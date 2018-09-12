@@ -1,0 +1,9 @@
+GRV
+===
+Terminal based interface to explore git repos
+
+* installation
+source ./install.sh
+
+* update
+See https://github.com/rgburke/grv

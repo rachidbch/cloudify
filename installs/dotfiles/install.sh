@@ -1,9 +1,9 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 # clone dotfiles repo
 
-[ -d ~/.config/dotfiles ] || git clone https://gitlab.com/mobilefirstcentury/dotfiles.git ~/.config/dotfiles
+[ -d ~/.config/dotfiles ] || git clone https://gitlab.com/mobilefirstcentury/dotfiles.git ${XDG_CONFIG_HOME:-~/.config}/dotfiles
 # generate symlinks for softwares not respecting XDG Base Directory Spec.
 # the script would not work if sourced, so we have to execute it
-chmod +x ~/.config/dotfiles/install.sh
-~/.config/dotfiles/install.sh
+chmod +x ${XDG_CONFIG_HOME:-~/.config}/dotfiles/install.sh
+source ${XDG_CONFIG_HOME:-~/.config}/dotfiles/install.sh

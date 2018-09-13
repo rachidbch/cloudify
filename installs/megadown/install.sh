@@ -2,8 +2,6 @@ Megadown
 ========
 # utility to download from mega.nz
 
-# first install dependencies
-if [ -z "$(command -v "python" 2>&1)"  ]; then sudo apt install python; fi    # Ubuntu 18.10 comes with only Python3, megadown needs python2
 sudo apt install pv
 
 # install megadown

@@ -1,0 +1,51 @@
+WORKSTATION
+===========
+
+Workstation installs a workable developement enviroement on newly installed ubuntu box.
+This environement should provide tools allowing the user to be fully productive: 
+
+* installed tools
+** version management tools
+  - git
+
+** ssh and session management
+  - openssh
+  - mosh
+  - tmux
+
+** programming languages
+  - python (with pip, virtualenv, pyenv adn miniconda3)
+  - node (with nvm)
+  - go (with gvm)
+  - php (with composer) 
+  - ruby (with rvm)
+
+** editors
+  - spacemacs (with tern)
+
+** databases
+  - mysql
+
+** backup
+  - rclone (rsync with drivers for all cloud providers)
+  - megadown (a tool to download from mega.nz)
+
+** shell 
+  - bashd (bash configuration management)
+  - fzf   (dir and file jumper)
+  - jump  (idem. to remove)
+  - bat   (a better cat)
+
+** devops
+  - minikube (?)
+  - vagrant (?)
+  - lxd (?)
+  - docker (?)
+
+* usage
+git clone "https://gitlab.com/mobilefirstcentury/installations.git" ~/.workstation
+source ~/.workstation/init.sh
+
+
+
+

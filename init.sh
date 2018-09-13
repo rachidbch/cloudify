@@ -7,14 +7,14 @@ export GIT_EMAIL=rachidbch@gmail.com
 
 # Configuration variables
 export EDITOR=vim
-export LOCAL_BIN=~/.local/bin
-export LOCAL_TMP=~/tmp/
 export WORKSTATION_DIR=~/workstation/
 
 [ -d "$LOCAL_BIN" ] || mkdir -p "$LOCAL_BIN"
 set PATH=$PATH:"$LOCAL_BIN"
+export LOCAL_BIN=~/.local/bin
 
 [ -d "$LOCAL_TMP" ] || mkdir -p "$LOCAL_TMP"
+export LOCAL_TMP=~/tmp/
 
 # basic apt packages
 sudo apt install software-properties-common

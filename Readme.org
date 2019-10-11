@@ -6,58 +6,62 @@
   This environment should provide tools allowing the user to be fully productive: 
   
   Workstation Project deals with tools installation whereas bash-it is used for configuration 
-  
-  
 
-** installed tools
-*** version management tools
-   - git
+** Tools Install
 
-*** ssh and session management
-   - openssh
-   - mosh
-   - tmux
-
-*** programming languages
-   - python (with pip, virtualenv, pyenv adn miniconda3)
-   - node (with nvm)
-   - go (with gvm)
-   - php (with phpbrew and composer)
-   - ruby (with rvm)
-
-*** editors
-   - spacemacs (with tern)
-
-*** databases
-   - mysql
-
-*** backup
-   - rclone (rsync with drivers for all cloud providers)
-   - megadown (a tool to download from mega.nz)
-
-*** shell 
-   - bash-it (bash configuration management, also called bashd)
-   - fzf   (dir and file jumper)
-   - jump  (idem. to remove)
-   - bat   (a better cat)
-
-*** help
-    - tldr (a better man)  [[https://github.com/pepa65/tldr-bash-client][The bash version]]
-    - cheat [[https://github.com/chrisallenlane/cheat][a CLI cheatsheet]]
-    - manly [[https://github.com/carlbordum/manly][a inversed man]]
-    - howdoi
-
-*** devops
-   - minikube (?)
-   - vagrant (?)
-   - lxd (?)
-   - docker (?)
-
-** usage
+*** How to install
  git clone "https://gitlab.com/mobilefirstcentury/installations.git" ~/.workstation
  source ~/.workstation/init.sh
+ 
+*** Tools list
+**** version management tools
+    - git
 
-** todo
+**** ssh and session management
+    - openssh
+    - mosh
+    - tmux
+
+**** programming languages
+    - python (with pip, virtualenv, pyenv adn miniconda3)
+    - node (with nvm)
+    - go (with gvm)
+    - php (with phpbrew and composer)
+    - ruby (with rvm)
+
+**** editors
+    - spacemacs (with tern)
+
+**** databases
+    - mysql
+
+**** backup
+    - rclone (rsync with drivers for all cloud providers)
+    - megadown (a tool to download from mega.nz)
+
+**** shell 
+    - bash-it (bash configuration management, also called bashd)
+    - fzf   (dir and file jumper)
+    - jump  (idem. to remove)
+    - bat   (a better cat)
+
+**** help
+     - tldr (a better man)  [[https://github.com/pepa65/tldr-bash-client][The bash version]]
+     - cheat [[https://github.com/chrisallenlane/cheat][a CLI cheatsheet]]
+     - manly [[https://github.com/carlbordum/manly][a inversed man]]
+     - howdoi
+
+**** devops
+    - minikube (?)
+    - vagrant (?)
+    - lxd (?)
+    - docker (?)
+
+
+** Backup Restoration 
+   Insofar we only have a [[file:~/org/notes/howto/backup.org::*Temporary%20Backup%20Strategy][Temporary Backup Strategy]]
+   
+** Todo
    - color the man pages. See [[https://www.tecmint.com/view-colored-man-pages-in-linux/][here]]
 
 

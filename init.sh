@@ -43,6 +43,8 @@ source "$WORKSTATION_DIR"/installs/go/install.sh
 source "$WORKSTATION_DIR"/installs/php/install.sh
 source "$WORKSTATION_DIR"/installs/ruby/install.sh
 
+exit 0
+
 # editors
 source "$WORKSTATION_DIR"/installs/spacemacs/install.sh
 source "$WORKSTATION_DIR"/installs/tern/install.sh

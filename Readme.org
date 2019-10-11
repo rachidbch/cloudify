@@ -1,51 +1,64 @@
-WORKSTATION
-===========
+* WORKSTATION
+  =warning= This is an unfinished project
+            Use it with caution
 
-Workstation installs a workable developement enviroement on newly installed ubuntu box.
-This environement should provide tools allowing the user to be fully productive: 
+  Workstation Project installs a workable development environment on newly installed ubuntu box.
+  This environment should provide tools allowing the user to be fully productive: 
+  
+  Workstation Project deals with tools installation whereas bash-it is used for configuration 
+  
+  
 
-* installed tools
-** version management tools
-  - git
+** installed tools
+*** version management tools
+   - git
 
-** ssh and session management
-  - openssh
-  - mosh
-  - tmux
+*** ssh and session management
+   - openssh
+   - mosh
+   - tmux
 
-** programming languages
-  - python (with pip, virtualenv, pyenv adn miniconda3)
-  - node (with nvm)
-  - go (with gvm)
-  - php (with composer) 
-  - ruby (with rvm)
+*** programming languages
+   - python (with pip, virtualenv, pyenv adn miniconda3)
+   - node (with nvm)
+   - go (with gvm)
+   - php (with phpbrew and composer)
+   - ruby (with rvm)
 
-** editors
-  - spacemacs (with tern)
+*** editors
+   - spacemacs (with tern)
 
-** databases
-  - mysql
+*** databases
+   - mysql
 
-** backup
-  - rclone (rsync with drivers for all cloud providers)
-  - megadown (a tool to download from mega.nz)
+*** backup
+   - rclone (rsync with drivers for all cloud providers)
+   - megadown (a tool to download from mega.nz)
 
-** shell 
-  - bashd (bash configuration management)
-  - fzf   (dir and file jumper)
-  - jump  (idem. to remove)
-  - bat   (a better cat)
+*** shell 
+   - bash-it (bash configuration management, also called bashd)
+   - fzf   (dir and file jumper)
+   - jump  (idem. to remove)
+   - bat   (a better cat)
 
-** devops
-  - minikube (?)
-  - vagrant (?)
-  - lxd (?)
-  - docker (?)
+*** help
+    - tldr (a better man)  [[https://github.com/pepa65/tldr-bash-client][The bash version]]
+    - cheat [[https://github.com/chrisallenlane/cheat][a CLI cheatsheet]]
+    - manly [[https://github.com/carlbordum/manly][a inversed man]]
+    - howdoi
 
-* usage
-git clone "https://gitlab.com/mobilefirstcentury/installations.git" ~/.workstation
-source ~/.workstation/init.sh
+*** devops
+   - minikube (?)
+   - vagrant (?)
+   - lxd (?)
+   - docker (?)
 
+** usage
+ git clone "https://gitlab.com/mobilefirstcentury/installations.git" ~/.workstation
+ source ~/.workstation/init.sh
+
+** todo
+   - color the man pages. See [[https://www.tecmint.com/view-colored-man-pages-in-linux/][here]]
 
 
 

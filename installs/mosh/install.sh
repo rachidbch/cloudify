@@ -1,4 +1,1 @@
- MOSH
-======
-
-sudo apt install mosh
+sudo apt install mosh -y

@@ -1,0 +1,47 @@
+* Spacemasc automated installation
+
+** Bugs 
+   Here's a list of little bugs that I encountered when I installed spacemacs with this recipe
+   Bugs that are still unresolved, that needed a manual intervention or that disapeared mysterioulsy are listed first
+
+*** Manual
+
+**** Catastrophic Emacs failure (no package installed) 
+    Due to [[https://github.com/syl20bnr/spacemacs/issues/12545][this issue]], I had to add disable package signature checking with `(setq package-check-signature nil)` at top of *~/.emacs.d/init.el*  (Same issue, same workaround in lean.eamcs)
+    =todo= This is heavy handed, try adding `(setq gnutls-algorithm-priority "NORMAL:-VERS-TLS1.3")` instead (suggested on the same issue page)
+    =note= As ~/.emacs.d/init.el is spacemacs code, we'll have to do this for each Spacemacs install and for each upgrade (with git pull)
+    
+**** Check your `yas-snippet-dirs': /home/rbch/.emacs.d/elpa/yasnippet-20191030.1331/snippets is not a directory  
+     A problem with Yas-Snippets listed on [[https://github.com/syl20bnr/spacemacs/issues/10316][github]]
+     =todo= Didn't investigate seriously.  Check Yas-Snippet does work 
+
+**** ????? All over Spacemacs
+     May be a font problem. 
+     Only disappeared after several emacs relaunch (and remediation of the other bugs listed in this doc, so ...)
+
+**** Magit-gh-pulls-popup Symbol's value as variable is void
+     This [[https://github.com/syl20bnr/spacemacs/issues/12650][github issue]] recommended to:
+     M-x package-list-package RET
+     /magit-gh-pulls                     # Search for this package
+     d                                   # Mark it for deletion
+     x                                   # Execute all marked actions
+     C-c C-x                             # Quit
+     emacs                               # Relaunch
+     M-x package-list-packages            
+     /pagit-gh-pulls                     # search for this package
+     i                                   # mark it for installation 
+     x                                   # Execute marked actions
+
+**** tern binary not found
+     The message appeared several times and then disapeared mysteriously
+     =todo= Check that tern does work 
+     
+
+*** Resolved 
+**** Bashrc warning
+     As my bash config doesn't follow best practices, Emacs was warning that my ~/.bashrc may have not have been sourced  
+     In fact my  ~/.bashrc is sourced from ~/.profile so there's no problem
+     I had to disable the warning with setting exec-path-from-shell-check-startup-files to nil
+
+**** Skipping check for new version (reason dotfile)
+     The update is disabled in spacemacs config (there's an [[https://github.com/syl20bnr/spacemacs/issues/9107][explanation on why]] on github)

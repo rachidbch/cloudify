@@ -1,4 +1,5 @@
-# WORKSTATION Installation
+
+j# WORKSTATION Installation
 # =warning= this script must be SOURCED and not executed  (otherwise environment modifcations, like aliases, won't persist after exectution)
 
 # cloud-init user-data

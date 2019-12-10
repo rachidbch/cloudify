@@ -56,6 +56,7 @@ RESULT=$?
 rm composer-setup.php
 echo "composer installation done!"
 echo "installing psysh ..."
+sudo chown -R $USER ~/.composer/                                # For some reason I had a permission denied because files from this fodler where owned by root  
 composer g require psy/psysh:@stable
 # this should install psysh in ~/.config/composer/vendor/bin. 
 #That dir should be in the path

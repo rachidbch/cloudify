@@ -1,7 +1,7 @@
 # this will also install latest node LTS version
 
 export NVM_DIR="$HOME/.nvm" && (
-    if [ ! -d "$NMV_DIR"  ]; then
+    if [ ! -d "$NVM_DIR"  ]; then
         git clone https://github.com/creationix/nvm.git "$NVM_DIR"
         cd "$NVM_DIR"
     else

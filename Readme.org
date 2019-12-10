@@ -2,10 +2,11 @@
   =warning= This is an unfinished project
             Use it with caution
 
+  Workstation Project deals with tools installation whereas bash-it is used for configuration 
+
   Workstation Project installs a workable development environment on newly installed ubuntu box.
   This environment should provide tools allowing the user to be fully productive: 
   
-  Workstation Project deals with tools installation whereas bash-it is used for configuration 
 
 ** Tools Install
 
@@ -58,9 +59,6 @@
     - docker (?)
 
 
-** Backup Restoration 
-   Insofar we only have a [[file:~/org/notes/howto/backup.org::*Temporary%20Backup%20Strategy][Temporary Backup Strategy]]
-   
 ** Todo
    - color the man pages. See [[https://www.tecmint.com/view-colored-man-pages-in-linux/][here]]
 

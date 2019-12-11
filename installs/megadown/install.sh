@@ -2,7 +2,7 @@ Megadown
 ========
 # utility to download from mega.nz
 
-sudo apt install pv
+sudo apt-get -q install pv
 
 # install megadown
 [ -d ./git ] && rm -rf ./git

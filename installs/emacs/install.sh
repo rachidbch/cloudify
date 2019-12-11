@@ -3,9 +3,10 @@
 # emacs install
 if ! grep -q "^deb .*kelleyk/emacs" /etc/apt/sources.list.d/*; then
   sudo add-apt-repository ppa:kelleyk/emacs -y
-  sudo apt update
+  sudo apt-get -q update
 fi
-sudo apt install emacs26-nox -y  #non-X version
+
+sudo apt-get -q install emacs26-nox -y  #non-X version
 
 if [[ -d ~/dotfiles/emacs/.lean.emacs.d ]]; then
  if [[ -d ~/.emacs.d && ! -L ~/.emacs.d ]]; then

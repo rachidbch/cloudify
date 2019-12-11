@@ -3,11 +3,10 @@
 # clone dotfiles repo
 # =todo= authorization needed as long as we have ssh package in dotfiles!
 # =todo= remove ssh package from dotfiles!
-echo "about to clone dotfiles"
 [ -d ~/dotfiles ] || git clone https://gitlab.com/mobilefirstcentury/dotfiles.git ~/dotfiles
 
 # Stow!
-sudo apt install stow
+sudo apt-get -q install stow
 ( cd ~/dotfiles; bash ./stow/stowit )
 
 # To simplify for now we don't use XDG_CONGIG dir. =todo= Use it?

@@ -5,9 +5,12 @@
 # install Pip3 before Pip2, otherwise pip will default to pip3 instead of pip2 (bug?)
 
 # this will install /usr/local/bin/pip3
-wget https://bootstrap.pypa.io/get-pip.py -O /tmp/get-pip.py
-# without sudo -H, install generates an error
-sudo -H python3 /tmp/get-pip.py
-
-# this will install /usr/local/bin/pip (ie. pip2)
-sudo -H python2  /tmp/get-pip.py
+if [ -z $(which pip3) ]; then
+  wget -nv https://bootstrap.pypa.io/get-pip.py -O /tmp/get-pip.py
+  # without sudo -H, install generates an error
+  sudo -H python3 /tmp/get-pip.py
+elif [ -z $(which pip2) ]; then
+  [ -e /tmp/get-pip.py ] || wget -nv https://bootstrap.pypa.io/get-pip.py -O /tmp/get-pip.py
+  # this will install /usr/local/bin/pip (ie. pip2)
+  sudo -H python2  /tmp/get-pip.py
+fi

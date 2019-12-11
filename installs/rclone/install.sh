@@ -8,8 +8,8 @@ RClone
 curl -LSs "https://downloads.rclone.org/v1.43.1/rclone-v1.43.1-linux-amd64.deb" > rclone.deb
 
 # install rclone
-sudo apt update
-sudo apt install ./rclone.deb
+sudo apt-get -q update
+sudo apt-get -q install ./rclone.deb
 
 # install megadown
 source "$WORKSTATION_DIR"/installs/megadown/install.sh

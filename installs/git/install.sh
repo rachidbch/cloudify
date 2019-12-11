@@ -1,14 +1,14 @@
-sudo apt install git -y
+sudo apt-get -q install git -y
 
-[ -f ~/.gitconfig ] || cat > ~/.gitconfig <<-EOF
-    [user]
-    email = "$GIT_EMAIL"
-    name = "$GIT_USER"
-    [core]
-    editor = vim
-    [diff]
-    tool = vimdiff
-    [difftool]
-    prompt = false
-EOF
-
+# Not needed as it's already managed in dotfiles
+#[ -f ~/.gitconfig ] || cat > ~/.gitconfig <<-EOF
+#    [user]
+#    email = "$GIT_EMAIL"
+#    name = "$GIT_USER"
+#    [core]
+#    editor = vim
+#    [diff]
+#    tool = vimdiff
+#    [difftool]
+#    prompt = false
+#EOF

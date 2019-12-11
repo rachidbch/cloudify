@@ -1,9 +1,11 @@
 # notes: release links
-#   - v1.43.1  Linux 64 : https://github.com/sharkdp/bat/releases/download/v0.6.1/bat_0.6.1_amd64.deb
+BAT_TAG=0.12.1
+
+[ -d ~/tmp ] || mkdir ~/tmp
 
 # download bat deb in ~/workstation/install/deb
-curl -LSs "https://github.com/sharkdp/bat/releases/download/v0.6.1/bat_0.6.1_amd64.deb" > bat.deb
+# =todo= could be smarter by checking latest tag and comparing it with BAT_TAG (Another install script has the git vodoo to check the latest tag)
+curl -LSs "https://github.com/sharkdp/bat/releases/download/v${BAT_TAG}/bat_${BAT_TAG}_amd64.deb" > ~/tmp/bat.deb
 
 # install bat
-sudo apt update
-sudo apt install ./bat.deb -y
+sudo apt-get -q install ~/tmp/bat.deb -y

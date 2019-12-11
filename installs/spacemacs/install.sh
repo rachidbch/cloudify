@@ -5,9 +5,9 @@
 if [[ -d ~/dotfiles/spacemacs/.spacemacs.d ]]; then
   if ! grep -q "^deb .*kelleyk/emacs" /etc/apt/sources.list.d/*; then
     sudo add-apt-repository ppa:kelleyk/emacs
-    sudo apt update
+    sudo apt-get -q update
   fi
-  sudo apt install emacs26-nox -y #non-X version
+  sudo apt-get -q install emacs26-nox -y #non-X version
 
   # spacemacs install
   [ -d ~/.spacemacs.emacs.d ] || git clone https://github.com/syl20bnr/spacemacs ~/.spacemacs.emacs.d
@@ -15,7 +15,7 @@ if [[ -d ~/dotfiles/spacemacs/.spacemacs.d ]]; then
   ln -s ~/.spacemacs.d/private ~/.spacemacs.emacs.d/private
 
   # install some private layers
-  git clone https://github.com/venmos/w3m-layer.git ~/.spacemacs.d/private/w3m
+  [ -d ~/.spacemacs.d/private/w3m ] || git clone https://github.com/venmos/w3m-layer.git ~/.spacemacs.d/private/w3m
 
   # spacemacs bugs workarounds
 
@@ -23,8 +23,8 @@ if [[ -d ~/dotfiles/spacemacs/.spacemacs.d ]]; then
   [ -d ~/.spacemacs.d/layers ] || mkdir ~/.spacemacs.d/layers
 
   # 2. ac-ispell package bug: see https://github.com/syl20bnr/spacemacs/issues/11095 
-  git clone  https://github.com/syohex/emacs-ac-ispell.git ~/.spacemacs.d/private/emacs-ac-ispell
-  # install package manually in spacemacs: SPC SPC package-install-file ~/.spacemacs.d/private/emacs-ac-ispell          ;; [TODO] automate
+  [ -d ~/.spacemacs.d/private/emacs-ac-ispell ] || git clone  https://github.com/syohex/emacs-ac-ispell.git ~/.spacemacs.d/private/emacs-ac-ispell
+  # install package manually in spacemacs: SPC SPC package-install-file ~/.spacemacs.d/private/emacs-ac-ispell          ;; =todo= automate
 
   # 3. yas snippets dirs warning: see https://github.com/syl20bnr/spacemacs/issues/10316
   # simply create an empty `snippets` directory in path indicated by warning message

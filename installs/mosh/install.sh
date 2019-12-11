@@ -1,1 +1,1 @@
-sudo apt install mosh -y
+sudo apt-get -q install mosh -y

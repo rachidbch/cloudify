@@ -1,37 +1,37 @@
-# WORKSTATION Installation
-# =warning= this script must be SOURCED and not executed  (otherwise environment modifcations, like aliases, won't persist after exectution)
+# Workstation installation
 
+# DEBUG or NOT
+WORKSTATION_DEBUG=true
+
+
+# =warning= this script must be SOURCED and not executed  (otherwise environment modifcations, like aliases, won't persist after exectution)
 # cloud-init user-data
 # =todo= GIT_USER and GIT_EMAIL must be sourced from cloudinit user-data
 
-[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nExports...\n***\n"
-
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "Setting Exports...\n***"
 export GIT_USER=rachidbch
 export GIT_EMAIL=rachidbch@gmail.com
-
 # Configuration variables
 export EDITOR=vim
 export WORKSTATION_DIR=~/workstation/
-
 export LOCAL_BIN=~/.local/bin
 [ -d "$LOCAL_BIN" ] || mkdir -p "$LOCAL_BIN"
 set PATH=$PATH:"$LOCAL_BIN"
-
 export LOCAL_TMP=~/tmp/
 [ -d "$LOCAL_TMP" ] || mkdir -p "$LOCAL_TMP"
-
 # basic apt packages
 # =todo= create a basic package in workstation project
 
 # Some stations come without proper locales
-# On RackNerd VPS, I had a lot of " perl: warning: Setting locale failed." errors 
-# =todo= Some advise to be selective and install only needed locales. How?  
+# On RackNerd VPS, I had a lot of " perl: warning: Setting locale failed." errors
+# =todo= Some advise to be selective and install only needed locales. How?
 [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling Language pack\n***"
-sudo apt install language-pack-en -y
+sudo apt-get -q install language-pack-en -y
 
-# Without this no add-apt-repository ...
-[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling Properties Common\n***"
-sudo apt install software-properties-common -y
+# Without software-propreties-common this no add-apt-repository ...
+# Add a mini comment to explain other installs
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling basics\n***"
+sudo apt-get -q install apt-transport-https ca-certificates curl gnupg-agent software-properties-common -y
 
 # Is a linux machine even possible without python
 [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling python\n***"
@@ -59,45 +59,42 @@ source "$WORKSTATION_DIR"/installs/dotfiles/install.sh
 # bash  (bash-it install has a flag raised to not touch ~/.bashrc has it has already been set by dotfiles package above)
 [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling bash-it\n***"
 source "$WORKSTATION_DIR"/installs/bash-it/install.sh
-echo "Here?"
 
 # miscelaneous softwares
 
 ## ssh management
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling mosh\n***"
-#source "$WORKSTATION_DIR"/installs/mosh/install.sh
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling tmux\n***"
-#source "$WORKSTATION_DIR"/installs/tmux/install.sh
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling mosh\n***"
+source "$WORKSTATION_DIR"/installs/mosh/install.sh
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling tmux\n***"
+source "$WORKSTATION_DIR"/installs/tmux/install.sh
 
 ## programming languages
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling pip\n***"
-#source "$WORKSTATION_DIR"/installs/pip/install.sh
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling miniconda3\n***"
-#source "$WORKSTATION_DIR"/installs/miniconda3/install.sh
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling pip\n***"
+source "$WORKSTATION_DIR"/installs/pip/install.sh
 [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling nvm\n***"
 source "$WORKSTATION_DIR"/installs/nvm/install.sh
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling go\n***"
-#source "$WORKSTATION_DIR"/installs/go/install.sh
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling php\n***"
-#(source "$WORKSTATION_DIR"/installs/php/install.sh)
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling php\n***"
-#source "$WORKSTATION_DIR"/installs/ruby/install.sh
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling go\n***"
+source "$WORKSTATION_DIR"/installs/go/install.sh
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\n\nInstalling php\n***"
+source "$WORKSTATION_DIR"/installs/php/install.sh
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling ruby\n***"
+source "$WORKSTATION_DIR"/installs/ruby/install.sh
+#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling miniconda3\n***"
+#source "$WORKSTATION_DIR"/installs/miniconda3/install.sh
 
 # miscellaneous tools
-#echo "installing todo.txt\n***"
 [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling toto.txt\n***"
 source "$WORKSTATION_DIR"/installs/todo.txt/install.sh
 
-
 # editors
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling tern\n***"
+source "$WORKSTATION_DIR"/installs/tern/install.sh
 [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling emacs\n***"
 source "$WORKSTATION_DIR"/installs/emacs/install.sh
 [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling spacemacs\n***"
 source "$WORKSTATION_DIR"/installs/spacemacs/install.sh
-[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling tern\n***"
-source "$WORKSTATION_DIR"/installs/tern/install.sh
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling vim\n***"
-#source "$WORKSTATION_DIR"/installs/vim/install.sh
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling vim\n***"
+source "$WORKSTATION_DIR"/installs/vim/install.sh
 
 # databases
 #[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling mysql\n***"
@@ -111,17 +108,20 @@ source "$WORKSTATION_DIR"/installs/tern/install.sh
 
 # version management tools
 # git already installed above
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling grv\n***"
-# source "$WORKSTATION_DIR"/installs/grv/install.sh
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling grv\n***"
+source "$WORKSTATION_DIR"/installs/grv/install.sh
 
 # shell 
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling bat"\n***
-#source "$WORKSTATION_DIR"/installs/bat/install.sh
-#[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling fzf\n***"
-#source "$WORKSTATION_DIR"/installs/fzf/install.sh
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling bat\n***"
+source "$WORKSTATION_DIR"/installs/bat/install.sh
+[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling fzf\n***"
+source "$WORKSTATION_DIR"/installs/fzf/install.sh
+# Jump is redondant with fasd (which is integrated with fzf)
+# =todo= which is better? 
 #[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling jump\n***"
 #source "$WORKSTATION_DIR"/installs/jump/install.sh
-# =todo !
+
+# =todo= remove and remove bashd package
 #[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstallin bashd\n***"
 #source "$WORKSTATION_DIR"/installs/bashd/install.sh
 
@@ -129,4 +129,7 @@ source "$WORKSTATION_DIR"/installs/tern/install.sh
 #[ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling minikube\n***"
 #source "$WORKSTATION_DIR"/installs/minikube/install.sh
 
-echo -e "STATION ON ORBIT!\n***"
+# We're set
+echo -e "\nSourcing ~/.bashrc\n***"
+source ~/.bashrc
+echo -e "Station on orbit!\n***"

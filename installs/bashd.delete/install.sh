@@ -1,9 +1,9 @@
-# Bash-it
+# Bash-it  
 
-# Bash-it install complains if no ~/bin/ is found
+# Bash-it install complains if no ~/bin/ is found 
 # =todo= Report Issue
 if [[ ! -e ~/bin ]]; then
-    mkdir ~/bin
+    mkdir ~/bin	 
 elif [[ ! -d ~/bin ]]; then
     echo "FATAL: ~/bin already exists and isn\'nt a directory"
 fi

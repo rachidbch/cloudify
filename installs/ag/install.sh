@@ -1,4 +1,4 @@
 # install fd
-sudo apt update
-sudo apt install silversearcher-ag -y
+sudo apt-get -q update
+sudo apt-get -q install silversearcher-ag -y
 

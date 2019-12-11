@@ -2,6 +2,6 @@
 
 # install fd
 # doc: http://entrproject.org/
-sudo apt update
-sudo apt install entr -y
+sudo apt-get -q update
+sudo apt-get -q install entr -y
 

@@ -5,5 +5,5 @@
 curl -LSs "https://dev.mysql.com/get/mysql-apt-config_0.8.10-1_all.deb" > mysql.deb
 
 # install bat
-sudo apt update
-sudo apt install ./mysql.deb -y
+sudo apt-get -q update
+sudo apt-get -q install ./mysql.deb -y

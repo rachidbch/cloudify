@@ -66,7 +66,7 @@ if [ -z $(which psysh) ]; then
   sudo chown -R $USER ~/.composer/                                # For some reason I had a permission denied because files from this fodler where owned by root  
   composer g require psy/psysh:@stable
   # this should install psysh in ~/.config/composer/vendor/bin. 
-  #That dir should be in the path           # =todo= There's no way this will end in PATH...
+  #That dir should be in the path           
   PATH="${PATH}:/home/${USER}/.config/composer/vendor/bin"
   # install sqlite php driver needed to read manual doc from within psysh
   echo "installing php-sqlite3 ..."

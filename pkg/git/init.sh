@@ -1,3 +1,7 @@
+# This may be usefull temporarily until we can clone dotfiles
+export GIT_USER=rachidbch
+export GIT_EMAIL=rachidbch@gmail.com
+
 sudo apt-get -q install git -y
 
 # Not needed as it's already managed in dotfiles

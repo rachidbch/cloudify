@@ -9,13 +9,10 @@ export PYENV_VIRTUALENV_DISABLE_PROMPT=1
 # prevent  pyenv activate <version> to modify prompt (only pyenv activate <env> should be visible in prompt):
 export PYTHONNOUSERSITE=True
 
-
 # install pyenv
 [ -d ~/.pyenv ] || git clone https://github.com/pyenv/pyenv.git ~/.pyenv
 
 # enable ~/.bash.d/available/pyenv.plugin
-
 # install virtualenv plugin  
-[ -d "$(pyenv root)/plugins/pyenv-virtualenv" ] || git clone https://github.com/pyenv/pyenv-virtualenv.git $(pyenv root)/plugins/pyenv-virtualenv
-
+[ -d ~/.pyenv/plugins/pyenv-virtualenv ] || git clone https://github.com/pyenv/pyenv-virtualenv.git ~/.pyenv/plugins/pyenv-virtualenv
 # we prefer to not install pyenv virtualenv autoactivation feature. 

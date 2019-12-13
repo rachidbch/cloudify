@@ -1,7 +1,7 @@
 # PHP
 # ====
 
-set -e
+#set -e
 
 # PHP doesn\'t necessitate rbm version management system as it is build to be backward compatible.
 # dependencies management is done per project directory using composer
@@ -51,7 +51,7 @@ if [ -z $(which composer) ]; then
 
   if [ "$EXPECTED_SIGNATURE" != "$ACTUAL_SIGNATURE"  ]
   then
-      >&2 echo 'ERROR: Invalid installer signature'
+      >&2 echo 'ERROR: Invalid PHP installer signature'
       rm composer-setup.php
       exit 1
   fi
@@ -62,12 +62,13 @@ if [ -z $(which composer) ]; then
 fi
 
 if [ -z $(which psysh) ]; then
+  # =todo= The whole thing should be in ~/.config/composer" instead of ~/.composer/"
   echo -e "\ninstalling psysh ..."
   sudo chown -R $USER ~/.composer/                                # For some reason I had a permission denied because files from this fodler where owned by root  
-  composer g require psy/psysh:@stable
+  composer global require psy/psysh:@stable
   # this should install psysh in ~/.config/composer/vendor/bin. 
-  #That dir should be in the path           
-  PATH="${PATH}:/home/${USER}/.config/composer/vendor/bin"
+  #That dir should be in the path
+  export PATH="${PATH}:/home/${USER}/.composer/vendor/bin"
   # install sqlite php driver needed to read manual doc from within psysh
   echo "installing php-sqlite3 ..."
   sudo apt-get -q install php-sqlite3 -y

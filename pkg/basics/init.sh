@@ -5,4 +5,5 @@ sudo apt-get -q install language-pack-en -y
 
 # Without software-propreties-common this no add-apt-repository ...
 # Add a mini comment to explain other installs
-sudo apt-get -q install apt-transport-https ca-certificates curl gnupg-agent software-properties-common -y
+sudo apt-get -q install apt-transport-https ca-certificates curl gnupg-agent
+software-properties-common bc tree -y

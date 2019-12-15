@@ -15,6 +15,13 @@ sudo add-apt-repository \
 
 sudo apt-get -q update
 
-sudo apt-get -q install docker-ce docker-ce-cli containerd.io
+sudo apt-get -q install docker-ce docker-ce-cli containerd.io -y
 
+echo "Docker version installed"
 docker -v
+
+echo "Warning: Don't forget to add $USER to docker group"
+echo "> sudo usermod -aG docker $USER"
+echo "> newgrp docker"
+echo "> newgrp $USER"
+echo "> docker run hello-world"

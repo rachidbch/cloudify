@@ -10,7 +10,9 @@ fi
 if [ -z $(which go.1.4) ]; then
  gvm install go1.4 -B
  gvm use go1.4
-elif  [ -z $(which go.1.13) ]; then
+fi
+if [ -z $(which go.1.13) ]; then
  export GOROOT_BOOTSTRAP=$GOROOT
  gvm install go1.13
+ gvm use go1.13
 fi

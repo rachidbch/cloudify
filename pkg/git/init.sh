@@ -16,3 +16,20 @@ sudo apt-get -q install git -y
 #    [difftool]
 #    prompt = false
 #EOF
+
+# Install Hub
+HUB_VER=2.13.0
+(
+  [ -z ~/tmp ] && mkdir ~/tmp && cd ~/tmp
+  curl -sSL "https://github.com/github/hub/releases/download/v${HUB_VER}/hub-linux-amd64-${HUB_VER}.tgz" > hub.tgz
+  [ -d hub ] && rm -rf ./hub/* || mkdir hub
+  tar xvzf hub.tgz --strip-components=1 -C hub
+  cd hub
+  sudo  prefix=/usr/local ./install
+)
+
+# Install Lab
+latest="$(curl -sL 'https://api.github.com/repos/zaquestion/lab/releases/latest' | grep 'tag_name' | grep --only 'v[0-9\.]\+' | cut -c 2-)"
+curl -sL "https://github.com/zaquestion/lab/releases/download/v${latest}/lab_${latest}_linux_amd64.tar.gz" | tar -C ~/tmp/ -xzvf -
+sudo install -m755 ~/tmp/lab /usr/local/bin/lab
+

@@ -1,0 +1,15 @@
+#!/bin/bash
+
+if [ "$1" == "create" ]; then 
+  lab project create --private 2>/dev/null
+fi
+
+if [ "$1" == "create" -o "$1" == "toggle" ]; then 
+  # First get the Gitlab Access Token
+  TOKEN=$(sed -r -n 's/^\s*"token" = "([^"]*)"/\1/p' ~/.config/lab.hcl)
+  sed -i -r "s/^(\s*url\s*=\s*)(git@gitlab.com:)([^/]*)\/([^.]*)\.git/\1https:\/\/git:$TOKEN@gitlab.com\/\3\/\4.git/" ./.git/config  
+fi
+
+if [ "$1" == "create" ]; then 
+  lab push -u origin master 
+fi

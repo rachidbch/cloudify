@@ -21,7 +21,8 @@ sudo apt-get -q install git -y
 # Install Hub
 HUB_VER=2.13.0
 (
-  [ -z ~/tmp ] && mkdir ~/tmp && cd ~/tmp
+  [ -z ~/tmp ] && mkdir ~/tmp
+  cd ~/tmp
   curl -sSL "https://github.com/github/hub/releases/download/v${HUB_VER}/hub-linux-amd64-${HUB_VER}.tgz" > hub.tgz
   [ -d hub ] && rm -rf ./hub/* || mkdir hub
   tar xvzf hub.tgz --strip-components=1 -C hub

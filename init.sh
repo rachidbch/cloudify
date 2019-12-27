@@ -26,14 +26,25 @@ else
     PKG_INIT="init.sh"
 fi
 
+
 # Install packages
-for pkg in $(< ${PKGS_FILE});
-do
+if [ -z "$1" ]; then
+  for pkg in $(< ${PKGS_FILE}); do
     echo ${pkg%%*( )}
     [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling ${pkg}\n***"
     source "$WORKSTATION_DIR"/pkg/${pkg%%*( )}/${PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
-done
+  done
+elif [[ "$1" == "ls" || "$1" == "list" ]]; then
+  \ls "$WORKSTATION_DIR"/pkg
+else
+  pkg="$1"
+  echo ${pkg%%*( )}
+  [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling ${pkg}\n***"
+  source "$WORKSTATION_DIR"/pkg/${pkg%%*( )}/${PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
+fi
 
 # Finish 
-echo -e "\nNow please Source ~/.bashrc\n***"
-echo -e "Station on orbit!\n***"
+if [ "$1" != "ls" -a "$1" != "list" ]; then
+ echo -e "\nNow please Source ~/.bashrc\n***"
+ echo -e "Station on orbit!\n***"
+fi

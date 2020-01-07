@@ -7,3 +7,7 @@ if [ -z "$(command -v "python3" 2>&1)"  ]; then sudo apt-get -q install python3 
 # =todo= The following package install fails on 16.04.06 LTS. As it was a workaround for the problem below, try to found out what to do with it!
 # without this, following pip3 install [[https://github.com/pypa/pip/issues/5367#issuecomment-387354705][fails]]
 #sudo apt-get -q install python3-distutils -y
+
+# Install pipx
+python3 -m pip install --user pipx
+python3 -m pipx ensurepath &> /dev/null

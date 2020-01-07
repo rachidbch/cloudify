@@ -36,3 +36,7 @@ sudo install -m755 ~/tmp/lab /usr/local/bin/lab
 
 # Install git-lab subcommand
 sudo install -m755 $PKG_DIR/git-lab /usr/local/bin/
+
+# Install gitless (using pipx)
+pipx install gitless
+

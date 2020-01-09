@@ -50,6 +50,14 @@ if (( $(echo "$UBUNTU_VER <= 16.04" | bc -l ))); then
     # Don't even ask me why ...   Python is just a mess...
     sudo apt install python3.6-venv
 
+    # Don't ask about this one neither. Witout python3.6 complains about the module absence
+    # I use sudo (which is not recommended), because I want the module "available globally" for 3.6, but the truth is I don't understand what I'm doing :(
+    # So far, so good, ...
+    # sudo -H pip3 install argcomplete
+    # Most probably I shoud have done:
+    python3 -m pip install argcomplete
+    # =todo= Try it on a fresh install 
+
   fi
 fi
 

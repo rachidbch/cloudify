@@ -1,4 +1,3 @@
-
 # Bug workaround
 # bug: [[https://github.com/conda/conda/issues/6018][bug in python3]]
 #   this bug inserts user site packages path in sys.path. 
@@ -10,9 +9,12 @@ export PYENV_VIRTUALENV_DISABLE_PROMPT=1
 export PYTHONNOUSERSITE=True
 
 # install pyenv
-[ -d ~/.pyenv ] || git clone https://github.com/pyenv/pyenv.git ~/.pyenv
+if [ ! -d ~/.pyenv ]; then
 
-# enable ~/.bash.d/available/pyenv.plugin
-# install virtualenv plugin  
-[ -d ~/.pyenv/plugins/pyenv-virtualenv ] || git clone https://github.com/pyenv/pyenv-virtualenv.git ~/.pyenv/plugins/pyenv-virtualenv
-# we prefer to not install pyenv virtualenv autoactivation feature. 
+  git clone https://github.com/pyenv/pyenv.git ~/.pyenv
+
+  # enable ~/.bash.d/available/pyenv.plugin
+  # install virtualenv plugin  
+  git clone https://github.com/pyenv/pyenv-virtualenv.git ~/.pyenv/plugins/pyenv-virtualenv
+  # we prefer to not install pyenv virtualenv autoactivation feature. 
+fi

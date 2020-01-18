@@ -3,9 +3,9 @@
 
 (
 TODOTXT_VER=2.11.0
-cd ~/tmp/
+cd /tmp/
 [ -e todo.txt_cli.tar.gz ] || wget -O todo.txt_cli.tar.gz "https://github.com/todotxt/todo.txt-cli/releases/download/v${TODOTXT_VER}/todo.txt_cli-${TODOTXT_VER}.tar.gz"
-if [ ! -d ~/tmp/todo.txt_cli ]; then
+if [ ! -d /tmp/todo.txt_cli ]; then
   mkdir todo.txt_cli
   tar xzvf todo.txt_cli.tar.gz -C /tmp/todo.txt_cli --strip-components 1
 fi

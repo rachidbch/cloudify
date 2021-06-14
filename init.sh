@@ -26,25 +26,46 @@ else
     PKG_INIT="init.sh"
 fi
 
+function printHelp(){
+cat << EOF
+usage: cloudify:                    print help
+       cloudify help:               print help  
+       cloudify ls|list:            list installable packages 
+       cloudify ls|list enabled:    list enabled packages 
+       cloudify i <pkg>             install package
+       cloudify i enabled           install enabled in termux|station.packages
+       cloudify u <pkg>             uninstall package
+EOF
+}
+
+function printDone() {
+  echo -e "\nNow please Source ~/.bashrc\n***"
+  echo -e "Station on orbit!\n***"
+}
 
 # Install packages
-if [ -z "$1" ]; then
+if [[ -z "$1" || "$1" == "help"]] ; then
+  printHelp
+elif [[ ( "$1" == "ls" || "$1" == "list" ) && "$2" == "enabled" ]]; then
+  for pkg in $(< ${PKGS_FILE}); do
+    echo ${pkg%%*( )}
+  done
+elif [[ ( "$1" == "ls" || "$1" == "list" ) && ( -z "$2" || "$2" == "all" ) ]]; then
+  \ls "$WORKSTATION_DIR"/pkg
+elif [[ "$1" == "i" &&  "$2" == "enabled" ]]; then
   for pkg in $(< ${PKGS_FILE}); do
     echo ${pkg%%*( )}
     [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling ${pkg}\n***"
     source "$WORKSTATION_DIR"/pkg/${pkg%%*( )}/${PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
   done
-elif [[ "$1" == "ls" || "$1" == "list" ]]; then
-  \ls "$WORKSTATION_DIR"/pkg
-else
+  printDone
+elif [[ "$1" == "i" &&  ! -z "$2" ]]; then
   pkg="$1"
   echo ${pkg%%*( )}
   [ -z "$WORKSTATION_DEBUG" ] || echo -e "\nInstalling ${pkg}\n***"
   source "$WORKSTATION_DIR"/pkg/${pkg%%*( )}/${PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
+  printDone
+else
+  printHelp
 fi
 
-# Finish 
-if [ "$1" != "ls" -a "$1" != "list" ]; then
- echo -e "\nNow please Source ~/.bashrc\n***"
- echo -e "Station on orbit!\n***"
-fi

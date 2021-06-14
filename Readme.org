@@ -1,19 +1,18 @@
-* WORKSTATION
-  =warning= This is an unfinished project
-            Use it with caution
+* CLOUDSTATION PROJECT 
+  =warning= This is an unfinished project. Use it with caution
 
-  Workstation Project deals with tools installation whereas bash-it is used for configuration 
+  Cloudstation Project deals with tools installation whereas bash-it is used for configuration 
 
-  Workstation Project installs a workable development environment on newly installed ubuntu box.
+  Cloudstation Project installs a workable development environment on newly installed ubuntu box.
   This environment should provide tools allowing the user to be fully productive: 
-  
 
 ** Tools Install
 
 *** How to install
- git clone "https://gitlab.com/mobilefirstcentury/installations.git" ~/.workstation
- source ~/.workstation/init.sh
- 
+ $ git clone "https://gitlab.com/mobilefirstcentury/installations.git" ~/cloustation          
+ $ source ~/cloudstation/init.sh                                                            # This will test if platform is standard linux or termux
+                                                                                            # and will install station.packages or termux.packages
+                                                                                            # accordingly
 *** Tools list
 **** version management tools
     - git
@@ -32,6 +31,8 @@
 
 **** editors
     - spacemacs (with tern)
+    - emacs (my leanemacs setup)
+    - vim (my minimal vim setup)
 
 **** databases
     - mysql
@@ -58,9 +59,9 @@
     - lxd (?)
     - docker (?)
 
+** Miscelaneous
+   - croc  A secure send file tool. See [[https://github.com/schollz/croc][here]]
 
 ** Todo
    - color the man pages. See [[https://www.tecmint.com/view-colored-man-pages-in-linux/][here]]
-
-
 

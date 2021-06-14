@@ -6,8 +6,12 @@
 export WRKFY_DEBUG=true
 
 function WRKFY_DEBUG_MSG() {
-  $WRKFY_DEBUG && echo "*** DEBUG: $1 ***"
+  $WRKFY_DEBUG && echo -e "*** DEBUG: $1 ***"
 }
+function WRKFY_DEBUG_MSG_NEWLINE() {
+  $WRKFY_DEBUG && echo -e "\n*** DEBUG: $1 ***"
+}
+
 
 #
 #

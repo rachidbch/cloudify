@@ -1,1 +1,1 @@
-curl https://getcroc.schollz.com | bash
+curl -sL https://getcroc.schollz.com | bash

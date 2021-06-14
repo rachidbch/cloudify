@@ -3,8 +3,14 @@
 # =todo= Modify the script so it can be executed: all environment variables and aliases that must persist be set by bash-it 
 
 # DEBUG or NOT
-WRKFY_DEBUG=true
+export WRKFY_DEBUG=true
 
+function WRKFY_DEBUG_MSG() {
+  $WRKFY_DEBUG && echo "*** DEBUG: $1 ***"
+}
+
+#
+#
 # Local Configuration variables
 
 # To find workify/pkg directory path we naively relied on the following line to retrieve the path of the folder containing this script
@@ -45,9 +51,9 @@ cat << EOF
 usage: cloudify:                    print help
        cloudify help:               print help  
        cloudify ls|list:            list installable packages 
-       cloudify ls|list enabled:    list enabled packages 
+       cloudify ls|list default:    list default packages 
        cloudify i <pkg>             install package
-       cloudify i enabled           install enabled in termux|station.packages
+       cloudify i default           install default in termux|station.packages
        cloudify u <pkg>             uninstall package
 EOF
 }
@@ -58,38 +64,43 @@ function printDone() {
 }
 
 # Install packages
-if [[ -z "$1" || "$1" == "help" ]] ; then
-  printHelp
-elif [[ ( "$1" == "ls" || "$1" == "list" ) && "$2" == "enabled" ]]; then
-  ( for pkg in $(< ${WRKFY_PKG_FILE}); do
-    echo ${pkg%%*( )}
-  done ) | column 
-elif [[ ( "$1" == "ls" || "$1" == "list" ) && ( -z "$2" || "$2" == "all" ) ]]; then
-  \ls "$WRKFY_DIR"/pkg
-elif [[ "$1" == "i" &&  "$2" == "enabled" ]]; then
-  for pkg in $(< ${PKGS_FILE}); do
-    echo ${pkg%%*( )}
-    [ -z "$WRKFY_DEBUG" ] || echo -e "\nInstalling ${pkg}\n***"
 
+if [[ -z "$1" || "$1" == "help" ]] ; then
+  # Get help 
+  printHelp
+elif [[ ( "$1" == "ls" || "$1" == "list" ) && "$2" == "default" ]]; then
+  # List default packages for current platform
+  # Default packages are lited in ./*.packages files 
+  ( for pkg in $(< ${WRKFY_PKG_FILE}); do
+      echo ${pkg%%*( )}
+    done ) | column 
+elif [[ ( "$1" == "ls" || "$1" == "list" ) && ( -z "$2" || "$2" == "all" ) ]]; then
+  # List all available packages for current platform
+  \ls "$WRKFY_DIR"/pkg
+elif [[ ( "$1" == "i" || "$1" == "install" ) &&  "$2" == "default" ]]; then
+  # Install default packages for current platform 
+  # Default packages are lited in ./*.packages files 
+  for pkg in $(< ${WRKFY_PKG_FILE}); do
+    WRKFY_DEBUG_MSG "Installing ${pkg%%*( )}"
     if [[ $WRKFY_TERMUX && -f "$WRKFY_PKG_INIT_TERMUX" ]]; then
         source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
     else
-        source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
+        source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
     fi
   done
   printDone
-elif [[ "$1" == "i" &&  ! -z "$2" ]]; then
-  pkg="$1"
-  echo ${pkg%%*( )}
-  [ -z "$WRKFY_DEBUG" ] || echo -e "\nInstalling ${pkg}\n***"
-
+elif [[ ( "$1" == "i" || "$1" == "install" ) &&  ! -z "$2" ]]; then
+  # Install a specific package
+  pkg="$2"
+  WRKFY_DEBUG_MSG "Installing ${pkg%%*( )}"
   if [[ $WRKFY_TERMUX && -f "$WRKFY_PKG_INIT_TERMUX" ]]; then
     source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
   else
-    source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
+    source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
   fi
   printDone
 else
+  # Get help 
   printHelp
 fi
 

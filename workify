@@ -13,6 +13,52 @@ function WRKFY_DEBUG_MSG_NEWLINE() {
 }
 
 
+function wrkfy_pkg_startup_env(){
+
+  WRKFY_DEBUG_MSG_NEWLINE "ENV TO SETUP:"
+  WRKFY_PKG_ENV_ESCAPED=()
+  for wrkfy_line in "${WRKFY_PKG_ENV[@]}"; do
+    echo "Adding $wrkfy_line to array"
+    wrkfy_line=$(echo "$wrkfy_line" | sed 's/\//\\\//g' )
+    WRKFY_PKG_ENV_ESCAPED+=( "$wrkfy_line" )
+  done;
+  #WRKFY_PKG_ENV_ESCAPED=$(echo "$WRKKFY_PKG_ENV" | sed 's/\//\\\//g')
+  WRKFY_DEBUG_MSG_NEWLINE "ENV TO SETUP:"
+  for wrkfy_line in "${WRKFY_PKG_ENV_ESCAPED[@]}"; do
+    echo "Added $wrkfy_line"
+  done;
+  
+  # Reserve workit space in bashrc
+  WRKFY_DEBUG_MSG_NEWLINE "Reserve Workify space inside bashrc"
+  grep -qFx "# WORKIT ENV START" ~/.bashrc || echo -e "# WORKIT ENV START\n# WORKIT ENV END"  >> ~/.bashrc
+  
+  # Remove previous pkg setup
+  WRKFY_DEBUG_MSG_NEWLINE "Remove existing pkg setup if any"
+  for wrkfy_line in "${WRKFY_PKG_ENV_ESCAPED[@]}"; do
+    WRKFY_DEBUG_MSG "Remove line: $wrkfy_line"
+    sed -in "/$wrkfy_line/d" ~/.bashrc
+    WRKFY_DEBUG_MSG "----"
+    WRKFY_DEBUG_MSG "What's in there in bashrc?"
+    tail ~/.bashrc
+    echo 
+  done;
+  
+  
+  
+  # Insert bash-it env
+  WRKFY_DEBUG_MSG_NEWLINE "Inserting pkg setup"
+  for wrkfy_line in "${WRKFY_PKG_ENV_ESCAPED[@]}"; do
+    WRKFY_DEBUG_MSG "Inserting line: $wrkfy_line"
+    sed -in "/# WORKIT ENV END/i $wrkfy_line" ~/.bashrc
+    WRKFY_DEBUG_MSG "----"
+    WRKFY_DEBUG_MSG "What's in there in bashrc?"
+    tail ~/.bashrc
+    echo
+  done;
+  
+}
+
+
 #
 #
 # Local Configuration variables

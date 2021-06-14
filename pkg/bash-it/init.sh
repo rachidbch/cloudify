@@ -1,13 +1,14 @@
 # Bash-it package
 
-## # Bash-it install complains if no ~/bin/ is found
-## # =todo= Report Issue
-## if [[ ! -e ~/bin ]]; then
-##   mkdir ~/bin
-## elif [[ ! -d ~/bin ]]; then
-##   echo "FATAL: ~/bin already exists and isn\'nt a directory"
-##   exit 1
-## fi
+# Bash-it install complains if no ~/bin/ is found
+# =todo= Report Issue
+if [[ ! -e ~/bin ]]; then
+  mkdir ~/bin
+elif [[ ! -d ~/bin ]]; then
+  echo "FATAL: ~/bin already exists and isn\'nt a directory"
+  exit 1
+fi
+
 ## 
 ## # Bash-it complains if Bash-Completion is absent
 ## dpkg -l bash-completions |& grep -q "^ii  bash-completion" && sudo apt-get -q install bash-completion -y

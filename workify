@@ -1,0 +1,95 @@
+# Workstation installation
+# =warning= this script must be SOURCED and not executed  (otherwise environment modifcations, like aliases, won't persist after exectution)
+# =todo= Modify the script so it can be executed: all environment variables and aliases that must persist be set by bash-it 
+
+# DEBUG or NOT
+WRKFY_DEBUG=true
+
+# Local Configuration variables
+
+# To find workify/pkg directory path we naively relied on the following line to retrieve the path of the folder containing this script
+# Since then workify, the script, has been extracted from workify, the packages repo, into its own project
+# So we had to hardcode the path to workify/pkg (with an environment variable to customize that path)
+# WRKFY_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+# Set WRKFY_DIR a defautl value if not already set
+: "${WRKFY_DIR:=$HOME/workify}"
+
+# Create local tmp folder 
+LOCAL_TMP=~/tmp/
+[[ -d "$LOCAL_TMP" ]] || mkdir -p "$LOCAL_TMP"
+
+# Make sure vim is the default editor 
+export EDITOR=vim                           # If an editor is needed during install 
+
+# Make sure ~/.local/bin exists and is in the path
+LOCAL_BIN=~/.local/bin
+[[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"
+#[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${LOCAL_BIN}:${PATH}"
+# Make it persistent 
+#echo [[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${LOCAL_BIN}:${PATH}" >> ~/.bashrc
+
+
+# Are we on Android Termux or Linux station?
+if [ ! -z "$(pgrep -f com.termux)" ]; then
+  WRKFY_TERMUX=true
+  WRKFY_PKG_FILE=${WRKFY_DIR}/termux.packages
+else
+  WRKFY_PKG_FILE=${WRKFY_DIR}/station.packages
+fi
+WRKFY_PKG_INIT="init.sh"
+WRKFY_PKG_INIT_TERMUX="termux.init.sh"
+
+
+function printHelp(){
+cat << EOF
+usage: cloudify:                    print help
+       cloudify help:               print help  
+       cloudify ls|list:            list installable packages 
+       cloudify ls|list enabled:    list enabled packages 
+       cloudify i <pkg>             install package
+       cloudify i enabled           install enabled in termux|station.packages
+       cloudify u <pkg>             uninstall package
+EOF
+}
+
+function printDone() {
+  echo -e "\nNow please Source ~/.bashrc\n***"
+  echo -e "Station on orbit!\n***"
+}
+
+# Install packages
+if [[ -z "$1" || "$1" == "help" ]] ; then
+  printHelp
+elif [[ ( "$1" == "ls" || "$1" == "list" ) && "$2" == "enabled" ]]; then
+  ( for pkg in $(< ${WRKFY_PKG_FILE}); do
+    echo ${pkg%%*( )}
+  done ) | column 
+elif [[ ( "$1" == "ls" || "$1" == "list" ) && ( -z "$2" || "$2" == "all" ) ]]; then
+  \ls "$WRKFY_DIR"/pkg
+elif [[ "$1" == "i" &&  "$2" == "enabled" ]]; then
+  for pkg in $(< ${PKGS_FILE}); do
+    echo ${pkg%%*( )}
+    [ -z "$WRKFY_DEBUG" ] || echo -e "\nInstalling ${pkg}\n***"
+
+    if [[ $WRKFY_TERMUX && -f "$WRKFY_PKG_INIT_TERMUX" ]]; then
+        source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
+    else
+        source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
+    fi
+  done
+  printDone
+elif [[ "$1" == "i" &&  ! -z "$2" ]]; then
+  pkg="$1"
+  echo ${pkg%%*( )}
+  [ -z "$WRKFY_DEBUG" ] || echo -e "\nInstalling ${pkg}\n***"
+
+  if [[ $WRKFY_TERMUX && -f "$WRKFY_PKG_INIT_TERMUX" ]]; then
+    source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
+  else
+    source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
+  fi
+  printDone
+else
+  printHelp
+fi
+

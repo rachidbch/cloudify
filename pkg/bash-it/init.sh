@@ -6,6 +6,7 @@ if [[ ! -e ~/bin ]]; then
     mkdir ~/bin
 elif [[ ! -d ~/bin ]]; then
     echo "FATAL: ~/bin already exists and isn\'nt a directory"
+    exit 1
 fi
 
 # Bash-it complains if Bash-Completion is absent
@@ -16,7 +17,7 @@ if [ -d ~/.bash_it ]; then
     ( cd ~/.bash_it; git pull)
 else
     git clone --depth=1 https://github.com/Bash-it/bash-it.git ~/.bash_it
-    # this will create backup current ~/.bashrc and create a new one.
+    # this will backup current ~/.bashrc and create a new one.
     # [BUG] sourcing (instead of calling it as an executable) generates an error.
     # [TODO] report the bug
     chmod +x ~/.bash_it/install.sh

@@ -1,6 +1,7 @@
 basics
 python
 git
+stow
 dotfiles
 bash-it
 mosh

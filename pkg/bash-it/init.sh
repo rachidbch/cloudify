@@ -39,7 +39,8 @@ fi
 #   > BASH_IT_CUSTOM="/home/rbc/.bash.d/"
 #   > source "$bash_it"/bash_it.sh
 
-WRKFY_PKG_ENV=( '## BASH_IT ENV SETUP' 'BASH_IT_CUSTOM="$HOME/.bash.d"' 'source $HOME/.bash_it/bash_it.sh' )
+WRKFY_PKG_ENV=( '## BASH_IT ENV SETUP' 'export BASH_IT="$HOME/.bash_it"' 'export BASH_IT_THEME="bobby\"' 'export SCM_CHECK=true' 'export SHORT_HOSTNAME=$(hostname -s)' 'export BASH_IT_RELOAD_LEGACY=1' 'export BASH_IT_CUSTOM="$HOME/.bash.d"' 'source $HOME/.bash_it/bash_it.sh' )
+
 # This function does the work of updating the values above in ~/.bashrc
 wrkfy_pkg_startup_env 
 

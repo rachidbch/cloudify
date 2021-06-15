@@ -11,7 +11,6 @@ if [ -d ~/dotfiles ]; then
 else
   WRKFY_DEBUG_MSG_NEWLINE "Downloading dotfiles"
   git clone https://gitlab.com/mobilefirstcentury/dotfiles.git  ~/dotfiles
-
 fi
 
 # Stow!
@@ -24,7 +23,11 @@ mv ~/.bashrc.bak.2 ~/.bashrc.bak.3 2>/dev/null
 mv ~/.bashrc.bak  ~/.bashrc.bak.2 2>/dev/null
 mv ~/.bashrc ~/.bashrc.bak
 WRKFY_DEBUG_MSG "Setting up dotfiles with stow"
-( cd ~/dotfiles; bash ./stow/stowit )
+
+WRKFY_DEBUG_MSG "Installing stowit"
+ln -s ~/dotfiles/stow/stowit ~/.local/bin/stowit
+stowit
+#( cd ~/dotfiles; bash ./stow/stowit )
 
 # Add environment variables and aliases
 #WRKFY_PKG_ENV=( '## DOTFILES ENV SETUP' )

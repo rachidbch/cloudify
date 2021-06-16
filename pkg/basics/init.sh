@@ -15,4 +15,5 @@ sudo apt-get -q install trash-cli -y
 sudo apt-get -q install tree psproc -y
 sudo apt-get -q install jq -y
 sudo apt-get -q install rename -y
+sudo apt-get -q install pandoc -y
 

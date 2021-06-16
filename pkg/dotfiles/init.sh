@@ -15,7 +15,7 @@ fi
 
 # Stow!
 # Install stow
-../stow/init.sh
+source $WRKFY_DIR"/pkg/stow/init.sh
 WRKFY_DEBUG_MSG "Backuping .bashrc"
 mv ~/.bashrc.bak.4 ~/.bashrc.bak.5 2>/dev/null 
 mv ~/.bashrc.bak.3 ~/.bashrc.bak.4 2>/dev/null

@@ -69,6 +69,8 @@ function wrkfy_pkg_startup_env(){
 # WRKFY_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 # Set WRKFY_DIR a defautl value if not already set
 : "${WRKFY_DIR:=$HOME/workify}"
+# The variable is needed in subshells
+export WRKFY_DIR
 
 # Create local tmp folder 
 LOCAL_TMP=~/tmp/

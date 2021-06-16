@@ -12,7 +12,7 @@ software-properties-common bc -y
 sudo apt-get -q install trash-cli -y
 
 # Nice to have tooling 
-sudo apt-get -q install tree psproc -y
+sudo apt-get -q install tree procps -y
 sudo apt-get -q install jq -y
 sudo apt-get -q install rename -y
 sudo apt-get -q install pandoc -y

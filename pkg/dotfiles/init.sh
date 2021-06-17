@@ -17,7 +17,8 @@ fi
 
 # Stow!
 # Install stow
-../stow/init.sh
+source "$WRKFY_DIR"/pkg/stow/init.sh
+
 WRKFY_DEBUG_MSG "Backuping .bashrc"
 mv ~/.bashrc.bak.4 ~/.bashrc.bak.5 2>/dev/null 
 mv ~/.bashrc.bak.3 ~/.bashrc.bak.4 2>/dev/null
@@ -28,7 +29,7 @@ WRKFY_DEBUG_MSG "Setting up dotfiles with stow"
 
 WRKFY_DEBUG_MSG "Installing stowit"
 ln -s ~/dotfiles/stow/stowit ~/.local/bin/stowit
-stowit
+~/.local/bin/stowit
 #( cd ~/dotfiles; bash ./stow/stowit )
 
 # Add environment variables and aliases

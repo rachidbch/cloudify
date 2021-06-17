@@ -7,10 +7,12 @@
 # Clone cloudfiles repo
 if [ -d ~/dotfiles ]; then
   WRKFY_DEBUG_MSG_NEWLINE "Updating dotfiles"
-  ( cd ~/dotfiles; git pull)
+  ( cd ~/dotfiles; git pull --recurse-submodules )
+  ( cd ~/dotfiles; git submodule update --recursive --remote )
 else
   WRKFY_DEBUG_MSG_NEWLINE "Downloading dotfiles"
-  git clone https://gitlab.com/mobilefirstcentury/dotfiles.git  ~/dotfiles
+  git clone --recurse-submodules https://gitlab.com/mobilefirstcentury/dotfiles.git  ~/dotfiles
+  ( cd ~/dotfiles; git submodule update --recursive --remote )
 fi
 
 # Stow!

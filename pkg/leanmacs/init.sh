@@ -11,12 +11,12 @@ fi
 
 sudo apt-get -q install emacs26-nox -y  #non-X version
 
-if [[ -d ~/dotfiles/emacs/.lean.emacs.d ]]; then
+if [[ -d ~/dotfiles/emacs/.leanmacs.d ]]; then
  if [[ -d ~/.emacs.d && ! -L ~/.emacs.d ]]; then
   echo "Warning: ~/.emacs.d directory found. Backing it up before symlinking to dotfiles"
   mv ~/.emacs.d ~/.emacs.d.bak 
  fi
- ln -nsf ~/.lean.emacs.d ~/.emacs.d
+ ln -nsf ~/.leanmacs.d ~/.emacs.d
 else
   echo "Warning: Bash no dotfiles found"
 fi

@@ -95,9 +95,10 @@ export EDITOR=vim                           # If an editor is needed during inst
 # Make sure ~/.local/bin exists and is in the path
 LOCAL_BIN=~/.local/bin
 [[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"
-#[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${LOCAL_BIN}:${PATH}"
-# Make it persistent 
-#echo [[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${LOCAL_BIN}:${PATH}" >> ~/.bashrc
+[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${LOCAL_BIN}:${PATH}"
+
+# Make it persistent
+[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${LOCAL_BIN}:${PATH}" >> ~/.bashrc
 
 
 # Are we on Android Termux or Linux station?

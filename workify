@@ -86,20 +86,25 @@ function WRKFY_PKG_DEPS() {
 export WRKFY_DIR
 
 # Create local tmp folder 
-LOCAL_TMP=~/tmp/
+LOCAL_TMP="$HOME"/tmp/
 [[ -d "$LOCAL_TMP" ]] || mkdir -p "$LOCAL_TMP"
 
 # Make sure vim is the default editor 
 export EDITOR=vim                           # If an editor is needed during install 
 
 # Make sure ~/.local/bin exists and is in the path
-LOCAL_BIN=~/.local/bin
+LOCAL_BIN="$HOME"/.local/bin
 [[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"
-[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${LOCAL_BIN}:${PATH}"
+[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"
 
-# Make it persistent
-[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${LOCAL_BIN}:${PATH}" >> ~/.bashrc
-
+# Make LOCAL BIN persistent
+# DIRTY HACK! The comment '# WORKIFY LOCAL BIN:' is used by workify to avoid doublons in .bashrc
+if ! grep -Fq "# WORKIFY LOCAL BIN:" $HOME/.bashrc; then 
+  echo -e "\n# WORKIFY LOCAL BIN: Workify uses a local at ~/.local/bin to install utility scripts" >> "$HOME"/.bashrc
+  echo 'export LOCAL_BIN="$HOME"/.local/bin' >> "$HOME"/.bashrc
+  echo '[[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"' >> "$HOME"/.bashrc
+  echo '[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"' >> "$HOME"/.bashrc
+fi 
 
 # Are we on Android Termux or Linux station?
 if [ ! -z "$(pgrep -f com.termux)" ]; then

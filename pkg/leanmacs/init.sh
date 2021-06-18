@@ -21,3 +21,7 @@ else
   echo "Warning: Bash no dotfiles found"
 fi
 
+# HACK!
+# Emacs complains if org/roam folder doesn't exist.
+# We may remove org-roam from leanmacs in the future. For the moment we force the creation of this folder
+[[ -d "$HOME"/org/roam ]] || mkdir -p "$HOME"/org/roam

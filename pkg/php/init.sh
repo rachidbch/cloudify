@@ -68,7 +68,7 @@ if [ -z $(which psysh) ]; then
   composer global require psy/psysh:@stable
   # this should install psysh in ~/.config/composer/vendor/bin. 
   #That dir should be in the path
-  export PATH="${PATH}:/home/${USER}/.composer/vendor/bin"
+  [[ ":${PATH}:" != *":$HOME/.composer/vendor/bin:"* ]] && export PATH="${PATH}:${HOME}/.composer/vendor/bin"
   # install sqlite php driver needed to read manual doc from within psysh
   echo "installing php-sqlite3 ..."
   sudo apt-get -q install php-sqlite3 -y

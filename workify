@@ -28,9 +28,9 @@ function wrkfy_pkg_startup(){
     echo "Added $wrkfy_line"
   done;
   
-  # Reserve workit space in bashrc
+  # Reserve Workify space in bashrc
   WRKFY_DEBUG_MSG_NEWLINE "Reserve Workify space inside bashrc"
-  grep -qFx "# WORKIT ENV START" ~/.bashrc || echo -e "# WORKIT ENV START\n# WORKIT ENV END"  >> ~/.bashrc
+  grep -qFx "# WORKIFY ENV START" ~/.bashrc || echo -e "# WORKIFY ENV START\n# WORKIFY ENV END"  >> ~/.bashrc
   
   # Remove previous pkg setup
   WRKFY_DEBUG_MSG_NEWLINE "Remove existing pkg setup if any"
@@ -49,7 +49,7 @@ function wrkfy_pkg_startup(){
   WRKFY_DEBUG_MSG_NEWLINE "Inserting pkg setup"
   for wrkfy_line in "${WRKFY_PKG_ENV_ESCAPED[@]}"; do
     WRKFY_DEBUG_MSG "Inserting line: $wrkfy_line"
-    sed -in "/# WORKIT ENV END/i $wrkfy_line" ~/.bashrc
+    sed -in "/# WORKIFY ENV END/i $wrkfy_line" ~/.bashrc
     WRKFY_DEBUG_MSG "----"
     WRKFY_DEBUG_MSG "What's in there in bashrc?"
     tail ~/.bashrc

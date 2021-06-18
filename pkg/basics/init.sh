@@ -1,19 +1,15 @@
 # Some stations come without proper locales
 # On RackNerd VPS, I had a lot of " perl: warning: Setting locale failed." errors
 # Some advise to be selective and install only needed locales. How?
-sudo apt-get -q install language-pack-en -y 
+WRKFY_APT_INSTALL language-pack-en 
 
 # Without software-propreties-common this no add-apt-repository ...
 # Add a mini comment to explain other installs
-sudo apt-get -q install apt-transport-https ca-certificates curl gnupg-agent -y
-software-properties-common bc -y
+
+WRKFY_APT_INSTALL apt-transport-https ca-certificates curl gnupg-agent software-properties-common bc 
 
 # trash-cli is used by workify to safely delete files and directories 
-sudo apt-get -q install trash-cli -y
+WRKFY_APT_INSTALL trash-cli 
 
 # Nice to have tooling 
-sudo apt-get -q install tree procps -y
-sudo apt-get -q install jq -y
-sudo apt-get -q install rename -y
-sudo apt-get -q install pandoc -y
-
+WRKFY_APT_INSTALL tree procps jq rename pandoc moreutils 

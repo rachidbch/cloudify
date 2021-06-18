@@ -28,7 +28,7 @@ mv ~/.bashrc ~/.bashrc.bak
 WRKFY_DEBUG_MSG "Setting up dotfiles with stow"
 
 WRKFY_DEBUG_MSG "Installing stowit"
-ln -s ~/dotfiles/stow/stowit ~/.local/bin/stowit
+ln -nsf ~/dotfiles/stow/stowit ~/.local/bin/stowit
 ~/.local/bin/stowit
 #( cd ~/dotfiles; bash ./stow/stowit )
 

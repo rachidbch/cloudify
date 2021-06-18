@@ -22,7 +22,7 @@
   ```
   cd 
   git clone "https://gitlab.com/mobilefirstcentury/workify.git""
-  sudo ln -s ~/workify/workify    /usr/local/bin/workify
+  sudo ln -nsf ~/workify/workify    /usr/local/bin/workify
   ```
   
 2) Install basics packages

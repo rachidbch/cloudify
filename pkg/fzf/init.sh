@@ -8,8 +8,7 @@ WRKFY_PKG_DEPS fasd
 ~/.fzf/install --bin                # configuration files are already in dotfiles
 
 # Put fzf in the PATH 
-[[ -e ~/.local/bin/fzf ]] && rm -rf ~/.local/bin/fzf
-ln -s ~/.fzf/bin/fzf ~/.local/bin/fzf
+ln -nsf ~/.fzf/bin/fzf ~/.local/bin/fzf
 
 # Source fzf configuration files for bash 
 [[ -f ~/.fzf/shell/key-bindings.bash ]] && source ~/.fzf/shell/key-bindings.bash

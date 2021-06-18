@@ -13,7 +13,7 @@ function WRKFY_DEBUG_MSG_NEWLINE() {
 }
 
 
-function wrkfy_pkg_startup_env(){
+function wrkfy_pkg_startup(){
 
   WRKFY_DEBUG_MSG_NEWLINE "ENV TO SETUP:"
   WRKFY_PKG_ENV_ESCAPED=()
@@ -58,9 +58,22 @@ function wrkfy_pkg_startup_env(){
   
 }
 
+# Install apt package if not already installed
+function WRKFY_APT_INSTALL() {
+  for pkg in ${@}; do 
+   dpkg -l "$pkg" |& grep -q "^ii  $pkg" || WRKFY_DEBUG_MSG_NEWLINE "Installing $pkg apt package" && sudo apt-get -q install "$pkg"  -y
+  done
+}
 
-#
-#
+# Adds a package dependeny
+function WRKFY_PKG_DEPS() {
+  for pkg in ${@}; do 
+    WRKFY_DEBUG_MSG "Installing $pkg workify package"
+    source "$WRKFY_DIR"/pkg/"$pkg"/init.sh
+  done
+}
+
+
 # Local Configuration variables
 
 # To find workify/pkg directory path we naively relied on the following line to retrieve the path of the folder containing this script

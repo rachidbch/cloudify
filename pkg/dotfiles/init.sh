@@ -36,6 +36,6 @@ ln -s ~/dotfiles/stow/stowit ~/.local/bin/stowit
 #WRKFY_PKG_ENV=( '## DOTFILES ENV SETUP' )
 
 # This function does the work of updating the values above in ~/.bashrc
-wrkfy_pkg_startup_env 
+wrkfy_pkg_startup 
 
 

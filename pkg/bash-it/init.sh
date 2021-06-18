@@ -11,7 +11,7 @@ fi
 
 ## 
 ## # Bash-it complains if Bash-Completion is absent
-## dpkg -l bash-completions |& grep -q "^ii  bash-completion" && sudo apt-get -q install bash-completion -y
+## dpkg -l bash-completions |& grep -q "^ii  bash-completion" || sudo apt-get -q install bash-completion -y
 
 
 # Clone bash-it repo
@@ -42,7 +42,7 @@ fi
 WRKFY_PKG_ENV=( '## BASH_IT ENV SETUP' 'export BASH_IT="$HOME/.bash_it"' 'export BASH_IT_THEME="bobby\"' 'export SCM_CHECK=true' 'export SHORT_HOSTNAME=$(hostname -s)' 'export BASH_IT_RELOAD_LEGACY=1' '[[ -d "$HOME/.bash.d" ]] && export BASH_IT_CUSTOM="$HOME/.bash.d" || unset BASH_IT_CUSTOM' 'source $HOME/.bash_it/bash_it.sh' )
 
 # This function does the work of updating the values above in ~/.bashrc
-wrkfy_pkg_startup_env 
+wrkfy_pkg_startup 
 
 
 # WARNING: before sourcing ~/.bashrc, directory defined by BASH_IT_CUSTOM (by default ~/.bashd.d) must be populated w/ mobilefirstcentury/bash-it.git   

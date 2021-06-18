@@ -50,7 +50,7 @@ if (( $(echo "$UBUNTU_VER <= 16.04" | bc -l ))); then
     echo "Installing python3.6-venv"
     # Without this, `pipx install pycowsay' failes
     # Don't even ask me why ...   Python is just a mess...
-    sudo apt install python3.6-venv
+    sudo apt-get -q install python3.6-venv -y
 
     echo "Installing argcomplete"
     # Don't ask about this one neither. Witout python3.6 complains about the module absence

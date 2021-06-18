@@ -1,5 +1,8 @@
 # Emacs 
 
+# Declare dependency packages
+WRKFY_PKG_DEPS fzf sqlite3
+
 # emacs install
 if ! grep -q "^deb .*kelleyk/emacs" /etc/apt/sources.list.d/*; then
   sudo add-apt-repository ppa:kelleyk/emacs -y

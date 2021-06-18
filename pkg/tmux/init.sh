@@ -8,6 +8,6 @@ dpkg -l tmux |& grep -q "^ii  tmux" || WRKFY_DEBUG_MSG_NEWLINE "Installing tmux"
 WRKFY_PKG_ENV=( '## TMUX ENV SETUP' 'alias tmux='\''TERM=xterm-256color tmux -f "${XDG_CONFIG_HOME:-~/.config}"/tmux/tmux.conf\'\''')
 
 # This function does the work of updating the values above in ~/.bashrc
-wrkfy_pkg_startup_env 
+wrkfy_pkg_startup 
 
 

@@ -1,0 +1,1 @@
+WRKFY_APT_INSTALL sqlite3

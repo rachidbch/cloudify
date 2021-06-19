@@ -152,23 +152,25 @@ elif [[ ( "$1" == "i" || "$1" == "install" ) &&  "$2" == "default" ]]; then
   # Install default packages for current platform 
   # Default packages are lited in ./*.packages files 
   for pkg in $(< ${WRKFY_PKG_FILE}); do
-    WRKFY_DEBUG_MSG "Installing ${pkg%%*( )}"
+    WRKFY_DEBUG_MSG_NEWLINE "Installing ${pkg%%*( )}"
     if [[ $WRKFY_TERMUX && -f "$WRKFY_PKG_INIT_TERMUX" ]]; then
         source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
     else
-        source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
+        source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT}                   # We use bash expansion to trim spaces at the end of the package name
     fi
   done
   printDone
 elif [[ ( "$1" == "i" || "$1" == "install" ) &&  ! -z "$2" ]]; then
   # Install a specific package
-  pkg="$2"
-  WRKFY_DEBUG_MSG "Installing ${pkg%%*( )}"
-  if [[ $WRKFY_TERMUX && -f "$WRKFY_PKG_INIT_TERMUX" ]]; then
-    source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
-  else
-    source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT}                          # We use bash expansion to trim spaces at the end of the package name
-  fi
+  shift                                                                          # Begin argument loop at 2nd argument 
+  for pkg in "$@"; do
+    WRKFY_DEBUG_MSG_NEWLINE "Installing ${pkg%%*( )}"
+    if [[ $WRKFY_TERMUX && -f "$WRKFY_PKG_INIT_TERMUX" ]]; then
+      source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT_TERMUX}              # We use bash expansion to trim spaces at the end of the package name
+    else
+      source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT}                     # We use bash expansion to trim spaces at the end of the package name
+    fi
+  done
   printDone
 else
   # Get help 

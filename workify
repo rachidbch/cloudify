@@ -3,7 +3,7 @@
 # =todo= Modify the script so it can be executed: all environment variables and aliases that must persist be set by bash-it 
 
 # DEBUG or NOT
-export WRKFY_DEBUG=true
+# export WRKFY_DEBUG=true
 
 function WRKFY_DEBUG_MSG() {
   $WRKFY_DEBUG && echo -e "*** DEBUG: $1 ***"

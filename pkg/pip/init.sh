@@ -6,11 +6,18 @@
 
 # this will install /usr/local/bin/pip3
 if [ -z $(which pip3) ]; then
+  WRKFY_DEBUG_MSG "Installing pip3"
   wget -nv https://bootstrap.pypa.io/get-pip.py -O /tmp/get-pip.py
   # without sudo -H, install generates an error
+  WRKFY_DEBUG_MSG "Executing pip install script with pyhton3"
   sudo -H python3 /tmp/get-pip.py
-elif [ -z $(which pip2) ]; then
-  [ -e /tmp/get-pip.py ] || wget -nv https://bootstrap.pypa.io/get-pip.py -O /tmp/get-pip.py
+  rm /tmp/get-pip.py
+fi
+if [ -z $(which pip2) ]; then
+  WRKFY_DEBUG_MSG "Installing pip2"
+  wget -nv https://bootstrap.pypa.io/pip/2.7/get-pip.py  -O /tmp/get-pip.py
   # this will install /usr/local/bin/pip (ie. pip2)
+  WRKFY_DEBUG_MSG "Executing pip install script with pyhton2"
   sudo -H python2  /tmp/get-pip.py
+  rm /tmp/get-pip.py
 fi

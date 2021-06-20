@@ -3,7 +3,13 @@
 # =todo= Modify the script so it can be executed: all environment variables and aliases that must persist be set by bash-it 
 
 # DEBUG or NOT
-# export WRKFY_DEBUG=true
+
+
+# If WRKFY_DEBUG isn't set, set it to false. 
+: "${WRKFY_DEBUG:=false}" 
+# Export it so it's available in subshells
+export WRKFY_DEBUG
+#echo "WRKFY_DEBUG=$WRKFY_DEBUG"
 
 function WRKFY_DEBUG_MSG() {
   $WRKFY_DEBUG && echo -e "*** DEBUG: $1 ***"
@@ -13,19 +19,21 @@ function WRKFY_DEBUG_MSG_NEWLINE() {
 }
 
 
+
 function wrkfy_pkg_startup(){
 
   WRKFY_DEBUG_MSG_NEWLINE "ENV TO SETUP:"
+  # sed special characters have to be escaped. We're liberal here. 
   WRKFY_PKG_ENV_ESCAPED=()
   for wrkfy_line in "${WRKFY_PKG_ENV[@]}"; do
-    echo "Adding $wrkfy_line to array"
-    wrkfy_line=$(echo "$wrkfy_line" | sed 's/\//\\\//g' )
+    WRKFY_DEBUG_MSG "Adding $wrkfy_line to array"
+    wrkfy_line=$(echo "$wrkfy_line" | sed 's/\//\\\//g' | sed 's/\*/\\*/g' | sed 's/\-/\\-/g' | sed 's/\!/\\!/g' | sed 's/\=/\\=/g' | sed 's/\:/\\:/g' | sed 's/\[/\\[/g' | sed 's/\]/\\]/g' | sed 's/\\(/\\(/g' | sed 's/\\)/\\)/g')
     WRKFY_PKG_ENV_ESCAPED+=( "$wrkfy_line" )
   done;
   #WRKFY_PKG_ENV_ESCAPED=$(echo "$WRKKFY_PKG_ENV" | sed 's/\//\\\//g')
   WRKFY_DEBUG_MSG_NEWLINE "ENV TO SETUP:"
   for wrkfy_line in "${WRKFY_PKG_ENV_ESCAPED[@]}"; do
-    echo "Added $wrkfy_line"
+    WRKFY_DEBUG_MSG "Added $wrkfy_line"
   done;
   
   # Reserve Workify space in bashrc
@@ -39,11 +47,8 @@ function wrkfy_pkg_startup(){
     sed -in "/$wrkfy_line/d" ~/.bashrc
     WRKFY_DEBUG_MSG "----"
     WRKFY_DEBUG_MSG "What's in there in bashrc?"
-    tail ~/.bashrc
-    echo 
+    $WRKFY_DEBUG && cat  ~/.bashrc
   done;
-  
-  
   
   # Insert bash-it env
   WRKFY_DEBUG_MSG_NEWLINE "Inserting pkg setup"
@@ -52,8 +57,7 @@ function wrkfy_pkg_startup(){
     sed -in "/# WORKIFY ENV END/i $wrkfy_line" ~/.bashrc
     WRKFY_DEBUG_MSG "----"
     WRKFY_DEBUG_MSG "What's in there in bashrc?"
-    tail ~/.bashrc
-    echo
+    $WRKFY_DEBUG && cat ~/.bashrc
   done;
   
 }

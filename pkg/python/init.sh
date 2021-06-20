@@ -1,13 +1,16 @@
 UBUNTU_VER="$(lsb_release -r | cut -f2)"
 
 # Python2 should always be accessible through `python` command
+
 if [ -z "$(command -v "python" 2>&1)"  ]; then 
+  echo "Installing python2 as python"
   [ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ] &&  sudo apt-get -q update
   sudo apt-get -q install python -y 
 fi
 
-## Python3 should always be accessible through `python` command
+## Python3 should always be accessible through `python3` command
 if [ -z "$(command -v "python3" 2>&1)"  ]; then 
+  echo "Installing python3 as python3"
   [ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ] &&  sudo apt-get -q update
   sudo apt-get -q install python3 -y 
 fi
@@ -28,6 +31,7 @@ fi
 # 6. And then only proceed to add the apt repository and apt update
 if (( $(echo "$UBUNTU_VER <= 16.04" | bc -l ))); then
   if [ -z "$(command -v "python3.6" 2>&1)"  ]; then 
+    echo "Doing strange stuff to install python on Ubuntu 16.04-"
     echo "1 ==="
     if ! grep -q "^deb .*deadsnakes/ppa" /etc/apt/sources.list.d/*; then
       echo "2 ==="
@@ -66,7 +70,7 @@ fi
 
 
 
-echo "python3-distutils"
+echo "Installing python3-distutils"
 # =todo= The following package install fails on 16.04.06 LTS. As it was a workaround for the problem below, try to found out what to do with it!
 # without this, following pip3 install [[https://github.com/pypa/pip/issues/5367#issuecomment-387354705][fails]]
 #sudo apt-get -q install python3-distutils -y

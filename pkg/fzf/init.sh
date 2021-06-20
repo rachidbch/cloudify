@@ -14,7 +14,7 @@ ln -nsf ~/.fzf/bin/fzf ~/.local/bin/fzf
 [[ -f ~/.fzf/shell/key-bindings.bash ]] && source ~/.fzf/shell/key-bindings.bash
 [[ -f ~/.fzf/shell/completion.bash ]] && source ~/.fzf/shell/completion.bash
 
-WRKFY_PKG_ENV=( '## FZF SETUP' '[[ -f ~/.fzf/shell/completion.bash ]] && source ~/.fzf/shell/completion.bash' '[[ -f ~/.fzf/shell/key\-bindings.bash ]] && source ~/.fzf/shell/key\-bindings.bash') 
+WRKFY_PKG_ENV=( '## FZF SETUP' '[[ -f ~/.fzf/shell/completion.bash ]] && source ~/.fzf/shell/completion.bash' '[[ -f ~/.fzf/shell/key-bindings.bash ]] && source ~/.fzf/shell/key-bindings.bash') 
 
 # This function does the work of inserting statements defined in WRKFY_PKG_ENV above in ~/.bashrc
 wrkfy_pkg_startup 

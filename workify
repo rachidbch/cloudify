@@ -1,125 +1,8 @@
 # Workstation installation
-# =warning= this script must be SOURCED and not executed  (otherwise environment modifcations, like aliases, won't persist after exectution)
-# =todo= Modify the script so it can be executed: all environment variables and aliases that must persist be set by bash-it 
 
-# DEBUG or NOT
-
-
-# If WRKFY_DEBUG isn't set, set it to false. 
-: "${WRKFY_DEBUG:=false}" 
-# Export it so it's available in subshells
-export WRKFY_DEBUG
-#echo "WRKFY_DEBUG=$WRKFY_DEBUG"
-
-function WRKFY_DEBUG_MSG() {
-  $WRKFY_DEBUG && echo -e "*** DEBUG: $1 ***"
-}
-function WRKFY_DEBUG_MSG_NEWLINE() {
-  $WRKFY_DEBUG && echo -e "\n*** DEBUG: $1 ***"
-}
-
-
-
-function wrkfy_pkg_startup(){
-
-  WRKFY_DEBUG_MSG_NEWLINE "ENV TO SETUP:"
-  # sed special characters have to be escaped. We're liberal here. 
-  WRKFY_PKG_ENV_ESCAPED=()
-  for wrkfy_line in "${WRKFY_PKG_ENV[@]}"; do
-    WRKFY_DEBUG_MSG "Adding $wrkfy_line to array"
-    wrkfy_line=$(echo "$wrkfy_line" | sed 's/\//\\\//g' | sed 's/\*/\\*/g' | sed 's/\-/\\-/g' | sed 's/\!/\\!/g' | sed 's/\=/\\=/g' | sed 's/\:/\\:/g' | sed 's/\[/\\[/g' | sed 's/\]/\\]/g' | sed 's/\\(/\\(/g' | sed 's/\\)/\\)/g')
-    WRKFY_PKG_ENV_ESCAPED+=( "$wrkfy_line" )
-  done;
-  #WRKFY_PKG_ENV_ESCAPED=$(echo "$WRKKFY_PKG_ENV" | sed 's/\//\\\//g')
-  WRKFY_DEBUG_MSG_NEWLINE "ENV TO SETUP:"
-  for wrkfy_line in "${WRKFY_PKG_ENV_ESCAPED[@]}"; do
-    WRKFY_DEBUG_MSG "Added $wrkfy_line"
-  done;
-  
-  # Reserve Workify space in bashrc
-  WRKFY_DEBUG_MSG_NEWLINE "Reserve Workify space inside bashrc"
-  grep -qFx "# WORKIFY ENV START" ~/.bashrc || echo -e "# WORKIFY ENV START\n# WORKIFY ENV END"  >> ~/.bashrc
-  
-  # Remove previous pkg setup
-  WRKFY_DEBUG_MSG_NEWLINE "Remove existing pkg setup if any"
-  for wrkfy_line in "${WRKFY_PKG_ENV_ESCAPED[@]}"; do
-    WRKFY_DEBUG_MSG "Remove line: $wrkfy_line"
-    sed -in "/$wrkfy_line/d" ~/.bashrc
-    WRKFY_DEBUG_MSG "----"
-    WRKFY_DEBUG_MSG "What's in there in bashrc?"
-    $WRKFY_DEBUG && cat  ~/.bashrc
-  done;
-  
-  # Insert bash-it env
-  WRKFY_DEBUG_MSG_NEWLINE "Inserting pkg setup"
-  for wrkfy_line in "${WRKFY_PKG_ENV_ESCAPED[@]}"; do
-    WRKFY_DEBUG_MSG "Inserting line: $wrkfy_line"
-    sed -in "/# WORKIFY ENV END/i $wrkfy_line" ~/.bashrc
-    WRKFY_DEBUG_MSG "----"
-    WRKFY_DEBUG_MSG "What's in there in bashrc?"
-    $WRKFY_DEBUG && cat ~/.bashrc
-  done;
-  
-}
-
-# Install apt package if not already installed
-function WRKFY_APT_INSTALL() {
-  for pkg in ${@}; do 
-   dpkg -l "$pkg" |& grep -q "^ii  $pkg" || WRKFY_DEBUG_MSG_NEWLINE "Installing $pkg apt package" && sudo apt-get -q install "$pkg"  -y
-  done
-}
-
-# Adds a package dependeny
-function WRKFY_PKG_DEPS() {
-  for pkg in ${@}; do 
-    WRKFY_DEBUG_MSG "Installing $pkg workify package"
-    source "$WRKFY_DIR"/pkg/"$pkg"/init.sh
-  done
-}
-
-
-# Local Configuration variables
-
-# To find workify/pkg directory path we naively relied on the following line to retrieve the path of the folder containing this script
-# Since then workify, the script, has been extracted from workify, the packages repo, into its own project
-# So we had to hardcode the path to workify/pkg (with an environment variable to customize that path)
-# WRKFY_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-# Set WRKFY_DIR a defautl value if not already set
-: "${WRKFY_DIR:=$HOME/workify}"
-# The variable is needed in subshells
-export WRKFY_DIR
-
-# Create local tmp folder 
-LOCAL_TMP="$HOME"/tmp/
-[[ -d "$LOCAL_TMP" ]] || mkdir -p "$LOCAL_TMP"
-
-# Make sure vim is the default editor 
-export EDITOR=vim                           # If an editor is needed during install 
-
-# Make sure ~/.local/bin exists and is in the path
-LOCAL_BIN="$HOME"/.local/bin
-[[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"
-[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"
-
-# Make LOCAL BIN persistent
-# DIRTY HACK! The comment '# WORKIFY LOCAL BIN:' is used by workify to avoid doublons in .bashrc
-if ! grep -Fq "# WORKIFY LOCAL BIN:" $HOME/.bashrc; then 
-  echo -e "\n# WORKIFY LOCAL BIN: Workify uses a local at ~/.local/bin to install utility scripts" >> "$HOME"/.bashrc
-  echo 'export LOCAL_BIN="$HOME"/.local/bin' >> "$HOME"/.bashrc
-  echo '[[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"' >> "$HOME"/.bashrc
-  echo '[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"' >> "$HOME"/.bashrc
-fi 
-
-# Are we on Android Termux or Linux station?
-if [ ! -z "$(pgrep -f com.termux)" ]; then
-  WRKFY_TERMUX=true
-  WRKFY_PKG_FILE=${WRKFY_DIR}/termux.packages
-else
-  WRKFY_PKG_FILE=${WRKFY_DIR}/station.packages
-fi
-WRKFY_PKG_INIT="init.sh"
-WRKFY_PKG_INIT_TERMUX="termux.init.sh"
-
+# Constantes
+PKG_INIT_FILE="init.sh"
+PKG_INIT_FILE_TERMUX="termux.init.sh"
 
 function printHelp(){
 cat << EOF
@@ -133,51 +16,253 @@ usage: cloudify:                    print help
 EOF
 }
 
+# Set Debug state
+: "${WRKFY_DEBUG:=false}"                           # If WRKFY_DEBUG isn't set, set it to false. 
+export WRKFY_DEBUG                                  # Export it so it's available in subshells
+
+# Print a DEBUG message
+function PKG_DEBUG() {
+  $WRKFY_DEBUG && echo -e "*** DEBUG: $1 ***"
+}
+# Print a DEBUG message after a new line 
+function PKG_DEBUG_LN() {
+  $WRKFY_DEBUG && echo -e "\n*** DEBUG: $1 ***"
+}
+
+# Utility function to test if a directory is empty
+function emptyDir() {
+ ls -1qA "$1" | grep -q .
+}
+
+# Write lines listed as single-quoted arguments in .bashrc 
+# =todo= Make it compatible with zsh shell
+function pkg_in_startuprc(){
+  PKG_DEBUG_LN "ENV TO SETUP:"
+  
+  # sed special characters have to be escaped. We're liberal here. 
+  pkg_escaped_lines=()
+  for pkg_startuprc_line in "${@}"; do
+    PKG_DEBUG "Adding $pkg_startuprc_line to array"
+
+    pkg_startuprc_line=$(echo "$pkg_startuprc_line" \
+                     | sed 's/\//\\\//g' \
+  	             | sed 's/\*/\\*/g' \
+	             | sed 's/\-/\\-/g' \
+		     | sed 's/\!/\\!/g' \
+		     | sed 's/\=/\\=/g' \
+		     | sed 's/\:/\\:/g' \
+		     | sed 's/\[/\\[/g'  | sed 's/\]/\\]/g' \
+		     | sed 's/\\(/\\(/g' | sed 's/\\)/\\)/g')
+
+    pkg_escaped_lines+=( "$pkg_startuprc_line" )
+  done;
+
+  PKG_DEBUG_LN "ENV TO SETUP:"
+  for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
+    PKG_DEBUG "Added $pkg_startuprc_line"
+  done;
+  
+  # Reserve Workify space in bashrc
+  PKG_DEBUG_LN "Reserve Workify space inside bashrc"
+  grep -qFx "# WORKIFY ENV START" ~/.bashrc || echo -e "# WORKIFY ENV START\n# WORKIFY ENV END"  >> ~/.bashrc
+  
+  # Remove previous pkg setup
+  PKG_DEBUG_LN "Remove existing pkg setup if any"
+  for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
+    PKG_DEBUG "Remove line: $pkg_startuprc_line"
+    sed -in "/$pkg_startuprc_line/d" ~/.bashrc
+    PKG_DEBUG "----"
+    PKG_DEBUG "What's in there in bashrc?"
+    $WRKFY_DEBUG && cat  ~/.bashrc
+  done;
+  
+  # Insert bash-it env
+  PKG_DEBUG_LN "Inserting pkg setup"
+  for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
+    PKG_DEBUG "Inserting line: $pkg_startuprc_line"
+    sed -in "/# WORKIFY ENV END/i $pkg_startuprc_line" ~/.bashrc
+    PKG_DEBUG "----"
+    PKG_DEBUG "What's in there in bashrc?"
+    $WRKFY_DEBUG && cat ~/.bashrc
+  done;
+  
+}
+
+# Add apt source
+function pkg_apt_repository() {
+  for apt_source in "${@}"; do 
+    if ! grep -q "^deb .*${apt_source}" /etc/apt/sources.list.d/*; then
+      sudo add-apt-repository "ppa:${apt_source}" -y
+    fi
+  done
+  sudo apt-get -q update 
+}
+
+
+# Install apt package if not already installed
+function pkg_apt_install() {
+  for pkg in "${@}"; do 
+   [[ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ]] &&  sudo apt-get -q update
+   dpkg -l "$pkg" |& grep -q "^ii  $pkg" || PKG_DEBUG_LN "Installing $pkg apt package" && sudo apt-get -q install "$pkg"  -y
+  done
+}
+
+# Install latest release from Github
+# =TODO= Add installation from gitlab
+# =TODO= Add an argument to force a specific release version  
+# =TODO= ADD an argument to specify release to install (defaults to latest).
+#        Use 'https://api.github.com/repos/USER/REPO/releases' to list all releases
+# =TODO= Should this use 'https://github.com/archf/ghi/blob/master/ghi' ?
+function pkg_install_release() {
+    =TODO= be defensive here
+    cmd="$1"
+    repoId="$2"
+
+    PKG_DEBUG_LN "Retrieving $repoId last release"
+    release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux[-_]amd64' | grep -ie '\.tgz\|\.tar\.gz')
+    PKG_DEBUG_LN "Last release url: $release_url"
+    
+    if [[ ! -z "$cmd"  ]]; then 
+      [[ -d /tmp/"$cmd" ]] && rm -rf /tmp/"$cmd"
+      mkdir /tmp/"$cmd"
+    
+      PKG_DEBUG "Extracting $repoId tgz archive. in /tmp/$cmd/"
+      curl -sSL "$release_url" | tar -C /tmp/"$cmd"  --strip-components=1  -xzf -
+
+      if emptyDIR /tmp/"$cmd"; then
+         # Contrary to a widely shared practice, this repo doesn't include a top level folder into its release archive 
+         curl -sSL "$release_url" | tar -C /tmp/"$cmd"  -xzf -
+      fi
+      
+      PKG_DEBUG "Installing $repoId in /usr/local/"
+      (
+    
+          # Some install archives have an install/setup script. 
+          # If that's the case, let it do its thing (A lot of install/setup scripts read the install directory in a prefix variable )
+          [[ -f /tmp/"$cmd"/install ]] && PKG_DEBUG "Running archive setup script" && sudo prefix=/usr/local bash  /tmp/"$cmd"/install && exit 0
+          [[ -f /tmp/"$cmd"/install.sh ]] && PKG_DEBUG "Running archive setup script" && sudo prefix=/usr/local bash  /tmp/"$cmd"/install.sh && exit 0
+          [[ -f /tmp/"$cmd"/setup ]] && PKG_DEBUG "Running archive setup script" && sudo prefix=/usr/local bash  /tmp/"$cmd"/setup && exit 0
+          [[ -f /tmp/"$cmd"/setup.sh ]] && PKG_DEBUG "Running archive setup script" && sudo prefix=/usr/local bash  /tmp/"$cmd"/setup.sh && exit 0
+           
+          # Some install archive contain directly the binary
+          [[ -f /tmp/"$cmd"/"$cmd" ]] && PKG_DEBUG "Installing $cmd binary" && sudo install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ && exit 0
+	  
+          # The 'install' command doesn't have a recursive option. We use find as a workaround 
+          # This will install each file in the archive at corresping path /usr/local
+          # Note we're excluding the first level, as this is the place of files, like LICENSE, that shouldn't be installed 
+	  # =TODO= harden this part. We should only install some directories like bin, man, etc.
+	  for release_dir in ( 'bin' 'share' 'etc'); do
+            ([[ -d /tmp/"$cmd"/"$release_dir" ]] && cd /tmp/"$cmd"/"$release_dir" && sudo find . -mindepth 2 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \;)
+	  done
+      )
+      PKG_DEBUG "Discarding tmp/$cmd/"
+      rm -rf "/tmp/${cmd}"
+    fi
+}
+
+
+
+# Adds a package dependeny
+function pkg_depends() {
+  for pkg in ${@}; do 
+    if [[ -f "$PKG_DIR"/pkg/"$pkg"/init.sh ]]; then
+      PKG_DEBUG "Installing $pkg workify package"
+      source "$PKG_DIR"/pkg/"$pkg"/init.sh
+    else
+      pkg_apt_install ${pkg}
+    fi
+  done
+}
+
 function printDone() {
   echo -e "\nNow please Source ~/.bashrc\n***"
   echo -e "Station on orbit!\n***"
 }
 
-# Install packages
+function main() {
+  # Local Configuration variables
+  
+  # To find workify/pkg directory path we naively relied on the following line to retrieve the path of the folder containing this script
+  # Since then workify, the script, has been extracted from workify, the packages repo, into its own project
+  # So we had to hardcode the path to workify/pkg (with an environment variable to customize that path)
+  # PKG_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  # Set PKG_DIR a defautl value if not already set
+  : "${PKG_DIR:=$HOME/workify}"
+  # The variable is needed in subshells
+  export PKG_DIR
+  
+  # Create local tmp folder 
+  LOCAL_TMP="$HOME"/tmp/
+  [[ -d "$LOCAL_TMP" ]] || mkdir -p "$LOCAL_TMP"
+  
+  # Make sure vim is the default editor 
+  export EDITOR=vim                           # If an editor is needed during install 
+  
+  # Make sure ~/.local/bin exists and is in the path
+  LOCAL_BIN="$HOME"/.local/bin
+  [[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"
+  [[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"
+  
+  # Make LOCAL BIN persistent
+  # DIRTY HACK! The comment '# WORKIFY LOCAL BIN:' is used by workify to avoid doublons in .bashrc
+  if ! grep -Fq "# WORKIFY LOCAL BIN:" $HOME/.bashrc; then 
+    echo -e "\n# WORKIFY LOCAL BIN: Workify uses a local at ~/.local/bin to install utility scripts" >> "$HOME"/.bashrc
+    echo 'export LOCAL_BIN="$HOME"/.local/bin' >> "$HOME"/.bashrc
+    echo '[[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"' >> "$HOME"/.bashrc
+    echo '[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"' >> "$HOME"/.bashrc
+  fi 
+  
+  # Are we on Android Termux or Linux station?
+  if [ ! -z "$(pgrep -f com.termux)" ]; then
+    export PKG_TERMUX=true
+    packages_file=${PKG_DIR}/termux.packages
+  else
+    packages_file=${PKG_DIR}/station.packages
+  fi
+  
+  # Install packages
+  
+  if [[ -z "$1" || "$1" == "help" ]] ; then
+    # Get help 
+    printHelp
+  elif [[ ( "$1" == "ls" || "$1" == "list" ) && "$2" == "default" ]]; then
+    # List default packages for current platform
+    # Default packages are lited in ./*.packages files 
+    ( for pkg in $(< ${packages_file}); do
+        echo ${pkg%%*( )}
+      done ) | column 
+  elif [[ ( "$1" == "ls" || "$1" == "list" ) && ( -z "$2" || "$2" == "all" ) ]]; then
+    # List all available packages for current platform
+    \ls "$PKG_DIR"/pkg
+  elif [[ ( "$1" == "i" || "$1" == "install" ) &&  "$2" == "default" ]]; then
+    # Install default packages for current platform 
+    # Default packages are lited in ./*.packages files 
+    for pkg in $(< ${packages_file}); do
+      PKG_DEBUG_LN "Installing ${pkg%%*( )}"
+      if [[ $PKG_TERMUX && -f "$PKG_INIT_FILE_TERMUX" ]]; then
+          source "$PKG_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
+      else
+          source "$PKG_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                   # We use bash expansion to trim spaces at the end of the package name
+      fi
+    done
+    printDone
+  elif [[ ( "$1" == "i" || "$1" == "install" ) &&  ! -z "$2" ]]; then
+    # Install a specific package
+    shift                                                                          # Begin argument loop at 2nd argument 
+    for pkg in "$@"; do
+      PKG_DEBUG_LN "Installing ${pkg%%*( )}"
+      if [[ $PKG_TERMUX && -f "$PKG_INIT_FILE_TERMUX" ]]; then
+        source "$PKG_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}              # We use bash expansion to trim spaces at the end of the package name
+      else
+        source "$PKG_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                     # We use bash expansion to trim spaces at the end of the package name
+      fi
+    done
+    printDone
+  else
+    # Get help 
+    printHelp
+  fi
+}
 
-if [[ -z "$1" || "$1" == "help" ]] ; then
-  # Get help 
-  printHelp
-elif [[ ( "$1" == "ls" || "$1" == "list" ) && "$2" == "default" ]]; then
-  # List default packages for current platform
-  # Default packages are lited in ./*.packages files 
-  ( for pkg in $(< ${WRKFY_PKG_FILE}); do
-      echo ${pkg%%*( )}
-    done ) | column 
-elif [[ ( "$1" == "ls" || "$1" == "list" ) && ( -z "$2" || "$2" == "all" ) ]]; then
-  # List all available packages for current platform
-  \ls "$WRKFY_DIR"/pkg
-elif [[ ( "$1" == "i" || "$1" == "install" ) &&  "$2" == "default" ]]; then
-  # Install default packages for current platform 
-  # Default packages are lited in ./*.packages files 
-  for pkg in $(< ${WRKFY_PKG_FILE}); do
-    WRKFY_DEBUG_MSG_NEWLINE "Installing ${pkg%%*( )}"
-    if [[ $WRKFY_TERMUX && -f "$WRKFY_PKG_INIT_TERMUX" ]]; then
-        source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
-    else
-        source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT}                   # We use bash expansion to trim spaces at the end of the package name
-    fi
-  done
-  printDone
-elif [[ ( "$1" == "i" || "$1" == "install" ) &&  ! -z "$2" ]]; then
-  # Install a specific package
-  shift                                                                          # Begin argument loop at 2nd argument 
-  for pkg in "$@"; do
-    WRKFY_DEBUG_MSG_NEWLINE "Installing ${pkg%%*( )}"
-    if [[ $WRKFY_TERMUX && -f "$WRKFY_PKG_INIT_TERMUX" ]]; then
-      source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT_TERMUX}              # We use bash expansion to trim spaces at the end of the package name
-    else
-      source "$WRKFY_DIR"/pkg/${pkg%%*( )}/${WRKFY_PKG_INIT}                     # We use bash expansion to trim spaces at the end of the package name
-    fi
-  done
-  printDone
-else
-  # Get help 
-  printHelp
-fi
-
+# Execute script
+main

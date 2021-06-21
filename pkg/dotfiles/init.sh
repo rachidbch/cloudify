@@ -6,11 +6,11 @@
 
 # Clone cloudfiles repo
 if [ -d ~/dotfiles ]; then
-  WRKFY_DEBUG_MSG_NEWLINE "Updating dotfiles"
+  PKG_DEBUG_LN "Updating dotfiles"
   ( cd ~/dotfiles; git pull --recurse-submodules )
   ( cd ~/dotfiles; git submodule update --recursive --remote )
 else
-  WRKFY_DEBUG_MSG_NEWLINE "Downloading dotfiles"
+  PKG_DEBUG_LN "Downloading dotfiles"
   git clone --recurse-submodules https://gitlab.com/mobilefirstcentury/dotfiles.git  ~/dotfiles
   ( cd ~/dotfiles; git submodule update --recursive --remote )
 fi
@@ -19,24 +19,18 @@ fi
 # Install stow
 source "$WRKFY_DIR"/pkg/stow/init.sh
 
-WRKFY_DEBUG_MSG "Backuping .bashrc"
+PKG_DEBUG "Backuping .bashrc"
 mv ~/.bashrc.bak.4 ~/.bashrc.bak.5 2>/dev/null 
 mv ~/.bashrc.bak.3 ~/.bashrc.bak.4 2>/dev/null
 mv ~/.bashrc.bak.2 ~/.bashrc.bak.3 2>/dev/null
 mv ~/.bashrc.bak  ~/.bashrc.bak.2 2>/dev/null
 mv ~/.bashrc ~/.bashrc.bak
-WRKFY_DEBUG_MSG "Setting up dotfiles with stow"
+PKG_DEBUG "Setting up dotfiles with stow"
 
-WRKFY_DEBUG_MSG "Installing stowit"
+PKG_DEBUG "Installing stowit"
 ln -nsf ~/dotfiles/stow/stowit ~/.local/bin/stowit
 ln -nsf ~/dotfiles/stow/unstowit ~/.local/bin/unstowit
 ~/.local/bin/stowit
-#( cd ~/dotfiles; bash ./stow/stowit )
 
-# Add environment variables and aliases
-#WRKFY_PKG_ENV=( '## DOTFILES ENV SETUP' )
-
-# This function does the work of updating the values above in ~/.bashrc
-wrkfy_pkg_startup 
 
 

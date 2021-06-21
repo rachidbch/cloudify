@@ -1,4 +1,2 @@
-[ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ] &&  sudo apt-get -q update
-sudo apt-get -q install vim -y
-
-
+pkg_apt_install vim
+pkg_in_startuprc '## VIM setup' 'export EDITOR=vim'

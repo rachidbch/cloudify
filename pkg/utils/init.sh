@@ -2,8 +2,9 @@
 #
 # Utils pkg gathers small in-house utility scripts
 
-# ~/.local/bin/ipath allows you to edit your PATH in VIM
+# ~/.local/bin/ipath allows you to *interactively* edit your PATH in VIM
 # =NOTE= As it must manipulate your shell environment, you must source it and not execute it.
+# =TODO= ipath should be an alias instead. That way you wouldn't need to source it.
 
 [[ -e ~/.local/bin/ipath ]] && rm ~/.local/bin/ipath
 cat -> "$HOME"/.local/bin/ipath <<- EOF

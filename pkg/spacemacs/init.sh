@@ -36,5 +36,5 @@ if [[ -d ~/dotfiles/spacemacs/.spacemacs.d ]]; then
   fi
   ln -nsf ~/.spacemacs.emacs.d ~/.emacs.d
 else
-  echo "Warning: Bash no dotfiles found"
+  echo "Warning: No dotfiles found for spacemacs"
 fi

@@ -18,10 +18,10 @@ pkg_in_startuprc \
 
 # Make it a little bit easier to reload bashrc
 # Here's the alias is a readable format:
-# alias reloadrc='source ~/.bashrc'
-pkg_in_startuprc '# Alias '\''reloadrc'\'' Setup' 'alias reloadrc='\''source ~/.bashrc'\'''
+# alias rcreload='source ~/.bashrc'
+pkg_in_startuprc '# Alias '\''rcreload'\'' Setup' 'alias rcreload='\''source ~/.bashrc'\'''
 
 # Make it a little bit to edit .bashrc 
 # Here's the alias is a readable format:
-# alias editrc='vim ~/.bashrc'
-pkg_in_startuprc '# Alias '\''editrc'\'' Setup' 'alias editrc='\''${EDITOR:-vi} ~/.bashrc'\'''
+# alias rcedit='vim ~/.bashrc'
+pkg_in_startuprc '# Alias '\''rcedit'\'' Setup' 'alias rcedit='\''${EDITOR:-vi} ~/.bashrc'\'''

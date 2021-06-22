@@ -68,16 +68,9 @@ if (( $(echo "$UBUNTU_VER <= 16.04" | bc -l ))); then
   fi
 fi
 
-
-
-echo "Installing python3-distutils"
+# echo "Installing python3-distutils"
 # =todo= The following package install fails on 16.04.06 LTS. As it was a workaround for the problem below, try to found out what to do with it!
 # without this, following pip3 install [[https://github.com/pypa/pip/issues/5367#issuecomment-387354705][fails]]
 #sudo apt-get -q install python3-distutils -y
-
-echo "Installing pipx "
-# Install pipx
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath &> /dev/null
 
 

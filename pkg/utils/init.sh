@@ -2,21 +2,26 @@
 #
 # Utils pkg gathers small in-house utility scripts
 
-# ~/.local/bin/ipath allows you to *interactively* edit your PATH in VIM
-# =NOTE= As it must manipulate your shell environment, you must source it and not execute it.
-# =TODO= ipath should be an alias instead. That way you wouldn't need to source it.
+# 'ipath' function allows you to *interactively* edit your PATH in VIM
+# Here's the function in a readable format
+# function ipath() {
+#     PATHBACK=\$PATH
+#     PATHNEW=\$( echo \$PATH | tr ':' '\n' | EDITOR=vi vipe | sed '/^$/d' | tr '\n' ':')
+#     PATHNEW=\$(sed -r 's/:\$//' <<<"\$PATHNEW")
+#     export PATH=\$PATHNEW && unset PATHNEW && unset PATHBACK 
+# }
 
-[[ -e ~/.local/bin/ipath ]] && rm ~/.local/bin/ipath
-cat -> "$HOME"/.local/bin/ipath <<- EOF
-	PATHBACK=\$PATH
-	PATHNEW=\$( echo \$PATH | tr ':' '\n' | EDITOR=vi vipe | sed '/^$/d' | tr '\n' ':')
-	# Remove last ':'
-	PATHNEW=\$(sed -r 's/:\$//' <<<"\$PATHNEW")
-	# echo Check everything is OK
-	# echo \$PATHNEW | tr ':' '\n' 
-	# Replace
-	export PATH=\$PATHNEW && unset PATHNEW && unset PATHBACK 
-EOF
+# =NOTE= Newline characters '\n' are escaped: '\\n'
+pkg_in_startuprc \
+  '# Function '\''ipath'\'' Setup' \
+  'function ipath() { PATHBACK=$PATH; PATHNEW=$( echo $PATH | tr '\'':'\'' '\''\\n'\'' | EDITOR=vi vipe | sed '\''/^$/d'\'' | tr '\''\\n'\'' '\'':'\''); PATHNEW=$(sed -r '\''s/:$//'\'' <<<"\$PATHNEW"); export PATH=$PATHNEW && unset PATHNEW && unset PATHBACK; }'
 
-# ipath must be sourced not executed, otherwise it will have no effect on your shell environment
-chmod -x "$HOME"/.local/bin/ipath
+# Make it a little bit easier to reload bashrc
+# Here's the alias is a readable format:
+# alias reloadrc='source ~/.bashrc'
+pkg_in_startuprc '# Alias '\''reloadrc'\'' Setup' 'alias reloadrc='\''source ~/.bashrc'\'''
+
+# Make it a little bit to edit .bashrc 
+# Here's the alias is a readable format:
+# alias editrc='vim ~/.bashrc'
+pkg_in_startuprc '# Alias '\''editrc'\'' Setup' 'alias editrc='\''${EDITOR:-vi} ~/.bashrc'\'''

@@ -1,6 +1,7 @@
 # Install gh
 
 # Install Latest release from github
+pkg_depends git
 pkg_install_release "gh" "cli/cli"
 
 # =INFO= When authenticating with gh, you'll be asked a username and a password.

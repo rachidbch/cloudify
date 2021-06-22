@@ -1,5 +1,6 @@
 # Install latest hub release from Github 
 
+pkg_depends git
 pkg_install_release hub "github/hub"
 
 # =INFO= When authenticating with gh, you'll be asked a username and a password.

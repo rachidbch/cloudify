@@ -14,12 +14,12 @@ export PYTHONNOUSERSITE=True
 
 # install pyenv
 if [ ! -d ~/.pyenv ]; then
-  WRKFY_DEBUG_MSG_NEWLINE "Cloning pyenv repo in ~/.pyenv"
+  PKG_DEBUG_LN "Cloning pyenv repo in ~/.pyenv"
   git clone https://github.com/pyenv/pyenv.git "$HOME"/.pyenv
 
   # enable ~/.bash.d/available/pyenv.plugin
   # install virtualenv plugin  
-  WRKFY_DEBUG_MSG_NEWLINE "Adding pyenv-virtualenv plugin"
+  PKG_DEBUG_LN "Adding pyenv-virtualenv plugin"
   git clone https://github.com/pyenv/pyenv-virtualenv.git ~/.pyenv/plugins/pyenv-virtualenv
   # we prefer to not install pyenv virtualenv autoactivation feature. 
 fi
@@ -28,11 +28,13 @@ export PYENV_ROOT="$HOME"/.pyenv
 [[ ":${PATH}:" != *":${PYENV_ROOT}/bin:"* ]] && export PATH="${PYENV_ROOT}/bin:${PATH}"
 [[ ":${PATH}:" != *":${PYENV_ROOT}/shims:"* ]] && export PATH="${PYENV_ROOT}/shims:${PATH}"
 eval "$(pyenv init -)"  &> /dev/null
-#WRKFY_PKG_ENV=( '## PYENV ENV SETUP' 'export PYENV_VIRTUALENV_DISABLE_PROMPT=1' 'export PYTHONNOUSERSITE=True' 'export PYENV_ROOT="$HOME"/.pyenv' '[[ ":${PATH}:" != *":${PYENV_ROOT}/bin:"* ]] && export PATH="${PATH}:${PYENV_ROOT}/bin"' 'eval "$(pyenv init --path)"')
-
-WRKFY_PKG_ENV=( '## PYENV ENV SETUP' 'export PYENV_VIRTUALENV_DISABLE_PROMPT=1' 'export PYTHONNOUSERSITE=True' 'export PYENV_ROOT="$HOME"/.pyenv' '[[ ":$PATH:" != *":$PYENV_ROOT/bin:"* ]] && export PATH="$PYENV_ROOT/bin:$PATH"' '[[ ":$PATH:" != *":$PYENV_ROOT/shims:"* ]] && export PATH="$PYENV_ROOT/shims:$PATH"' 'eval "$(pyenv init -)" &> /dev/null' )
 
 # This function does the work of updating the values above in ~/.bashrc
-wrkfy_pkg_startup 
-
+pkg_in_startuprc \
+    '## PYENV ENV SETUP'\
+    'export PYENV_VIRTUALENV_DISABLE_PROMPT=1'\
+    'export PYTHONNOUSERSITE=True' 'export PYENV_ROOT="$HOME"/.pyenv'\
+    '[[ ":$PATH:" != *":$PYENV_ROOT/bin:"* ]] && export PATH="$PYENV_ROOT/bin:$PATH"'\
+    '[[ ":$PATH:" != *":$PYENV_ROOT/shims:"* ]] && export PATH="$PYENV_ROOT/shims:$PATH"'\
+    'eval "$(pyenv init -)" &> /dev/null' 
 

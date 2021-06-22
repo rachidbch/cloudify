@@ -1,7 +1,7 @@
 # Bash-it package
 
-## # Bash-it complains if Bash-Completion is absent
-pkg_depends bash_completions
+## # Bash-it complains if bash-completion is absent
+pkg_depends bash-completion
 
 # Bash-it install complains if no ~/bin/ is found
 # =todo= Report Issue
@@ -14,10 +14,10 @@ fi
 
 # Clone bash-it repo
 if [ -d ~/.bash_it ]; then
-  PKG_DEBUG_LN "Updating workify packages definitions"
+  PKG_DEBUG_LN "Updating cloudify packages definitions"
   ( cd "$HOME"/.bash_it; git pull)
 else
-  PKG_DEBUG_LN "Downloading workify packages definitions"
+  PKG_DEBUG_LN "Downloading cloudify packages definitions"
   git clone --depth=1 https://github.com/Bash-it/bash-it.git ~/.bash_it
 
   PKG_DEBUG_LN "Launching bash_it install script"

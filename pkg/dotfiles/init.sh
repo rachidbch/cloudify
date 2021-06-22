@@ -1,8 +1,9 @@
-#!/bin/bash
+# Dotfiles Install 
 
 # To simplify for now we don't use XDG_CONGIG dir. Use it? 
 #[ -d ~/.config/dotfiles ] || git clone https://gitlab.com/mobilefirstcentury/dotfiles.git ${XDG_CONFIG_HOME:-~/.config}/dotfiles
 
+pkg_depends stow 
 
 # Clone cloudfiles repo
 if [ -d ~/dotfiles ]; then
@@ -15,22 +16,20 @@ else
   ( cd ~/dotfiles; git submodule update --recursive --remote )
 fi
 
-# Stow!
-# Install stow
-source "$WRKFY_DIR"/pkg/stow/init.sh
-
 PKG_DEBUG "Backuping .bashrc"
-mv ~/.bashrc.bak.4 ~/.bashrc.bak.5 2>/dev/null 
-mv ~/.bashrc.bak.3 ~/.bashrc.bak.4 2>/dev/null
-mv ~/.bashrc.bak.2 ~/.bashrc.bak.3 2>/dev/null
-mv ~/.bashrc.bak  ~/.bashrc.bak.2 2>/dev/null
-mv ~/.bashrc ~/.bashrc.bak
-PKG_DEBUG "Setting up dotfiles with stow"
+[[ -d "$HOME"/.backup ]] || mkdir "$HOME"/.backup 
+mv "$HOME"/.backup/.bashrc.bak.4 "$HOME"/.backup/.bashrc.bak.5 2>/dev/null 
+mv "$HOME"/.backup/.bashrc.bak.3 "$HOME"/.backup/.bashrc.bak.4 2>/dev/null
+mv "$HOME"/.backup/.bashrc.bak.2 "$HOME"/.backup/.bashrc.bak.3 2>/dev/null
+mv "$HOME"/.backup/.bashrc.bak  "$HOME"/.backup/.bashrc.bak.2 2>/dev/null
+mv "$HOME"/.bashrc "$HOME"/.backup/.bashrc.bak
 
 PKG_DEBUG "Installing stowit"
-ln -nsf ~/dotfiles/stow/stowit ~/.local/bin/stowit
-ln -nsf ~/dotfiles/stow/unstowit ~/.local/bin/unstowit
-~/.local/bin/stowit
+ln -nsf "$HOME"/dotfiles/stow/stowit "$HOME"/.local/bin/stowit
+ln -nsf "$HOME"/dotfiles/stow/unstowit "$HOME"/.local/bin/unstowit
+
+PKG_DEBUG "Setting up dotfiles with stow"
+"$HOME"/.local/bin/stowit
 
 
 

@@ -17,20 +17,20 @@ EOF
 }
 
 # Set Debug state
-: "${WRKFY_DEBUG:=false}"                           # If WRKFY_DEBUG isn't set, set it to false. 
-export WRKFY_DEBUG                                  # Export it so it's available in subshells
+: "${CLOUDIFY_DEBUG:=false}"                           # If CLOUDIFY_DEBUG isn't set, set it to false. 
+export CLOUDIFY_DEBUG                                  # Export it so it's available in subshells
 
 # Print a DEBUG message
 function PKG_DEBUG() {
-  $WRKFY_DEBUG && echo -e "*** DEBUG: $1 ***"
+  $CLOUDIFY_DEBUG && echo -e "*** DEBUG: $1 ***" || true
 }
 # Print a DEBUG message after a new line 
 function PKG_DEBUG_LN() {
-  $WRKFY_DEBUG && echo -e "\n*** DEBUG: $1 ***"
+  $CLOUDIFY_DEBUG && echo -e "\n*** DEBUG: $1 ***" || true
 }
 
 # Utility function to test if a directory is empty
-function emptyDir() {
+function emptydir() {
  ls -1qA "$1" | grep -q .
 }
 
@@ -42,7 +42,7 @@ function pkg_in_startuprc(){
   # sed special characters have to be escaped. We're liberal here. 
   pkg_escaped_lines=()
   for pkg_startuprc_line in "${@}"; do
-    PKG_DEBUG "Adding $pkg_startuprc_line to array"
+    PKG_DEBUG "Adding '$pkg_startuprc_line'"
 
     pkg_startuprc_line=$(echo "$pkg_startuprc_line" \
                      | sed 's/\//\\\//g' \
@@ -59,12 +59,12 @@ function pkg_in_startuprc(){
 
   PKG_DEBUG_LN "ENV TO SETUP:"
   for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
-    PKG_DEBUG "Added $pkg_startuprc_line"
+    PKG_DEBUG "Added '$pkg_startuprc_line'"
   done;
   
-  # Reserve Workify space in bashrc
-  PKG_DEBUG_LN "Reserve Workify space inside bashrc"
-  grep -qFx "# WORKIFY ENV START" ~/.bashrc || echo -e "# WORKIFY ENV START\n# WORKIFY ENV END"  >> ~/.bashrc
+  # Reserve cloudify space in bashrc
+  PKG_DEBUG_LN "Reserve cloudify space inside bashrc"
+  grep -qFx "# CLOUDIFY ENV START" ~/.bashrc || echo -e "\n# CLOUDIFY ENV START\n# CLOUDIFY ENV END"  >> ~/.bashrc
   
   # Remove previous pkg setup
   PKG_DEBUG_LN "Remove existing pkg setup if any"
@@ -73,19 +73,18 @@ function pkg_in_startuprc(){
     sed -in "/$pkg_startuprc_line/d" ~/.bashrc
     PKG_DEBUG "----"
     PKG_DEBUG "What's in there in bashrc?"
-    $WRKFY_DEBUG && cat  ~/.bashrc
+    $CLOUDIFY_DEBUG && cat  ~/.bashrc
   done;
   
-  # Insert bash-it env
+  # Insert pkg setup 
   PKG_DEBUG_LN "Inserting pkg setup"
   for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
     PKG_DEBUG "Inserting line: $pkg_startuprc_line"
-    sed -in "/# WORKIFY ENV END/i $pkg_startuprc_line" ~/.bashrc
+    sed -in "/# CLOUDIFY ENV END/i $pkg_startuprc_line" ~/.bashrc
     PKG_DEBUG "----"
     PKG_DEBUG "What's in there in bashrc?"
-    $WRKFY_DEBUG && cat ~/.bashrc
+    $CLOUDIFY_DEBUG && cat ~/.bashrc
   done;
-  
 }
 
 # Add apt source
@@ -103,7 +102,7 @@ function pkg_apt_repository() {
 function pkg_apt_install() {
   for pkg in "${@}"; do 
    [[ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ]] &&  sudo apt-get -q update
-   dpkg -l "$pkg" |& grep -q "^ii  $pkg" || PKG_DEBUG_LN "Installing $pkg apt package" && sudo apt-get -q install "$pkg"  -y
+   dpkg -l "$pkg" |& grep -q "^ii  $pkg" || { PKG_DEBUG_LN "Installing $pkg apt package" && sudo apt-get -q install "$pkg"  -y; }
   done
 }
 
@@ -114,7 +113,7 @@ function pkg_apt_install() {
 #        Use 'https://api.github.com/repos/USER/REPO/releases' to list all releases
 # =TODO= Should this use 'https://github.com/archf/ghi/blob/master/ghi' ?
 function pkg_install_release() {
-    =TODO= be defensive here
+    # =TODO= be defensive here
     cmd="$1"
     repoId="$2"
 
@@ -129,7 +128,7 @@ function pkg_install_release() {
       PKG_DEBUG "Extracting $repoId tgz archive. in /tmp/$cmd/"
       curl -sSL "$release_url" | tar -C /tmp/"$cmd"  --strip-components=1  -xzf -
 
-      if emptyDIR /tmp/"$cmd"; then
+      if emptydir /tmp/"$cmd"; then
          # Contrary to a widely shared practice, this repo doesn't include a top level folder into its release archive 
          curl -sSL "$release_url" | tar -C /tmp/"$cmd"  -xzf -
       fi
@@ -150,13 +149,14 @@ function pkg_install_release() {
           # The 'install' command doesn't have a recursive option. We use find as a workaround 
           # This will install each file in the archive at corresping path /usr/local
           # Note we're excluding the first level, as this is the place of files, like LICENSE, that shouldn't be installed 
-	  # =TODO= harden this part. We should only install some directories like bin, man, etc.
-	  for release_dir in ( 'bin' 'share' 'etc'); do
-            ([[ -d /tmp/"$cmd"/"$release_dir" ]] && cd /tmp/"$cmd"/"$release_dir" && sudo find . -mindepth 2 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \;)
-	  done
+	        # =TODO= harden this part. We should only install some directories like bin, man, etc.
+	        for release_dir in 'bin' 'share' 'etc' 'doc'; do
+              [[ -d /tmp/"$cmd"/"$release_dir" ]] && PKG_DEBUG "Installing /tmp/$cmd/$release_dir to /usr/local/$release_dir"
+              ([[ -d /tmp/"$cmd"/"$release_dir" ]] && cd /tmp/"$cmd"/"$release_dir" && sudo find . -mindepth 1 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \;)
+	        done
       )
       PKG_DEBUG "Discarding tmp/$cmd/"
-      rm -rf "/tmp/${cmd}"
+      #rm -rf "/tmp/${cmd}"
     fi
 }
 
@@ -164,10 +164,10 @@ function pkg_install_release() {
 
 # Adds a package dependeny
 function pkg_depends() {
-  for pkg in ${@}; do 
-    if [[ -f "$PKG_DIR"/pkg/"$pkg"/init.sh ]]; then
-      PKG_DEBUG "Installing $pkg workify package"
-      source "$PKG_DIR"/pkg/"$pkg"/init.sh
+  for pkg in "${@}"; do 
+    if [[ -f "$CLOUDIFY_DIR"/pkg/"$pkg"/init.sh ]]; then
+      PKG_DEBUG "Installing $pkg cloudify package"
+      source "$CLOUDIFY_DIR"/pkg/"$pkg"/init.sh
     else
       pkg_apt_install ${pkg}
     fi
@@ -182,14 +182,14 @@ function printDone() {
 function main() {
   # Local Configuration variables
   
-  # To find workify/pkg directory path we naively relied on the following line to retrieve the path of the folder containing this script
-  # Since then workify, the script, has been extracted from workify, the packages repo, into its own project
-  # So we had to hardcode the path to workify/pkg (with an environment variable to customize that path)
-  # PKG_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  # Set PKG_DIR a defautl value if not already set
-  : "${PKG_DIR:=$HOME/workify}"
+  # To find cloudify/pkg directory path we naively relied on the following line to retrieve the path of the folder containing this script
+  # Since then cloudify, the script, has been extracted from cloudify, the packages repo, into its own project
+  # So we had to hardcode the path to cloudify/pkg (with an environment variable to customize that path)
+  # CLOUDIFY_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  # Set CLOUDIFY_DIR a defautl value if not already set
+  : "${CLOUDIFY_DIR:=$HOME/cloudify}"
   # The variable is needed in subshells
-  export PKG_DIR
+  export CLOUDIFY_DIR
   
   # Create local tmp folder 
   LOCAL_TMP="$HOME"/tmp/
@@ -204,9 +204,9 @@ function main() {
   [[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"
   
   # Make LOCAL BIN persistent
-  # DIRTY HACK! The comment '# WORKIFY LOCAL BIN:' is used by workify to avoid doublons in .bashrc
-  if ! grep -Fq "# WORKIFY LOCAL BIN:" $HOME/.bashrc; then 
-    echo -e "\n# WORKIFY LOCAL BIN: Workify uses a local at ~/.local/bin to install utility scripts" >> "$HOME"/.bashrc
+  # DIRTY HACK! The comment '# CLOUDIFY LOCAL BIN:' is used by cloudify to avoid doublons in .bashrc
+  if ! grep -Fq "# CLOUDIFY LOCAL BIN:" $HOME/.bashrc; then 
+    echo -e "\n# CLOUDIFY LOCAL BIN: Cloudify uses a local at ~/.local/bin to install utility scripts" >> "$HOME"/.bashrc
     echo 'export LOCAL_BIN="$HOME"/.local/bin' >> "$HOME"/.bashrc
     echo '[[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"' >> "$HOME"/.bashrc
     echo '[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"' >> "$HOME"/.bashrc
@@ -215,13 +215,12 @@ function main() {
   # Are we on Android Termux or Linux station?
   if [ ! -z "$(pgrep -f com.termux)" ]; then
     export PKG_TERMUX=true
-    packages_file=${PKG_DIR}/termux.packages
+    packages_file=${CLOUDIFY_DIR}/termux.packages
   else
-    packages_file=${PKG_DIR}/station.packages
+    packages_file=${CLOUDIFY_DIR}/station.packages
   fi
   
   # Install packages
-  
   if [[ -z "$1" || "$1" == "help" ]] ; then
     # Get help 
     printHelp
@@ -233,16 +232,16 @@ function main() {
       done ) | column 
   elif [[ ( "$1" == "ls" || "$1" == "list" ) && ( -z "$2" || "$2" == "all" ) ]]; then
     # List all available packages for current platform
-    \ls "$PKG_DIR"/pkg
+    \ls "$CLOUDIFY_DIR"/pkg
   elif [[ ( "$1" == "i" || "$1" == "install" ) &&  "$2" == "default" ]]; then
     # Install default packages for current platform 
     # Default packages are lited in ./*.packages files 
     for pkg in $(< ${packages_file}); do
-      PKG_DEBUG_LN "Installing ${pkg%%*( )}"
+      PKG_DEBUG_LN "Installing ${pkg%%*( )} cloudify package"
       if [[ $PKG_TERMUX && -f "$PKG_INIT_FILE_TERMUX" ]]; then
-          source "$PKG_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
+          source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
       else
-          source "$PKG_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                   # We use bash expansion to trim spaces at the end of the package name
+          source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                   # We use bash expansion to trim spaces at the end of the package name
       fi
     done
     printDone
@@ -250,11 +249,11 @@ function main() {
     # Install a specific package
     shift                                                                          # Begin argument loop at 2nd argument 
     for pkg in "$@"; do
-      PKG_DEBUG_LN "Installing ${pkg%%*( )}"
+      PKG_DEBUG_LN "Installing ${pkg%%*( )} cloudify package"
       if [[ $PKG_TERMUX && -f "$PKG_INIT_FILE_TERMUX" ]]; then
-        source "$PKG_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}              # We use bash expansion to trim spaces at the end of the package name
+        source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}              # We use bash expansion to trim spaces at the end of the package name
       else
-        source "$PKG_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                     # We use bash expansion to trim spaces at the end of the package name
+        source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                     # We use bash expansion to trim spaces at the end of the package name
       fi
     done
     printDone
@@ -265,4 +264,4 @@ function main() {
 }
 
 # Execute script
-main
+main "$@"

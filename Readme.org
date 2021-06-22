@@ -1,51 +1,51 @@
-* WORKIFY PROJECT 
+* CLOUDIFY PROJECT 
 
   =WARNING= This is an unfinished project. Use it with caution
 
-  Workify Project deals with tools installation whereas bash-it is used for configuration 
+  cloudify Project deals with tools installation whereas bash-it is used for configuration 
 
-  Workify Project installs a workable development environment on newly installed ubuntu box.
+  cloudify Project installs a workable development environment on newly installed ubuntu box.
   This environment should provide tools allowing the user to be fully productive: 
 
-  Workify can bring a new machine or container up to speed in no time by installing MFC standard tools & setup
+  cloudify can bring a new machine or container up to speed in no time by installing MFC standard tools & setup
 
 
-** How to install Workify 
+** How to install cloudify 
 
-1) Install workify
+1) Install cloudify
 
   # Use online install script w/ curl
-  curl -sL scripts.rachid.space/workify.sh | sudo bash
+  curl -sL scripts.rachid.space/cloudify.sh | sudo bash
 
  =NOTE=
-  As scripts.rachid.space/workify.sh still doesn't exist, you can install workify with just:
+  As scripts.rachid.space/cloudify.sh still doesn't exist, you can install cloudify with just:
   ```
   cd 
-  git clone "https://gitlab.com/mobilefirstcentury/workify.git""
-  sudo ln -nsf ~/workify/workify    /usr/local/bin/workify
+  git clone "https://gitlab.com/mobilefirstcentury/cloudify.git""
+  sudo ln -nsf ~/cloudify/cloudify    /usr/local/bin/cloudify
   ```
   
 2) Install basics packages
   # 'basics' package contains, well ... basics tools
-  workify i basics
+  cloudify i basics
   
 3) Install cloufiles
   # Apart basics packages, dotfiles should be among the first packages to be setup
   # Unlike other pakcages that install tools, dotfiles will use stow to restore Standard dotfiles
-  $ workify i dotfiles
+  $ cloudify i dotfiles
 
 4) List installable tools
-   $ workify ls
+   $ cloudify ls
 
 5) Install some specific tool 
    # Here we choose to install bash-it tool
-   workify i bash-it
+   cloudify i bash-it
 
 6) List 'default' packages that can be installed in one shot
-   $ workify ls default
+   $ cloudify ls default
 
 7) Install 'default' 'packages
-   $ workify i all
+   $ cloudify i all
 
 
 *** Tools list

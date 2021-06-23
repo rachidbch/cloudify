@@ -12,7 +12,7 @@ else
 fi
 
 # Put fzf in the PATH 
-ln -nsf "$HOME"/.fzf/bin/fzf "$HOME"/.local/bin/fzf
+ln -sfn "$HOME"/.fzf/bin/fzf "$HOME"/.local/bin/fzf
 
 # Source fzf configuration files for bash 
 [[ -f "$HOME"/.fzf/shell/key-bindings.bash ]] && source "$HOME"/.fzf/shell/key-bindings.bash

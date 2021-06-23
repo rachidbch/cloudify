@@ -4,5 +4,5 @@ if (( $(echo "$UBUNTU_VER < 18.04" | bc -l ))); then
     [ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ] &&  sudo apt-get -q update
     sudo apt-get install gnupg2
     sudo mv /usr/bin/gpg /usr/bin/gpg1  
-    sudo ln -ns /usr/bin/gpg2 /usr/bin/gpg
+    sudo ln -sn /usr/bin/gpg2 /usr/bin/gpg
 fi

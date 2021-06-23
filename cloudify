@@ -2,7 +2,7 @@
 # Cloudify all-in-one machine and containers managing tool 
 
 # STRICT MODE ERROR HANDLING
-#set -Eeuo pipefail
+set -Eeuo pipefail
 
 # SCRIPT USAGE
 function usage(){
@@ -18,6 +18,7 @@ cat <<'EOF'
        cloudify u <pkg>             uninstall package
 EOF
 }
+
 
 # CONSTANTES 
 PKG_INIT_FILE_DEFAULT="init.sh"
@@ -96,8 +97,41 @@ setup_colors() {
 # msg sends its output to stderr (See 12 Factors CLI app principles) and support special color codes
 # msg "This is a ${RED}very important${RESET} message, but not a script output value!"
 msg() {
-  echo >&2 -e "${1-}"
+  if [[ "${1-}" == "-n" ]]; then
+    echo >&2 -n -e "${2-}"
+  else
+    echo >&2 -e "${1-}"
+  fi
 }
+
+#############################################################
+############################################# THROWAWAY CODE!
+
+function prompt2var() {
+  local prompt="$1"
+  local answervar="$2"
+  msg -n "${GREEN}$1${RESET} "
+  read "$answervar" 
+}
+
+function prompt2pass() {
+  local answervar="$1"
+  # This utility script reads the password in PWORD 
+  local answer=$("$LOCAL_BIN"/askpass_stars.sh)
+  export "$answervar"="$answer"
+}
+
+
+# Throw away code that can be tested w/ 'cloudify test' 
+# Use this to test code before inserting it in cloudify 
+
+function throwawaycode () {
+  echo "No throw away code to test"
+}
+
+###################################### END OF THROWAWAY CODE!
+#############################################################
+
 
 # CLOUDIFY API 
 # THESE FUNCTION CAN BE CALLED FROM PACKAGE MODULES TO INSTALL SOFTWARE
@@ -307,14 +341,18 @@ function pkg_uninstall {
 # Ensure tmp folder exist, local bin exist and is in the path 
 # Test platform on which sript is running
 function preconfigure() {
-  # Create local tmp folder 
+
+  # Ensure all required credentials are set in proper environment variables
+  check_credentials
+
+  # Ensure tmp folder exists
   [[ -d "$LOCAL_TMP" ]] || mkdir -p "$LOCAL_TMP"
-  # Make sure ~/.local/bin exists and is in the path
+
+  # Ensure ~/.local/bin exists and is in the path
   [[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"
   [[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"
-  
-  # Make LOCAL BIN persistent
-  # DIRTY HACK! The comment '# CLOUDIFY LOCAL BIN:' is used by cloudify to avoid doublons in .bashrc
+  ## Make it persistent 
+  ## DIRTY HACK! The comment '# CLOUDIFY LOCAL BIN:' is used by cloudify to avoid doublons in .bashrc
   if ! grep -Fq "# CLOUDIFY LOCAL BIN:" $HOME/.bashrc; then 
     echo -e "\n# CLOUDIFY LOCAL BIN: Cloudify may install utility scripts in ~/.local/bin" >> "$HOME"/.bashrc
     echo 'export LOCAL_BIN="$HOME"/.local/bin' >> "$HOME"/.bashrc
@@ -331,6 +369,101 @@ function preconfigure() {
     packages_file=${CLOUDIFY_DIR}/station.packages
     pkg_init_file=$PKG_INIT_FILE_DEFAULT
   fi
+
+}
+
+
+# CREDENTIALS 
+## Cloudify needs user credentials to manage hosts and packages
+
+# Simply prompt the user and read the answer
+function prompt2var() {
+  local prompt="$1"
+  local answervar="$2"
+  msg -n "${GREEN}$1${RESET} "
+  read "$answervar" 
+}
+
+# Prompt the user for a password
+# Makes use of 'askpass_starts.sh' script from [antofthy](https://antofthy.gitlab.io/software/askpass_stars_v1.sh.txt)
+# Antofty also proposes more evolved scripts that may suit production more (See https://antofthy.gitlab.io/software/#askpass_stars) 
+function prompt2pass() {
+  local answervar="$1"
+  # This utility script reads the password in PWORD 
+  local answer=$("$LOCAL_BIN"/askpass_stars.sh)
+  export "$answervar"="$answer"
+}
+
+# Ask for host credentials
+function ask_host_credentials(){
+  echo
+  prompt2var "Host user:" "CLOUDIFY_HOSTUSER" && export CLOUDIFY_HOSTUSER 
+  # Ensure remote host user password is set
+  prompt2pass "CLOUDIFY_HOSTPWD" && export CLOUDIFY_HOSTPWD 
+  echo
+}
+
+# Ask for Github credentials
+function ask_github_credentials(){
+    echo
+    prompt2var "Github user:" "CLOUDIFY_GITHUBUSER" &&  export CLOUDIFY_GITHUBUSER
+    # Ensure remote Github password is set
+    prompt2pass "CLOUDIFY_GITHUBPWD" && export CLOUDIFY_GITHUBPWD
+    echo
+}
+
+# Ask for Gitlab credentials
+function ask_gitlab_credentials(){
+    echo
+    prompt2var "Gitlab user:" "CLOUDIFY_GITLABUSER" &&  export CLOUDIFY_GITLABUSER
+    # Ensure remote Gitlab user password is set
+    prompt2pass "CLOUDIFY_GITLABPWD" && export CLOUDIFY_GITLABPWD
+    echo
+}
+
+
+# Check if needed credentials are set in appropriate environment  variables
+# If not, ask for credentials and generate a script that the user will source to set the environment variables
+function check_credentials () {
+  # Check for credentials environment variables 
+  ## Remote sudo user and password, gitlab and github user and password must be set in env variables 
+  [[ "${1-}" == "-f" || "${1-}" == "--force" ]] && local force_ask_credentials=true || local force_ask_credentials=false
+
+  if "$force_ask_credentials" || [[ -z "${CLOUDIFY_HOSTUSER-}" || -z "${CLOUDIFY_HOSTPWD-}" ||  -z "${CLOUDIFY_GITHUBUSER-}" || -z "${CLOUDIFY_GITHUBPWD-}" || -z "${CLOUDIFY_GITLABUSER-}" || -z "${CLOUDIFY_GITLABPWD-}" ]]; then
+    local new_credentials=true
+    msg "${GREEN}Cloudify needs your Host, Github and Gitlab credentials.${RESET}"
+    [[ -f /dev/shm/cloudify_credentials ]] && rm -f "/dev/shm/cloudify_credentials"
+    touch /dev/shm/cloudify_credentials 
+    chmod 600 /dev/shm/cloudify_credentials
+  fi
+
+  # Ensure remote host user is set
+  if "$force_ask_credentials" || [[ -z "${CLOUDIFY_HOSTUSER-}" || -z "${CLOUDIFY_HOSTPWD-}" ]]; then
+    ask_host_credentials
+    echo "export CLOUDIFY_HOSTUSER=$CLOUDIFY_HOSTUSER" >> /dev/shm/cloudify_credentials
+    echo "export CLOUDIFY_HOSTPWD=$CLOUDIFY_HOSTPWD" >> /dev/shm/cloudify_credentials
+  fi
+
+  # Ensure remote Github user is set
+  if "$force_ask_credentials" ||  [[ -z "${CLOUDIFY_GITHUBUSER-}" || -z "${CLOUDIFY_GITHUBPWD-}" ]]; then
+    ask_github_credentials
+    echo "export CLOUDIFY_GITHUBUSER=$CLOUDIFY_GITHUBUSER" >> /dev/shm/cloudify_credentials
+    echo "export CLOUDIFY_GITHUBPWD=$CLOUDIFY_GITHUBPWD" >> /dev/shm/cloudify_credentials
+  fi
+
+  # Ensure remote Gitlab host user is set
+  if "$force_ask_credentials" ||  [[ -z "${CLOUDIFY_GITLABUSER-}" || -z "${CLOUDIFY_GITLABPWD-}" ]]; then
+    ask_gitlab_credentials
+    echo "export CLOUDIFY_GITLABUSER=$CLOUDIFY_GITLABUSER" >> /dev/shm/cloudify_credentials
+    echo "export CLOUDIFY_GITLABPWD=$CLOUDIFY_GITLABPWD" >> /dev/shm/cloudify_credentials
+  fi
+  
+  if "$new_credentials"; then 
+    echo
+    msg "${GREEN}A script was generated to store these credentials in environment variables.${RESET}"
+    msg "${GREEN}Please execute the following command line:${RESET}"
+    msg "source /dev/shm/cloudify_credentials"
+  fi
 }
 
 # PARSE SCRIPT PARAMETERS 
@@ -342,14 +475,10 @@ function preconfigure() {
 #  cloudify i default           install default in termux|station.packages
 #  cloudify u <pkg>             uninstall package
 parse_params () {
-  # Parse parameters 
-  # default options values 
-  action="install"
+  # First we need our color codes 
+  setup_colors
   
-  # Initial setup before running script 
-  preconfigure
-  
-  # Read script parameters
+  # Now, parse script parameters
   while :; do
     case "${1-}" in
     -h  | --help | help)
@@ -368,6 +497,7 @@ parse_params () {
           fi
           break ;; 
      i  | install | --install)  
+          preconfigure
           if [[ -z "${2-}" || "${2-}" == "defaults" ]]; then
             pkg_install_defaults
           else
@@ -375,12 +505,19 @@ parse_params () {
           fi
           break ;; 
      u  | uninstall | --uninstall) 
+          preconfigure
           if [[ -z "${2-}" || "${2-}" == "defaults" ]]; then
             pkg_uninstall_defaults
           else
             shift && pkg_uninstall "$@"
           fi
           break ;; 
+     c  | credentials | --credentials) 
+          check_credentials --force               # Ask all credentials 
+          break ;;
+     t  | test | --test) 
+          throwawaycode
+          break ;;
 #   -p  | --param) # Named parameter
 #         param="${2-}"
 #         shift

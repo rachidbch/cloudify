@@ -8,7 +8,7 @@ if [[ -d "$HOME"/.dotfiles/leanmacs/.leanmacs.d ]]; then
   echo "Warning: ~/.emacs.d directory found. Backing it up before symlinking to dotfiles"
   mv ~/.emacs.d ~/.emacs.d.bak 
  fi
- ln -nsf ~/.leanmacs.d ~/.emacs.d
+ ln -sfn ~/.leanmacs.d ~/.emacs.d
 else
   echo "Warning: No dotfiles found for leanmacs"
 fi

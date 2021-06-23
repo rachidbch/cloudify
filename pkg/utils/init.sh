@@ -2,7 +2,7 @@
 #
 # Utils pkg gathers small in-house utility scripts
 
-# 'ipath' function allows you to *interactively* edit your PATH in VIM
+# 'IPATH' FUNCTION ALLOWS YOU TO *INTERACTIVELY* EDIT YOUR PATH IN VIM
 # Here's the function in a readable format
 # function ipath() {
 #     PATHBACK=\$PATH
@@ -10,18 +10,24 @@
 #     PATHNEW=\$(sed -r 's/:\$//' <<<"\$PATHNEW")
 #     export PATH=\$PATHNEW && unset PATHNEW && unset PATHBACK 
 # }
-
 # =NOTE= Newline characters '\n' are escaped: '\\n'
 pkg_in_startuprc \
   '# Function '\''ipath'\'' Setup' \
   'function ipath() { PATHBACK=$PATH; PATHNEW=$( echo $PATH | tr '\'':'\'' '\''\\n'\'' | EDITOR=vi vipe | sed '\''/^$/d'\'' | tr '\''\\n'\'' '\'':'\''); PATHNEW=$(sed -r '\''s/:$//'\'' <<<"\$PATHNEW"); export PATH=$PATHNEW && unset PATHNEW && unset PATHBACK; }'
-
 # Make it a little bit easier to reload bashrc
 # Here's the alias is a readable format:
 # alias rcreload='source ~/.bashrc'
 pkg_in_startuprc '# Alias '\''rcreload'\'' Setup' 'alias rcreload='\''source ~/.bashrc'\'''
-
 # Make it a little bit to edit .bashrc 
 # Here's the alias is a readable format:
 # alias rcedit='vim ~/.bashrc'
 pkg_in_startuprc '# Alias '\''rcedit'\'' Setup' 'alias rcedit='\''${EDITOR:-vi} ~/.bashrc'\'''
+
+# Move all files with a .script extension found in this folder to the local bin folder
+# The '.script' extension is stripped. 
+# =NOTE= While cloudify is in development, we symlink instead of copying the scripts
+for utility in "${CLOUDIFY_DIR}"/pkg/utils/*.script; do 
+  utility_basename=$(basename "$utility")
+  DEBUG_MSG "Installing $utility in $LOCAL_BIN"
+  ln -sfn "$utility" "$LOCAL_BIN"/${utility_basename%.*}; 
+done

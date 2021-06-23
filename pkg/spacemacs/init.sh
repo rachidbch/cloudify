@@ -34,7 +34,7 @@ if [[ -d "$HOME"/.dotfiles/spacemacs/.spacemacs.d ]]; then
     echo "Warning: ~/.emacs.d directory found. Backing it up before symlinking to dotfiles"
     mv ~/.emacs.d ~/.emacs.d.bak
   fi
-  ln -nsf ~/.spacemacs.emacs.d ~/.emacs.d
+  ln -sfn ~/.spacemacs.emacs.d ~/.emacs.d
 else
   echo "Warning: No dotfiles found for spacemacs"
 fi

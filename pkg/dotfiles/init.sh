@@ -25,8 +25,8 @@ mv "$HOME"/.backup/.bashrc.bak  "$HOME"/.backup/.bashrc.bak.2 2>/dev/null
 mv "$HOME"/.bashrc "$HOME"/.backup/.bashrc.bak
 
 PKG_DEBUG "Installing stowit"
-ln -nsf "$HOME"/.dotfiles/stow/stowit "$HOME"/.local/bin/stowit
-ln -nsf "$HOME"/.dotfiles/stow/unstowit "$HOME"/.local/bin/unstowit
+ln -sfn "$HOME"/.dotfiles/stow/stowit "$HOME"/.local/bin/stowit
+ln -sfn "$HOME"/.dotfiles/stow/unstowit "$HOME"/.local/bin/unstowit
 
 PKG_DEBUG "Setting up dotfiles with stow"
 "$HOME"/.local/bin/stowit

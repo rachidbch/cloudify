@@ -22,7 +22,7 @@
   ```
   cd 
   git clone "https://gitlab.com/mobilefirstcentury/cloudify.git""
-  sudo ln -nsf ~/cloudify/cloudify    /usr/local/bin/cloudify
+  sudo ln -sfn ~/cloudify/cloudify    /usr/local/bin/cloudify
   ```
   
 2) Install basics packages

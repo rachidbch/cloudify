@@ -3,7 +3,7 @@
 # Declare dependency packages
 pkg_depends fzf sqlite3 emacs26-nox
 
-if [[ -d ~/dotfiles/leanmacs/.leanmacs.d ]]; then
+if [[ -d "$HOME"/.dotfiles/leanmacs/.leanmacs.d ]]; then
  if [[ -d ~/.emacs.d && ! -L ~/.emacs.d ]]; then
   echo "Warning: ~/.emacs.d directory found. Backing it up before symlinking to dotfiles"
   mv ~/.emacs.d ~/.emacs.d.bak 

@@ -20,7 +20,7 @@ EOF
 }
 
 # CONSTANTES 
-PKG_INIT_FILE="init.sh"
+PKG_INIT_FILE_DEFAULT="init.sh"
 PKG_INIT_FILE_TERMUX="termux.init.sh"
 LOCAL_BIN="$HOME"/.local/bin
 LOCAL_TMP=/tmp/cloudify
@@ -177,7 +177,11 @@ function pkg_apt_repository() {
 function pkg_apt_install() {
   for pkg in "${@}"; do 
    [[ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ]] &&  sudo apt-get -q update
-   dpkg -l "$pkg" |& grep -q "^ii  $pkg" || { PKG_DEBUG_LN "Installing $pkg apt package" && sudo apt-get -q install "$pkg"  -y; }
+   # =TODO= Parse apt install output to detect error in installation
+   if  ! dpkg -l "$pkg" |& grep -q "^ii  $pkg"; then
+     PKG_DEBUG_LN "Installing $pkg apt package"
+     sudo apt-get -q install "$pkg"  -y || die "Error installing $pkg" 1 
+   fi
   done
 }
 
@@ -239,9 +243,9 @@ function pkg_install_release() {
 # Adds a package dependeny
 function pkg_depends() {
   for pkg in "${@}"; do 
-    if [[ -f "$CLOUDIFY_DIR"/pkg/"$pkg"/init.sh ]]; then
+    if [[ -f "$CLOUDIFY_DIR"/pkg/"$pkg"/"$pkg_init_file" ]]; then
       PKG_DEBUG "Installing $pkg cloudify package"
-      source "$CLOUDIFY_DIR"/pkg/"$pkg"/init.sh
+      source "$CLOUDIFY_DIR"/pkg/"$pkg"/"$pkg_init_file"
     else
       pkg_apt_install ${pkg}
     fi
@@ -267,13 +271,8 @@ function pkg_show() {
   # Show module code of packages
   for pkg in "$@"; do
     msg "${GREEN}${pkg%%*( )} cloudify package code\n${RESET}"
-    if [[ $PKG_TERMUX && -f "$PKG_INIT_FILE_TERMUX" ]]; then
-      msg "${GREEN}>> $CLOUDIFY_DIR/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}${RESET}"
-      cat "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}              # We use bash expansion to trim spaces at the end of the package name
-    else
-      msg "${GREEN}>> $CLOUDIFY_DIR/pkg/${pkg%%*( )}/${PKG_INIT_FILE}${RESET}"
-      cat "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                     # We use bash expansion to trim spaces at the end of the package name
-    fi
+    msg "${GREEN}>> $CLOUDIFY_DIR/pkg/${pkg%%*( )}/${pkg_init_file}${RESET}"
+    cat "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${pkg_init_file}                     # We use bash expansion to trim spaces at the end of the package name
   done
 }
 
@@ -282,11 +281,7 @@ function pkg_install_defaults {
   # Default packages are lited in ./*.packages files 
   for pkg in $(< ${packages_file}); do
     msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
-    if [[ $PKG_TERMUX && -f "$PKG_INIT_FILE_TERMUX" ]]; then
-      source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
-    else
-      source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                   # We use bash expansion to trim spaces at the end of the package name
-    fi
+    pkg_depends "$pkg"
   done
   printDone
 }
@@ -295,11 +290,7 @@ function pkg_install {
   # Install specific packages 
   for pkg in "$@"; do
     msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
-    if [[ $PKG_TERMUX && -f "$PKG_INIT_FILE_TERMUX" ]]; then
-      source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}              # We use bash expansion to trim spaces at the end of the package name
-    else
-      source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                     # We use bash expansion to trim spaces at the end of the package name
-    fi
+    pkg_depends "$pkg"
   done
   printDone
 }
@@ -335,8 +326,10 @@ function preconfigure() {
   if [ ! -z "$(pgrep -f com.termux)" ]; then
     export PKG_PLATFORM="termux"
     packages_file=${CLOUDIFY_DIR}/termux.packages
+    pkg_init_file=$PKG_INIT_FILE_TERMUX
   else
     packages_file=${CLOUDIFY_DIR}/station.packages
+    pkg_init_file=$PKG_INIT_FILE_DEFAULT
   fi
 }
 

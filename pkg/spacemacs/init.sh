@@ -2,7 +2,7 @@
 
 # spacemacs install
 
-if [[ -d ~/dotfiles/spacemacs/.spacemacs.d ]]; then
+if [[ -d "$HOME"/.dotfiles/spacemacs/.spacemacs.d ]]; then
   if ! grep -q "^deb .*kelleyk/emacs" /etc/apt/sources.list.d/*; then
     sudo add-apt-repository ppa:kelleyk/emacs
     sudo apt-get -q update

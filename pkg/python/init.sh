@@ -5,14 +5,14 @@ UBUNTU_VER="$(lsb_release -r | cut -f2)"
 if [ -z "$(command -v "python" 2>&1)"  ]; then 
   echo "Installing python2 as python"
   [ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ] &&  sudo apt-get -q update
-  sudo apt-get -q install python -y 
+  pkg_apt_install python 
 fi
 
 ## Python3 should always be accessible through `python3` command
 if [ -z "$(command -v "python3" 2>&1)"  ]; then 
   echo "Installing python3 as python3"
   [ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ] &&  sudo apt-get -q update
-  sudo apt-get -q install python3 -y 
+  pkg_apt_install python3
 fi
 
 # On Ubuntu 16.04 official apt repo doesn't have Python 3.5+
@@ -32,14 +32,10 @@ fi
 if (( $(echo "$UBUNTU_VER <= 16.04" | bc -l ))); then
   if [ -z "$(command -v "python3.6" 2>&1)"  ]; then 
     echo "Doing strange stuff to install python on Ubuntu 16.04-"
-    echo "1 ==="
-    if ! grep -q "^deb .*deadsnakes/ppa" /etc/apt/sources.list.d/*; then
-      echo "2 ==="
-      sudo add-apt-repository ppa:deadsnakes/ppa 
-      sudo apt-get -q update
-    fi
-    echo "3 ==="
-    sudo apt-get install python3.6 
+
+    pkg_apt_repository "deadsnakes/ppa"
+
+    pkg_apt_install python3.6 
 
     # Set python3.6 as the default python3
     sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.5 1
@@ -54,7 +50,7 @@ if (( $(echo "$UBUNTU_VER <= 16.04" | bc -l ))); then
     echo "Installing python3.6-venv"
     # Without this, `pipx install pycowsay' failes
     # Don't even ask me why ...   Python is just a mess...
-    sudo apt-get -q install python3.6-venv -y
+    pkg_apt_install python3.6-venv 
 
     echo "Installing argcomplete"
     # Don't ask about this one neither. Witout python3.6 complains about the module absence

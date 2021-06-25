@@ -1,2 +1,2 @@
-sudo apt-get install mlocate
+pkg_apt_install mlocate
 sudo updatedb

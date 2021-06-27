@@ -2,7 +2,7 @@
 # Cloudify all-in-one machine and containers managing tool 
 
 # STRICT MODE ERROR HANDLING
-set -Eeuo pipefail
+#set -Eeuo pipefail
 
 # SCRIPT USAGE
 function usage(){
@@ -41,7 +41,7 @@ export CLOUDIFY_DEBUG                                  # Export it so it's avail
 # CLEANUP BEFORE EXIT 
 # Call clean up function before exiting script
 trap cleanup SIGINT SIGTERM ERR EXIT
-cleanup() {
+function cleanup() {
   trap - SIGINT SIGTERM ERR EXIT
   
   # script cleanup here
@@ -62,19 +62,38 @@ function PKG_DEBUG() {
 function PKG_DEBUG_LN() {
 #  $CLOUDIFY_DEBUG && msg "${ORANGE}\n*** DEBUG: $1 ***${RESET}" || true
   echo
-  PKG_DEBUG $@ 
+  PKG_DEBUG "$@"
 }
 
 # GENERAL UTILITIES
 
+# Simple break command to ease debug
+# Pauses until you type enter
+function pkg_break() {
+  local _ 
+  read -p 'Paused. Type enter to continue' _
+}
+
+
+# Can we define a logical not operator that works as a function and as a command in a pipe?
+# =DANGER= Not ready. Don't use!
+function not() {
+  [[ ! -z "${1-}" ]] && local in=$1 || { local in; read in;}
+  [[ -t 1 ]] && {
+    [[ "${in-}" == 0 ]] &&  return 1 || return 0; 
+  } || {
+    [[ "${in-}" == 0 ]] && echo 1 || echo 0; 
+  }
+}
+
 # Utility function to test if a directory is empty
 function emptydir() {
- ls -1qA "$1" | grep -q .
+ ls -1qA "$1" | grep -q . && return 1 || return 0 
 }
 
 # Die gracefully
 # Usage: `die "This requirement isn't met" 1
-die() {
+function die() {
   local msg=$1
   local code=${2-1} # default exit status 1
   msg "${RED}$msg${RESET}"
@@ -91,7 +110,7 @@ function printDone() {
 }
 
 # Setup colors code for more readable messages
-setup_colors() {
+function setup_colors() {
   # Setup color codes if we have real terminal on stderr unless colors have been disabled
   if [[ -t 2 ]] && [[ -z "${NO_COLOR-}" ]] && [[ "${TERM-}" != "dumb" ]]; then
     RESET='\033[0m' RED='\033[0;31m' GREEN='\033[0;32m' ORANGE='\033[0;33m' BLUE='\033[0;34m' PURPLE='\033[0;35m' CYAN='\033[0;36m' YELLOW='\033[1;33m'
@@ -103,33 +122,234 @@ setup_colors() {
 # Print messages with colors
 # msg sends its output to stderr (See 12 Factors CLI app principles) and support special color codes
 # msg "This is a ${RED}very important${RESET} message, but not a script output value!"
-msg() {
+function msg() {
   if [[ "${1-}" == "-n" ]]; then
-    echo >&2 -n -e "${2-}"
+    shift
+    echo >&2 -n -e "$@"
   else
-    echo >&2 -e "${1-}"
+    echo >&2 -e "$@"
   fi
 }
 
 
+# Simply prompt the user and read the answer
+function prompt2var() {
+  local prompt="$1"
+  local answervar="$2"
+  msg -n "${GREEN}$1${RESET} "
+  read "$answervar" 
+}
 
-#############################################################
-############################################# JUNK CODE!
+# Prompt the user for a password
+# Makes use of 'askpass_starts.sh' script from [antofthy](https://antofthy.gitlab.io/software/askpass_stars_v1.sh.txt)
+# Antofty also proposes more evolved scripts that may suit production more (See https://antofthy.gitlab.io/software/#askpass_stars) 
+function prompt2pass() {
+  local answervar="$1"
+  # This utility script reads the password in PWORD 
+  local answer=$("$LOCAL_BIN"/askpass_stars.sh)
+  export "$answervar"="$answer"
+}
 
-# Junk code that can be tested w/ 'cloudify test' 
-# Use this to test code before inserting it in cloudify 
+# Ask for host credentials
+function ask_host_credentials(){
+  echo
+  prompt2var "Host user:" "CLOUDIFY_HOSTUSER" && export CLOUDIFY_HOSTUSER 
+  # Ensure remote host user password is set
+  prompt2pass "CLOUDIFY_HOSTPWD" && export CLOUDIFY_HOSTPWD 
+  echo
+}
 
-function git() {
-  # backup current .gitconfig
-  git config --global url."https://api@github.com/".insteadOf "https://github.com/"
-  git config --global url."https://ssh@github.com/".insteadOf "ssh://git@github.com/"
-  git config --global url."https://git@github.com/".insteadOf "git@github.com:"
+# Ask for Github credentials
+function ask_github_credentials(){
+    echo
+    prompt2var "Github user:" "CLOUDIFY_GITHUBUSER" &&  export CLOUDIFY_GITHUBUSER
+    # Ensure remote Github password is set
+    prompt2pass "CLOUDIFY_GITHUBPWD" && export CLOUDIFY_GITHUBPWD
+    echo
+}
+
+# Ask for Gitlab credentials
+function ask_gitlab_credentials(){
+    echo
+    prompt2var "Gitlab user:" "CLOUDIFY_GITLABUSER" &&  export CLOUDIFY_GITLABUSER
+    # Ensure remote Gitlab user password is set
+    prompt2pass "CLOUDIFY_GITLABPWD" && export CLOUDIFY_GITLABPWD
+    echo
 }
 
 
+function is_path () {
+ # On linux anything can be a path!
+ return 0
+}
+
+# Parse git urls
+# Description: Parse all git urls format
+# Syntax: parse_git_url <url> [[url|proto|user|pass|host|domain|subdomain|port|path|account|project]]"
+# Example: parse_git_url 'git@github.com/acme/project/repo.git/' 'host,account,project'
+#          This writes requested segments on stdout with a 'segment: <segment>' on each line
+# Example: parse_git_url ssh://user@host.xz:port/path/to/repo.git/
+#          This writes all segments on stdout with a 'segment: <segment>' on each line
+# Code copied and tweaked from https://janikvonrotz.ch/2021/03/09/parse-url-in-shell-script/ 
+# Supported formats are listed on this [stackoverflow question](https://stackoverflow.com/questions/31801271/what-are-the-supported-git-url-formats)
+function parse_git_url () {
+    # get protocol
+    # if proto isn't given, we're parsing a git format  (user@host.xz:path/to/repo.git)
+    [[ ! -z "${1-}" ]] || return 1
+    echo >&2 $1
+
+    local proto="$(echo $1 | grep :// | sed -e's,^\(.*://\).*,\1,g')"
+    [[ -z "${proto-}" || "${proto-}" == *:// ]] || return 1 
+    
+    # remove the protocol
+    local url="$(echo ${1/$proto/})"
+    [[ ! -z "${url-}" ]] || return 1
+    
+    # extract the user (if any)
+    local userpass="$(echo $url | grep @ | cut -d@ -f1)"
+    local pass="$(echo $userpass | grep : | cut -s -d: -f2)"
+    if [ -n "$pass" ]; then
+        local user="$(echo $userpass | grep : | cut -d: -f1)"
+    else
+        user=$userpass
+    fi
+    
+    # remove the user and password
+    url="$(echo ${url/$userpass@/})"
+    [[ ! -z "${url-}" ]] || return 1
+     
+    # extract the host and port
+    local host_port
+    host_port="$(echo ${url} | cut -d/ -f1)"
+    [[ ! -z "${host_port-}" ]] || return 1
+    
+    port="$(echo ${host_port} | cut -s -d: -f2)"
+
+    if [[ ${host_port-} == *:* && ! ${port-} =~ ^[0-9]+$ ]]; then
+      [[ -z "${proto-}" ]] && proto="git://"
+      host_port="$(echo ${url} | cut -d: -f1)"
+      [[ ! -z "${host_port-}" ]] || return 1
+      port=""
+      host=$host_port
+    else
+      [[ -z "${proto-}" ]] && proto="https://"
+      host="$(echo ${host_port} | cut -d: -f1)"
+      [[ ! -z "${host-}" ]] || return 1
+    fi
+    
+#    url                       host_port        port        Prot       host_port        port   host
+#    github.com:/toto/tata     github.com:      ''          SSH        github.com        ''     github.com 
+#    github.com:toto/tata      github.com:toto  toto        SSH        github.com        ''     github.com
+#    github.com:80/titi        github.com:80    80          HTTPS      github.com:80     80     github.com
+#    github.com/titi           github.com       ''          HTTPS      github.com        ''     github.com
+
+    
+    # extract the path (if any)
+    local path
+    path="$(echo ${url#$host_port})"
+    path="$(echo ${path#:})"
+
+    # extract domain and subdomain
+
+    local levels=$(echo $host | grep -o "\." | wc -l)
+    if [ $levels -eq "1" ]; then 
+        domain=$host
+    fi
+    if [ $levels -eq "2" ]; then 
+        domain=$(echo $host | awk -F"." '{print $2 "." $3}')
+        subdomain=$(echo $host | awk -F"." '{print $1}')
+    fi
+    [[ ! -z "${domain-}" ]] || return 1
+    
+    # extract account and project
+    local account
+    local project
+
+    # TODO just remove any leading slash 
+    # account=$(echo $path | sed 's,^/,,' | cut -d/ -f1)  
+    # project=$(echo $path | sed 's,^/,,' | cut -s -d/ -f2)  
+ 
+    if [[ "$path" == /* ]]; then
+      account=$(echo $path | cut -s -d/ -f2)  
+      project=$(echo $path | cut -s -d/ -f3)  
+    else
+      account=$(echo $path | cut -d/ -f1)  
+      project=$(echo $path | cut -s -d/ -f2)  
+    fi
+    
+    if [[ -z "${2-}" ]]; then
+      echo -e "url: $url\nproto: $proto\nuser: $user\npass: $pass\nhost_port: $host_port\nhost: $host\ndomain: $domain\nsubdomain: $subdomain\nport: $port\npath: $path\naccount: $account\nproject: $project"
+    else
+      for f in $(echo $2 | sed "s/,/ /g")
+      do
+          case $f in
+              url)
+                  echo $url
+                  ;;
+              proto)
+                  echo $proto
+                  ;;
+              user)
+                  echo $user
+                  ;;
+              pass)
+                  echo $pass
+                  ;;
+              host)
+                  echo $host
+                  ;;
+              domain)
+                  echo $domain
+                  ;;
+              subdomain)
+                  echo $subdomain
+                  ;;
+              port)
+                  echo $port
+                  ;;
+              path)
+                  echo $path
+                  ;;
+              account)
+                  echo $account
+                  ;;
+              project)
+                  echo $project
+                  ;;
+          esac
+      done
+    fi
+#   Unused
+#   local port="$(echo $host_port | sed -e 's,^.*:,:,g' -e 's,.*:\([0-9]*\).*,\1,g' -e 's,[^0-9],,g')"
+}
+
+# Is an url a git url ?
+# Description: Checks if an url is a git url 
+# under the hood, the url is parsed. If the parsing fails, we assume the input isn't an url
+function is_git_url () {
+ parse_git_url $1 &> /dev/null
+}
+
+
+
+
+  
+# CLOUDIFY API 
+# THESE FUNCTION CAN BE CALLED FROM PACKAGE MODULES TO INSTALL SOFTWARE
+# Currently Cloudify API is as simple as 2 functions: 'pkg_depends' and 'pkg_in_startuprc' 
+#
+# pkg_depends:           Most used API function. Declares an explicit dependency. Tries to do its best to install dependencies
+# pkg_in_startuprc:      Safely adds to .bashrc (someday to .zshrc) list of single quoted string given as arguments
+# pkg_apt_repository:    Safely adds apt repository in apt repositories list 
+# pkg_apt_install:       Safely install an apt package   
+# pkg_install_release:   Install cloudify package (Run module code if found or calls pkg_apt_install 
+
+
 # Backup files
+# =DANGER= function full of 'rm -rf'!! 
+# =TODO= Prevent destructve actions. Example: What happens if called with path '/' ?
 pkg_backup() {
-  PKG_DEBUG "Running backup"
+  PKG_DEBUG "Running pkg_backup for ${1-}"
 
   # Do we keep the same name for the target and its target
   same=false; [[ "${1-}" == "--same" ]] && same=true && shift
@@ -139,7 +359,7 @@ pkg_backup() {
     return 1
   fi
   
-  PKG_DEBUG "Testing same flag"
+  #PKG_DEBUG "Testing same flag"
 
   # Derive a unique file name for the backup by getting the absolute path of the target and replacing by '/' by '__'
 
@@ -150,26 +370,54 @@ pkg_backup() {
   fi
   backup_name="${CLOUDIFY_TMP}"/backup/${backup_name}
 
+  echo yolo
   PKG_DEBUG "Backing up ${1-} to ${backup_name}"
 
   [[ -d "${CLOUDIFY_TMP}"/backup ]] || PKG_DEBUG "Creating ${CLOUDIFY_TMP}/backup directory" && mkdir -p "${CLOUDIFY_TMP}"/backup 
-
+  echo yola
   rm -rf  "${backup_name}.bak.5"                         2>/dev/null 
+  echo 11
   mv      "${backup_name}.bak.4" "${backup_name}.bak.5"  2>/dev/null 
+  echo 10
   rm -rf  "${backup_name}.bak.4"                         2>/dev/null 
   mv      "${backup_name}.bak.3" "${backup_name}.bak.4"  2>/dev/null  
+  echo 9
   rm -rf  "${backup_name}.bak.3"                         2>/dev/null
   mv      "${backup_name}.bak.2" "${backup_name}.bak.3"  2>/dev/null 
+  echo 8
   rm -rf  "${backup_name}.bak.2"                         2>/dev/null
   mv      "${backup_name}.bak.1" "${backup_name}.bak.2"  2>/dev/null
+  echo 7
   rm -rf  "${backup_name}.bak.1"                         2>/dev/null
   mv      "${backup_name}.bak"   "${backup_name}.bak.1"  2>/dev/null
+  echo 6
   rm -rf  "${backup_name}.bak"                           2>/dev/null
   mv      "${backup_name}"       "${backup_name}.bak"    2>/dev/null
+  echo 5
   rm -rf  "${backup_name}"                               2>/dev/null
   cp -paf "$1" "${backup_name}"
+
+  # Now, as we preserved links while copying, if the file/fodler we've backed up is a link, modifying the original will modify the backup...
+  # We need to break the original link so any modification of original file won't stain the backup
+  # =TODO= Simplify this mess!
+  set -x
+  rm -rf  "${backup_name}".atomic                        2>/dev/null
+  cp -paL --no-preserve=links "$1" "${backup_name}".atomic 
+  rm -rf  "${1}"                               2>/dev/null
+  cp -paL --no-preserve=links "${backup_name}".atomic "$1"
+  rm -rf  "${backup_name}".atomic                        2>/dev/null
+  set +x
+
+  echo yulu
+  # Increment backup counter for this file
+  [[ -f "${backup_name}.index" ]] || touch "${backup_name}.index" 
+  expr $(cat "${backup_name}.index") + 1 > "${backup_name}.index"
+  echo exiting from backup
 }
 
+# pkg_restore uses simple 'mv' to restore files.
+# This may mess with ownership and permissions...
+# =TODO= use rsync! For the bacup and the restoration.
 pkg_restore() {
   PKG_DEBUG "Running Restore"
 
@@ -182,8 +430,9 @@ pkg_restore() {
   "$same" && backup_name=${1-} || backup_name=$(dirname $1) && backup_name="$(basename ${1-})${backup_name//\//@}"
   backup_name="${CLOUDIFY_TMP}"/backup/${backup_name}
 
-  if [[ ! -e "${backup_name-}" ]]; then
+  if [[ ! -e "${backup_name-}" && ! -h "${backup_name-}" ]]; then
     PKG_DEBUG "File or directory ${1-} has no backup"
+    PKG_DEBUG "File or directory ${backup_name-} doesn't exist"
     return 1
   fi
 
@@ -204,54 +453,23 @@ pkg_restore() {
   rm -rf "${backup_name}.bak.4"                        2>/dev/null 
   mv     "${backup_name}.bak.5" "${backup_name}.bak.4" 2>/dev/null 
   
+  # Decrement backup counter for this file
+  expr $(cat "${backup_name}.index") - 1 > "${backup_name}.index"
+  [[ $(cat "${backup_name}.index") == 0 ]] && rm "${backup_name-}.index"
   return 0                             # If we're then everything is ok. Roll back failures are exptected.
 }
 
 
-function junkCode () {
-
-  HOMETRASH="/home/rbc/cloudify/trash/home"
-
-  if ! pkg_backup "$HOMETRASH/$1"; then echo "pkg_backup return an error"; else echo "done!"; fi
-  echo "content of ~"
-  tree -a $HOMETRASH
-  echo "content of backup"
-  tree -a  "$CLOUDIFY_TMP"/backup
-
-  if ! pkg_backup "$HOMETRASH/$1"; then echo "pkg_backup returned an error"; else echo "done!"; fi
-  echo "content of ~"
-  tree -a  $HOMETRASH
-  echo "content of backup"
-  tree -a "$CLOUDIFY_TMP"/backup
-
-  if ! pkg_restore "$HOMETRASH/$1"; then echo "pkg_restore returned an error"; else echo "done!"; fi
-
-  echo "content of ~"
-  tree -a $HOMETRASH
-  echo "content of backup"
-  tree -a "$CLOUDIFY_TMP"/backup
-
-  if ! pkg_restore "$HOMETRASH/$1"; then echo "pkg_restore returned an error"; else echo "done!"; fi
-
-  echo "content of ~"
-  tree -a $HOMETRASH
-  echo "content of backup"
-  tree -a "$CLOUDIFY_TMP"/backup
-}
-
-###################################### END OF JUNK CODE!
-#############################################################
 
 
-# CLOUDIFY API 
-# THESE FUNCTION CAN BE CALLED FROM PACKAGE MODULES TO INSTALL SOFTWARE
-# Currently Cloudify API is as simple as 2 functions: 'pkg_depends' and 'pkg_in_startuprc' 
-#
-# pkg_depends:           Most used API function. Declares an explicit dependency. Tries to do its best to install dependencies
-# pkg_in_startuprc:      Safely adds to .bashrc (someday to .zshrc) list of single quoted string given as arguments
-# pkg_apt_repository:    Safely adds apt repository in apt repositories list 
-# pkg_apt_install:       Safely install an apt package   
-# pkg_install_release:   Install cloudify package (Run module code if found or calls pkg_apt_install 
+
+
+
+
+
+
+
+
 
 # Write lines listed as single-quoted arguments in .bashrc 
 # =todo= Make it compatible with zsh shell
@@ -300,6 +518,7 @@ function pkg_in_startuprc(){
   for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
     PKG_DEBUG "Inserting line: $pkg_startuprc_line"
     sed -in "/# CLOUDIFY ENV END/i $pkg_startuprc_line" ~/.bashrc
+
     PKG_DEBUG "----"
     PKG_DEBUG "What's in there in bashrc?"
     $CLOUDIFY_DEBUG && cat ~/.bashrc
@@ -427,7 +646,7 @@ function pkg_depends() {
 }
 
 
-# SCRIPT ACTIONS
+# SCRIPT SUBCOMMANDS 
 function pkg_list_all() {
   # List all available packages for current platform
   \ls "$CLOUDIFY_DIR"/pkg
@@ -516,51 +735,6 @@ function preconfigure() {
 # CREDENTIALS 
 ## Cloudify needs user credentials to manage hosts and packages
 
-# Simply prompt the user and read the answer
-function prompt2var() {
-  local prompt="$1"
-  local answervar="$2"
-  msg -n "${GREEN}$1${RESET} "
-  read "$answervar" 
-}
-
-# Prompt the user for a password
-# Makes use of 'askpass_starts.sh' script from [antofthy](https://antofthy.gitlab.io/software/askpass_stars_v1.sh.txt)
-# Antofty also proposes more evolved scripts that may suit production more (See https://antofthy.gitlab.io/software/#askpass_stars) 
-function prompt2pass() {
-  local answervar="$1"
-  # This utility script reads the password in PWORD 
-  local answer=$("$LOCAL_BIN"/askpass_stars.sh)
-  export "$answervar"="$answer"
-}
-
-# Ask for host credentials
-function ask_host_credentials(){
-  echo
-  prompt2var "Host user:" "CLOUDIFY_HOSTUSER" && export CLOUDIFY_HOSTUSER 
-  # Ensure remote host user password is set
-  prompt2pass "CLOUDIFY_HOSTPWD" && export CLOUDIFY_HOSTPWD 
-  echo
-}
-
-# Ask for Github credentials
-function ask_github_credentials(){
-    echo
-    prompt2var "Github user:" "CLOUDIFY_GITHUBUSER" &&  export CLOUDIFY_GITHUBUSER
-    # Ensure remote Github password is set
-    prompt2pass "CLOUDIFY_GITHUBPWD" && export CLOUDIFY_GITHUBPWD
-    echo
-}
-
-# Ask for Gitlab credentials
-function ask_gitlab_credentials(){
-    echo
-    prompt2var "Gitlab user:" "CLOUDIFY_GITLABUSER" &&  export CLOUDIFY_GITLABUSER
-    # Ensure remote Gitlab user password is set
-    prompt2pass "CLOUDIFY_GITLABPWD" && export CLOUDIFY_GITLABPWD
-    echo
-}
-
 
 # Check if needed credentials are set in appropriate environment  variables
 # If not, ask for credentials and generate a script that the user will source to set the environment variables
@@ -606,6 +780,252 @@ function check_credentials () {
     msg "source /dev/shm/cloudify_credentials"
   fi
 }
+
+#############################################################
+############################################# TEST CODE! 
+
+# Test code that can be tested w/ 'cloudify test' 
+# Use this to test code before inserting it in cloudify 
+
+function git_authenticate() {
+  local git_remote_url="${1-}"
+  [[ -z "${git_remote_url-}" ]] && PKG_DEBUG "Remote url must be non null." return 1
+
+
+  # first backup current .gitconfig
+  pkg_backup "$HOME"/.gitconfig 
+
+  # Only credentials per git domain are supported so far 
+  # =TODO= Enable credential per account and per project. 
+  local git_domain=$(parse_git_url $git_remote_url domain) 
+  echo "git_domain -> $git_domain"
+
+  case "${git_domain-}" in
+     gitlab.com)  
+        export GIT_TOKEN=$CLOUDIFY_GITLABPWD
+        ;; 
+     github.com)  
+        export GIT_TOKEN=$CLOUDIFY_GITHUBPWD
+        echo YOUKO
+        ;; 
+     *) die "Git Host $git_domain is not supported'" 1;;
+  esac
+  echo "GIT_TOKEN -> $GIT_TOKEN"
+  echo 'echo $GIT_TOKEN' > $HOME/.git-askpass
+  chmod +x $HOME/.git-askpass
+  export GIT_ASKPASS=$HOME/.git-askpass
+
+  # use 'insteadOf' git feature to force git to use https connection whatever the git url format used
+  command git config --global url."https://api@${git_domain}/".insteadOf "https://${git_domain}/"
+  command git config --global url."https://ssh@${git_domain}/".insteadOf "ssh://git@${git_domain}/"
+  command git config --global url."https://git@${git_domain}/".insteadOf "git@${git_domain}:"
+
+# git config --global url."https://api@github.com/".insteadOf "https://github.com/"
+# git config --global url."https://ssh@github.com/".insteadOf "ssh://git@github.com/"
+# git config --global url."https://git@github.com/".insteadOf "git@github.com:"
+
+}
+
+function git_deauthenticate() {
+
+  # Undo our git config modifications 
+  pkg_restore "$HOME"/.gitconfig 
+}
+
+
+
+function git() {
+  # Then   
+  local inside_git_repo=false
+  local git_remote_url=""
+  if [[ "${1-}" == "clone" ]];then
+     # We need to get the remote git host by parsing arguments passed to 'git clone'  
+     # Any argument that isn't clone or an option, is deemed to be the url to clone
+     for arg in "$@"; do
+       [[ "${arg-}" != "clone" &&  "${arg-}" != "-*" ]] && { 
+         if [[ -z "${git_remote_url}" ]] && is_git_url "${arg-}"; then 
+           git_remote_url="${arg-}"
+         else
+           [[ -z "{git_remote_url}" ]] && { PKG_DEBUG "Unable to git clone: Not a valid git url" &&  return 1; }
+           git_repo_path="${arg-}"
+           # No validity test here as anything can be a path on linux
+           # But we can only clone into an existing folder
+           [[ ! -d $(dirname "${arg-}") ]] &&  { PKG_DEBUG "Unable to git clone: path $(dirname ${arg-}) doesn't exist." &&  return 1; }
+           break
+         fi   
+       } 
+     done 
+     # If the directory exist, we simply update 
+     
+     # nul 
+     # Continue: git will create a sub folder in pwd
+
+     # Not not null, dir doesn't exist
+     # Continue: git will create the dir 
+
+     # not null, dir exist. dir  is empty 
+     # Continue: git will fill the dir
+      
+     # not null, dir exist. dir NOT empty 
+     # WARNING: if git_repo_url is the same, PULL!
+     #          if git_repo_url is not the same. ERROR!
+
+
+     #if [[ -d "$git_repo_path" ]] ; then echo dir exist; else dir doesn\'t exist; fi
+     #if ! emptydir "$git_repo_path"; then echo dir not empty; else echo dir empty; fi
+
+     if [[ -d "$git_repo_path" ]] && ! emptydir "$git_repo_path"; then
+       PKG_DEBUG "$git_repo_path directory exist and isn't empty. Pulling updates." 
+       ( cd "$git_repo_path"
+         inside_git_repo="$(command git rev-parse --is-inside-work-tree 2>/dev/null)"
+         $inside_git_repo || { PKG_DEBUG "Can't execute git commands. $git_repo_path isn't a git repo" && return 1; }
+         
+         if same_git_remote ${git_remote_url} $(command git remote get-url origin); then
+             msg here
+             set -x
+             git pull
+             set +x
+         else
+            PKG_DEBUG "Unable to git clone: Repo $(command git remote get-url origin) different from $git_remote_url you trying to clone." &&  return 1 
+         fi
+       )
+     else
+         PKG_DEBUG "$git_repo_path doesn't exist directory exist or is empty. cloning" 
+         git_authenticate $git_remote_url
+         set -x
+         msg "Actual git command executed"
+         command git $@ -v
+         set +x
+         git_deauthenticate $git_remote_url
+     fi
+  else
+     # We can directly read remote url 
+     inside_git_repo="$(command git rev-parse --is-inside-work-tree 2>/dev/null)"
+     if [[ ! "$inside_git_repo" ]]; then
+        PKG_DEBUG "Can't execute git commands. $PWD is not inside a git repo."
+        return 1
+     else
+        git_remote_url=$(command git remote get-url origin)
+     fi
+     git_authenticate $git_remote_url
+     PKG_DEBUG "Actual git command executed:" echo git $@ -v
+     set -x
+     command git $@ -v
+     set +x
+     git_deauthenticate $git_remote_url
+  fi
+}
+
+
+# Does two remote ur refer to the same repo? 
+function same_git_remote () {
+
+    local remote_url_1="${1-}"
+    local remote_url_2="${2-}"
+
+    local url_1; local url_2;
+    local host_1;  local host_2; 
+    local domain_1;  local domain_2; 
+    local subdomain_1;  local subdomain_2; 
+    local port_1; local port_2; 
+    local account_1;  local account_2; 
+    local project_1;  local project_2; 
+  
+    local _; local segment
+
+
+    parse_git_url "${remote_url_1}" 
+    #echo; msg "${RED}now it\'s verified. Try again${RESET}"
+
+    # Parsing the output of 'parse_git_utl' to get individual url segments. So meta :)
+    # Note without the 'IFS=' prefix, read discards leading and trailing whitespaces. But we need them to correctly parse the segments
+    parse_git_url "${remote_url_1}" | {
+        IFS= read url_1; segment=$(echo $url_1 | cut -d: -f1); url_1=${url_1#$segment: }
+        IFS= read _
+        IFS= read _
+        IFS= read _
+        IFS= read _
+        IFS= read host_1;  segment=$(echo $host_1 | cut -d: -f1); host_1=${host_1#$segment: }
+        IFS= read domain_1;  segment=$(echo $domain_1 | cut -d: -f1); domain_1=${domain_1#$segment: }
+        IFS= read subdomain_1; segment=$(echo $subdomain_1 | cut -d: -f1); subdomain_1=${subdomain_1#$segment: } 
+        IFS= read port_1;  segment=$(echo $port_1 | cut -d: -f1); port_1=${port_1#$segment: }
+        IFS= read _
+        IFS= read account_1;  segment=$(echo $account_1 | cut -d: -f1); account_1=${account_1#$segment: }
+        IFS= read project_1;  segment=$(echo $project_1 | cut -d: -f1); project_1=${project_1#$segment: }
+  
+        IFS= echo url_1 $url_1
+        IFS= echo host_1 $host_1
+        IFS= echo domain_1 $domain_1
+        IFS= echo subdomain_1 $subdomain_1
+        IFS= echo port_1 $port_1
+        IFS= echo account_1 $account_1
+        IFS= echo project_1 $project_1
+
+        echo dezio "${remote_url_2}" 
+        parse_git_url "${remote_url_2}" | {
+            IFS= read url_2; segment=$(echo $url_2 | cut -d: -f1); url_2=${url_2#$segment: }
+            IFS= read _
+            IFS= read _
+            IFS= read _
+            IFS= read _
+            IFS= read host_2;  segment=$(echo $host_2 | cut -d: -f1); host_2=${host_2#$segment: }
+            IFS= read domain_2;  segment=$(echo $domain_2 | cut -d: -f1); domain_2=${domain_2#$segment: }
+            IFS= read subdomain_2; segment=$(echo $subdomain_2 | cut -d: -f1); subdomain_2=${subdomain_2#$segment: } 
+            IFS= read port_2;  segment=$(echo $port_2 | cut -d: -f1); port_2=${port_2#$segment: }
+            IFS= read _
+            IFS= read account_2;  segment=$(echo $account_2 | cut -d: -f1); account_2=${account_2#$segment: }
+            IFS= read project_2;  segment=$(echo $project_2 | cut -d: -f1); project_2=${project_2#$segment: }
+  
+            IFS= echo url_2 $url_2
+            IFS= echo host_2 $host_2
+            IFS= echo domain_2 $domain_2
+            IFS= echo subdomain_2 $subdomain_2
+            IFS= echo port_2 $port_2
+            IFS= echo account_2 $account_2
+            IFS= echo project_2 $project_2
+
+            [[ $url_1 == $url_2 ]] && [[ $host_1 == $host_2 ]] && [[ $domain_1 == $domain_2 ]] && [[ $subdomain_1 == $subdomain_2 ]] && [[ $port_1 == $port_2 ]] && [[ $account_1 == $account_2 ]] && [[ $project_1 == $project_2 ]] &&  return 0;
+            return 1;
+        }
+    }
+}
+
+
+function testCode () {
+
+    git clone "https://github.com/rachidbch/play.git" /tmp/cloudify/play
+
+
+#   msg first; 
+#   parse_git_url "https://github.com:80/rachidbch/play.git" 
+#   echo; msg second
+#   parse_git_url "git@github.com:rachidbch/play.git"
+
+  #parse_git_url "https://github.com/rachidbch/play.git"
+  #same_git_remote "https://github.com/rachidbch/play.git"
+
+  #same_git_remote "https://github.com:80/rachidbch/play.git"   "https://github.com:80/rachidbch/play.git" && echo "YES" || echo "No"
+  
+#  same_git_remote "https://github.com:80/rachidbch/play.git"  "git@github.com:rachidbch/play.git"  && echo YES ||  echo NO
+}
+
+
+###################################### END OF TEST CODE!
+#############################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # PARSE SCRIPT PARAMETERS 
 #  cloudify:                    print help
@@ -657,7 +1077,7 @@ parse_params () {
           check_credentials --force               # Ask all credentials 
           break ;;
      t  | test | --test) 
-          shift && junkCode $@
+          shift && testCode $@
           break ;;
 #   -p  | --param) # Named parameter
 #         param="${2-}"

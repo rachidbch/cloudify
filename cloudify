@@ -4,7 +4,7 @@
 # STRICT MODE ERROR HANDLING
 #set -Eeuo pipefail
 
-# SCRIPT USAGE
+#== SCRIPT USAGE
 function usage(){
 cat <<'EOF'
   cloudify [action] [package]
@@ -20,25 +20,25 @@ EOF
 }
 
 
-# CONSTANTES 
+#== CONSTANTS 
 PKG_INIT_FILE_DEFAULT="init.sh"
 PKG_INIT_FILE_TERMUX="termux.init.sh"
 LOCAL_BIN="$HOME"/.local/bin
 export CLOUDIFY_TMP=/tmp/cloudify
 export EDITOR=vim                           # If an editor is needed during install 
 
-# ENVIRONMENT
+#== ENVIRONMENT
 # Set CLOUDIFY_DIR a defautl value if not already set
 # Export it as it is needed in subshells
 : "${CLOUDIFY_DIR:=$HOME/cloudify}" && export CLOUDIFY_DIR
 # Default assumed platform
 export PKG_PLATFORM="ubuntu"
 
-# DEBUG STATE
+#== DEBUG STATE
 : "${CLOUDIFY_DEBUG:=false}"                           # If CLOUDIFY_DEBUG isn't set, set it to false. 
 export CLOUDIFY_DEBUG                                  # Export it so it's available in subshells
 
-# CLEANUP BEFORE EXIT 
+#== CLEANUP BEFORE EXIT 
 # Call clean up function before exiting script
 trap cleanup SIGINT SIGTERM ERR EXIT
 function cleanup() {
@@ -49,7 +49,7 @@ function cleanup() {
 }
 
 
-# DEBUG FUNCTIONS
+#== DEBUG FUNCTIONS
 # Print a DEBUG message
 function PKG_DEBUG() {
   #DEBUG_PROMPT='\033[0;33m+(${BASH_SOURCE}:${BASH_LINENO[0]}):\033[0m ${FUNCNAME[0]:+${FUNCNAME[0]}(): } '
@@ -65,7 +65,7 @@ function PKG_DEBUG_LN() {
   PKG_DEBUG "$@"
 }
 
-# GENERAL UTILITIES
+#== GENERAL UTILITIES
 
 # Simple break command to ease debug
 # Pauses until you type enter
@@ -329,12 +329,8 @@ function parse_git_url () {
 function is_git_url () {
  parse_git_url $1 &> /dev/null
 }
-
-
-
-
   
-# CLOUDIFY API 
+#== CLOUDIFY API 
 # THESE FUNCTION CAN BE CALLED FROM PACKAGE MODULES TO INSTALL SOFTWARE
 # Currently Cloudify API is as simple as 2 functions: 'pkg_depends' and 'pkg_in_startuprc' 
 #
@@ -646,93 +642,9 @@ function pkg_depends() {
 }
 
 
-# SCRIPT SUBCOMMANDS 
-function pkg_list_all() {
-  # List all available packages for current platform
-  \ls "$CLOUDIFY_DIR"/pkg
-}
-
-function pkg_list_defaults() {
-  # List default packages for current platform
-  # Default packages are lited in ./*.packages files 
-  ( for pkg in $(< ${packages_file}); do
-      echo ${pkg%%*( )}
-    done ) | column 
-}
-
-function pkg_show() {
-  # Show module code of packages
-  for pkg in "$@"; do
-    msg "${GREEN}${pkg%%*( )} cloudify package code\n${RESET}"
-    msg "${GREEN}>> $CLOUDIFY_DIR/pkg/${pkg%%*( )}/${pkg_init_file}${RESET}"
-    cat "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${pkg_init_file}                     # We use bash expansion to trim spaces at the end of the package name
-  done
-}
-
-function pkg_install_defaults {
-  # Install default packages for current platform 
-  # Default packages are lited in ./*.packages files 
-  for pkg in $(< ${packages_file}); do
-    msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
-    pkg_depends "$pkg"
-  done
-  printDone
-}
-
-function pkg_install {
-  # Install specific packages 
-  for pkg in "$@"; do
-    msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
-    pkg_depends "$pkg"
-  done
-  printDone
-}
-
-function pkg_uninstall_defaults {
-  die "Uninstall package features not ready" 1
-}
-function pkg_uninstall {
-  die "Uninstall package features not ready" 1
-}
 
 
-# Initial configurations before applying script actions
-# Ensure tmp folder exist, local bin exist and is in the path 
-# Test platform on which sript is running
-function preconfigure() {
-
-  # Ensure all required credentials are set in proper environment variables
-  check_credentials
-
-  # Ensure tmp folder exists
-  [[ -d "$CLOUDIFY_TMP" ]] || mkdir -p "$CLOUDIFY_TMP"
-
-  # Ensure ~/.local/bin exists and is in the path
-  [[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"
-  [[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"
-  ## Make it persistent 
-  ## DIRTY HACK! The comment '# CLOUDIFY LOCAL BIN:' is used by cloudify to avoid doublons in .bashrc
-  if ! grep -Fq "# CLOUDIFY LOCAL BIN:" $HOME/.bashrc; then 
-    echo -e "\n# CLOUDIFY LOCAL BIN: Cloudify may install utility scripts in ~/.local/bin" >> "$HOME"/.bashrc
-    echo 'export LOCAL_BIN="$HOME"/.local/bin' >> "$HOME"/.bashrc
-    echo '[[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"' >> "$HOME"/.bashrc
-    echo '[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"' >> "$HOME"/.bashrc
-  fi 
-  
-  # Are we on Android Termux or Linux station?
-  if [ ! -z "$(pgrep -f com.termux)" ]; then
-    export PKG_PLATFORM="termux"
-    packages_file=${CLOUDIFY_DIR}/termux.packages
-    pkg_init_file=$PKG_INIT_FILE_TERMUX
-  else
-    packages_file=${CLOUDIFY_DIR}/station.packages
-    pkg_init_file=$PKG_INIT_FILE_DEFAULT
-  fi
-
-}
-
-
-# CREDENTIALS 
+#== CREDENTIALS 
 ## Cloudify needs user credentials to manage hosts and packages
 
 
@@ -781,11 +693,12 @@ function check_credentials () {
   fi
 }
 
-#############################################################
-############################################# TEST CODE! 
 
-# Test code that can be tested w/ 'cloudify test' 
-# Use this to test code before inserting it in cloudify 
+#== SHADOWING !
+##  Cloudify shadows some bash commands and programs to ensure seamless operations (auto-authentication, idempotence, etc)
+##  This way, package init scripts can be naive bash scripts while cloudify ensures high reliability, remote execution, etc
+
+## Git shadowing
 
 function git_authenticate() {
   local git_remote_url="${1-}"
@@ -832,6 +745,77 @@ function git_deauthenticate() {
   pkg_restore "$HOME"/.gitconfig 
 }
 
+# Does two remote url refer to the same remote repo? 
+function same_git_remote () {
+    local remote_url_1="${1-}"
+    local remote_url_2="${2-}"
+
+    local url_1; local url_2;
+    local host_1;  local host_2; 
+    local domain_1;  local domain_2; 
+    local subdomain_1;  local subdomain_2; 
+    local port_1; local port_2; 
+    local account_1;  local account_2; 
+    local project_1;  local project_2; 
+  
+    local _; local segment
+
+
+    parse_git_url "${remote_url_1}" 
+    #echo; msg "${RED}now it\'s verified. Try again${RESET}"
+
+    # Parsing the output of 'parse_git_utl' to get individual url segments. So meta :)
+    # Note without the 'IFS=' prefix, read discards leading and trailing whitespaces. But we need them to correctly parse the segments
+    parse_git_url "${remote_url_1}" | {
+        IFS= read url_1; segment=$(echo $url_1 | cut -d: -f1); url_1=${url_1#$segment: }
+        IFS= read _
+        IFS= read _
+        IFS= read _
+        IFS= read _
+        IFS= read host_1;  segment=$(echo $host_1 | cut -d: -f1); host_1=${host_1#$segment: }
+        IFS= read domain_1;  segment=$(echo $domain_1 | cut -d: -f1); domain_1=${domain_1#$segment: }
+        IFS= read subdomain_1; segment=$(echo $subdomain_1 | cut -d: -f1); subdomain_1=${subdomain_1#$segment: } 
+        IFS= read port_1;  segment=$(echo $port_1 | cut -d: -f1); port_1=${port_1#$segment: }
+        IFS= read _
+        IFS= read account_1;  segment=$(echo $account_1 | cut -d: -f1); account_1=${account_1#$segment: }
+        IFS= read project_1;  segment=$(echo $project_1 | cut -d: -f1); project_1=${project_1#$segment: }
+  
+        IFS= echo url_1 $url_1
+        IFS= echo host_1 $host_1
+        IFS= echo domain_1 $domain_1
+        IFS= echo subdomain_1 $subdomain_1
+        IFS= echo port_1 $port_1
+        IFS= echo account_1 $account_1
+        IFS= echo project_1 $project_1
+
+        echo dezio "${remote_url_2}" 
+        parse_git_url "${remote_url_2}" | {
+            IFS= read url_2; segment=$(echo $url_2 | cut -d: -f1); url_2=${url_2#$segment: }
+            IFS= read _
+            IFS= read _
+            IFS= read _
+            IFS= read _
+            IFS= read host_2;  segment=$(echo $host_2 | cut -d: -f1); host_2=${host_2#$segment: }
+            IFS= read domain_2;  segment=$(echo $domain_2 | cut -d: -f1); domain_2=${domain_2#$segment: }
+            IFS= read subdomain_2; segment=$(echo $subdomain_2 | cut -d: -f1); subdomain_2=${subdomain_2#$segment: } 
+            IFS= read port_2;  segment=$(echo $port_2 | cut -d: -f1); port_2=${port_2#$segment: }
+            IFS= read _
+            IFS= read account_2;  segment=$(echo $account_2 | cut -d: -f1); account_2=${account_2#$segment: }
+            IFS= read project_2;  segment=$(echo $project_2 | cut -d: -f1); project_2=${project_2#$segment: }
+  
+            IFS= echo url_2 $url_2
+            IFS= echo host_2 $host_2
+            IFS= echo domain_2 $domain_2
+            IFS= echo subdomain_2 $subdomain_2
+            IFS= echo port_2 $port_2
+            IFS= echo account_2 $account_2
+            IFS= echo project_2 $project_2
+
+            [[ $url_1 == $url_2 ]] && [[ $host_1 == $host_2 ]] && [[ $domain_1 == $domain_2 ]] && [[ $subdomain_1 == $subdomain_2 ]] && [[ $port_1 == $port_2 ]] && [[ $account_1 == $account_2 ]] && [[ $project_1 == $project_2 ]] &&  return 0;
+            return 1;
+        }
+    }
+}
 
 
 function git() {
@@ -917,78 +901,108 @@ function git() {
 }
 
 
-# Does two remote ur refer to the same repo? 
-function same_git_remote () {
+#== Remoting
+##  Cloudify can execute cloudify package init scripts on remote machine
 
-    local remote_url_1="${1-}"
-    local remote_url_2="${2-}"
+function remote_script() {
 
-    local url_1; local url_2;
-    local host_1;  local host_2; 
-    local domain_1;  local domain_2; 
-    local subdomain_1;  local subdomain_2; 
-    local port_1; local port_2; 
-    local account_1;  local account_2; 
-    local project_1;  local project_2; 
-  
-    local _; local segment
-
-
-    parse_git_url "${remote_url_1}" 
-    #echo; msg "${RED}now it\'s verified. Try again${RESET}"
-
-    # Parsing the output of 'parse_git_utl' to get individual url segments. So meta :)
-    # Note without the 'IFS=' prefix, read discards leading and trailing whitespaces. But we need them to correctly parse the segments
-    parse_git_url "${remote_url_1}" | {
-        IFS= read url_1; segment=$(echo $url_1 | cut -d: -f1); url_1=${url_1#$segment: }
-        IFS= read _
-        IFS= read _
-        IFS= read _
-        IFS= read _
-        IFS= read host_1;  segment=$(echo $host_1 | cut -d: -f1); host_1=${host_1#$segment: }
-        IFS= read domain_1;  segment=$(echo $domain_1 | cut -d: -f1); domain_1=${domain_1#$segment: }
-        IFS= read subdomain_1; segment=$(echo $subdomain_1 | cut -d: -f1); subdomain_1=${subdomain_1#$segment: } 
-        IFS= read port_1;  segment=$(echo $port_1 | cut -d: -f1); port_1=${port_1#$segment: }
-        IFS= read _
-        IFS= read account_1;  segment=$(echo $account_1 | cut -d: -f1); account_1=${account_1#$segment: }
-        IFS= read project_1;  segment=$(echo $project_1 | cut -d: -f1); project_1=${project_1#$segment: }
-  
-        IFS= echo url_1 $url_1
-        IFS= echo host_1 $host_1
-        IFS= echo domain_1 $domain_1
-        IFS= echo subdomain_1 $subdomain_1
-        IFS= echo port_1 $port_1
-        IFS= echo account_1 $account_1
-        IFS= echo project_1 $project_1
-
-        echo dezio "${remote_url_2}" 
-        parse_git_url "${remote_url_2}" | {
-            IFS= read url_2; segment=$(echo $url_2 | cut -d: -f1); url_2=${url_2#$segment: }
-            IFS= read _
-            IFS= read _
-            IFS= read _
-            IFS= read _
-            IFS= read host_2;  segment=$(echo $host_2 | cut -d: -f1); host_2=${host_2#$segment: }
-            IFS= read domain_2;  segment=$(echo $domain_2 | cut -d: -f1); domain_2=${domain_2#$segment: }
-            IFS= read subdomain_2; segment=$(echo $subdomain_2 | cut -d: -f1); subdomain_2=${subdomain_2#$segment: } 
-            IFS= read port_2;  segment=$(echo $port_2 | cut -d: -f1); port_2=${port_2#$segment: }
-            IFS= read _
-            IFS= read account_2;  segment=$(echo $account_2 | cut -d: -f1); account_2=${account_2#$segment: }
-            IFS= read project_2;  segment=$(echo $project_2 | cut -d: -f1); project_2=${project_2#$segment: }
-  
-            IFS= echo url_2 $url_2
-            IFS= echo host_2 $host_2
-            IFS= echo domain_2 $domain_2
-            IFS= echo subdomain_2 $subdomain_2
-            IFS= echo port_2 $port_2
-            IFS= echo account_2 $account_2
-            IFS= echo project_2 $project_2
-
-            [[ $url_1 == $url_2 ]] && [[ $host_1 == $host_2 ]] && [[ $domain_1 == $domain_2 ]] && [[ $subdomain_1 == $subdomain_2 ]] && [[ $port_1 == $port_2 ]] && [[ $account_1 == $account_2 ]] && [[ $project_1 == $project_2 ]] &&  return 0;
-            return 1;
-        }
-    }
 }
+function remote_execute() {
+  local host="$1"
+}
+
+
+#== SCRIPT SUBCOMMANDS 
+function pkg_list_all() {
+  # List all available packages for current platform
+  \ls "$CLOUDIFY_DIR"/pkg
+}
+
+function pkg_list_defaults() {
+  # List default packages for current platform
+  # Default packages are lited in ./*.packages files 
+  ( for pkg in $(< ${packages_file}); do
+      echo ${pkg%%*( )}
+    done ) | column 
+}
+
+function pkg_show() {
+  # Show module code of packages
+  for pkg in "$@"; do
+    msg "${GREEN}${pkg%%*( )} cloudify package code\n${RESET}"
+    msg "${GREEN}>> $CLOUDIFY_DIR/pkg/${pkg%%*( )}/${pkg_init_file}${RESET}"
+    cat "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${pkg_init_file}                     # We use bash expansion to trim spaces at the end of the package name
+  done
+}
+
+function pkg_install_defaults {
+  # Install default packages for current platform 
+  # Default packages are lited in ./*.packages files 
+  for pkg in $(< ${packages_file}); do
+    msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
+    pkg_depends "$pkg"
+  done
+  printDone
+}
+
+function pkg_install {
+  # Install specific packages 
+  for pkg in "$@"; do
+    msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
+    pkg_depends "$pkg"
+  done
+  printDone
+}
+
+function pkg_uninstall_defaults {
+  die "Uninstall package features not ready" 1
+}
+function pkg_uninstall {
+  die "Uninstall package features not ready" 1
+}
+
+
+# Initial configurations before applying script actions
+# Ensure tmp folder exist, local bin exist and is in the path 
+# Test platform on which sript is running
+function preconfigure() {
+
+  # Ensure all required credentials are set in proper environment variables
+  check_credentials
+
+  # Ensure tmp folder exists
+  [[ -d "$CLOUDIFY_TMP" ]] || mkdir -p "$CLOUDIFY_TMP"
+
+  # Ensure ~/.local/bin exists and is in the path
+  [[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"
+  [[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"
+  ## Make it persistent 
+  ## DIRTY HACK! The comment '# CLOUDIFY LOCAL BIN:' is used by cloudify to avoid doublons in .bashrc
+  if ! grep -Fq "# CLOUDIFY LOCAL BIN:" $HOME/.bashrc; then 
+    echo -e "\n# CLOUDIFY LOCAL BIN: Cloudify may install utility scripts in ~/.local/bin" >> "$HOME"/.bashrc
+    echo 'export LOCAL_BIN="$HOME"/.local/bin' >> "$HOME"/.bashrc
+    echo '[[ -d "$LOCAL_BIN" ]] || mkdir -p "$LOCAL_BIN"' >> "$HOME"/.bashrc
+    echo '[[ ":${PATH}:" != *":${LOCAL_BIN}:"* ]] && export PATH="${PATH}:${LOCAL_BIN}"' >> "$HOME"/.bashrc
+  fi 
+  
+  # Are we on Android Termux or Linux station?
+  if [ ! -z "$(pgrep -f com.termux)" ]; then
+    export PKG_PLATFORM="termux"
+    packages_file=${CLOUDIFY_DIR}/termux.packages
+    pkg_init_file=$PKG_INIT_FILE_TERMUX
+  else
+    packages_file=${CLOUDIFY_DIR}/station.packages
+    pkg_init_file=$PKG_INIT_FILE_DEFAULT
+  fi
+
+}
+
+
+#== TEST CODE!  ############################################# 
+#############################################################
+# Test code that can be tested w/ 'cloudify test' 
+# Use this to test code before inserting it in cloudify 
+
 
 
 function testCode () {
@@ -1015,27 +1029,18 @@ function testCode () {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-# PARSE SCRIPT PARAMETERS 
+#== MAIN PARSE SCRIPT PARAMETERS 
 #  cloudify:                    print help
 #  cloudify help:               print help  
-#  cloudify ls|list:            list installable packages 
+#  cloudify ls|list [all]:      list installable packages 
 #  cloudify ls|list defaults:   list default packages 
 #  cloudify i <pkg>             install package
-#  cloudify i default           install default in termux|station.packages
+#  cloudify i defaults          install default in termux|station.packages
 #  cloudify u <pkg>             uninstall package
 parse_params () {
+  # host on which to execute
+  local host='localhost'
+
   # First we need our color codes 
   setup_colors
   
@@ -1055,6 +1060,13 @@ parse_params () {
             pkg_list_defaults
           else
             shift && pkg_show $@
+          fi
+          break ;; 
+     r  | remote | --remote)  
+          if [[ -z "${2-}" ]]; then
+            die "Remote hostname missing."
+          else
+            shift && pkg_remote $@
           fi
           break ;; 
      i  | install | --install)  
@@ -1098,11 +1110,11 @@ parse_params () {
   return 0
 }
 
-# EXECUTE SCRIPT!
+#== MAIN: EXECUTE SCRIPT!
 parse_params "$@"
 
 
-## ARCHIVED CODE 
+#== ARCHIVED CODE 
 
 ## # Unused but we let it around as it may serve
 ## PKG_SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)

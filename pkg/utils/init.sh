@@ -28,6 +28,6 @@ pkg_in_startuprc '# Alias '\''rcedit'\'' Setup' 'alias rcedit='\''${EDITOR:-vi} 
 # =NOTE= While cloudify is in development, we symlink instead of copying the scripts
 for utility in "${CLOUDIFY_DIR}"/pkg/utils/*.script; do 
   utility_basename=$(basename "$utility")
-  DEBUG_MSG "Installing $utility in $LOCAL_BIN"
+  PKG_DEBUG "Installing $utility in $LOCAL_BIN"
   ln -sfn "$utility" "$LOCAL_BIN"/${utility_basename%.*}; 
 done

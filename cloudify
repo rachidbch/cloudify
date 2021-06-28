@@ -4,7 +4,6 @@
 # STRICT MODE ERROR HANDLING
 #set -Eeuo pipefail
 
-
 #== SCRIPT PATH 
 ##  This onliner tries to cover all scenarios. It gets the real path of this script bet it executed or sourced directly or through symlinks 
 PKG_SCRIPT_DIR=$(cd "$(dirname $([ -L ${BASH_SOURCE[0]} ] && readlink -f ${BASH_SOURCE[0]} || echo ${BASH_SOURCE[0]}))" &>/dev/null && pwd -P)
@@ -62,7 +61,7 @@ function PKG_DEBUG() {
 
 #  echo  "DEBUG: ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${RESET} ${FUNCNAME[0]:+${FUNCNAME[0]}()}${ORANGE} $1${RESET}"
 
-  $CLOUDIFY_DEBUG && msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[0]:+${FUNCNAME[0]}()}${ORANGE} $1${RESET}" || true
+  $CLOUDIFY_DEBUG && msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[0]:+${FUNCNAME[0]}()}${ORANGE} $@${RESET}" || true
 }
 # Print a DEBUG message after a new line 
 function PKG_DEBUG_LN() {
@@ -372,30 +371,21 @@ pkg_backup() {
   fi
   backup_name="${CLOUDIFY_TMP}"/backup/${backup_name}
 
-  echo yolo
   PKG_DEBUG "Backing up ${1-} to ${backup_name}"
 
   [[ -d "${CLOUDIFY_TMP}"/backup ]] || PKG_DEBUG "Creating ${CLOUDIFY_TMP}/backup directory" && mkdir -p "${CLOUDIFY_TMP}"/backup 
-  echo yola
   rm -rf  "${backup_name}.bak.5"                         2>/dev/null 
-  echo 11
   mv      "${backup_name}.bak.4" "${backup_name}.bak.5"  2>/dev/null 
-  echo 10
   rm -rf  "${backup_name}.bak.4"                         2>/dev/null 
   mv      "${backup_name}.bak.3" "${backup_name}.bak.4"  2>/dev/null  
-  echo 9
   rm -rf  "${backup_name}.bak.3"                         2>/dev/null
   mv      "${backup_name}.bak.2" "${backup_name}.bak.3"  2>/dev/null 
-  echo 8
   rm -rf  "${backup_name}.bak.2"                         2>/dev/null
   mv      "${backup_name}.bak.1" "${backup_name}.bak.2"  2>/dev/null
-  echo 7
   rm -rf  "${backup_name}.bak.1"                         2>/dev/null
   mv      "${backup_name}.bak"   "${backup_name}.bak.1"  2>/dev/null
-  echo 6
   rm -rf  "${backup_name}.bak"                           2>/dev/null
   mv      "${backup_name}"       "${backup_name}.bak"    2>/dev/null
-  echo 5
   rm -rf  "${backup_name}"                               2>/dev/null
   cp -paf "$1" "${backup_name}"
 
@@ -410,11 +400,9 @@ pkg_backup() {
   rm -rf  "${backup_name}".atomic                        2>/dev/null
   set +x
 
-  echo yulu
   # Increment backup counter for this file
   [[ -f "${backup_name}.index" ]] || touch "${backup_name}.index" 
   expr $(cat "${backup_name}.index") + 1 > "${backup_name}.index"
-  echo exiting from backup
 }
 
 # pkg_restore uses simple 'mv' to restore files.
@@ -717,7 +705,6 @@ function git_authenticate() {
   # Only credentials per git domain are supported so far 
   # =TODO= Enable credential per account and per project. 
   local git_domain=$(parse_git_url $git_remote_url domain) 
-  echo "git_domain -> $git_domain"
 
   case "${git_domain-}" in
      gitlab.com)  
@@ -725,11 +712,9 @@ function git_authenticate() {
         ;; 
      github.com)  
         export GIT_TOKEN=$CLOUDIFY_GITHUBPWD
-        echo YOUKO
         ;; 
      *) die "Git Host $git_domain is not supported'" 1;;
   esac
-  echo "GIT_TOKEN -> $GIT_TOKEN"
   echo 'echo $GIT_TOKEN' > $HOME/.git-askpass
   chmod +x $HOME/.git-askpass
   export GIT_ASKPASS=$HOME/.git-askpass
@@ -768,7 +753,6 @@ function same_git_remote () {
 
 
     parse_git_url "${remote_url_1}" 
-    #echo; msg "${RED}now it\'s verified. Try again${RESET}"
 
     # Parsing the output of 'parse_git_utl' to get individual url segments. So meta :)
     # Note without the 'IFS=' prefix, read discards leading and trailing whitespaces. But we need them to correctly parse the segments
@@ -794,7 +778,6 @@ function same_git_remote () {
         IFS= echo account_1 $account_1
         IFS= echo project_1 $project_1
 
-        echo dezio "${remote_url_2}" 
         parse_git_url "${remote_url_2}" | {
             IFS= read url_2; segment=$(echo $url_2 | cut -d: -f1); url_2=${url_2#$segment: }
             IFS= read _
@@ -860,10 +843,6 @@ function git() {
      # WARNING: if git_repo_url is the same, PULL!
      #          if git_repo_url is not the same. ERROR!
 
-
-     #if [[ -d "$git_repo_path" ]] ; then echo dir exist; else dir doesn\'t exist; fi
-     #if ! emptydir "$git_repo_path"; then echo dir not empty; else echo dir empty; fi
-
      if [[ -d "$git_repo_path" ]] && ! emptydir "$git_repo_path"; then
        PKG_DEBUG "$git_repo_path directory exist and isn't empty. Pulling updates." 
        ( cd "$git_repo_path"
@@ -871,7 +850,6 @@ function git() {
          $inside_git_repo || { PKG_DEBUG "Can't execute git commands. $git_repo_path isn't a git repo" && return 1; }
          
          if same_git_remote ${git_remote_url} $(command git remote get-url origin); then
-             msg here
              set -x
              git pull
              set +x
@@ -884,7 +862,7 @@ function git() {
          git_authenticate $git_remote_url
          set -x
          msg "Actual git command executed"
-         command git $@ -v
+         command git "$@" -v
          set +x
          git_deauthenticate $git_remote_url
      fi
@@ -898,9 +876,9 @@ function git() {
         git_remote_url=$(command git remote get-url origin)
      fi
      git_authenticate $git_remote_url
-     PKG_DEBUG "Actual git command executed:" echo git $@ -v
+     PKG_DEBUG "Actual git command executed:" echo git "$@" -v
      set -x
-     command git $@ -v
+     command git "$@" -v
      set +x
      git_deauthenticate $git_remote_url
   fi
@@ -911,6 +889,7 @@ function git() {
 ##  Cloudify can execute cloudify package init scripts on remote machine
 
 function cloudify_remote_payload_template() {
+  export CLOUDIFY_DEBUG='{{CLOUDIFY_DEBUG}}'
   export CLOUDIFY_HOSTUSER='{{CLOUDIFY_HOSTUSER}}'
   export CLOUDIFY_HOSTPWD='{{CLOUDIFY_HOSTPWD}}'
   export CLOUDIFY_GITHUBUSER='{{CLOUDIFY_GITHUBUSER}}'
@@ -919,16 +898,15 @@ function cloudify_remote_payload_template() {
   export CLOUDIFY_GITLABPWD='{{CLOUDIFY_GITLABPWD}}'
 
   bash -c "$(curl -sL scripts.rachid.space/bootstrap/cloudify.sh)"
-
 }
 
 function cloudify_remote() {
   local host="$1" && shift
-
   # Read remote payload template
   local cloudify_remote_payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
  
   # Load credentials in the payload template
+  cloudify_remote_payload=$(sed "s/{{CLOUDIFY_DEBUG}}/$CLOUDIFY_DEBUG/g" <<< "$cloudify_remote_payload")
   cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTUSER}}/$CLOUDIFY_HOSTUSER/g" <<< "$cloudify_remote_payload")
   cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTPWD}}/$CLOUDIFY_HOSTPWD/g" <<< "$cloudify_remote_payload")
   cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBUSER}}/$CLOUDIFY_GITHUBUSER/g" <<< "$cloudify_remote_payload")
@@ -939,11 +917,11 @@ function cloudify_remote() {
   # Add actual cloudify command
   cloudify_remote_payload="$cloudify_remote_payload; cloudify $@"
 
-  echo; echo "cloudify_remote_payload"
-  msg $cloudify_remote_payload
+  PKG_DEBUG_LN "Payload to execute remotely on $host" 
+  PKG_DEBUG $cloudify_remote_payload
 
-  echo; echo "SSHing..."
-  ssh $host "$cloudify_remote_payload"  && echo
+  PKG_DEBUG_LN "SSHing..."
+  ssh $host "$cloudify_remote_payload" 
 
   #ssh -tt workify "sudo -kS cat /etc/shadow" <<< "$CLOUDIFY_HOSTPWD"
 } 
@@ -1096,14 +1074,15 @@ parse_params () {
           elif [[ "${2-}" == "defaults" ]]; then
             pkg_list_defaults
           else
-            shift && pkg_show $@
+            shift && pkg_show "$@"
           fi
           break ;; 
      r  | remote | --remote)  
           if [[ -z "${2-}" ]]; then
             die "Remote hostname missing."
           else
-            shift && pkg_remote $@
+            PKG_DEBUG cloudify_remote "$@" 
+            shift && cloudify_remote "$@" 
           fi
           break ;; 
      i  | install | --install)  
@@ -1111,7 +1090,7 @@ parse_params () {
           if [[ -z "${2-}" || "${2-}" == "defaults" ]]; then
             pkg_install_defaults
           else
-            shift && pkg_install $@
+            shift && pkg_install "$@"
           fi
           break ;; 
      u  | uninstall | --uninstall) 
@@ -1119,14 +1098,14 @@ parse_params () {
           if [[ -z "${2-}" || "${2-}" == "defaults" ]]; then
             pkg_uninstall_defaults
           else
-            shift && pkg_uninstall $@
+            shift && pkg_uninstall "$@"
           fi
           break ;; 
      c  | credentials | --credentials) 
           check_credentials --force               # Ask all credentials 
           break ;;
      t  | test | --test) 
-          shift && testCode $@
+          shift && testCode "$@"
           break ;;
 #   -p  | --param) # Named parameter
 #         param="${2-}"
@@ -1146,10 +1125,8 @@ parse_params () {
 
   return 0
 }
-
 #== MAIN: EXECUTE SCRIPT!
 parse_params "$@"
-
 
 #== ARCHIVED CODE 
 

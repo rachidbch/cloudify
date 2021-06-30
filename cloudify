@@ -870,7 +870,6 @@ function git() {
          PKG_DEBUG "$git_repo_path doesn't exist directory exist or is empty. cloning" 
          git_authenticate $git_remote_url
          #set -x
-         msg "Actual git command executed"
          command git "$@" -v
          #set +x
          git_deauthenticate $git_remote_url

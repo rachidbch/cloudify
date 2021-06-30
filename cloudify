@@ -883,6 +883,7 @@ function git() {
         return 1
      else
         git_remote_url=$(command git remote get-url origin)
+        PKG_DEBUG "Git remote URL: $git_remote_url"
      fi
      git_authenticate $git_remote_url
      PKG_DEBUG "Actual git command executed:" echo git "$@" -v
@@ -911,11 +912,10 @@ function cloudify_remote_payload_template() {
 
 function cloudify_remote() {
   #local host="$1" && shift
-  local realhost="$1"
-  local host="localhost" && shift
+  local host="$1" && shift
 
-  if [[ "$realhost" == "localhost" ]]; then
-      cloudify $@  |& sed "s/^/$realhost: /"  |& sed "s/^$realhost: $//"
+  if [[ "$host" == "localhost" ]]; then
+      cloudify $@  |& sed "s/^/$host: /"  |& sed "s/^$host: $//"
   else
       # Read remote payload template
       local cloudify_remote_payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
@@ -932,12 +932,12 @@ function cloudify_remote() {
       # Add actual cloudify command
       cloudify_remote_payload="$cloudify_remote_payload; cloudify $@"
     
-      PKG_DEBUG "Payload to execute remotely on $realhost:" 
+      PKG_DEBUG "Payload to execute remotely on $host:" 
       $CLOUDIFY_DEBUG && msg "$cloudify_remote_payload"
     
       PKG_DEBUG "SSHing..."
       # The SSH session is launched in the background to parallelize hosts cloudifcation
-      (ssh $host "$cloudify_remote_payload" |& sed "s/^/$realhost: /"  |& sed "s/^$realhost: $//") &
+      (ssh $host "$cloudify_remote_payload" |& sed "s/^/$host: /"  |& sed "s/^$host: $//") &
     
       #ssh -tt workify "sudo -kS cat /etc/shadow" <<< "$CLOUDIFY_HOSTPWD"
   fi

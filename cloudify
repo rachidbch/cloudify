@@ -816,6 +816,7 @@ function same_git_remote () {
 
 
 function git() {
+
   # Then   
   local inside_git_repo=false
   local git_remote_url=""
@@ -1159,6 +1160,8 @@ function cloudify () {
                 [[ "$hosts" == "localhost" ]] && {
                     # Cloudify is executed on localhost. Either because cloudify is executed agains local machine,
                     # we're inside a remote execution. Either way, we can safely execute each package sequentially.
+                    # Ensure environment variables are set and set default values otherwise 
+                    preconfigure
                     if [[ "$action" == "install" ]]; then 
                         PKG_DEBUG "${YELLOW}pkg_install ${packages/--$action}${RESET}"
                         pkg_install ${packages/--$action}

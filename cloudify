@@ -1163,6 +1163,7 @@ function cloudify () {
                     # we're inside a remote execution. Either way, we can safely execute each package sequentially.
                     # Ensure environment variables are set and set default values otherwise 
                     preconfigure
+                    # Go install or uninstall
                     if [[ "$action" == "install" ]]; then 
                         PKG_DEBUG "${YELLOW}pkg_install ${packages/--$action}${RESET}"
                         pkg_install ${packages/--$action}
@@ -1188,8 +1189,11 @@ function cloudify () {
               for host in $hosts; do
                 if [[ "$hosts" == "localhost" ]]; then
 
+                    # Ensure environment variables are set and set default values otherwise 
                     # Cloudify is executed on localhost. Either because cloudify is executed agains local machine,
                     # we're inside a remote execution. Either way, we can safely execute each package sequentially.
+                    preconfigure
+                    # Go install or uninstall
                     if [[ "$action" == "install" ]]; then 
                       PKG_DEBUG "${YELLOW}pkg_install ${packages/--$action}${RESET}"
                       pkg_install ${packages/--$action}
@@ -1199,7 +1203,6 @@ function cloudify () {
                     else
                       die "Unexecpected package action: $action"
                     fi
-
                 else
                   PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
                   ( cloudify_remote "$host" "$packages" )

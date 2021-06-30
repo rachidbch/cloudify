@@ -6,6 +6,7 @@
 
 #== SCRIPT PATH 
 ##  This onliner tries to cover all scenarios. It gets the real path of this script bet it executed or sourced directly or through symlinks 
+##  =TODO= Compare with [this longer version](https://gist.github.com/TheMengzor/968e5ea87e99d9c41782) and find out if we need it
 PKG_SCRIPT_DIR=$(cd "$(dirname $([ -L ${BASH_SOURCE[0]} ] && readlink -f ${BASH_SOURCE[0]} || echo ${BASH_SOURCE[0]}))" &>/dev/null && pwd -P)
 
 
@@ -61,14 +62,15 @@ function PKG_DEBUG() {
 
 #  echo  "DEBUG: ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${RESET} ${FUNCNAME[0]:+${FUNCNAME[0]}()}${ORANGE} $1${RESET}"
 
-  $CLOUDIFY_DEBUG && msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[0]:+${FUNCNAME[0]}()}${ORANGE} $@${RESET}" || true
+  $CLOUDIFY_DEBUG && msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} $@${RESET}" || true
 }
 # Print a DEBUG message after a new line 
 function PKG_DEBUG_LN() {
 #  $CLOUDIFY_DEBUG && msg "${ORANGE}\n*** DEBUG: $1 ***${RESET}" || true
-  echo
-  PKG_DEBUG "$@"
+  echo >&2
+  $CLOUDIFY_DEBUG && msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} $@${RESET}" || true
 }
+
 
 #== GENERAL UTILITIES
 
@@ -135,6 +137,11 @@ function msg() {
     echo >&2 -e "$@"
   fi
 }
+
+function msgln() {
+  echo >&2 && msg "$@"
+}
+
 
 
 # Simply prompt the user and read the answer
@@ -625,11 +632,12 @@ function pkg_install_release() {
 
 # Adds a package dependeny
 function pkg_depends() {
-  for pkg in "${@}"; do 
+  for pkg in $@; do 
     if [[ -f "$CLOUDIFY_DIR"/pkg/"$pkg"/"$pkg_init_file" ]]; then
       PKG_DEBUG "Installing $pkg cloudify package"
       source "$CLOUDIFY_DIR"/pkg/"$pkg"/"$pkg_init_file"
     else
+      echo  "$CLOUDIFY_DIR"/pkg/"$pkg"/"$pkg_init_file" "doesn't exist" 
       pkg_apt_install ${pkg}
     fi
   done
@@ -901,30 +909,41 @@ function cloudify_remote_payload_template() {
 }
 
 function cloudify_remote() {
-  local host="$1" && shift
-  # Read remote payload template
-  local cloudify_remote_payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
- 
-  # Load credentials in the payload template
-  cloudify_remote_payload=$(sed "s/{{CLOUDIFY_DEBUG}}/$CLOUDIFY_DEBUG/g" <<< "$cloudify_remote_payload")
-  cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTUSER}}/$CLOUDIFY_HOSTUSER/g" <<< "$cloudify_remote_payload")
-  cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTPWD}}/$CLOUDIFY_HOSTPWD/g" <<< "$cloudify_remote_payload")
-  cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBUSER}}/$CLOUDIFY_GITHUBUSER/g" <<< "$cloudify_remote_payload")
-  cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBPWD}}/$CLOUDIFY_GITHUBPWD/g" <<< "$cloudify_remote_payload")
-  cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABUSER}}/$CLOUDIFY_GITLABUSER/g" <<< "$cloudify_remote_payload")
-  cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABPWD}}/$CLOUDIFY_GITLABPWD/g" <<< "$cloudify_remote_payload")
+  #local host="$1" && shift
+  local realhost="$1"
+  local host="localhost" && shift
 
-  # Add actual cloudify command
-  cloudify_remote_payload="$cloudify_remote_payload; cloudify $@"
-
-  PKG_DEBUG_LN "Payload to execute remotely on $host" 
-  PKG_DEBUG $cloudify_remote_payload
-
-  PKG_DEBUG_LN "SSHing..."
-  ssh $host "$cloudify_remote_payload" 
-
-  #ssh -tt workify "sudo -kS cat /etc/shadow" <<< "$CLOUDIFY_HOSTPWD"
+  if [[ "$realhost" == "localhost" ]]; then
+      cloudify $@  |& sed "s/^/$realhost: /"  |& sed "s/^$realhost: $//"
+  else
+      # Read remote payload template
+      local cloudify_remote_payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+     
+      # Load credentials in the payload template
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_DEBUG}}/$CLOUDIFY_DEBUG/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTUSER}}/$CLOUDIFY_HOSTUSER/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTPWD}}/$CLOUDIFY_HOSTPWD/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBUSER}}/$CLOUDIFY_GITHUBUSER/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBPWD}}/$CLOUDIFY_GITHUBPWD/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABUSER}}/$CLOUDIFY_GITLABUSER/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABPWD}}/$CLOUDIFY_GITLABPWD/g" <<< "$cloudify_remote_payload")
+    
+      # Add actual cloudify command
+      cloudify_remote_payload="$cloudify_remote_payload; cloudify $@"
+    
+      PKG_DEBUG "Payload to execute remotely on $realhost:" 
+      $CLOUDIFY_DEBUG && msg "$cloudify_remote_payload"
+    
+      PKG_DEBUG "SSHing..."
+      # The SSH session is launched in the background to parallelize hosts cloudifcation
+      (ssh $host "$cloudify_remote_payload" |& sed "s/^/$realhost: /"  |& sed "s/^$realhost: $//") &
+    
+      #ssh -tt workify "sudo -kS cat /etc/shadow" <<< "$CLOUDIFY_HOSTPWD"
+  fi
 } 
+
+
+
 
 
 #== SCRIPT SUBCOMMANDS 
@@ -1018,24 +1037,33 @@ function preconfigure() {
 # Test code that can be tested w/ 'cloudify test' 
 # Use this to test code before inserting it in cloudify 
 
+
+function inventory {
+
+  # Without filter, return all hosts
+  # Remove host duplicates while retaining host order (see awk incantation below)
+  {
+      [[ $# == 0 ]] && ls -d $CLOUDIFY_DIR/inventory/*/ | xargs -I {} basename {}
+    
+      for filter in "$@"; do
+          if [[ "$filter" != \@* ]]; then
+             # If filter is an host, check if it exist
+             ls -d $CLOUDIFY_DIR/inventory/"$filter"/  | xargs -I {} basename {}
+          else
+             # If filter is a tag, filter all hosts with that tag 
+             ls -d $CLOUDIFY_DIR/inventory/*/"$filter" | xargs -I {} dirname {} | xargs -I {} basename {}
+          fi
+      done
+  }  | awk '!a[$0]++' 
+}
+
 function testCode () {
 
-   cloudify_remote workify i play 
+  echo
+  echo inventory:
+  echo -e "--------"
+  inventory @infra @cluster
 
-#    git clone "https://github.com/rachidbch/play.git" /tmp/cloudify/play
-
-
-#   msg first; 
-#   parse_git_url "https://github.com:80/rachidbch/play.git" 
-#   echo; msg second
-#   parse_git_url "git@github.com:rachidbch/play.git"
-
-  #parse_git_url "https://github.com/rachidbch/play.git"
-  #same_git_remote "https://github.com/rachidbch/play.git"
-
-  #same_git_remote "https://github.com:80/rachidbch/play.git"   "https://github.com:80/rachidbch/play.git" && echo "YES" || echo "No"
-  
-#  same_git_remote "https://github.com:80/rachidbch/play.git"  "git@github.com:rachidbch/play.git"  && echo YES ||  echo NO
 }
 
 
@@ -1052,16 +1080,18 @@ function testCode () {
 #  cloudify i <pkg>             install package
 #  cloudify i defaults          install default in termux|station.packages
 #  cloudify u <pkg>             uninstall package
-parse_params () {
-  # host on which to execute
-  local host='localhost'
 
-  # First we need our color codes 
-  setup_colors
-  
-  # Now, parse script parameters
+function cloudify () {
+  PKG_DEBUG_LN "*** Cloudify $@"
+  host='localhost'
+  hosts=""
+  hosts_parsing="not started"
+  packages=""
+  packages_parsing="not started"
+  # Parse script parameters
   while :; do
-    case "${1-}" in
+    [[ -z "$1" ]] && break
+    case "$1" in
     -h  | --help | help)
           usage
           break
@@ -1077,34 +1107,110 @@ parse_params () {
             shift && pkg_show "$@"
           fi
           break ;; 
-     r  | remote | --remote)  
-          if [[ -z "${2-}" ]]; then
-            die "Remote hostname missing."
-          else
-            PKG_DEBUG cloudify_remote "$@" 
-            shift && cloudify_remote "$@" 
-          fi
-          break ;; 
-     i  | install | --install)  
-          preconfigure
-          if [[ -z "${2-}" || "${2-}" == "defaults" ]]; then
-            pkg_install_defaults
-          else
-            shift && pkg_install "$@"
-          fi
-          break ;; 
-     u  | uninstall | --uninstall) 
-          preconfigure
-          if [[ -z "${2-}" || "${2-}" == "defaults" ]]; then
-            pkg_uninstall_defaults
-          else
-            shift && pkg_uninstall "$@"
-          fi
-          break ;; 
-     c  | credentials | --credentials) 
+     --on | on | o)  
+          # Build hosts list
+          [[ $packages_parsing == "started" ]] && die "Cloudify usage error: unexptected on block."
+          [[ $hosts_parsing == "started" ]] && die "cloudify usage error: 'on' statement already encountered"
+
+          hosts_parsing="started"
+          packages="" 
+          hosts=""
+
+          while true; do
+            # first, die out on invalid argument
+            [[ "$2" == "--on" || "$2" == "on" || "$2" == "o" ||  "$2" == "--help" ||  "$2" == "help" || "$2" == "-h" || "$2" == "--list" || "$2" == "list" || "$2" == "l" || "$2" == "--credentials" || "$2" == "credentials" ||  "$2" == "c" || "$2" == "--test" || "$2" == "test" || "$2" == "t" ]] &&  "Argument syntax error: '$2' invalid inside an 'on' block"
+            # If any of these is encountered, there's no more hosts, we can go ahead and setup the hosts
+            [[ -z "$2" || "$2" == -* ||  "$2" == "install" || "$2" == "inst" || "$2" == "i" || "$2" == "uninstall" || "$2" == "u" ]] && { 
+              [[ -z "$hosts" ]] && die "Cloudify usage error: No host found."
+              hosts_parsing="ended" 
+              break    # Hosts have been consummed, go ahead and parse next arguments
+            }
+            [[ -z "$hosts" ]] && hosts="$2" || hosts="$hosts $2"
+            shift
+          done
+          [[ -z "$2" ]] && die "No packages found for hosts: $hosts"
+          ;;
+     --install | install |inst | i | --uninstall | uninstall | u)  
+          # Build packages list
+          [[ $hosts_parsing == "started" ]] && die "Cloudify usage error: unexptected action '$1'"
+          [[ -z "$hosts" ]] && hosts="localhost"
+          packages_parsing="started"
+
+          local action=''
+          case "$1" in
+            --install | install |inst | i)
+              action='install' 
+            ;;
+            --uninstall | uninstall | u)  
+              action='uninstall' 
+          esac
+
+          [[ -z "$packages" ]] &&  packages="--$action" || packages="$packages --$action"
+
+
+          while true; do
+            # first, die out on invalid argument
+            [[ "$2" == "--help" ||  "$2" == "help" || "$2" == "-h" || "$2" == "--list" || "$2" == "list" || "$2" == "l" || "$2" == "--credentials" || "$2" == "credentials" ||  "$2" == "c" || "$2" == "--test" || "$2" == "test" || "$2" == "t" ]] &&  die "Argument syntax error: '$2' invalid inside an action block."
+            
+            # If any of these is encountered, there's no more packages in this package section. Go ahead and parse next package section
+            [[ "$2" == "--install" || "$2" == "install" || "$2" == "i" ||  "$2" == "--uninstall" || "$2" == "uninstall" || "$2" == "u" ]] && {
+                [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
+              
+                [[ "$hosts" == "localhost" ]] && {
+                    # Cloudify is executed on localhost. Either because cloudify is executed agains local machine,
+                    # we're inside a remote execution. Either way, we can safely execute each package sequentially.
+                    if [[ "$action" == "install" ]]; then 
+                        PKG_DEBUG "${YELLOW}pkg_install ${packages/--$action}${RESET}"
+                        pkg_install ${packages/--$action}
+                    elif [[ "$action" == "uninstall" ]]; then 
+                        PKG_DEBUG "${YELLOW}pkg_uninstall ${packages/--$action}${RESET}"
+                        pkg_uninstall ${packages/--$action}
+                    else
+                        die "Unexecpected package action: $action"
+                    fi
+
+                    # Make sure each package is processed once
+                    packages=""
+                 }
+                  
+                 break    # packages to install have been consummed, go ahead and gather packages to remove 
+            } # End of detect install / uninstall test 
+
+            # If any of these is encountered, there's no more packages, we can go ahead and install them 
+            [[ -z "$2" || "$2" == "--on" || "$2" == "on" || "$2" == "o" ]] && {
+              [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
+              packages_parsing="ended" 
+              # Install/Remove packages on hosts
+              for host in $hosts; do
+                if [[ "$hosts" == "localhost" ]]; then
+
+                    # Cloudify is executed on localhost. Either because cloudify is executed agains local machine,
+                    # we're inside a remote execution. Either way, we can safely execute each package sequentially.
+                    if [[ "$action" == "install" ]]; then 
+                      PKG_DEBUG "${YELLOW}pkg_install ${packages/--$action}${RESET}"
+                      pkg_install ${packages/--$action}
+                    elif [[ "$action" == "uninstall" ]]; then 
+                      PKG_DEBUG "${YELLOW}pkg_uninstall ${packages/--$action}${RESET}"
+                      pkg_uninstall ${packages/--$action}
+                    else
+                      die "Unexecpected package action: $action"
+                    fi
+
+                else
+                  PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
+                  ( cloudify_remote "$host" "$packages" )
+                fi
+              done
+              break    # All packages have been consummed, go ahead and install/remove them  
+            }
+            packages="$packages $2"
+            shift
+          done
+          ;;      
+     --credentials | credentials | c) 
           check_credentials --force               # Ask all credentials 
           break ;;
-     t  | test | --test) 
+     --test | test | t) 
           shift && testCode "$@"
           break ;;
 #   -p  | --param) # Named parameter
@@ -1121,59 +1227,11 @@ parse_params () {
 #  [[ -z "${param-}" ]] && die "Missing required parameter: param"
 #  [[ ${#args[@]} -eq 0 ]] && die "Missing script arguments"
 
-  # Apply cloudify actions
+  # Apply cloudify packages
 
   return 0
 }
+
 #== MAIN: EXECUTE SCRIPT!
-parse_params "$@"
-
-#== ARCHIVED CODE 
-
-
-## function main() {
-##   # Install packages
-##   if [[ -z "$1" || "$1" == "help" ]] ; then
-##     # Get help 
-##     usage
-##   elif [[ ( "$1" == "ls" || "$1" == "list" ) && "$2" == "default" ]]; then
-##     # List default packages for current platform
-##     # Default packages are lited in ./*.packages files 
-##     ( for pkg in $(< ${packages_file}); do
-##         echo ${pkg%%*( )}
-##       done ) | column 
-##   elif [[ ( "$1" == "ls" || "$1" == "list" ) && ( -z "$2" || "$2" == "all" ) ]]; then
-##     # List all available packages for current platform
-##     \ls "$CLOUDIFY_DIR"/pkg
-##   elif [[ ( "$1" == "i" || "$1" == "install" ) &&  "$2" == "default" ]]; then
-##     # Install default packages for current platform 
-##     # Default packages are lited in ./*.packages files 
-##     for pkg in $(< ${packages_file}); do
-##       PKG_DEBUG_LN "Installing ${pkg%%*( )} cloudify package"
-##       if [[ $PKG_TERMUX && -f "$PKG_INIT_FILE_TERMUX" ]]; then
-##           source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}            # We use bash expansion to trim spaces at the end of the package name
-##       else
-##           source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                   # We use bash expansion to trim spaces at the end of the package name
-##       fi
-##     done
-##     printDone
-##   elif [[ ( "$1" == "i" || "$1" == "install" ) &&  ! -z "$2" ]]; then
-##     # Install specific packages 
-##     shift                                                                          # Begin argument loop at 2nd argument 
-##     for pkg in "$@"; do
-##       PKG_DEBUG_LN "Installing ${pkg%%*( )} cloudify package"
-##       if [[ $PKG_TERMUX && -f "$PKG_INIT_FILE_TERMUX" ]]; then
-##         source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE_TERMUX}              # We use bash expansion to trim spaces at the end of the package name
-##       else
-##         source "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${PKG_INIT_FILE}                     # We use bash expansion to trim spaces at the end of the package name
-##       fi
-##     done
-##     printDone
-##   else
-##     # Get help 
-##     usage
-##   fi
-## }
-
-
+cloudify "$@"
 

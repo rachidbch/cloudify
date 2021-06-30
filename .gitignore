@@ -2,3 +2,5 @@
 *.swp
 logs
 todo.txt
+dummify.sh
+inventory/

@@ -1108,6 +1108,15 @@ function cloudify () {
             shift && pkg_show "$@"
           fi
           break ;; 
+     --launch | launch)
+       host_image="$2"
+       host="$3"
+       lxc launch "$host_image" cloudhorse:"$host" -p default ${@:4}
+       ;;
+     --delete | delete)
+       host="$2"
+       lxc delete cloudhorse:"$host" ${@:3}
+       ;;
      --on | on | o)  
           # Build hosts list
           [[ $packages_parsing == "started" ]] && die "Cloudify usage error: unexptected on block."

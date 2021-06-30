@@ -399,13 +399,13 @@ pkg_backup() {
   # Now, as we preserved links while copying, if the file/fodler we've backed up is a link, modifying the original will modify the backup...
   # We need to break the original link so any modification of original file won't stain the backup
   # =TODO= Simplify this mess!
-  set -x
+  #set -x
   rm -rf  "${backup_name}".atomic                        2>/dev/null
   cp -paL --no-preserve=links "$1" "${backup_name}".atomic 
   rm -rf  "${1}"                               2>/dev/null
   cp -paL --no-preserve=links "${backup_name}".atomic "$1"
   rm -rf  "${backup_name}".atomic                        2>/dev/null
-  set +x
+  #set +x
 
   # Increment backup counter for this file
   [[ -f "${backup_name}.index" ]] || touch "${backup_name}.index" 
@@ -859,9 +859,9 @@ function git() {
          $inside_git_repo || { PKG_DEBUG "Can't execute git commands. $git_repo_path isn't a git repo" && return 1; }
          
          if same_git_remote ${git_remote_url} $(command git remote get-url origin); then
-             set -x
+             #set -x
              git pull
-             set +x
+             #set +x
          else
             PKG_DEBUG "Unable to git clone: Repo $(command git remote get-url origin) different from $git_remote_url you trying to clone." &&  return 1 
          fi
@@ -869,10 +869,10 @@ function git() {
      else
          PKG_DEBUG "$git_repo_path doesn't exist directory exist or is empty. cloning" 
          git_authenticate $git_remote_url
-         set -x
+         #set -x
          msg "Actual git command executed"
          command git "$@" -v
-         set +x
+         #set +x
          git_deauthenticate $git_remote_url
      fi
   else
@@ -887,9 +887,9 @@ function git() {
      fi
      git_authenticate $git_remote_url
      PKG_DEBUG "Actual git command executed:" echo git "$@" -v
-     set -x
+     #set -x
      command git "$@" -v
-     set +x
+     #set +x
      git_deauthenticate $git_remote_url
   fi
 }

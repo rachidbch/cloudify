@@ -1001,7 +1001,7 @@ function pkg_uninstall {
 # Ensure tmp folder exist, local bin exist and is in the path 
 # Test platform on which sript is running
 function preconfigure() {
-
+  PKG_DEBUG "Running Preconfiguration"
   # Ensure all required credentials are set in proper environment variables
   check_credentials
 
@@ -1025,11 +1025,12 @@ function preconfigure() {
     export PKG_PLATFORM="termux"
     packages_file=${CLOUDIFY_DIR}/termux.packages
     pkg_init_file=$PKG_INIT_FILE_TERMUX
+    PKG_DEBUG "Package init file name: $pkg_init_file"
   else
     packages_file=${CLOUDIFY_DIR}/station.packages
     pkg_init_file=$PKG_INIT_FILE_DEFAULT
+    PKG_DEBUG "Package init file name: $pkg_init_file"
   fi
-
 }
 
 

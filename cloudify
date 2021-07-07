@@ -57,6 +57,7 @@ function cleanup() {
 
 #== DEBUG FUNCTIONS
 # Print a DEBUG message
+
 function PKG_DEBUG() {
   #DEBUG_PROMPT='\033[0;33m+(${BASH_SOURCE}:${BASH_LINENO[0]}):\033[0m ${FUNCNAME[0]:+${FUNCNAME[0]}(): } '
 
@@ -64,7 +65,9 @@ function PKG_DEBUG() {
 
   $CLOUDIFY_DEBUG && msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} $@${RESET}" || true
 }
+
 # Print a DEBUG message after a new line 
+
 function PKG_DEBUG_LN() {
 #  $CLOUDIFY_DEBUG && msg "${ORANGE}\n*** DEBUG: $1 ***${RESET}" || true
   echo >&2
@@ -76,9 +79,9 @@ function PKG_DEBUG_LN() {
 
 # Simple break command to ease debug
 # Pauses until you type enter
-function pkg_break() {
+function pkg_pause() {
   local _ 
-  read -p 'Paused. Type enter to continue' _
+  [[ -z $1 ]] && read -p "Cloudify is paused. Type enter to continue"  _ || read -p "Cloudify is paused at $1. Type enter to continue"  _
 }
 
 
@@ -153,7 +156,7 @@ function prompt2var() {
 }
 
 # Prompt the user for a password
-# Makes use of 'askpass_starts.sh' script from [antofthy](https://antofthy.gitlab.io/software/askpass_stars_v1.sh.txt)
+# Makes use of 'askpass_stars.sh' script from [antofthy](https://antofthy.gitlab.io/software/askpass_stars_v1.sh.txt)
 # Antofty also proposes more evolved scripts that may suit production more (See https://antofthy.gitlab.io/software/#askpass_stars) 
 function prompt2pass() {
   local answervar="$1"
@@ -163,9 +166,18 @@ function prompt2pass() {
 }
 
 # Ask for host credentials
+function ask_localhost_credentials(){
+  echo
+  prompt2var "Host user:" "CLOUDIFY_LOCALHOSTUSER" && export CLOUDIFY_LOCALHOSTUSER 
+  # Ensure user password is set
+  prompt2pass "CLOUDIFY_LOCALHOSTPWD" && export CLOUDIFY_LOCALHOSTPWD 
+  echo
+}
+
+# Ask for host credentials
 function ask_host_credentials(){
   echo
-  prompt2var "Host user:" "CLOUDIFY_HOSTUSER" && export CLOUDIFY_HOSTUSER 
+  prompt2var "Remote Host user:" "CLOUDIFY_HOSTUSER" && export CLOUDIFY_HOSTUSER 
   # Ensure remote host user password is set
   prompt2pass "CLOUDIFY_HOSTPWD" && export CLOUDIFY_HOSTPWD 
   echo
@@ -341,7 +353,56 @@ function parse_git_url () {
 function is_git_url () {
  parse_git_url $1 &> /dev/null
 }
+
+
+# Write entry in /etc/hosts 
+# =todo= Make it compatible with zsh shell
+function add_in_hosts(){
   
+  $CLOUDIFY_DEBUG && pkg_pause "break 1"
+  # sed special characters have to be escaped. We're liberal here. 
+  local escaped_hosts_lines=()
+  for host_line in "${@}"; do                     # pkg_startuprc_line
+    PKG_DEBUG "Adding '$host_line'" 
+
+    host_line=$(echo "$host_line" \
+                       | sed 's/\//\\\//g' \
+        	             | sed 's/\*/\\*/g' \
+	                     | sed 's/\-/\\-/g' \
+		                   | sed 's/\!/\\!/g' \
+		                   | sed 's/\=/\\=/g' \
+		                   | sed 's/\:/\\:/g' \
+		                   | sed 's/\[/\\[/g'  | sed 's/\]/\\]/g' \
+		                   | sed 's/\\(/\\(/g' | sed 's/\\)/\\)/g')
+
+   escaped_host_lines+=( "$host_line" )
+  done;
+
+  PKG_DEBUG_LN "ENV TO SETUP:"
+  for host_line in "${escaped_host_lines[@]}"; do
+    PKG_DEBUG "About to insert: '$host_line'"
+  done;
+  
+  # Reserve cloudify space in /etc/hosts 
+  $CLOUDIFY_DEBUG && pkg_pause "break 2"
+  PKG_DEBUG_LN "Reserve cloudify space inside /etc/hosts"
+  grep -qFx "# CLOUDIFY HOSTS START" /etc/hosts || sudo -kS -p '' sed -i -n -e '$a\\n# CLOUDIFY HOSTS START\n# CLOUDIFY HOSTS END' /etc/hosts <<<$CLOUDIFY_LOCALHOSTPWD
+  
+  $CLOUDIFY_DEBUG && pkg_pause "break 3"
+  # Insert new hosts lines 
+  PKG_DEBUG_LN "Inserting host lines"
+  for host_line in "${escaped_host_lines[@]}"; do
+    PKG_DEBUG "Inserting: $host_line"
+    # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". 
+    #        Exact same line above didn't need that. Why that?
+    sudo -kSp '' sed -in "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &> /dev/null <<<$CLOUDIFY_LOCALHOSTPWD
+    PKG_DEBUG "Inserted: $host_line"
+  done
+
+  $CLOUDIFY_DEBUG && pkg_pause "break 4"
+}
+
+
 #== CLOUDIFY API 
 # THESE FUNCTION CAN BE CALLED FROM PACKAGE MODULES TO INSTALL SOFTWARE
 # Currently Cloudify API is as simple as 2 functions: 'pkg_depends' and 'pkg_in_startuprc' 
@@ -525,16 +586,20 @@ function pkg_in_startuprc(){
 
 # Update apt cache
 function pkg_apt_update() {
+  local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
+  [[ -z ${hostpwd} ]] && die "Host passord not set"
   if [[ "${1-}" == "--force"  || -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ]]; then
-    sudo -kS -p '' apt-get -q update <<< "$CLOUDIFY_HOSTPWD"
+    sudo -kS -p '' apt-get -q update <<< "$hostpwd"
   fi
 }
 
 # Add apt source
 function pkg_apt_repository() {
+  local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
+  [[ -z ${hostpwd} ]] && die "Host passord not set"
   for apt_source in "${@}"; do 
     if ! grep -q "^deb .*${apt_source}" /etc/apt/sources.list.d/*; then
-      sudo -kS -p '' add-apt-repository "ppa:${apt_source}" -y <<< "$CLOUDIFY_HOSTPWD"
+      sudo -kS -p '' add-apt-repository "ppa:${apt_source}" -y <<< "$hostpwd"
     fi
   done
   pkg_apt_update --force
@@ -543,12 +608,14 @@ function pkg_apt_repository() {
 
 # Install apt package if not already installed
 function pkg_apt_install() {
+  local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
+  [[ -z ${hostpwd} ]] && die "Host passord not set"
   for pkg in "${@}"; do 
    pkg_apt_update 
    # =TODO= Parse apt install output to detect error in installation
    if  ! dpkg -l "$pkg" |& grep -q "^ii  $pkg"; then
      PKG_DEBUG_LN "Installing $pkg apt package"
-     sudo -kS -p '' apt-get -q install "$pkg"  -y  <<< "$CLOUDIFY_HOSTPWD"
+     sudo -kS -p '' apt-get -q install "$pkg"  -y  <<< "$hostpwd"
      # If apt-get install failed, we stop cloudify
      # =TODO= Instead of brutally exiting, log the error and continue with next package installations
      local exitcode=$?
@@ -565,6 +632,9 @@ function pkg_apt_install() {
 #        Use 'https://api.github.com/repos/USER/REPO/releases' to list all releases
 # =TODO= Should this use 'https://github.com/archf/ghi/blob/master/ghi' ?
 function pkg_install_release() {
+   local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
+   [[ -z ${hostpwd} ]] && die "Host passord not set"
+
     # =TODO= be defensive here
     cmd="$1"
     repoId="$2"
@@ -587,28 +657,27 @@ function pkg_install_release() {
       
       PKG_DEBUG "Installing $repoId in /usr/local/"
       (
-    
           # Some install archives have an install/setup script. 
           # If that's the case, let it do its thing (A lot of install/setup scripts read the install directory in a prefix variable )
           [[ -f /tmp/"$cmd"/install ]] && PKG_DEBUG "Running archive setup script" \
-            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install <<< "$CLOUDIFY_HOSTPWD" \
+            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install <<< "$hostpwd" \
             && exit 0
 
           [[ -f /tmp/"$cmd"/install.sh ]] && PKG_DEBUG "Running archive setup script" \
-            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install.sh <<< "$CLOUDIFY_HOSTPWD" \
+            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install.sh <<< "$hostpwd" \
             && exit 0
 
           [[ -f /tmp/"$cmd"/setup ]] && PKG_DEBUG "Running archive setup script" \
-            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup <<< "$CLOUDIFY_HOSTPWD" \
+            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup <<< "$hostpwd" \
             && exit 0
 
           [[ -f /tmp/"$cmd"/setup.sh ]] && PKG_DEBUG "Running archive setup script" \
-            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup.sh <<< "$CLOUDIFY_HOSTPWD"   \
+            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup.sh <<< "$hostpwd"   \
             && exit 0
            
           # Some install archive contain directly the binary
           [[ -f /tmp/"$cmd"/"$cmd" ]] && PKG_DEBUG "Installing $cmd binary" \
-            && sudo -kS -p '' install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ <<< "$CLOUDIFY_HOSTPWD"  \
+            && sudo -kS -p '' install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ <<< "$hostpwd"  \
             && exit 0
 	  
           # The 'install' command doesn't have a recursive option. We use find as a workaround 
@@ -619,7 +688,7 @@ function pkg_install_release() {
 
               if [[ -d /tmp/"$cmd"/"$release_dir" ]]; then
                 ( cd /tmp/"$cmd"/"$release_dir" 
-                sudo -kS -p '' find . -mindepth 1 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \; <<< "$CLOUDIFY_HOSTPWD" )
+                sudo -kS -p '' find . -mindepth 1 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \; <<< "$hostpwd" )
               fi
 	        done
       )
@@ -633,11 +702,18 @@ function pkg_install_release() {
 # Adds a package dependeny
 function pkg_depends() {
   for pkg in $@; do 
-    if [[ -f "$CLOUDIFY_DIR"/pkg/"$pkg"/"$pkg_init_file" ]]; then
+    if [[ -f "$CLOUDIFY_DIR/pkg/$pkg/$pkg_init_file" ]]; then
       PKG_DEBUG "Installing $pkg cloudify package"
-      source "$CLOUDIFY_DIR"/pkg/"$pkg"/"$pkg_init_file"
+      source "$CLOUDIFY_DIR/pkg/$pkg/$pkg_init_file"
+
+      # Install package scripts in ~/.local/bin
+      for script in "$CLOUDIFY_DIR/pkg/$pkg"/*.script; do
+	 script_basename=$(basename $script)
+	 #echo cp -paf $script "$LOCAL_BIN"/${script_basename%.script}
+	 cp -paf $script "$LOCAL_BIN"/${script_basename%.script}
+      done
     else
-      echo  "$CLOUDIFY_DIR"/pkg/"$pkg"/"$pkg_init_file" "doesn't exist" 
+      echo  "$CLOUDIFY_DIR/pkg/$pkg/$pkg_init_file doesn't exist" 
       pkg_apt_install ${pkg}
     fi
   done
@@ -652,18 +728,27 @@ function pkg_depends() {
 
 # Check if needed credentials are set in appropriate environment  variables
 # If not, ask for credentials and generate a script that the user will source to set the environment variables
+
 function check_credentials () {
   # Check for credentials environment variables 
   ## sudo user and password, gitlab and github user and password must be set in env variables 
   [[ "${1-}" == "-f" || "${1-}" == "--force" ]] && local force_ask_credentials=true || local force_ask_credentials=false
 
   local new_credentials=false
-  if "$force_ask_credentials" || [[ -z "${CLOUDIFY_HOSTUSER-}" || -z "${CLOUDIFY_HOSTPWD-}" ||  -z "${CLOUDIFY_GITHUBUSER-}" || -z "${CLOUDIFY_GITHUBPWD-}" || -z "${CLOUDIFY_GITLABUSER-}" || -z "${CLOUDIFY_GITLABPWD-}" ]]; then
+
+  if "$force_ask_credentials" || [[ -z "${CLOUDIFY_LOCALHOSTUSER-}" || -z "${CLOUDIFY_LOCALHOSTPWD-}" || -z "${CLOUDIFY_HOSTUSER-}" || -z "${CLOUDIFY_HOSTPWD-}" ||  -z "${CLOUDIFY_GITHUBUSER-}" || -z "${CLOUDIFY_GITHUBPWD-}" || -z "${CLOUDIFY_GITLABUSER-}" || -z "${CLOUDIFY_GITLABPWD-}" ]]; then
     local new_credentials=true
     msg "${GREEN}Cloudify needs your Host, Github and Gitlab credentials.${RESET}"
     [[ -f /dev/shm/cloudify_credentials ]] && rm -f "/dev/shm/cloudify_credentials"
     touch /dev/shm/cloudify_credentials 
     chmod 600 /dev/shm/cloudify_credentials
+  fi
+
+  # Ensure local host user is set
+  if "$force_ask_credentials" || [[ -z "${CLOUDIFY_LOCALHOSTUSER-}" || -z "${CLOUDIFY_LOCALHOSTPWD-}" ]]; then
+    ask_localhost_credentials
+    echo "export CLOUDIFY_LOCALHOSTUSER=$CLOUDIFY_LOCALHOSTUSER" >> /dev/shm/cloudify_credentials
+    echo "export CLOUDIFY_LOCALHOSTPWD=$CLOUDIFY_LOCALHOSTPWD" >> /dev/shm/cloudify_credentials
   fi
 
   # Ensure remote host user is set
@@ -699,6 +784,38 @@ function check_credentials () {
 #== SHADOWING !
 ##  Cloudify shadows some bash commands and programs to ensure seamless operations (auto-authentication, idempotence, etc)
 ##  This way, package init scripts can be naive bash scripts while cloudify ensures high reliability, remote execution, etc
+
+
+## Sudo Shadowing
+#  To call commands requiring password based authentication, we generally supply the password (that is stored in CLOUDIFY_HOSTPWD or CLOUDIFY_LOCALHOSTPWD variable)
+#  using a Here String (which uses stdin). Sudo command stdin is often used for normal command processing (like in 'echo <commands> | sudo tee ...') 
+#  So to suppy the password to sudo we need to rearrange the way sudo is called, passing everything as arguments to free stdin for password
+
+function sudo() {
+
+  local lineargs=""
+  local pipeargs="" 
+
+  if [ -t 0 ]; then
+    lineargs="${@}"
+  elif [[ -p /dev/stdin ]]; then
+    lineargs="${@}"
+    pipeargs="$(cat -)"
+  else
+    lineargs="${@}"
+    pipeargs="$(cat -)"
+  fi
+
+  if [[ -z $pipeargs ]]; then
+    sudocmd="$@"
+  else
+    sudocmd="echo '$pipeargs' | $lineargs"
+  fi
+
+  # As we pass everything, including piped input as arguments to 'bash -c', we can safely supply sudo password using a herestring
+  command sudo -kS bash -c "$sudocmd"  &>/dev/null <<< "$CLOUDIFY_HOSTPWD"
+}
+
 
 ## Git shadowing
 
@@ -936,8 +1053,9 @@ function cloudify_remote() {
     
       PKG_DEBUG "SSHing..."
       # The SSH session is launched in the background to parallelize hosts cloudifcation
-      (ssh $host "$cloudify_remote_payload" |& sed "s/^/$host: /"  |& sed "s/^$host: $//") &
-    
+      # =TODO= Remote hosts key checking has been totally disabled.
+      #        It's highly unsafe! Parse ssh messages and prompt the user for decision instead. 
+      (ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" $host "$cloudify_remote_payload" |& sed "s/^/$host: /"  |& sed "s/^$host: $//") &
       #ssh -tt workify "sudo -kS cat /etc/shadow" <<< "$CLOUDIFY_HOSTPWD"
   fi
 } 
@@ -985,7 +1103,7 @@ function pkg_install {
     msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
     pkg_depends "$pkg"
   done
-  printDone
+  $SKIPDONEMESSAGE || printDone
 }
 
 function pkg_uninstall_defaults {
@@ -1002,7 +1120,7 @@ function pkg_uninstall {
 function preconfigure() {
   PKG_DEBUG "Running Preconfiguration"
   # Ensure all required credentials are set in proper environment variables
-  check_credentials
+  $SKIPCREDENTIALS || check_credentials
 
   # Ensure tmp folder exists
   [[ -d "$CLOUDIFY_TMP" ]] || mkdir -p "$CLOUDIFY_TMP"
@@ -1099,7 +1217,7 @@ function cloudify () {
           ;;
     -v  | --verbose | verbose) set -x ;;
     -n  | --no-color) NO_COLOR=1 ;;
-    -l  | ls | list | --list)          
+    packages | pkgs | pkg)          
           if [[ -z "${2-}" || "${2-}" == "all" ]]; then
             pkg_list_all 
           elif [[ "${2-}" == "defaults" ]]; then
@@ -1108,16 +1226,59 @@ function cloudify () {
             shift && pkg_show "$@"
           fi
           break ;; 
-     --launch | launch)
-       host_image="$2"
-       host="$3"
-       lxc launch "$host_image" cloudhorse:"$host" -p default ${@:4}
-       ;;
-     --delete | delete)
-       host="$2"
-       lxc delete cloudhorse:"$host" ${@:3}
-       ;;
-     --on | on | o)  
+    init)
+	  #pkg_pause "installing askpassstars"
+	  SKIPCREDENTIALS=true preconfigure
+	  SKIPDONEMESSAGE=true pkg_install askpassstars
+	  #pkg_pause "installing credentials"
+	  cloudify credentials
+	  ;;
+    hosts)
+	  lxc list cloudhorse:
+	  ;;
+    host)
+	  lxc list cloudhorse:$2
+	  ;;
+    launch | run)
+          local hostpwd="${CLOUDIFY_LOCALHOSTPWD}" 
+          [[ -z ${hostpwd} ]] && die "Host password not set"
+	  local host_image="$2"
+          local host="$3"
+          local restparams=${@:4} 
+
+          if [[ "$host_image" != *:* ]]; then
+              host_image="ubuntu:" 
+	      host="$2" 
+	      restparams=${@:3}
+	  fi
+
+          PKG_DEBUG lxc launch "$host_image" cloudhorse:"$host" -p default $restparams
+          lxc launch "$host_image" cloudhorse:"$host" -p default $restparams
+          # =TODO= test exit code
+          hostip="" 
+          while [[ ! $hostip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; do
+              hostip=$(lxc list -c4 --format csv cloudhorse:$host | cut -d' ' -f1)
+          done
+	  $CLOUDIFY_DEBUG && pkg_pause "line before add_in_hosts"
+          add_in_hosts "$hostip $host $host.remote" 
+	  $CLOUDIFY_DEBUG && pkg_pause "line after add_in_hosts"
+          
+          ;;
+    delete | del)
+          local hostpwd="${CLOUDIFY_LOCALHOSTPWD}" 
+          [[ -z ${hostpwd} ]] && die "Host password not set"
+          host="$2"
+          lxc delete cloudhorse:"$host" ${@:3}
+          # =TODO= test exit code
+	  # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". Why that? 
+	  sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts  &>/dev/null <<< "$hostpwd"
+          ;;
+    
+    shell)
+	  [[ -z $2 ]] && die "Missing host"
+          ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" $2
+	  ;;
+    --on | on | o)  
           # Build hosts list
           [[ $packages_parsing == "started" ]] && die "Cloudify usage error: unexptected on block."
           [[ $hosts_parsing == "started" ]] && die "cloudify usage error: 'on' statement already encountered"
@@ -1141,6 +1302,7 @@ function cloudify () {
           [[ -z "$2" ]] && die "No packages found for hosts: $hosts"
           ;;
      --install | install |inst | i | --uninstall | uninstall | u)  
+	  # pkg_pause "executing install subcommand"
           # Build packages list
           [[ $hosts_parsing == "started" ]] && die "Cloudify usage error: unexptected action '$1'"
           [[ -z "$hosts" ]] && hosts="localhost"

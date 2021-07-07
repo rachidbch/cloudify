@@ -2,6 +2,11 @@
 #
 # Utils pkg gathers small in-house utility scripts
 
+
+# Moreutils apt package contains the vipe utility that is used by ipath
+pkg_depends moreutils
+
+
 # 'IPATH' FUNCTION ALLOWS YOU TO *INTERACTIVELY* EDIT YOUR PATH IN VIM
 # Here's the function in a readable format
 # function ipath() {

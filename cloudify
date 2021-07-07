@@ -15,13 +15,22 @@ function usage(){
 cat <<'EOF'
   cloudify [action] [package]
   examples:
-       cloudify                     print help
-       cloudify help                print help  
-       cloudify ls|list             list installable packages 
-       cloudify ls|list default     list default packages 
-       cloudify i <pkg>             install package
-       cloudify i default           install default in termux|station.packages
-       cloudify u <pkg>             uninstall package
+       cloudify help                                   print this usage help 
+       cloudify init                                   Initilize cloudify before use (required once per session)
+       cloudify --credentials|credentials|c            Sets credentials (local host, remote hosts, github, gitlab)
+       cloudify packages|pkgs                          list installable packages 
+       cloudify packages|pkgs default                  list default packages 
+       cloudify --install|install|i <pkg>              install package on local machine
+       cloudify --install|install|i default            install default packages on local machine
+       cloudify --uninstall|uninstall|u <pkg>          uninstall package
+       cloudify hosts                                  list remote hosts
+       cloudify host <host>                            print <host> remote host status
+       cloudify launch|run <host>                      launch <host> remote host 
+       cloudify delete|del <host>                      remove delete <host> remote host (must be stopped first)
+       cloudify delete|del <host> --force              force delete <host> remote host 
+       cloudify shell <host>                           open a shell session on <host> remote host
+       cloudify --on|on|o <host>                       <host> remote host to run action on
+       cloudify --test|test|t                          helper to test code 
 EOF
 }
 
@@ -386,7 +395,7 @@ function add_in_hosts(){
   # Reserve cloudify space in /etc/hosts 
   $CLOUDIFY_DEBUG && pkg_pause "break 2"
   PKG_DEBUG_LN "Reserve cloudify space inside /etc/hosts"
-  grep -qFx "# CLOUDIFY HOSTS START" /etc/hosts || sudo -kS -p '' sed -i -n -e '$a\\n# CLOUDIFY HOSTS START\n# CLOUDIFY HOSTS END' /etc/hosts <<<$CLOUDIFY_LOCALHOSTPWD
+  grep -qFx "# CLOUDIFY HOSTS START" /etc/hosts || command sudo -kS -p '' sed -i -n -e '$a\\n# CLOUDIFY HOSTS START\n# CLOUDIFY HOSTS END' /etc/hosts <<<$CLOUDIFY_LOCALHOSTPWD
   
   $CLOUDIFY_DEBUG && pkg_pause "break 3"
   # Insert new hosts lines 
@@ -395,7 +404,7 @@ function add_in_hosts(){
     PKG_DEBUG "Inserting: $host_line"
     # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". 
     #        Exact same line above didn't need that. Why that?
-    sudo -kSp '' sed -in "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &> /dev/null <<<$CLOUDIFY_LOCALHOSTPWD
+    command sudo -kSp '' sed -in "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &> /dev/null <<<$CLOUDIFY_LOCALHOSTPWD
     PKG_DEBUG "Inserted: $host_line"
   done
 
@@ -589,7 +598,7 @@ function pkg_apt_update() {
   local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
   [[ -z ${hostpwd} ]] && die "Host passord not set"
   if [[ "${1-}" == "--force"  || -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ]]; then
-    sudo -kS -p '' apt-get -q update <<< "$hostpwd"
+    command sudo -kS -p '' apt-get -q update <<< "$hostpwd"
   fi
 }
 
@@ -599,7 +608,7 @@ function pkg_apt_repository() {
   [[ -z ${hostpwd} ]] && die "Host passord not set"
   for apt_source in "${@}"; do 
     if ! grep -q "^deb .*${apt_source}" /etc/apt/sources.list.d/*; then
-      sudo -kS -p '' add-apt-repository "ppa:${apt_source}" -y <<< "$hostpwd"
+      command sudo -kS -p '' add-apt-repository "ppa:${apt_source}" -y <<< "$hostpwd"
     fi
   done
   pkg_apt_update --force
@@ -615,7 +624,7 @@ function pkg_apt_install() {
    # =TODO= Parse apt install output to detect error in installation
    if  ! dpkg -l "$pkg" |& grep -q "^ii  $pkg"; then
      PKG_DEBUG_LN "Installing $pkg apt package"
-     sudo -kS -p '' apt-get -q install "$pkg"  -y  <<< "$hostpwd"
+     command sudo -kS -p '' apt-get -q install "$pkg"  -y  <<< "$hostpwd"
      # If apt-get install failed, we stop cloudify
      # =TODO= Instead of brutally exiting, log the error and continue with next package installations
      local exitcode=$?
@@ -660,24 +669,24 @@ function pkg_install_release() {
           # Some install archives have an install/setup script. 
           # If that's the case, let it do its thing (A lot of install/setup scripts read the install directory in a prefix variable )
           [[ -f /tmp/"$cmd"/install ]] && PKG_DEBUG "Running archive setup script" \
-            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install <<< "$hostpwd" \
+            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install <<< "$hostpwd" \
             && exit 0
 
           [[ -f /tmp/"$cmd"/install.sh ]] && PKG_DEBUG "Running archive setup script" \
-            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install.sh <<< "$hostpwd" \
+            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install.sh <<< "$hostpwd" \
             && exit 0
 
           [[ -f /tmp/"$cmd"/setup ]] && PKG_DEBUG "Running archive setup script" \
-            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup <<< "$hostpwd" \
+            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup <<< "$hostpwd" \
             && exit 0
 
           [[ -f /tmp/"$cmd"/setup.sh ]] && PKG_DEBUG "Running archive setup script" \
-            && sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup.sh <<< "$hostpwd"   \
+            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup.sh <<< "$hostpwd"   \
             && exit 0
            
           # Some install archive contain directly the binary
           [[ -f /tmp/"$cmd"/"$cmd" ]] && PKG_DEBUG "Installing $cmd binary" \
-            && sudo -kS -p '' install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ <<< "$hostpwd"  \
+            && command sudo -kS -p '' install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ <<< "$hostpwd"  \
             && exit 0
 	  
           # The 'install' command doesn't have a recursive option. We use find as a workaround 
@@ -688,7 +697,7 @@ function pkg_install_release() {
 
               if [[ -d /tmp/"$cmd"/"$release_dir" ]]; then
                 ( cd /tmp/"$cmd"/"$release_dir" 
-                sudo -kS -p '' find . -mindepth 1 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \; <<< "$hostpwd" )
+                command sudo -kS -p '' find . -mindepth 1 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \; <<< "$hostpwd" )
               fi
 	        done
       )
@@ -1271,12 +1280,12 @@ function cloudify () {
           local hostpwd="${CLOUDIFY_LOCALHOSTPWD}" 
           [[ -z ${hostpwd} ]] && die "Host password not set"
           host="$2"
-          lxc delete cloudhorse:"$host" ${@:3}
-          # =TODO= test exit code
-	  # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". Why that? 
-	  sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts  &>/dev/null <<< "$hostpwd"
+
+          if ! lxc delete cloudhorse:"$host" ${@:3} &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
+
+          # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". Why that? 
+          command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts  &>/dev/null <<< "$hostpwd"
           ;;
-    
     shell)
 	  [[ -z $2 ]] && die "Missing host"
           ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" $2

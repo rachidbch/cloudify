@@ -708,8 +708,11 @@ function pkg_depends() {
 
       # Install package scripts in ~/.local/bin
       for script in "$CLOUDIFY_DIR/pkg/$pkg"/*.script; do
+	 [[ -e "$script" ]] || continue                        # As per bash normal behaviour, when a glob expansion doesn't match any file,  
+	                                                       # the glob pattern itself is processed. This protects against such a case. 
+							       # Note that this can also be prevented by setting the 'nullglob' option 
 	 script_basename=$(basename $script)
-	 #echo cp -paf $script "$LOCAL_BIN"/${script_basename%.script}
+	 PKG_DEBUG cp -paf $script "$LOCAL_BIN"/${script_basename%.script}
 	 cp -paf $script "$LOCAL_BIN"/${script_basename%.script}
       done
     else

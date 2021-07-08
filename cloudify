@@ -735,7 +735,7 @@ function pkg_depends() {
 	 cp -paf $script "$LOCAL_BIN"/${script_basename%.script}
       done
     else
-      msg "$CLOUDIFY_DIR/pkg/$pkg/$pkg_init_file doesn't exist. Trying apt install." 
+      msg "${GREEN}$CLOUDIFY_DIR/pkg/$pkg/$pkg_init_file doesn't exist. Trying apt install.${RESET}" 
       pkg_apt_install ${pkg}
     fi
   done
@@ -1431,7 +1431,7 @@ function cloudify () {
   done
 
   # Wait until all background tasks return
-  echo Setup of machines in progess... 
+  msg "${GREEN}Setup of machines in progess...${RESET}"
   wait
 
   return 0

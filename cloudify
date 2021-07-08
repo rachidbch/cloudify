@@ -910,13 +910,13 @@ function same_git_remote () {
         IFS= read account_1;  segment=$(echo $account_1 | cut -d: -f1); account_1=${account_1#$segment: }
         IFS= read project_1;  segment=$(echo $project_1 | cut -d: -f1); project_1=${project_1#$segment: }
   
-        IFS= echo url_1 $url_1
-        IFS= echo host_1 $host_1
-        IFS= echo domain_1 $domain_1
-        IFS= echo subdomain_1 $subdomain_1
-        IFS= echo port_1 $port_1
-        IFS= echo account_1 $account_1
-        IFS= echo project_1 $project_1
+        #IFS= echo url_1 $url_1
+        #IFS= echo host_1 $host_1
+        #IFS= echo domain_1 $domain_1
+        #IFS= echo subdomain_1 $subdomain_1
+        #IFS= echo port_1 $port_1
+        #IFS= echo account_1 $account_1
+        #IFS= echo project_1 $project_1
 
         parse_git_url "${remote_url_2}" | {
             IFS= read url_2; segment=$(echo $url_2 | cut -d: -f1); url_2=${url_2#$segment: }
@@ -932,13 +932,13 @@ function same_git_remote () {
             IFS= read account_2;  segment=$(echo $account_2 | cut -d: -f1); account_2=${account_2#$segment: }
             IFS= read project_2;  segment=$(echo $project_2 | cut -d: -f1); project_2=${project_2#$segment: }
   
-            IFS= echo url_2 $url_2
-            IFS= echo host_2 $host_2
-            IFS= echo domain_2 $domain_2
-            IFS= echo subdomain_2 $subdomain_2
-            IFS= echo port_2 $port_2
-            IFS= echo account_2 $account_2
-            IFS= echo project_2 $project_2
+            #IFS= echo url_2 $url_2
+            #IFS= echo host_2 $host_2
+            #IFS= echo domain_2 $domain_2
+            #IFS= echo subdomain_2 $subdomain_2
+            #IFS= echo port_2 $port_2
+            #IFS= echo account_2 $account_2
+            #IFS= echo project_2 $project_2
 
             [[ $url_1 == $url_2 ]] && [[ $host_1 == $host_2 ]] && [[ $domain_1 == $domain_2 ]] && [[ $subdomain_1 == $subdomain_2 ]] && [[ $port_1 == $port_2 ]] && [[ $account_1 == $account_2 ]] && [[ $project_1 == $project_2 ]] &&  return 0;
             return 1;

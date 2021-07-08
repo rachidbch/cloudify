@@ -622,8 +622,8 @@ function pkg_apt_install() {
   for pkg in "${@}"; do 
    pkg_apt_update 
    # =TODO= Parse apt install output to detect error in installation
+   PKG_DEBUG_LN "Installing $pkg apt package"
    if  ! dpkg -l "$pkg" |& grep -q "^ii  $pkg"; then
-     PKG_DEBUG_LN "Installing $pkg apt package"
      command sudo -kS -p '' apt-get -q install "$pkg"  -y  <<< "$hostpwd"
      # If apt-get install failed, we stop cloudify
      # =TODO= Instead of brutally exiting, log the error and continue with next package installations
@@ -631,6 +631,8 @@ function pkg_apt_install() {
      if [ $exitcode -ne 0 ]; then
         die "Error installing $pkg" $exitcode
      fi
+   else
+     PKG_DEBUG_LN "$pkg apt package already present"
    fi
   done
 }
@@ -1387,7 +1389,8 @@ function cloudify () {
                     fi
                 else
                   PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
-                  ( cloudify_remote "$host" "$packages" )
+		  # =TODO= Should this be done in a sub-process? 
+                  cloudify_remote "$host" "$packages"
                 fi
               done
               break    # All packages have been consummed, go ahead and install/remove them  
@@ -1395,6 +1398,9 @@ function cloudify () {
             packages="$packages $2"
             shift
           done
+	  # Wait until all background tasks return
+	  echo Setup of machines in progess... 
+	  wait
           ;;      
      --credentials | credentials | c) 
           check_credentials --force               # Ask all credentials 

@@ -628,6 +628,7 @@ function pkg_apt_install() {
   [[ -z ${hostpwd} ]] && die "Host passord not set"
 
   PKG_DEBUG_LN "Installing $pkg apt package"
+
   for pkg in "${@}"; do 
    pkg_apt_update 
    # =TODO= Parse apt install output to detect error in installation
@@ -1038,7 +1039,7 @@ function git() {
 ##  Cloudify can execute cloudify package init scripts on remote machine
 
 function cloudify_remote_payload_template() {
-  export CLOUDIFY_DEBUG='{{CLOUDIFY_DEBUG}}'
+  export CLOUDIFY_DEBUG={{CLOUDIFY_DEBUG}}
   export CLOUDIFY_HOSTUSER='{{CLOUDIFY_HOSTUSER}}'
   export CLOUDIFY_HOSTPWD='{{CLOUDIFY_HOSTPWD}}'
   export CLOUDIFY_GITHUBUSER='{{CLOUDIFY_GITHUBUSER}}'
@@ -1069,7 +1070,7 @@ function cloudify_remote() {
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABPWD}}/$CLOUDIFY_GITLABPWD/g" <<< "$cloudify_remote_payload")
     
       # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running 
-      cloudify_remote_payload="export CLOUDIFY_FORCE_COLORS=true;\n$cloudify_remote_payload; cloudify $@"
+      cloudify_remote_payload="export CLOUDIFY_FORCE_COLORS=true;$cloudify_remote_payload; cloudify $@"
     
       PKG_DEBUG "Payload to execute remotely on $host:" 
       # Passwords are replaved by asterisks before printing

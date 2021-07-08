@@ -626,10 +626,11 @@ function pkg_apt_repository() {
 function pkg_apt_install() {
   local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
   [[ -z ${hostpwd} ]] && die "Host passord not set"
+
+  PKG_DEBUG_LN "Installing $pkg apt package"
   for pkg in "${@}"; do 
    pkg_apt_update 
    # =TODO= Parse apt install output to detect error in installation
-   PKG_DEBUG_LN "Installing $pkg apt package"
    if  ! dpkg -l "$pkg" |& grep -q "^ii  $pkg"; then
      command sudo -kS -p '' apt-get -q install "$pkg"  -y  <<< "$hostpwd"
      # If apt-get install failed, we stop cloudify

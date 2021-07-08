@@ -713,8 +713,9 @@ function pkg_install_release() {
 # Adds a package dependeny
 function pkg_depends() {
   for pkg in $@; do 
+    PKG_DEBUG "Installing $pkg cloudify package"
     if [[ -f "$CLOUDIFY_DIR/pkg/$pkg/$pkg_init_file" ]]; then
-      PKG_DEBUG "Installing $pkg cloudify package"
+      PKG_DEBUG sourcing "$CLOUDIFY_DIR/pkg/$pkg/$pkg_init_file"
       source "$CLOUDIFY_DIR/pkg/$pkg/$pkg_init_file"
 
       # Install package scripts in ~/.local/bin
@@ -723,11 +724,11 @@ function pkg_depends() {
 	                                                       # the glob pattern itself is processed. This protects against such a case. 
 							       # Note that this can also be prevented by setting the 'nullglob' option 
 	 script_basename=$(basename $script)
-	 PKG_DEBUG cp -paf $script "$LOCAL_BIN"/${script_basename%.script}
+	 PKG_DEBUG copying $script to "$LOCAL_BIN"/${script_basename%.script}
 	 cp -paf $script "$LOCAL_BIN"/${script_basename%.script}
       done
     else
-      echo  "$CLOUDIFY_DIR/pkg/$pkg/$pkg_init_file doesn't exist" 
+      msg "$CLOUDIFY_DIR/pkg/$pkg/$pkg_init_file doesn't exist. Trying apt install." 
       pkg_apt_install ${pkg}
     fi
   done

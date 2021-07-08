@@ -229,7 +229,7 @@ function parse_git_url () {
     # get protocol
     # if proto isn't given, we're parsing a git format  (user@host.xz:path/to/repo.git)
     [[ ! -z "${1-}" ]] || return 1
-    echo >&2 $1
+    #echo >&2 $1
 
     local proto="$(echo $1 | grep :// | sed -e's,^\(.*://\).*,\1,g')"
     [[ -z "${proto-}" || "${proto-}" == *:// ]] || return 1 

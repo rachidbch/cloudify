@@ -1399,9 +1399,6 @@ function cloudify () {
             packages="$packages $2"
             shift
           done
-	  # Wait until all background tasks return
-	  echo Setup of machines in progess... 
-	  wait
           ;;      
      --credentials | credentials | c) 
           check_credentials --force               # Ask all credentials 
@@ -1419,13 +1416,15 @@ function cloudify () {
     shift
   done
 
+  # Wait until all background tasks return
+  echo Setup of machines in progess... 
+  wait
+
+  return 0
+
 # Check required params and arguments
 #  [[ -z "${param-}" ]] && die "Missing required parameter: param"
 #  [[ ${#args[@]} -eq 0 ]] && die "Missing script arguments"
-
-  # Apply cloudify packages
-
-  return 0
 }
 
 #== MAIN: EXECUTE SCRIPT!

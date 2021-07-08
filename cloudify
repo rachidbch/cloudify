@@ -1434,9 +1434,9 @@ function cloudify () {
   done
 
   # Wait until all background tasks return
-  msg "${GREEN}Setup of machines in progess...${RESET}"
+  msg "${GREEN}Setup of machines in progress...${RESET}"
   wait
-
+  msg "${GREEN}Setup Done.${RESET}"
   return 0
 
 # Check required params and arguments

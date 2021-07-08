@@ -892,7 +892,7 @@ function same_git_remote () {
     local _; local segment
 
 
-    parse_git_url "${remote_url_1}" 
+    #parse_git_url "${remote_url_1}" 
 
     # Parsing the output of 'parse_git_utl' to get individual url segments. So meta :)
     # Note without the 'IFS=' prefix, read discards leading and trailing whitespaces. But we need them to correctly parse the segments

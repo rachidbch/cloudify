@@ -575,9 +575,9 @@ function pkg_in_startuprc(){
   for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
     PKG_DEBUG "Remove line: $pkg_startuprc_line"
     sed -in "/$pkg_startuprc_line/d" ~/.bashrc
-    PKG_DEBUG "----"
-    PKG_DEBUG "What's in there in bashrc?"
-    $CLOUDIFY_DEBUG && cat  ~/.bashrc
+    #PKG_DEBUG "----"
+    #PKG_DEBUG "What's in there in bashrc?"
+    #$CLOUDIFY_DEBUG && cat  ~/.bashrc
   done;
   
   # Insert pkg setup 
@@ -586,9 +586,9 @@ function pkg_in_startuprc(){
     PKG_DEBUG "Inserting line: $pkg_startuprc_line"
     sed -in "/# CLOUDIFY ENV END/i $pkg_startuprc_line" ~/.bashrc
 
-    PKG_DEBUG "----"
-    PKG_DEBUG "What's in there in bashrc?"
-    $CLOUDIFY_DEBUG && cat ~/.bashrc
+    #PKG_DEBUG "----"
+    #PKG_DEBUG "What's in there in bashrc?"
+    #$CLOUDIFY_DEBUG && cat ~/.bashrc
   done;
 }
 

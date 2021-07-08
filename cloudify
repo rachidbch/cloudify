@@ -1068,7 +1068,7 @@ function cloudify_remote() {
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABPWD}}/$CLOUDIFY_GITLABPWD/g" <<< "$cloudify_remote_payload")
     
       # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running 
-      cloudify_remote_payload="CLOUDIFY_FORCE_COLORS=true;\n$cloudify_remote_payload; cloudify $@"
+      cloudify_remote_payload="export CLOUDIFY_FORCE_COLORS=true;\n$cloudify_remote_payload; cloudify $@"
     
       PKG_DEBUG "Payload to execute remotely on $host:" 
       # Passwords are replaved by asterisks before printing

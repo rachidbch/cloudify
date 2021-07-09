@@ -1238,6 +1238,13 @@ function cloudify () {
   packages=""
   packages_parsing="not started"
 
+  # Check arguments validity 
+  # Implicit localhost only permitted if no --on|o option are given. This avoid very unintuitive behaviour like 'cloudify --install play --on workify' 
+  # installing 'play' on localhost (implicit host) and then complain about missing packages for workify 
+  if [[ "$1" == "--install" || "$1" == "install" || "$1" == "i" ]]; then
+     # "--on" close is forbidden with implicit localhost (ie 'cloudify --install ...')
+     [[ "$@" == *--on* || "$@" == *" on "* || "$@" == *"-o "* ]] && die "Error: Ambiguous host. Use 'cloudify install ...' for local only installations. Otherwise use explicit 'cloudify --on HOST --install ...'"
+  fi
 
   # Parse script parameters
   while :; do

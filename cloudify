@@ -79,12 +79,48 @@ function PKG_DEBUG() {
 
 function PKG_DEBUG_LN() {
 #  $CLOUDIFY_DEBUG && msg "${ORANGE}\n*** DEBUG: $1 ***${RESET}" || true
-  echo >&2
+  $CLOUDIFY_DEBUG && echo >&2
   $CLOUDIFY_DEBUG && msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} $@${RESET}" || true
 }
 
 
 #== GENERAL UTILITIES
+
+# Simple function to detect the OS we're running on 
+# Usage:
+# $ os detect:                 returns "gnux/linux ubuntu 18.04 lts"
+# $ os detect --os:            returns "gnux/linux"
+# $ os detect --distro:        returns "ubuntu" 
+# $ os detect --version:       returns "18.04"
+# $ os detect --lts:           returns "lts" (or nothing if not an lts version)
+function osdetect() {
+    arch=$(uname -m)
+    kernel=$(uname -r)
+
+    if [[ -n "$(command -v lsb_release)" ]]; then
+            distroname=$(lsb_release -s -d)
+    elif [[ -f "/etc/os-release" ]]; then
+            distroname=$(grep PRETTY_NAME /etc/os-release | sed 's/PRETTY_NAME=//g' | tr -d '="')
+    elif [[ -f "/etc/debian_version" ]]; then
+            distroname="Debian $(cat /etc/debian_version)"
+    elif [[ -f "/etc/redhat-release" ]]; then
+            distroname=$(cat /etc/redhat-release)
+    else
+            distroname="$(uname -s) $(uname -r)"
+    fi
+    
+    if [[ "$1" == "--os" ]]; then
+       echo "$(uname -o)" | tr '[A-Z]' '[a-z]'  
+    elif [[ "$1" == "--distro" ]]; then
+       echo "$distroname" | cut -d' ' -f 1 | tr '[A-Z]' '[a-z]'
+    elif [[ "$1" == "--version" ]]; then
+       echo "$distroname" | cut -d' ' -f 2 | tr '[A-Z]' '[a-z]' 
+    elif [[ "$1" == "--lts" ]]; then
+       echo "$distroname" | cut -d' ' -f 3 | tr '[A-Z]' '[a-z]' 
+    else
+        echo "$(uname -o) ${distroname}" | tr '[A-Z]' '[a-z]'
+    fi
+}
 
 # Simple break command to ease debug
 # Pauses until you type enter
@@ -1100,9 +1136,9 @@ function pkg_list_all() {
 function pkg_list_defaults() {
   # List default packages for current platform
   # Default packages are lited in ./*.packages files 
-  ( for pkg in $(< ${packages_file}); do
+  { for pkg in $(< ${packages_file}); do
       echo ${pkg%%*( )}
-    done ) | column 
+    done } | column 
 }
 
 function pkg_show() {
@@ -1167,11 +1203,11 @@ function preconfigure() {
   # Are we on Android Termux or Linux station?
   if [ ! -z "$(pgrep -f com.termux)" ]; then
     export PKG_PLATFORM="termux"
-    packages_file=${CLOUDIFY_DIR}/termux.packages
+    packages_file=${CLOUDIFY_DIR}/defaults/termux.packages
     pkg_init_file=$PKG_INIT_FILE_TERMUX
     PKG_DEBUG "Package init file name: $pkg_init_file"
   else
-    packages_file=${CLOUDIFY_DIR}/station.packages
+    packages_file=${CLOUDIFY_DIR}/defaults/station.packages
     pkg_init_file=$PKG_INIT_FILE_DEFAULT
     PKG_DEBUG "Package init file name: $pkg_init_file"
   fi
@@ -1183,33 +1219,60 @@ function preconfigure() {
 # Test code that can be tested w/ 'cloudify test' 
 # Use this to test code before inserting it in cloudify 
 
+function packages() {
 
-function inventory {
+  # Without filter, return all packages 
+  # Remove packages duplicates while retaining packages order (see awk incantation below)
+  
+  if [[ "$1" == "--labels" ]]; then
+     ls -d $CLOUDIFY_DIR/pkg/*/@* | xargs -I {} basename {} | awk '!a[$0]++' 
+     echo @default
+     echo @all
+  else
+    {
+        [[ $# == 0 ]] && ls -d $CLOUDIFY_DIR/pkg/*/ | xargs -I {} basename {}
+      
+        for filter in "$@"; do
+            if [[ "$filter" != \@* ]]; then
+               # If filter is an host, check if it exist
+               ls -d $CLOUDIFY_DIR/pkg/"$filter"/  | xargs -I {} basename {}
+	    elif [[ "$filter" == "@default"  ]]; then
+	       # If filter is virtual label '@default', list packages list default packages 
+               pkg_list_defaults
+            else
+               # If filter is a tag, filter all hosts with that tag 
+               ls -d $CLOUDIFY_DIR/pkg/*/"$filter" | xargs -I {} dirname {} | xargs -I {} basename {}
+            fi
+        done
+    }  | awk '!a[$0]++' 
+  fi
+}
+
+function inventory() {
 
   # Without filter, return all hosts
   # Remove host duplicates while retaining host order (see awk incantation below)
-  {
-      [[ $# == 0 ]] && ls -d $CLOUDIFY_DIR/inventory/*/ | xargs -I {} basename {}
-    
-      for filter in "$@"; do
-          if [[ "$filter" != \@* ]]; then
-             # If filter is an host, check if it exist
-             ls -d $CLOUDIFY_DIR/inventory/"$filter"/  | xargs -I {} basename {}
-          else
-             # If filter is a tag, filter all hosts with that tag 
-             ls -d $CLOUDIFY_DIR/inventory/*/"$filter" | xargs -I {} dirname {} | xargs -I {} basename {}
-          fi
-      done
-  }  | awk '!a[$0]++' 
+  if [[ "$1" == "--labels" ]]; then
+     ls -d $CLOUDIFY_DIR/inventory/*/@* | xargs -I {} basename {} | awk '!a[$0]++' 
+  else
+    {
+        [[ $# == 0 ]] && ls -d $CLOUDIFY_DIR/inventory/*/ | xargs -I {} basename {}
+      
+        for filter in "$@"; do
+            if [[ "$filter" != \@* ]]; then
+               # If filter is an host, check if it exist
+               ls -d $CLOUDIFY_DIR/inventory/"$filter"/  | xargs -I {} basename {}
+            else
+               # If filter is a tag, filter all hosts with that tag 
+               ls -d $CLOUDIFY_DIR/inventory/*/"$filter" | xargs -I {} dirname {} | xargs -I {} basename {}
+            fi
+        done
+    }  | awk '!a[$0]++' 
+  fi
 }
 
 function testCode () {
-
-  echo
-  echo inventory:
-  echo -e "--------"
-  inventory @infra @cluster
-
+  cloudify packages --labels 
 }
 
 
@@ -1237,6 +1300,8 @@ function cloudify () {
   hosts_parsing="not started"
   packages=""
   packages_parsing="not started"
+  
+  setup_in_progess=false
 
   # Check arguments validity 
   # Implicit localhost only permitted if no --on|o option are given. This avoid very unintuitive behaviour like 'cloudify --install play --on workify' 
@@ -1245,7 +1310,7 @@ function cloudify () {
      # "--on" close is forbidden with implicit localhost (ie 'cloudify --install ...')
      [[ "$@" == *--on* || "$@" == *" on "* || "$@" == *"-o "* ]] && die "Error: Ambiguous host. Use 'cloudify install ...' for local only installations. Otherwise use explicit 'cloudify --on HOST --install ...'"
   fi
-
+  [[ "$#" == 0 ]] && usage && exit 0
   # Parse script parameters
   while :; do
     [[ -z "$1" ]] && break
@@ -1256,13 +1321,27 @@ function cloudify () {
           ;;
     -v  | --verbose | verbose) set -x ;;
     -n  | --no-color) NO_COLOR=1 ;;
-    packages | pkgs | pkg)          
-          if [[ -z "${2-}" || "${2-}" == "all" ]]; then
-            pkg_list_all 
-          elif [[ "${2-}" == "defaults" ]]; then
-            pkg_list_defaults
+    inventory)          
+          SKIPCREDENTIALS=true preconfigure              # Initialize paths (but no need to check credentials)
+          if [[ -z "${2-}" || "${2-}" == "@all" ]]; then
+	    # If no arguments or if virtual label '@all' is given, list all inventory hosts 
+            inventory 
           else
-            shift && pkg_show "$@"
+	    # List packages matching filters (packages names or labels)
+            shift && inventory "$@"
+          fi
+          break ;; 
+    packages | pkgs | pkg)          
+          SKIPCREDENTIALS=true preconfigure              # Initialize paths (but no need to check credentials)
+	  if [[ "${2-}" == "show" ]]; then
+	    # Show packages installation code
+            shift && shift && pkg_show "$@"
+          elif [[ -z "${2-}" || "${2-}" == "@all" ]]; then
+	    # If no arguments or if virtual label '@all' is given, list all packages
+            packages | column
+          else
+	    # List packages matching filters (packages names or labels)
+            shift && packages "$@"
           fi
           break ;; 
     init)
@@ -1375,10 +1454,10 @@ function cloudify () {
                     # Go install or uninstall
                     if [[ "$action" == "install" ]]; then 
                         PKG_DEBUG "${YELLOW}pkg_install ${packages/--$action}${RESET}"
-                        pkg_install ${packages/--$action}
+			(pkg_install ${packages/--$action}) & setup_in_progress=true  
                     elif [[ "$action" == "uninstall" ]]; then 
                         PKG_DEBUG "${YELLOW}pkg_uninstall ${packages/--$action}${RESET}"
-                        pkg_uninstall ${packages/--$action}
+			(pkg_uninstall ${packages/--$action}) & setup_in_progress=true  
                     else
                         die "Unexecpected package action: $action"
                     fi
@@ -1405,17 +1484,17 @@ function cloudify () {
                     # Go install or uninstall
                     if [[ "$action" == "install" ]]; then 
                       PKG_DEBUG "${YELLOW}pkg_install ${packages/--$action}${RESET}"
-                      pkg_install ${packages/--$action}
+		      (pkg_install ${packages/--$action}) & setup_in_progress=true 
                     elif [[ "$action" == "uninstall" ]]; then 
                       PKG_DEBUG "${YELLOW}pkg_uninstall ${packages/--$action}${RESET}"
-                      pkg_uninstall ${packages/--$action}
+		      (pkg_uninstall ${packages/--$action}) & setup_in_progress=true 
                     else
                       die "Unexecpected package action: $action"
                     fi
                 else
                   PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
 		  # =TODO= Should this be done in a sub-process? 
-                  cloudify_remote "$host" "$packages"
+                  cloudify_remote "$host" "$packages"  && setup_in_progress=true 
                 fi
               done
               break    # All packages have been consummed, go ahead and install/remove them  
@@ -1440,15 +1519,19 @@ function cloudify () {
     shift
   done
 
-  # Wait until all background tasks return
-  msg "${GREEN}Setup of machines in progress...${RESET}"
-  wait
-  msg "${GREEN}Setup Done.${RESET}"
+  # Print Setup in progress only if we launched background setup
+  $setup_in_progess && {
+      # Wait until all background tasks return
+      msg "${GREEN}Setup of machines in progress...${RESET}"
+      wait
+      msg "${GREEN}Setup Done.${RESET}"
+  }
   return 0
 
 # Check required params and arguments
 #  [[ -z "${param-}" ]] && die "Missing required parameter: param"
 #  [[ ${#args[@]} -eq 0 ]] && die "Missing script arguments"
+
 }
 
 #== MAIN: EXECUTE SCRIPT!

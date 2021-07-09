@@ -4,3 +4,4 @@ logs
 todo.txt
 dummify.sh
 inventory/
+pkg/**/@*

@@ -86,7 +86,7 @@ function PKG_DEBUG() {
 
 function PKG_DEBUG_LN() {
 #  $CLOUDIFY_DEBUG && msg "${ORANGE}\n*** DEBUG: $1 ***${RESET}" || true
-  $CLOUDIFY_DEBUG && echo >&2
+  #$CLOUDIFY_DEBUG && echo >&2
   $CLOUDIFY_DEBUG && msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} $@${RESET}" || true
 }
 

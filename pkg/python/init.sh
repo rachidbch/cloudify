@@ -43,25 +43,44 @@ if (( $(echo "$UBUNTU_VER <= 16.04" | bc -l ))); then
     # =warning= If this doesn't do the job, select manually the alternative with:
     # $ sudo update-alternatives --config python3
 
-    # Install pip3.6 as it python3.6 pkg comes without it
-    echo "Installing pip3.6"
-    curl https://bootstrap.pypa.io/get-pip.py | sudo python3.6
-  
-    echo "Installing python3.6-venv"
-    # Without this, `pipx install pycowsay' failes
-    # Don't even ask me why ...   Python is just a mess...
-    pkg_apt_install python3.6-venv 
-
-    echo "Installing argcomplete"
-    # Don't ask about this one neither. Witout python3.6 complains about the module absence
-    # I use sudo (which is not recommended), because I want the module "available globally" for 3.6, but the truth is I don't understand what I'm doing :(
-    # So far, so good, ...
-    # sudo -H pip3 install argcomplete
-    # Most probably I shoud have done:
-    python3 -m pip install argcomplete
-    # =todo= Try it on a fresh install 
 
   fi
+fi
+
+# Install pip2 as it python3.6 pkg comes without it
+if ! python2 -m pip &>/dev/null; then 
+  echo "Installing pip2"
+  curl https://bootstrap.pypa.io/get-pip.py | sudo python2
+fi
+
+# Install pip3.6 as it python3.6 pkg comes without it
+if ! python3 -m pip &>/dev/null; then 
+  echo "Installing pip3"
+  curl https://bootstrap.pypa.io/get-pip.py | sudo python3
+fi
+
+#if ! python2 -m venv &>/dev/null; then 
+#  echo "Installing python2 venv"
+#  python2 -m pip install virtualenv 
+#fi
+
+if ! python3 -m venv &>/dev/null; then 
+  echo "Installing python3.6-venv"
+  # Without this, `pipx install pycowsay' fails
+  # Don't even ask me why ...   Python is just a mess...
+  pkg_apt_install python3.6-venv 
+fi
+
+if ! python3 -m argcomplete &>/dev/null; then 
+  echo "Installing argcomplete"
+  # Don't ask about this one neither. Witout python3.6 complains about the module absence
+  # I use sudo (which is not recommended), because I want the module "available globally" for 3.6, but the truth is I don't understand what I'm doing :(
+  # So far, so good, ...
+  # sudo -H pip3 install argcomplete
+  # Most probably I shoud have done:
+  
+  python3 -m pip install argcomplete
+  # =todo= Try it on a fresh install 
 fi
 
 # echo "Installing python3-distutils"

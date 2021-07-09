@@ -43,9 +43,13 @@ export CLOUDIFY_TMP=/tmp/cloudify
 export EDITOR=vim                           # If an editor is needed during install 
 
 #== ENVIRONMENT
-# Set CLOUDIFY_DIR a defautl value if not already set
+# Set CLOUDIFY_DIR a default value if not already set
 # Export it as it is needed in subshells
 : "${CLOUDIFY_DIR:=$HOME/cloudify}" && export CLOUDIFY_DIR
+
+# Set CLOUDIFY_LXDSERVER a defautl value if not already set
+: "${CLOUDIFY_LXDSERVER:=cloudhorse}" && export LXDSERVER=$CLOUDIFY_LXDSERVER
+
 # Default assumed platform
 export PKG_PLATFORM="ubuntu"
 
@@ -172,10 +176,10 @@ function setup_colors() {
   #$CLOUDIFY_DEBUG && { 
   #    [[ -t 2 ]] && PKG_DEBUG Terminal Detected || PKG_DEBUG NO Terminal Detected 
   #    [[ "${TERM-}" != "dumb"  ]] && PKG_DEBUG Real Terminal Detected || PKG_DEBUG Dumb Terminal Detected 
-  #    [[ -z "${NO_COLOR-}" ]] && PKG_DEBUG Colors enabled || PKG_DEBUG Colors disabled  
+  #    [[ -z "${NO_COLORS-}" ]] && PKG_DEBUG Colors enabled || PKG_DEBUG Colors disabled  
   #}
   
-  if $CLOUDIFY_FORCE_COLORS || ([[ -t 2 ]] && [[ -z "${NO_COLOR-}" ]] && [[ "${TERM-}" != "dumb" ]]); then
+  if ( -z "${NO_COLORS-}" ) &&  ( $CLOUDIFY_FORCE_COLORS || ([[ -t 2 ]] && [[ "${TERM-}" != "dumb" ]]) ); then
     RESET='\033[0m' RED='\033[0;31m' GREEN='\033[0;32m' ORANGE='\033[0;33m' BLUE='\033[0;34m' PURPLE='\033[0;35m' CYAN='\033[0;36m' YELLOW='\033[1;33m'
   else
     RESET='' RED='' GREEN='' ORANGE='' BLUE='' PURPLE='' CYAN='' YELLOW=''
@@ -698,8 +702,12 @@ function pkg_install_release() {
 
     PKG_DEBUG_LN "Retrieving $repoId last release"
     release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux[-_]amd64' | grep -ie '\.tgz\|\.tar\.gz')
+
+    [[ -z $release_url ]] && release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'x86_64' | grep -ive 'musl' | grep -ie '\.tgz\|\.tar\.gz')
+
+    [[ -z $release_url ]] && die "Unable to find 64bits linux release for $repoId"
+
     PKG_DEBUG_LN "Last release url: $release_url"
-    
     if [[ ! -z "$cmd"  ]]; then 
       [[ -d /tmp/"$cmd" ]] && rm -rf /tmp/"$cmd"
       mkdir /tmp/"$cmd"
@@ -717,24 +725,24 @@ function pkg_install_release() {
           # Some install archives have an install/setup script. 
           # If that's the case, let it do its thing (A lot of install/setup scripts read the install directory in a prefix variable )
           [[ -f /tmp/"$cmd"/install ]] && PKG_DEBUG "Running archive setup script" \
-            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install <<< "$hostpwd" \
+            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install &> /dev/null <<< "$hostpwd" \
             && exit 0
 
           [[ -f /tmp/"$cmd"/install.sh ]] && PKG_DEBUG "Running archive setup script" \
-            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install.sh <<< "$hostpwd" \
+            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install.sh &> /dev/null <<< "$hostpwd" \
             && exit 0
 
           [[ -f /tmp/"$cmd"/setup ]] && PKG_DEBUG "Running archive setup script" \
-            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup <<< "$hostpwd" \
+            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup &> /dev/null <<< "$hostpwd" \
             && exit 0
 
           [[ -f /tmp/"$cmd"/setup.sh ]] && PKG_DEBUG "Running archive setup script" \
-            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup.sh <<< "$hostpwd"   \
+            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup.sh &> /dev/null <<< "$hostpwd"   \
             && exit 0
            
           # Some install archive contain directly the binary
           [[ -f /tmp/"$cmd"/"$cmd" ]] && PKG_DEBUG "Installing $cmd binary" \
-            && command sudo -kS -p '' install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ <<< "$hostpwd"  \
+            && command sudo -kS -p '' install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ &> /dev/null <<< "$hostpwd"  \
             && exit 0
 	  
           # The 'install' command doesn't have a recursive option. We use find as a workaround 
@@ -745,7 +753,7 @@ function pkg_install_release() {
 
               if [[ -d /tmp/"$cmd"/"$release_dir" ]]; then
                 ( cd /tmp/"$cmd"/"$release_dir" 
-                command sudo -kS -p '' find . -mindepth 1 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \; <<< "$hostpwd" )
+                command sudo -kS -p '' find . -mindepth 1 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \; &> /dev/null <<< "$hostpwd" )
               fi
 	        done
       )
@@ -1162,9 +1170,19 @@ function pkg_install_defaults {
 
 function pkg_install {
   # Install specific packages 
+   
   for pkg in "$@"; do
-    msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
-    pkg_depends "$pkg"
+    if [[ "$pkg" != @* ]]; then
+      msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
+      pkg_depends "$pkg"
+    else
+      # Installing packages designated by a label
+      local label="$pkg"
+      msg "${GREEN}Installing ${pkg%%*( )} cloudify packages${RESET}"
+      for pkg in $(packages "$label"); do
+        pkg_install "$pkg"
+      done
+    fi
   done
   $SKIPDONEMESSAGE || printDone
 }
@@ -1301,7 +1319,7 @@ function cloudify () {
   packages=""
   packages_parsing="not started"
   
-  setup_in_progess=false
+  setup_in_progress=false
 
   # Check arguments validity 
   # Implicit localhost only permitted if no --on|o option are given. This avoid very unintuitive behaviour like 'cloudify --install play --on workify' 
@@ -1311,6 +1329,8 @@ function cloudify () {
      [[ "$@" == *--on* || "$@" == *" on "* || "$@" == *"-o "* ]] && die "Error: Ambiguous host. Use 'cloudify install ...' for local only installations. Otherwise use explicit 'cloudify --on HOST --install ...'"
   fi
   [[ "$#" == 0 ]] && usage && exit 0
+
+
   # Parse script parameters
   while :; do
     [[ -z "$1" ]] && break
@@ -1320,7 +1340,7 @@ function cloudify () {
           break
           ;;
     -v  | --verbose | verbose) set -x ;;
-    -n  | --no-color) NO_COLOR=1 ;;
+    -n  | --no-color) NO_COLORS=1 ;;
     inventory)          
           SKIPCREDENTIALS=true preconfigure              # Initialize paths (but no need to check credentials)
           if [[ -z "${2-}" || "${2-}" == "@all" ]]; then
@@ -1341,7 +1361,7 @@ function cloudify () {
             packages | column
           else
 	    # List packages matching filters (packages names or labels)
-            shift && packages "$@"
+            shift && packages "$@" 
           fi
           break ;; 
     init)
@@ -1352,10 +1372,10 @@ function cloudify () {
 	  cloudify credentials
 	  ;;
     hosts)
-	  lxc list cloudhorse:
+	  lxc list $LXDSERVER:
 	  ;;
     host)
-	  lxc list cloudhorse:$2
+	  lxc list $LXDSERVER:$2
 	  ;;
     launch | run)
           local hostpwd="${CLOUDIFY_LOCALHOSTPWD}" 
@@ -1370,12 +1390,12 @@ function cloudify () {
 	      restparams=${@:3}
 	  fi
 
-          PKG_DEBUG lxc launch "$host_image" cloudhorse:"$host" -p default $restparams
-          lxc launch "$host_image" cloudhorse:"$host" -p default $restparams
+          PKG_DEBUG lxc launch "$host_image" $LXDSERVER:"$host" -p default $restparams
+          lxc launch "$host_image" $LXDSERVER:"$host" -p default $restparams
           # =TODO= test exit code
           hostip="" 
           while [[ ! $hostip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; do
-              hostip=$(lxc list -c4 --format csv cloudhorse:$host | cut -d' ' -f1)
+              hostip=$(lxc list -c4 --format csv $LXDSERVER:$host | cut -d' ' -f1)
           done
 	  $CLOUDIFY_DEBUG && pkg_pause "line before add_in_hosts"
           add_in_hosts "$hostip $host $host.remote" 
@@ -1387,7 +1407,7 @@ function cloudify () {
           [[ -z ${hostpwd} ]] && die "Host password not set"
           host="$2"
 
-          if ! lxc delete cloudhorse:"$host" ${@:3} &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
+          if ! lxc delete $LXDSERVER:"$host" ${@:3} &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
 
           # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". Why that? 
           command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts  &>/dev/null <<< "$hostpwd"
@@ -1407,18 +1427,28 @@ function cloudify () {
 
           while true; do
             # first, die out on invalid argument
-            [[ "$2" == "--on" || "$2" == "on" || "$2" == "o" ||  "$2" == "--help" ||  "$2" == "help" || "$2" == "-h" || "$2" == "--list" || "$2" == "list" || "$2" == "l" || "$2" == "--credentials" || "$2" == "credentials" ||  "$2" == "c" || "$2" == "--test" || "$2" == "test" || "$2" == "t" ]] &&  "Argument syntax error: '$2' invalid inside an 'on' block"
+            [[ "$2" == "--on" || "$2" == "on" || "$2" == "o" ||  "$2" == "--help" ||  "$2" == "help" || "$2" == "-h" || "$2" == "--list" || "$2" == "list" || "$2" == "l" || "$2" == "--credentials" || "$2" == "credentials" ||  "$2" == "c" || "$2" == "--test" || "$2" == "test" || "$2" == "t" ]] &&  die "Argument syntax error: '$2' invalid inside an 'on' block"
+
             # If any of these is encountered, there's no more hosts, we can go ahead and setup the hosts
             [[ -z "$2" || "$2" == -* ||  "$2" == "install" || "$2" == "inst" || "$2" == "i" || "$2" == "uninstall" || "$2" == "u" ]] && { 
               [[ -z "$hosts" ]] && die "Cloudify usage error: No host found."
               hosts_parsing="ended" 
               break    # Hosts have been consummed, go ahead and parse next arguments
             }
-            [[ -z "$hosts" ]] && hosts="$2" || hosts="$hosts $2"
+            # Add current host to hosts list 
+	    local hosts_to_add="$2"
+	    [[ "$2" == @* ]] && hosts_to_add=$(inventory "$2")
+
+            if [[ -z "$hosts" ]]; then
+	      hosts="$hosts_to_add" 
+	    else
+              hosts="$hosts $hosts_to_add"
+            fi
             shift
           done
           [[ -z "$2" ]] && die "No packages found for hosts: $hosts"
           ;;
+
      --install | install |inst | i | --uninstall | uninstall | u)  
 	  # pkg_pause "executing install subcommand"
           # Build packages list
@@ -1476,7 +1506,6 @@ function cloudify () {
               # Install/Remove packages on hosts
               for host in $hosts; do
                 if [[ "$hosts" == "localhost" ]]; then
-
                     # Ensure environment variables are set and set default values otherwise 
                     # Cloudify is executed on localhost. Either because cloudify is executed agains local machine,
                     # we're inside a remote execution. Either way, we can safely execute each package sequentially.
@@ -1484,10 +1513,12 @@ function cloudify () {
                     # Go install or uninstall
                     if [[ "$action" == "install" ]]; then 
                       PKG_DEBUG "${YELLOW}pkg_install ${packages/--$action}${RESET}"
-		      (pkg_install ${packages/--$action}) & setup_in_progress=true 
+		      (pkg_install ${packages/--$action})& 
+		      setup_in_progress=true 
                     elif [[ "$action" == "uninstall" ]]; then 
                       PKG_DEBUG "${YELLOW}pkg_uninstall ${packages/--$action}${RESET}"
-		      (pkg_uninstall ${packages/--$action}) & setup_in_progress=true 
+		      (pkg_uninstall ${packages/--$action})& 
+		      setup_in_progress=true 
                     else
                       die "Unexecpected package action: $action"
                     fi
@@ -1520,7 +1551,7 @@ function cloudify () {
   done
 
   # Print Setup in progress only if we launched background setup
-  $setup_in_progess && {
+  $setup_in_progress && {
       # Wait until all background tasks return
       msg "${GREEN}Setup of machines in progress...${RESET}"
       wait

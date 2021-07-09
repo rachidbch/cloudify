@@ -878,6 +878,7 @@ function sudo() {
   fi
 
   # As we pass everything, including piped input as arguments to 'bash -c', we can safely supply sudo password using a herestring
+  PKG_DEBUG command sudo -kS bash -c "$sudocmd"  \&\>/dev/null \<\<\< "$CLOUDIFY_HOSTPWD"
   command sudo -kS bash -c "$sudocmd"  &>/dev/null <<< "$CLOUDIFY_HOSTPWD"
 }
 

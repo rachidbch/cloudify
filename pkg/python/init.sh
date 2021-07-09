@@ -65,10 +65,10 @@ fi
 #fi
 
 if ! python3 -m venv &>/dev/null; then 
-  echo "Installing python3.6-venv"
+  echo "Installing python3-venv"
   # Without this, `pipx install pycowsay' fails
   # Don't even ask me why ...   Python is just a mess...
-  pkg_apt_install python3.6-venv 
+  pkg_apt_install python3-venv 
 fi
 
 if ! python3 -m argcomplete &>/dev/null; then 

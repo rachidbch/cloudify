@@ -448,7 +448,7 @@ function add_in_hosts(){
     PKG_DEBUG "Inserting: $host_line"
     # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". 
     #        Exact same line above didn't need that. Why that?
-    command sudo -kSp '' sed -in "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &> /dev/null <<<$CLOUDIFY_LOCALHOSTPWD
+    command sudo -kSp '' sed -i -n "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &> /dev/null <<<$CLOUDIFY_LOCALHOSTPWD
     PKG_DEBUG "Inserted: $host_line"
   done
 
@@ -618,7 +618,7 @@ function pkg_in_startuprc(){
   #PKG_DEBUG_LN "Remove existing pkg setup if any"
   for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
     #PKG_DEBUG "Remove line: $pkg_startuprc_line"
-    sed -in "/$pkg_startuprc_line/d" ~/.bashrc
+    sed -i -n "/$pkg_startuprc_line/d" ~/.bashrc
     #PKG_DEBUG "----"
     #PKG_DEBUG "What's in there in bashrc?"
     #$CLOUDIFY_DEBUG && cat  ~/.bashrc
@@ -628,7 +628,7 @@ function pkg_in_startuprc(){
   #PKG_DEBUG_LN "Inserting pkg setup"
   for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
     #PKG_DEBUG "Inserting line: $pkg_startuprc_line"
-    sed -in "/# CLOUDIFY ENV END/i $pkg_startuprc_line" ~/.bashrc
+    sed -i -n "/# CLOUDIFY ENV END/i $pkg_startuprc_line" ~/.bashrc
 
     #PKG_DEBUG "----"
     #PKG_DEBUG "What's in there in bashrc?"

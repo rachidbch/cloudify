@@ -857,30 +857,117 @@ function check_credentials () {
 #  So to suppy the password to sudo we need to rearrange the way sudo is called, passing everything as arguments to free stdin for password
 
 function sudo() {
-
   local lineargs=""
   local pipeargs="" 
 
+  # Some commands arguments must be dealt with caution
+   case "$1" in
+     "sed")
+	# In a sed command, the sed expression argument must be surrounded with single quotes
+	# =TODO= Detect '-e' and '-f' options as those indicate a inline or in-file sed script resp.
+        local sedcmd="sed"
+	local arg=""
+        local arg_expr=""
+        local arg_file=""
+        shift; arg="$1"
+        while [[ ! -z "$arg" ]]; do 
+           if [[ "$arg" == -* ]]; then
+              sedcmd="$sedcmd $arg"
+           else
+              [[ -z "$arg_expr" ]] && { arg_expr="$arg"; sedcmd="$sedcmd '$arg_expr'"; } || { arg_file="$arg"; sedcmd="$sedcmd $arg_file"; }
+           fi
+           shift; arg="$1"
+        done
+        lineargs="$sedcmd"
+       ;;
+     "find")
+	local findcmd="find"
+        shift; arg="$1"
+	echo dealing with find
+	while [[ ! -z "$arg" ]]; do 
+          if [[ "$arg" == ";" ]]; then
+	     findcmd="$findcmd \\$arg"
+	  else
+  	     findcmd="$findcmd $arg"
+	  fi
+	  shift; arg="$1"
+         done
+         lineargs="$findcmd"
+       ;;
+     *)
+       lineargs="${@}"
+       ;;
+   esac
+
+  echo -E "$sudocmd"
+
+  # Find out if the sudo command have been called within a pipe, with arguments or both
+  # This if incantation can of course be simplified but I prefer to let it that way to make the different cases clear
   if [ -t 0 ]; then
-    lineargs="${@}"
+    # 'sudo' not called in a pipe
+    lineargs="$lineargs"
+    #lineargs="${@}"
   elif [[ -p /dev/stdin ]]; then
-    lineargs="${@}"
+    # 'sudo' called in a pipe. 
+    #lineargs="${@}"
     pipeargs="$(cat -)"
   else
-    lineargs="${@}"
+    # 'sudo' called with a here doc
     pipeargs="$(cat -)"
   fi
 
   if [[ -z $pipeargs ]]; then
-    sudocmd="$@"
+    sudocmd="$lineargs"
   else
     sudocmd="echo '$pipeargs' | $lineargs"
   fi
 
   # As we pass everything, including piped input as arguments to 'bash -c', we can safely supply sudo password using a herestring
-  PKG_DEBUG command sudo -kS bash -c "$sudocmd"  \&\>/dev/null \<\<\< "$CLOUDIFY_HOSTPWD"
-  command sudo -kS bash -c "$sudocmd"  &>/dev/null <<< "$CLOUDIFY_HOSTPWD"
+  sudocmd_length=$(echo -n "'$sudocmd'" | wc -m)
+  #echo length of sudo command is "$sudocmd_length". 
+
+  if (( $sudocmd_length < 10000 )); then
+    PKG_DEBUG command sudo -kS bash -c "$sudocmd" \<\<\< "$CLOUDIFY_HOSTPWD"
+    #command sudo -kS -p ""  bash -c "$sudocmd" 2>/dev/null <<< "$CLOUDIFY_HOSTPWD"
+    command sudo -kS -p ""  bash -c "$sudocmd" <<< "$CLOUDIFY_HOSTPWD"
+  else
+    # The sudo command is much too long, create a temporary file and execute it
+    local tfile=$(mktemp /tmp/foo.XXXXXXXXX)
+    echo creating $tfile
+    echo "$pipeargs" > $tfile
+    PKG_DEBUG command sudo -kS "$lineargs" "$tfile" \<\<\< "$CLOUDIFY_HOSTPWD"
+    command sudo -p " " -kS "$lineargs" "$tfile" <<< "$CLOUDIFY_HOSTPWD"
+  fi
 }
+
+
+
+
+#function sudo() {
+#
+#  local lineargs=""
+#  local pipeargs="" 
+#
+#  if [ -t 0 ]; then
+#    lineargs="${@}"
+#  elif [[ -p /dev/stdin ]]; then
+#    lineargs="${@}"
+#    pipeargs="$(cat -)"
+#  else
+#    lineargs="${@}"
+#    pipeargs="$(cat -)"
+#  fi
+#
+#  if [[ -z $pipeargs ]]; then
+#    sudocmd="$@"
+#  else
+#    sudocmd="echo '$pipeargs' | $lineargs"
+#  fi
+#
+#  # As we pass everything, including piped input as arguments to 'bash -c', we can safely supply sudo password using a herestring
+#  PKG_DEBUG command sudo -kS bash -c "$sudocmd"  \&\>/dev/null \<\<\< "$CLOUDIFY_HOSTPWD"
+#  command sudo -kS bash -c "$sudocmd"  &>/dev/null <<< "$CLOUDIFY_HOSTPWD"
+#}
 
 
 ## Git shadowing

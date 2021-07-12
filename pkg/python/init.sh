@@ -50,7 +50,7 @@ fi
 # Install pip2 as it python3.6 pkg comes without it
 if ! python2 -m pip &>/dev/null; then 
   echo "Installing pip2"
-  curl https://bootstrap.pypa.io/get-pip.py | sudo python2
+  curl https://bootstrap.pypa.io/pip/2.7/get-pip.py | sudo python2
 fi
 
 # Install pip3.6 as it python3.6 pkg comes without it

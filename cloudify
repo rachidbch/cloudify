@@ -862,6 +862,10 @@ function sudo() {
 
   # Some commands arguments must be dealt with caution
    case "$1" in
+     "add-apt-repository")
+	# In add-apt-repository the repository line must be enclosed in single quotes or add-apt-repository complains w/ "Error: need a single repository as argument"
+        lineargs="$1 '${@:2}'"
+        ;;
      "sed")
 	# In a sed command, the sed expression argument must be surrounded with single quotes
 	# =TODO= Detect '-e' and '-f' options as those indicate a inline or in-file sed script resp.
@@ -881,6 +885,7 @@ function sudo() {
         lineargs="$sedcmd"
        ;;
      "find")
+        # In find command, the last ';' argument must be escaped or it will be interpreted out by the shell
 	local findcmd="find"
         shift; arg="$1"
 	echo dealing with find
@@ -899,17 +904,15 @@ function sudo() {
        ;;
    esac
 
-  echo -E "$sudocmd"
 
   # Find out if the sudo command have been called within a pipe, with arguments or both
   # This if incantation can of course be simplified but I prefer to let it that way to make the different cases clear
   if [ -t 0 ]; then
     # 'sudo' not called in a pipe
-    lineargs="$lineargs"
-    #lineargs="${@}"
+    :;    # Do nothing
+    #lineargs="$lineargs"
   elif [[ -p /dev/stdin ]]; then
     # 'sudo' called in a pipe. 
-    #lineargs="${@}"
     pipeargs="$(cat -)"
   else
     # 'sudo' called with a here doc
@@ -924,7 +927,6 @@ function sudo() {
 
   # As we pass everything, including piped input as arguments to 'bash -c', we can safely supply sudo password using a herestring
   sudocmd_length=$(echo -n "'$sudocmd'" | wc -m)
-  #echo length of sudo command is "$sudocmd_length". 
 
   if (( $sudocmd_length < 10000 )); then
     PKG_DEBUG command sudo -kS bash -c "$sudocmd" \<\<\< "$CLOUDIFY_HOSTPWD"
@@ -939,8 +941,6 @@ function sudo() {
     command sudo -p " " -kS "$lineargs" "$tfile" <<< "$CLOUDIFY_HOSTPWD"
   fi
 }
-
-
 
 
 #function sudo() {

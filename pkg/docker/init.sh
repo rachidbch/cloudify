@@ -21,7 +21,7 @@ msg "Docker version installed"
 docker -v
 
 msg "Adding $USER to \'docker\' group"
-sudo usermod -aG docker $USER"
+sudo usermod -aG docker "$USER"
 
 msg "Warning: Ensure $USER is in \'docker\' group"
 msg "\$ newgrp docker"

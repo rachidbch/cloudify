@@ -785,7 +785,7 @@ function pkg_install_release() {
             )
         fi
         PKG_DEBUG "Discarding tmp/$cmd/"
-        #rm -rf "/tmp/${cmd}"
+        rm -rf "/tmp/${cmd}"
     fi
 }
 

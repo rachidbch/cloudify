@@ -669,13 +669,24 @@ function pkg_apt_repository() {
 function pkg_apt_install() {
   local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
   [[ -z ${hostpwd} ]] && die "Host passord not set"
+  local pkgname=""
 
   PKG_DEBUG_LN "Installing $pkg apt package"
 
   for pkg in "${@}"; do 
    pkg_apt_update 
-   # =TODO= Parse apt install output to detect error in installation
-   if  ! dpkg -l "$pkg" |& grep -q "^ii  $pkg"; then
+
+   # If a deb file is passed, get the package name from it
+   # Of course, this only works if deb files are consistently named "/path/to/<package name>.deb"
+   if [[ $pkg == .deb ]] && [[ -f $pkg ]]; then
+      pkgname=$(basename "$pkg")     
+      pkgname=${pkgname%.*}
+   else
+      pkgname=$pkg
+   fi
+
+   if  ! dpkg -l "$pkgname" |& grep -q "^ii  $pkg"; then
+     # =TODO= Parse apt install output to detect error in installation
      command sudo -kS -p '' apt-get -q install "$pkg"  -y  <<< "$hostpwd"
      # If apt-get install failed, we stop cloudify
      # =TODO= Instead of brutally exiting, log the error and continue with next package installations
@@ -723,7 +734,7 @@ function pkg_install_release() {
             PKG_DEBUG "Extracting $repoId deb archive in /tmp/${cmd}/${cmd}.deb"
             curl -sSL "$release_url" > "/tmp/${cmd}/${cmd}.deb"
             PKG_DEBUG "Installing $repoId deb package."
-            apt install "/tmp/${cmd}/${cmd}.deb" -y
+            pkg_apt_install "/tmp/${cmd}/${cmd}.deb" 
         else   
   	    # Install binary from tgz archive  
             PKG_DEBUG "Extracting $repoId tgz archive. in /tmp/$cmd/"

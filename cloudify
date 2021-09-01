@@ -703,64 +703,78 @@ function pkg_install_release() {
     repoId="$2"
 
     PKG_DEBUG_LN "Retrieving $repoId last release"
+
     release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux[-_]amd64' | grep -ie '\.tgz\|\.tar\.gz')
 
     [[ -z $release_url ]] && release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'x86_64' | grep -ive 'musl' | grep -ie '\.tgz\|\.tar\.gz')
 
+    release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux[-_]amd64' | grep -ie '\.deb')
+
     [[ -z $release_url ]] && die "Unable to find 64bits linux release for $repoId"
 
     PKG_DEBUG_LN "Last release url: $release_url"
+
     if [[ ! -z "$cmd"  ]]; then 
-      [[ -d /tmp/"$cmd" ]] && rm -rf /tmp/"$cmd"
-      mkdir /tmp/"$cmd"
-    
-      PKG_DEBUG "Extracting $repoId tgz archive. in /tmp/$cmd/"
-      curl -sSL "$release_url" | tar -C /tmp/"$cmd"  --strip-components=1  -xzf -
-
-      if emptydir /tmp/"$cmd"; then
-         # Contrary to a widely shared practice, this repo doesn't include a top level folder into its release archive 
-         curl -sSL "$release_url" | tar -C /tmp/"$cmd"  -xzf -
-      fi
+        [[ -d /tmp/"$cmd" ]] && rm -rf /tmp/"$cmd"
+        mkdir /tmp/"$cmd"
       
-      PKG_DEBUG "Installing $repoId in /usr/local/"
-      (
-          # Some install archives have an install/setup script. 
-          # If that's the case, let it do its thing (A lot of install/setup scripts read the install directory in a prefix variable )
-          [[ -f /tmp/"$cmd"/install ]] && PKG_DEBUG "Running archive setup script" \
-            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install &> /dev/null <<< "$hostpwd" \
-            && exit 0
-
-          [[ -f /tmp/"$cmd"/install.sh ]] && PKG_DEBUG "Running archive setup script" \
-            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install.sh &> /dev/null <<< "$hostpwd" \
-            && exit 0
-
-          [[ -f /tmp/"$cmd"/setup ]] && PKG_DEBUG "Running archive setup script" \
-            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup &> /dev/null <<< "$hostpwd" \
-            && exit 0
-
-          [[ -f /tmp/"$cmd"/setup.sh ]] && PKG_DEBUG "Running archive setup script" \
-            && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup.sh &> /dev/null <<< "$hostpwd"   \
-            && exit 0
-           
-          # Some install archive contain directly the binary
-          [[ -f /tmp/"$cmd"/"$cmd" ]] && PKG_DEBUG "Installing $cmd binary" \
-            && command sudo -kS -p '' install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ &> /dev/null <<< "$hostpwd"  \
-            && exit 0
-	  
-          # The 'install' command doesn't have a recursive option. We use find as a workaround 
-          # This will install each file in the archive at corresping path /usr/local
-          # Note we're excluding the first level, as this is the place of files, like LICENSE, that shouldn't be installed 
-	        for release_dir in 'bin' 'share' 'etc' 'doc'; do
-              [[ -d /tmp/"$cmd"/"$release_dir" ]] && PKG_DEBUG "Installing /tmp/$cmd/$release_dir to /usr/local/$release_dir"
-
-              if [[ -d /tmp/"$cmd"/"$release_dir" ]]; then
-                ( cd /tmp/"$cmd"/"$release_dir" 
-                command sudo -kS -p '' find . -mindepth 1 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \; &> /dev/null <<< "$hostpwd" )
-              fi
-	        done
-      )
-      PKG_DEBUG "Discarding tmp/$cmd/"
-      #rm -rf "/tmp/${cmd}"
+        if [[ $release_url == *.deb ]]; then
+  	    # Install from deb package
+            PKG_DEBUG "Extracting $repoId deb archive in /tmp/${cmd}/${cmd}.deb"
+            curl -sSL "$release_url" > "/tmp/${cmd}/${cmd}.deb"
+            PKG_DEBUG "Installing $repoId deb package."
+            apt install "/tmp/${cmd}/${cmd}.deb" -y
+        else   
+  	    # Install binary from tgz archive  
+            PKG_DEBUG "Extracting $repoId tgz archive. in /tmp/$cmd/"
+            curl -sSL "$release_url" | tar -C /tmp/"$cmd"  --strip-components=1  -xzf -
+      
+            if emptydir /tmp/"$cmd"; then
+               # Contrary to a widely shared practice, this repo doesn't include a top level folder into its release archive 
+               curl -sSL "$release_url" | tar -C /tmp/"$cmd"  -xzf -
+            fi
+            
+            PKG_DEBUG "Installing $repoId in /usr/local/"
+      
+            (
+                # Some install archives have an install/setup script. 
+                # If that's the case, let it do its thing (A lot of install/setup scripts read the install directory in a prefix variable )
+                [[ -f /tmp/"$cmd"/install ]] && PKG_DEBUG "Running archive setup script" \
+                  && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install &> /dev/null <<< "$hostpwd" \
+                  && exit 0
+      
+                [[ -f /tmp/"$cmd"/install.sh ]] && PKG_DEBUG "Running archive setup script" \
+                  && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/install.sh &> /dev/null <<< "$hostpwd" \
+                  && exit 0
+      
+                [[ -f /tmp/"$cmd"/setup ]] && PKG_DEBUG "Running archive setup script" \
+                  && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup &> /dev/null <<< "$hostpwd" \
+                  && exit 0
+      
+                [[ -f /tmp/"$cmd"/setup.sh ]] && PKG_DEBUG "Running archive setup script" \
+                  && command sudo -kS -p '' prefix=/usr/local bash  /tmp/"$cmd"/setup.sh &> /dev/null <<< "$hostpwd"   \
+                  && exit 0
+                 
+                # Some install archive contain directly the binary
+                [[ -f /tmp/"$cmd"/"$cmd" ]] && PKG_DEBUG "Installing $cmd binary" \
+                  && command sudo -kS -p '' install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ &> /dev/null <<< "$hostpwd"  \
+                  && exit 0
+      	  
+                # The 'install' command doesn't have a recursive option. We use find as a workaround 
+                # This will install each file in the archive at corresping path /usr/local
+                # Note we're excluding the first level, as this is the place of files, like LICENSE, that shouldn't be installed 
+      	        for release_dir in 'bin' 'share' 'etc' 'doc'; do
+                    [[ -d /tmp/"$cmd"/"$release_dir" ]] && PKG_DEBUG "Installing /tmp/$cmd/$release_dir to /usr/local/$release_dir"
+      
+                    if [[ -d /tmp/"$cmd"/"$release_dir" ]]; then
+                      ( cd /tmp/"$cmd"/"$release_dir" 
+                      command sudo -kS -p '' find . -mindepth 1 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \; &> /dev/null <<< "$hostpwd" )
+                    fi
+      	        done
+            )
+        fi
+        PKG_DEBUG "Discarding tmp/$cmd/"
+        #rm -rf "/tmp/${cmd}"
     fi
 }
 

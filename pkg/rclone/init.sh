@@ -1,5 +1,6 @@
 # Rclone Installation 
 
+pkg_depends jq
 pkg_install_release rclone "rclone/rclone"
 
 

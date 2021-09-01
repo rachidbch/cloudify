@@ -4,6 +4,12 @@
 # STRICT MODE ERROR HANDLING
 #set -Eeuo pipefail
 
+
+#== TODO
+## 1) Interactive scripts: The way we use "sudo -S" effectively forbids any interactive interaction
+##                         If interactive interaction is required, try solution explained in this [bash-sudo-s-mypassword-interactive-shell answer 
+##                         on AskUbuntu](https://askubuntu.com/a/1121309).
+
 #== SCRIPT PATH 
 ##  This onliner tries to cover all scenarios. It gets the real path of this script bet it executed or sourced directly or through symlinks 
 ##  =TODO= Compare with [this longer version](https://gist.github.com/TheMengzor/968e5ea87e99d9c41782) and find out if we need it
@@ -855,6 +861,10 @@ function check_credentials () {
 #  To call commands requiring password based authentication, we generally supply the password (that is stored in CLOUDIFY_HOSTPWD or CLOUDIFY_LOCALHOSTPWD variable)
 #  using a Here String (which uses stdin). Sudo command stdin is often used for normal command processing (like in 'echo <commands> | sudo tee ...') 
 #  So to suppy the password to sudo we need to rearrange the way sudo is called, passing everything as arguments to free stdin for password
+#  =TODO= So far, when a command is called w/ this shadow sudo function, we take care of special cases: this is done on a case by case basis in a switch case declaration
+#         This approach can only scale if we manage to abstract some general rules. For instance, the one problem encountered so far is commands that accept 
+#         complex arguments that contain spaces.
+#         This can be abstracted away, arguments can traversed in a loop and those that contain spaces can be enclosed in quotes.
 
 function sudo() {
   local lineargs=""

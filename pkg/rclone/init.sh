@@ -3,6 +3,10 @@
 pkg_depends jq
 pkg_install_release rclone "rclone/rclone"
 
+# Create a S3 Rclone remote in ~/.config/rclone/rclone.conf
+PKG_DEBUG "${RED}Creating ${HOME}/.config/rclone/rclone.conf file"
+cat $HOME/cloudify/pkg/rclone/rclone.conf | envsubst | tee ${HOME}/.config/rclone/rclone.conf &> /dev/null 
+PKG_DEBUG "${RED}Created ${HOME}/.config/rclone/rclone.conf file"
 
 ## notes: release links
 ##    v1.43.1  Linux 64 : https://downloads.rclone.org/v1.43.1/rclone-v1.43.1-linux-amd64.deb

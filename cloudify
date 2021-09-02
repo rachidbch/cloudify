@@ -251,6 +251,18 @@ function ask_github_credentials(){
     echo
 }
 
+# Ask for Restic/Rclone credentials
+function ask_restic_credentials(){
+    echo
+    # Ensure Restic variables and credentials are set 
+    prompt2var "Rclone Remote Name:" "CLOUDIFY_RCLONE_REMOTE" &&  export CLOUDIFY_RCLONE_REMOTE
+    prompt2var "Rclone Remote Region:" "CLOUDIFY_RCLONE_REMOTE_REGION" &&  export  CLOUDIFY_RCLONE_REMOTE_REGION
+    prompt2var "Rclone Remote Endpoint:" "CLOUDIFY_RCLONE_REMOTE_ENDPOINT" &&  export CLOUDIFY_RCLONE_REMOTE_ENDPOINT 
+    prompt2var "Rclone Remote Access Key Id:" "CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID" &&  export  CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID
+    prompt2var "Rclone Remote Secret Access Key:" "CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY" &&  export  CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY
+    echo
+}
+
 # Ask for Gitlab credentials
 function ask_gitlab_credentials(){
     echo
@@ -648,7 +660,14 @@ function pkg_apt_update() {
   local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
   [[ -z ${hostpwd} ]] && die "Host passord not set"
   if [[ "${1-}" == "--force"  || -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ]]; then
+    PKG_DEBUG "Updating apt packages lists"
     command sudo -kS -p '' apt-get -q update <<< "$hostpwd"
+    local exitcode=$?
+    if [ $exitcode -ne 0 ]; then
+        die "Error updating apt packages lists:" $exitcode
+    else
+        PKG_DEBUG "Apt packages lists updated."
+    fi
   fi
 }
 
@@ -671,7 +690,6 @@ function pkg_apt_install() {
   [[ -z ${hostpwd} ]] && die "Host passord not set"
   local pkgname=""
 
-  PKG_DEBUG_LN "Installing $pkg apt package"
 
   for pkg in "${@}"; do 
    pkg_apt_update 
@@ -684,6 +702,8 @@ function pkg_apt_install() {
    else
       pkgname=$pkg
    fi
+
+   PKG_DEBUG_LN "Installing $pkgname apt package"
 
    if  ! dpkg -l "$pkgname" |& grep -q "^ii  $pkg"; then
      # =TODO= Parse apt install output to detect error in installation
@@ -701,9 +721,11 @@ function pkg_apt_install() {
 }
 
 # Install latest release from Github
-# =TODO= Add installation from gitlab
 # =TODO= Add an argument to force a specific release version  
 #        Use 'https://api.github.com/repos/USER/REPO/releases' to list all releases
+# =TODO= Check if the package is already installed. Update if a newer version exist
+#        If a downgrade is requested, refuse and display an error
+# =TODO= Add installation from gitlab
 # =TODO= Should this use 'https://github.com/archf/ghi/blob/master/ghi' ?
 function pkg_install_release() {
    local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
@@ -816,8 +838,6 @@ function pkg_depends() {
 }
 
 
-
-
 #== CREDENTIALS 
 ## Cloudify needs user credentials to manage hosts and packages
 
@@ -832,7 +852,20 @@ function check_credentials () {
 
   local new_credentials=false
 
-  if "$force_ask_credentials" || [[ -z "${CLOUDIFY_LOCALHOSTUSER-}" || -z "${CLOUDIFY_LOCALHOSTPWD-}" || -z "${CLOUDIFY_HOSTUSER-}" || -z "${CLOUDIFY_HOSTPWD-}" ||  -z "${CLOUDIFY_GITHUBUSER-}" || -z "${CLOUDIFY_GITHUBPWD-}" || -z "${CLOUDIFY_GITLABUSER-}" || -z "${CLOUDIFY_GITLABPWD-}" ]]; then
+  if "$force_ask_credentials" || [[ -z "${CLOUDIFY_LOCALHOSTUSER-}" 
+	                      ||    -z "${CLOUDIFY_LOCALHOSTPWD-}" 
+			      ||    -z "${CLOUDIFY_HOSTUSER-}" 
+			      ||    -z "${CLOUDIFY_HOSTPWD-}" 
+			      ||    -z "${CLOUDIFY_GITHUBUSER-}" 
+			      ||    -z "${CLOUDIFY_GITHUBPWD-}" 
+			      ||    -z "${CLOUDIFY_GITLABUSER-}" 
+			      ||    -z "${CLOUDIFY_GITLABPWD-}" 
+			      ||    -z "${CLOUDIFY_RCLONE_REMOTE-}" 
+			      ||    -z "${CLOUDIFY_RCLONE_REMOTE_REGION-}" 
+			      ||    -z "${CLOUDIFY_RCLONE_REMOTE_ENDPOINT-}" 
+			      ||    -z "${CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID-}" 
+			      ||    -z "${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY-}" ]]; then
+
     local new_credentials=true
     msg "${GREEN}Cloudify needs your Host, Github and Gitlab credentials.${RESET}"
     [[ -f /dev/shm/cloudify_credentials ]] && rm -f "/dev/shm/cloudify_credentials"
@@ -840,34 +873,55 @@ function check_credentials () {
     chmod 600 /dev/shm/cloudify_credentials
   fi
 
-  # Ensure local host user is set
-  if "$force_ask_credentials" || [[ -z "${CLOUDIFY_LOCALHOSTUSER-}" || -z "${CLOUDIFY_LOCALHOSTPWD-}" ]]; then
-    ask_localhost_credentials
-    echo "export CLOUDIFY_LOCALHOSTUSER=$CLOUDIFY_LOCALHOSTUSER" >> /dev/shm/cloudify_credentials
-    echo "export CLOUDIFY_LOCALHOSTPWD=$CLOUDIFY_LOCALHOSTPWD" >> /dev/shm/cloudify_credentials
+  # If a .env credential file is found, use it
+  if [[ -f ${HOME}/cloudify/.env ]]; then
+     if [[ -f /dev/shm/cloudify_credentials ]]; then
+         msg "${GREEN}Credentials read from ${HOME}/.env file.${RESET}"
+         cp "${HOME}/cloudify/.env" /dev/shm/cloudify_credentials
+     else
+         msg "${RED}File /dev/shm/cloudify_credentials already exist. Use 'force' option to overwrite.${RESET}"
+     fi
+  # If no .env credential file is found, prompt the user for credentials
+  else
+      # Ensure local host user is set
+      if "$force_ask_credentials" || [[ -z "${CLOUDIFY_LOCALHOSTUSER-}" || -z "${CLOUDIFY_LOCALHOSTPWD-}" ]]; then
+        ask_localhost_credentials
+        echo "export CLOUDIFY_LOCALHOSTUSER=$CLOUDIFY_LOCALHOSTUSER" >> /dev/shm/cloudify_credentials
+        echo "export CLOUDIFY_LOCALHOSTPWD=$CLOUDIFY_LOCALHOSTPWD" >> /dev/shm/cloudify_credentials
+      fi
+    
+      # Ensure remote host user is set
+      if "$force_ask_credentials" || [[ -z "${CLOUDIFY_HOSTUSER-}" || -z "${CLOUDIFY_HOSTPWD-}" ]]; then
+        ask_host_credentials
+        echo "export CLOUDIFY_HOSTUSER=$CLOUDIFY_HOSTUSER" >> /dev/shm/cloudify_credentials
+        echo "export CLOUDIFY_HOSTPWD=$CLOUDIFY_HOSTPWD" >> /dev/shm/cloudify_credentials
+      fi
+    
+      # Ensure remote Github user is set
+      if "$force_ask_credentials" ||  [[ -z "${CLOUDIFY_GITHUBUSER-}" || -z "${CLOUDIFY_GITHUBPWD-}" ]]; then
+        ask_github_credentials
+        echo "export CLOUDIFY_GITHUBUSER=$CLOUDIFY_GITHUBUSER" >> /dev/shm/cloudify_credentials
+        echo "export CLOUDIFY_GITHUBPWD=$CLOUDIFY_GITHUBPWD" >> /dev/shm/cloudify_credentials
+      fi
+    
+      # Ensure remote Gitlab host user is set
+      if "$force_ask_credentials" ||  [[ -z "${CLOUDIFY_GITLABUSER-}" || -z "${CLOUDIFY_GITLABPWD-}" ]]; then
+        ask_gitlab_credentials
+        echo "export CLOUDIFY_GITLABUSER=$CLOUDIFY_GITLABUSER" >> /dev/shm/cloudify_credentials
+        echo "export CLOUDIFY_GITLABPWD=$CLOUDIFY_GITLABPWD" >> /dev/shm/cloudify_credentials
+      fi
+      
+      # Ensure remote Restic/Rclone credentials are set
+      if "$force_ask_credentials" || [[ -z "${CLOUDIFY_RCLONE_REMOTE-}" || -z "${CLOUDIFY_RCLONE_REMOTE_REGION-}" || -z "${CLOUDIFY_RCLONE_REMOTE_ENDPOINT-}" || -z "${CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID-}" || -z "${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY-}" ]]; then
+        ask_restic_credentials
+        echo "export CLOUDIFY_RCLONE_REMOTE=$CLOUDIFY_RCLONE_REMOTE" >> /dev/shm/cloudify_credentials
+        echo "export CLOUDIFY_RCLONE_REMOTE_REGION=$CLOUDIFY_RCLONE_REMOTE_REGION"  >> /dev/shm/cloudify_credentials
+        echo "export CLOUDIFY_RCLONE_REMOTE_ENDPOINT=$CLOUDIFY_RCLONE_REMOTE_ENDPOINT"  >> /dev/shm/cloudify_credentials
+        echo "export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID=$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID" >> /dev/shm/cloudify_credentials
+        echo "export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY=$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY" >> /dev/shm/cloudify_credentials
+      fi
   fi
 
-  # Ensure remote host user is set
-  if "$force_ask_credentials" || [[ -z "${CLOUDIFY_HOSTUSER-}" || -z "${CLOUDIFY_HOSTPWD-}" ]]; then
-    ask_host_credentials
-    echo "export CLOUDIFY_HOSTUSER=$CLOUDIFY_HOSTUSER" >> /dev/shm/cloudify_credentials
-    echo "export CLOUDIFY_HOSTPWD=$CLOUDIFY_HOSTPWD" >> /dev/shm/cloudify_credentials
-  fi
-
-  # Ensure remote Github user is set
-  if "$force_ask_credentials" ||  [[ -z "${CLOUDIFY_GITHUBUSER-}" || -z "${CLOUDIFY_GITHUBPWD-}" ]]; then
-    ask_github_credentials
-    echo "export CLOUDIFY_GITHUBUSER=$CLOUDIFY_GITHUBUSER" >> /dev/shm/cloudify_credentials
-    echo "export CLOUDIFY_GITHUBPWD=$CLOUDIFY_GITHUBPWD" >> /dev/shm/cloudify_credentials
-  fi
-
-  # Ensure remote Gitlab host user is set
-  if "$force_ask_credentials" ||  [[ -z "${CLOUDIFY_GITLABUSER-}" || -z "${CLOUDIFY_GITLABPWD-}" ]]; then
-    ask_gitlab_credentials
-    echo "export CLOUDIFY_GITLABUSER=$CLOUDIFY_GITLABUSER" >> /dev/shm/cloudify_credentials
-    echo "export CLOUDIFY_GITLABPWD=$CLOUDIFY_GITLABPWD" >> /dev/shm/cloudify_credentials
-  fi
-  
   if "$new_credentials"; then 
     echo
     msg "${GREEN}A script was generated to store these credentials in environment variables.${RESET}"
@@ -894,6 +948,9 @@ function check_credentials () {
 function sudo() {
   local lineargs=""
   local pipeargs="" 
+
+  local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
+  [[ -z ${hostpwd} ]] && die "Host passord not set"
 
   # Some commands arguments must be dealt with caution
    case "$1" in
@@ -964,16 +1021,16 @@ function sudo() {
   sudocmd_length=$(echo -n "'$sudocmd'" | wc -m)
 
   if (( $sudocmd_length < 10000 )); then
-    PKG_DEBUG command sudo -kS bash -c "$sudocmd" \<\<\< "$CLOUDIFY_HOSTPWD"
-    #command sudo -kS -p ""  bash -c "$sudocmd" 2>/dev/null <<< "$CLOUDIFY_HOSTPWD"
-    command sudo -kS -p ""  bash -c "$sudocmd" <<< "$CLOUDIFY_HOSTPWD"
+    PKG_DEBUG command sudo -kS bash -c "$sudocmd" \<\<\< "$hostpwd"
+    #command sudo -kS -p ""  bash -c "$sudocmd" 2>/dev/null <<< "$hostpwd"
+    command sudo -kS -p ""  bash -c "$sudocmd" <<< "$hostpwd"
   else
     # The sudo command is much too long, create a temporary file and execute it
     local tfile=$(mktemp /tmp/foo.XXXXXXXXX)
     echo creating $tfile
     echo "$pipeargs" > $tfile
-    PKG_DEBUG command sudo -kS "$lineargs" "$tfile" \<\<\< "$CLOUDIFY_HOSTPWD"
-    command sudo -p " " -kS "$lineargs" "$tfile" <<< "$CLOUDIFY_HOSTPWD"
+    PKG_DEBUG command sudo -kS "$lineargs" "$tfile" \<\<\< "$hostpwd"
+    command sudo -p " " -kS "$lineargs" "$tfile" <<< "$hostpwd"
   fi
 }
 
@@ -1212,6 +1269,11 @@ function cloudify_remote_payload_template() {
   export CLOUDIFY_GITHUBPWD='{{CLOUDIFY_GITHUBPWD}}'
   export CLOUDIFY_GITLABUSER='{{CLOUDIFY_GITLABUSER}}'
   export CLOUDIFY_GITLABPWD='{{CLOUDIFY_GITLABPWD}}'
+  export CLOUDIFY_RCLONE_REMOTE='{{CLOUDIFY_RCLONE_REMOTE}}'
+  export CLOUDIFY_RCLONE_REMOTE_REGION='{{CLOUDIFY_RCLONE_REMOTE_REGION}}'
+  export CLOUDIFY_RCLONE_REMOTE_ENDPOINT='{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}'
+  export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID='{{ CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}'
+  export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='{{ CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}'
 
   bash -c "$(curl -sL scripts.rachid.space/bootstrap/cloudify.sh)"
 }
@@ -1235,7 +1297,13 @@ function cloudify_remote() {
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBPWD}}/$CLOUDIFY_GITHUBPWD/g" <<< "$cloudify_remote_payload")
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABUSER}}/$CLOUDIFY_GITLABUSER/g" <<< "$cloudify_remote_payload")
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABPWD}}/$CLOUDIFY_GITLABPWD/g" <<< "$cloudify_remote_payload")
-    
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE}}/$CLOUDIFY_RCLONE_REMOTE/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_REGION}}/$CLOUDIFY_RCLONE_REMOTE_REGION/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}/$CLOUDIFY_RCLONE_REMOTE_ENDPOINT/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}/$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}/$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY/g" <<< "$cloudify_remote_payload")
+
+
       # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running 
       cloudify_remote_payload="$cloudify_remote_payload; cloudify $@"
     

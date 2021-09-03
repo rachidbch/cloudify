@@ -760,6 +760,12 @@ function pkg_install_release() {
             curl -sSL "$release_url" > "/tmp/${cmd}/${cmd}.deb"
             PKG_DEBUG "Installing $repoId deb package."
             pkg_apt_install "/tmp/${cmd}/${cmd}.deb" 
+	elif [[ $release_url == *.bz2 ]]; then
+            # Install compressed binary
+            PKG_DEBUG "Extracting $repoId bz2 binary archive. in /tmp/$cmd/"
+            curl -sSL "$release_url" | "/tmp/${cmd}/${cmd}.bz2"
+            bzip2 -d "/tmp/${cmd}/${cmd}.bz2"                                 # This creates a /tmp/${cmd}/${cmd} file
+	    sudo install -m755 "/tmp/${cmd}/${cmd}" "/usr/local/bin/${cmd}"
         else   
   	    # Install binary from tgz archive  
             PKG_DEBUG "Extracting $repoId tgz archive. in /tmp/$cmd/"

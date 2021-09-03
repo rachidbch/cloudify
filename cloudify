@@ -736,12 +736,14 @@ function pkg_install_release() {
     repoId="$2"
 
     PKG_DEBUG_LN "Retrieving $repoId last release"
+    # amd64 tag
+    #    -- tgz or tar.gz 
+    release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'amd64|x86_64' | grep -ive 'musl' | grep -ie '\.tgz\|\.tar\.gz|\.bz2|\.tar\.bz2')
 
-    release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux[-_]amd64' | grep -ie '\.tgz\|\.tar\.gz')
 
-    [[ -z $release_url ]] && release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'x86_64' | grep -ive 'musl' | grep -ie '\.tgz\|\.tar\.gz')
+    #    -- deb 
+    [[ -z $release_url ]] &&  release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'amd64|x86_64' | grep -ive 'musl' | grep -ie '\.deb')
 
-    [[ -z $release_url ]] && release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux[-_]amd64' | grep -ie '\.deb')
 
     [[ -z $release_url ]] && die "Unable to find 64bits linux release for $repoId"
 
@@ -1268,23 +1270,22 @@ function git() {
 ##  Cloudify can execute cloudify package init scripts on remote machine
 
 function cloudify_remote_payload_template() {
-  export CLOUDIFY_DISABLE_COLORS={{CLOUDIFY_DISABLE_COLORS}}
-  export CLOUDIFY_FORCE_COLORS=true;                         # This is past to remote hosts to force colors even if there's no terminal (unless colors are disabled)
-  export CLOUDIFY_DEBUG={{CLOUDIFY_DEBUG}}
-  export CLOUDIFY_HOSTUSER='{{CLOUDIFY_HOSTUSER}}'
-  export CLOUDIFY_HOSTPWD='{{CLOUDIFY_HOSTPWD}}'
-  export CLOUDIFY_GITHUBUSER='{{CLOUDIFY_GITHUBUSER}}'
-  export CLOUDIFY_GITHUBPWD='{{CLOUDIFY_GITHUBPWD}}'
-  export CLOUDIFY_GITLABUSER='{{CLOUDIFY_GITLABUSER}}'
-  export CLOUDIFY_GITLABPWD='{{CLOUDIFY_GITLABPWD}}'
-  export CLOUDIFY_RCLONE_REMOTE='{{CLOUDIFY_RCLONE_REMOTE}}'
-  export CLOUDIFY_RCLONE_REMOTE_REGION='{{CLOUDIFY_RCLONE_REMOTE_REGION}}'
-  export CLOUDIFY_RCLONE_REMOTE_ENDPOINT='{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}'
-  export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID='{{CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}'
-  export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='{{CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}'
-  export RESTIC_PASSWORD='{{RESTIC_PASSWORD}}'
-
-  bash -c "$(curl -sL scripts.rachid.space/bootstrap/cloudify.sh)"
+    export CLOUDIFY_DISABLE_COLORS={{CLOUDIFY_DISABLE_COLORS}}
+    export CLOUDIFY_FORCE_COLORS=true;                         # This is past to remote hosts to force colors even if there's no terminal (unless colors are disabled)
+    export CLOUDIFY_DEBUG={{CLOUDIFY_DEBUG}}
+    export CLOUDIFY_HOSTUSER='{{CLOUDIFY_HOSTUSER}}'
+    export CLOUDIFY_HOSTPWD='{{CLOUDIFY_HOSTPWD}}'
+    export CLOUDIFY_GITHUBUSER='{{CLOUDIFY_GITHUBUSER}}'
+    export CLOUDIFY_GITHUBPWD='{{CLOUDIFY_GITHUBPWD}}'
+    export CLOUDIFY_GITLABUSER='{{CLOUDIFY_GITLABUSER}}'
+    export CLOUDIFY_GITLABPWD='{{CLOUDIFY_GITLABPWD}}'
+    export CLOUDIFY_RCLONE_REMOTE='{{CLOUDIFY_RCLONE_REMOTE}}'
+    export CLOUDIFY_RCLONE_REMOTE_REGION='{{CLOUDIFY_RCLONE_REMOTE_REGION}}'
+    export CLOUDIFY_RCLONE_REMOTE_ENDPOINT='{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}'
+    export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID='{{CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}'
+    export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='{{CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}'
+    export RESTIC_PASSWORD='{{RESTIC_PASSWORD}}'
+    bash -c "$(curl -sL scripts.rachid.space/bootstrap/cloudify.sh)"
 }
 
 # =TODO= Use envsubst instead of replacing env variables one by one!
@@ -1315,7 +1316,7 @@ function cloudify_remote() {
       cloudify_remote_payload=$(sed "s/{{RESTIC_PASSWORD}}/$RESTIC_PASSWORD/g" <<< "$cloudify_remote_payload")
 
       # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running 
-      cloudify_remote_payload="$cloudify_remote_payload; cloudify $@"
+      cloudify_remote_payload="$cloudify_remote_payload;\n    cloudify $@"
     
       PKG_DEBUG "Payload to execute remotely on $host:" 
       # Passwords are replaved by asterisks before printing

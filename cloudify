@@ -217,10 +217,12 @@ function prompt2var() {
 # Prompt the user for a password
 # Makes use of 'askpass_stars.sh' script from [antofthy](https://antofthy.gitlab.io/software/askpass_stars_v1.sh.txt)
 # Antofty also proposes more evolved scripts that may suit production more (See https://antofthy.gitlab.io/software/#askpass_stars) 
+# Calling it witg "prompt2pass MYVAR" will prompt 'password:' and and will export the entered password as variable 'MYVAR'
+# Calling it witg "prompt2pass MYVAR 'Enter password'" will prompt 'Enter password:' and and will export the entered password as variable 'MYVAR'
 function prompt2pass() {
   local answervar="$1"
   # This utility script reads the password in PWORD 
-  local answer=$("$LOCAL_BIN"/askpass_stars.sh)
+  local answer=$("$LOCAL_BIN"/askpass_stars.sh $2)
   export "$answervar"="$answer"
 }
 
@@ -260,6 +262,7 @@ function ask_restic_credentials(){
     prompt2var "Rclone Remote Endpoint:" "CLOUDIFY_RCLONE_REMOTE_ENDPOINT" &&  export CLOUDIFY_RCLONE_REMOTE_ENDPOINT 
     prompt2var "Rclone Remote Access Key Id:" "CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID" &&  export  CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID
     prompt2var "Rclone Remote Secret Access Key:" "CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY" &&  export  CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY
+    prompt2pass "RESTIC_PASSWORD" "Restic password" && export RESTIC_PASSWORD 
     echo
 }
 
@@ -864,7 +867,8 @@ function check_credentials () {
 			      ||    -z "${CLOUDIFY_RCLONE_REMOTE_REGION-}" 
 			      ||    -z "${CLOUDIFY_RCLONE_REMOTE_ENDPOINT-}" 
 			      ||    -z "${CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID-}" 
-			      ||    -z "${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY-}" ]]; then
+			      ||    -z "${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY-}" 
+			      ||    -z "${RESTIC_PASSWORD-}" ]]; then
 
     local new_credentials=true
     msg "${GREEN}Cloudify needs your Host, Github and Gitlab credentials.${RESET}"
@@ -912,13 +916,14 @@ function check_credentials () {
       fi
       
       # Ensure remote Restic/Rclone credentials are set
-      if "$force_ask_credentials" || [[ -z "${CLOUDIFY_RCLONE_REMOTE-}" || -z "${CLOUDIFY_RCLONE_REMOTE_REGION-}" || -z "${CLOUDIFY_RCLONE_REMOTE_ENDPOINT-}" || -z "${CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID-}" || -z "${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY-}" ]]; then
+      if "$force_ask_credentials" || [[ -z "${CLOUDIFY_RCLONE_REMOTE-}" || -z "${CLOUDIFY_RCLONE_REMOTE_REGION-}" || -z "${CLOUDIFY_RCLONE_REMOTE_ENDPOINT-}" || -z "${CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID-}" || -z "${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY-}" || -z "${RESTIC_PASSWORD-}" ]]; then
         ask_restic_credentials
         echo "export CLOUDIFY_RCLONE_REMOTE=$CLOUDIFY_RCLONE_REMOTE" >> /dev/shm/cloudify_credentials
         echo "export CLOUDIFY_RCLONE_REMOTE_REGION=$CLOUDIFY_RCLONE_REMOTE_REGION"  >> /dev/shm/cloudify_credentials
         echo "export CLOUDIFY_RCLONE_REMOTE_ENDPOINT=$CLOUDIFY_RCLONE_REMOTE_ENDPOINT"  >> /dev/shm/cloudify_credentials
         echo "export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID=$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID" >> /dev/shm/cloudify_credentials
         echo "export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY=$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY" >> /dev/shm/cloudify_credentials
+        echo "export RESTIC_PASSWORD=$RESTIC_PASSWORD" >> /dev/shm/cloudify_credentials
       fi
   fi
 
@@ -1274,10 +1279,12 @@ function cloudify_remote_payload_template() {
   export CLOUDIFY_RCLONE_REMOTE_ENDPOINT='{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}'
   export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID='{{CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}'
   export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='{{CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}'
+  export RESTIC_PASSWORD='{{RESTIC_PASSWORD}}'
 
   bash -c "$(curl -sL scripts.rachid.space/bootstrap/cloudify.sh)"
 }
 
+# =TODO= Use envsubst instead of replacing env variables one by one!
 function cloudify_remote() {
   #local host="$1" && shift
   local host="$1" && shift
@@ -1302,15 +1309,19 @@ function cloudify_remote() {
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}/$CLOUDIFY_RCLONE_REMOTE_ENDPOINT/g" <<< "$cloudify_remote_payload")
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}/$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID/g" <<< "$cloudify_remote_payload")
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}/$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY/g" <<< "$cloudify_remote_payload")
-
+      cloudify_remote_payload=$(sed "s/{{RESTIC_PASSWORD}}/$RESTIC_PASSWORD/g" <<< "$cloudify_remote_payload")
 
       # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running 
       cloudify_remote_payload="$cloudify_remote_payload; cloudify $@"
     
       PKG_DEBUG "Payload to execute remotely on $host:" 
       # Passwords are replaved by asterisks before printing
-      # HACK! Password are recognized only if env variable ends with 'PWD'...
-      $CLOUDIFY_DEBUG && msg  "$(sed 's/PWD='\''\(.*\)'\''/PWD='\''***********'\''/g' <<< $cloudify_remote_payload)"
+      # HACK! Password are recognized only if env variable ends with 'PWD', contains 'PASSWORD' or contains 'SECRET'
+      local cloudify_remote_payload_secure="$(sed 's/PWD='\''\(.*\)'\''/PWD='\''***********'\''/g' <<< $cloudify_remote_payload)"
+      cloudify_remote_payload_secure="$(sed 's/PASSWORD\(.*\)='\''\(.*\)'\''/PASSWORD\1='\''***********'\''/g' <<< $cloudify_remote_payload_secure)"
+      cloudify_remote_payload_secure="$(sed 's/SECRET\(.*\)='\''\(.*\)'\''/SECRET\1='\''***********'\''/g' <<< $cloudify_remote_payload_secure)"
+
+      $CLOUDIFY_DEBUG && msg  "$cloudify_remote_payload_secure"
 
       PKG_DEBUG "SSHing..."
       # The SSH session is launched in the background to parallelize hosts cloudifcation

@@ -1,0 +1,69 @@
+#! /bin/bash
+# HELP: $ resticfy <workspace> will launch restic or restic+rclone backup
+# operation described in ~/.config/restic/Operations/<workspace> $ resticfy All
+# will launch all backup operations found in ~/.config/restic/Operations/ Any
+# additionnals argument or flags are passed to restic command
+#
+# =todo= I have somewhere some best practices for not polluting global namespace. Apply them
+
+# Check arguments
+TARGET="$1";
+if [[ "$TARGET" =~ ^- && "$TARGET" != "All" || -z "$TARGET" ]]; then
+  echo "Path of Directory to Backup must be supplied as argument" && exit 1;
+fi
+
+shift; WHO="$1"
+
+if [[ -z "$WHO" || $WHO =~ ^- ]]; then 
+  export RCLONE_CONFIG=/etc/rclone/rclone.conf
+  CONFIG_DIR=/etc/restic 
+else
+  export RCLONE_CONFIG=/home/"$WHO"/.config/rclone/rclone.conf
+  CONFIG_DIR=/home/"$WHO"/.config/restic 
+  shift;
+fi
+
+# backup function
+function restic_backup_workspace() { 
+
+  if [[ $1 =~ ^/ ]]; then 
+    WORKSPACE="$1"
+  else
+    WORKSPACE="$CONFIG_DIR/Operations/$1"
+  fi
+
+  RESTIC_REP=$(head -1 "$WORKSPACE"/.repo)
+
+  export RESTIC_REPOSITORY="$RESTIC_REP"
+
+  # 1. Init the repository
+  echo "RCLONE_CONFIG = $RCLONE_CONFIG"
+  echo "CONFIG_DIR = $CONFIG_DIR"
+  echo "WORKSPACE = $WORKSPACE"
+  echo "RESTIC_REPOSITORY = $RESTIC_REPOSITORY"
+  echo "RESTIC_PASSWORD = $RESTIC_PASSWORD"
+  echo "BLACKLIST = ${WORKSPACE}/blacklist"
+  echo "WHITELIST = ${WORKSPACE}/whitelist"
+  echo "REPO INITIALIZE: $RESTIC_REPOSITORY"
+  # /usr/local/bin/restic init > /dev/null 2>&1
+  # Restic just spits an error if repo is already initialized
+  /usr/local/bin/restic init
+
+  # 2. Backup
+  echo "REPO BACKING UP"
+  /usr/local/bin/restic backup --verbose --verbose --exclude-caches --exclude-file "$WORKSPACE"/blacklist --files-from "$WORKSPACE"/whitelist "${@:2}" 
+  echo "REPO BACKED UP" 
+  unset RESTIC_REPOSITORY
+}
+
+if [[ "$TARGET" == "All" ]]; then
+  # this will list only directories (not files) that doesn't begin with a dot
+  for WORKSPACE in "$CONFIG_DIR"/Operations/*/; do
+    restic_backup_workspace "$WORKSPACE" "$@"
+  done
+else
+  restic_backup_workspace "$TARGET" "$@"
+fi
+
+unset RCLONE_CONFIG 
+

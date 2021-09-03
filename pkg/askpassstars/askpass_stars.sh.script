@@ -13,7 +13,7 @@
 #
 unset PWORD
 PWORD=
-echo -n 'password: ' 1>&2
+echo -n '${1:-password}: ' 1>&2
 while IFS= read -r -n1 -s char; do
   # Convert users key press to hexadecimal character code
   # Note a 'return' or EOL, will return a empty string

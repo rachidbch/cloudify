@@ -591,23 +591,13 @@ pkg_restore() {
   return 0                             # If we're then everything is ok. Roll back failures are exptected.
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 # Write lines listed as single-quoted arguments in .bashrc 
 # =todo= Make it compatible with zsh shell
 function pkg_in_startuprc(){
   #PKG_DEBUG_LN "ENV TO SETUP:"
-  
+  #PKG_DEBUG "Editing .bashrc file. Initial content below:"
+  #$CLOUDIFY_DEBUG && cat  $HOME/.bashrc
+
   # sed special characters have to be escaped. We're liberal here. 
   pkg_escaped_lines=()
   for pkg_startuprc_line in "${@}"; do
@@ -623,6 +613,7 @@ function pkg_in_startuprc(){
 		                   | sed 's/\[/\\[/g'  | sed 's/\]/\\]/g' \
 		                   | sed 's/\\(/\\(/g' | sed 's/\\)/\\)/g')
 
+    #PKG_DEBUG "Adding '$pkg_startuprc_line'"
     pkg_escaped_lines+=( "$pkg_startuprc_line" )
   done;
 
@@ -633,28 +624,34 @@ function pkg_in_startuprc(){
   
   # Reserve cloudify space in bashrc
   #PKG_DEBUG_LN "Reserve cloudify space inside bashrc"
-  grep -qFx "# CLOUDIFY ENV START" ~/.bashrc || echo -e "\n# CLOUDIFY ENV START\n# CLOUDIFY ENV END"  >> ~/.bashrc
-  
+  grep -qFx "# CLOUDIFY ENV START" $HOME/.bashrc || echo -e "\n# CLOUDIFY ENV START\n# CLOUDIFY ENV END"  >> $HOME/.bashrc
+  #$CLOUDIFY_DEBUG && cat  $HOME/.bashrc
+
   # Remove previous pkg setup
   #PKG_DEBUG_LN "Remove existing pkg setup if any"
   for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
     #PKG_DEBUG "Remove line: $pkg_startuprc_line"
-    sed -i -n "/$pkg_startuprc_line/d" ~/.bashrc
+    #$CLOUDIFY_DEBUG && PKG_DEBUG "Bashrc file before line removal." && cat  $HOME/.bashrc
+    sed -i "/$pkg_startuprc_line/d" $HOME/.bashrc
     #PKG_DEBUG "----"
     #PKG_DEBUG "What's in there in bashrc?"
-    #$CLOUDIFY_DEBUG && cat  ~/.bashrc
+    #$CLOUDIFY_DEBUG && cat  $HOME/.bashrc
   done;
   
   # Insert pkg setup 
   #PKG_DEBUG_LN "Inserting pkg setup"
   for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
     #PKG_DEBUG "Inserting line: $pkg_startuprc_line"
-    sed -i -n "/# CLOUDIFY ENV END/i $pkg_startuprc_line" ~/.bashrc
+    sed -i "/# CLOUDIFY ENV END/i $pkg_startuprc_line" $HOME/.bashrc
 
     #PKG_DEBUG "----"
     #PKG_DEBUG "What's in there in bashrc?"
-    #$CLOUDIFY_DEBUG && cat ~/.bashrc
+    #$CLOUDIFY_DEBUG && cat $HOME/.bashrc
   done;
+  #$CLOUDIFY_DEBUG && cat  $HOME/.bashrc
+
+  #PKG_DEBUG "bashrc edited. New content below:"
+  #$CLOUDIFY_DEBUG && cat  $HOME/.bashrc
 }
 
 
@@ -744,7 +741,7 @@ function pkg_install_release() {
 
     [[ -z $release_url ]] && release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'x86_64' | grep -ive 'musl' | grep -ie '\.tgz\|\.tar\.gz')
 
-    release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux[-_]amd64' | grep -ie '\.deb')
+    [[ -z $release_url ]] && release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux[-_]amd64' | grep -ie '\.deb')
 
     [[ -z $release_url ]] && die "Unable to find 64bits linux release for $repoId"
 
@@ -776,7 +773,7 @@ function pkg_install_release() {
                curl -sSL "$release_url" | tar -C /tmp/"$cmd"  -xzf -
             fi
             
-            PKG_DEBUG "Installing $repoId in /usr/local/"
+            PKG_DEBUG "Installing $repoId in /usr/local/bin/"
       
             (
                 # Some install archives have an install/setup script. 

@@ -66,6 +66,10 @@ export PKG_PLATFORM="ubuntu"
 : "${CLOUDIFY_DEBUG:=false}"                           # If CLOUDIFY_DEBUG isn't set, set it to false. 
 export CLOUDIFY_DEBUG                                  # Export it so it's available in subshells
 
+# SKIP CREDENTIALS
+: "${SKIPCREDENTIALS:=false}"                           # If SKIPCREDENTIALS isn't set, set it to false. 
+export SKIPCREDENTIALS 
+
 #== CLEANUP BEFORE EXIT 
 # Call clean up function before exiting script
 trap cleanup SIGINT SIGTERM ERR EXIT
@@ -738,11 +742,10 @@ function pkg_install_release() {
     PKG_DEBUG_LN "Retrieving $repoId last release"
     # amd64 tag
     #    -- tgz or tar.gz 
-    release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'amd64|x86_64' | grep -ive 'musl' | grep -ie '\.tgz\|\.tar\.gz|\.bz2|\.tar\.bz2')
-
+    release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'amd64\|x86_64' | grep -ive 'musl' | grep -ie '\.tgz\|\.tar\.gz\|\.bz2\|\.tar\.bz2')
 
     #    -- deb 
-    [[ -z $release_url ]] &&  release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'amd64|x86_64' | grep -ive 'musl' | grep -ie '\.deb')
+    [[ -z $release_url ]] &&  release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'amd64\|x86_64' | grep -ive 'musl' | grep -ie '\.deb')
 
 
     [[ -z $release_url ]] && die "Unable to find 64bits linux release for $repoId"
@@ -762,7 +765,7 @@ function pkg_install_release() {
 	elif [[ $release_url == *.bz2 ]]; then
             # Install compressed binary
             PKG_DEBUG "Extracting $repoId bz2 binary archive. in /tmp/$cmd/"
-            curl -sSL "$release_url" | "/tmp/${cmd}/${cmd}.bz2"
+            curl -sSL "$release_url" > "/tmp/${cmd}/${cmd}.bz2"
             bzip2 -d "/tmp/${cmd}/${cmd}.bz2"                                 # This creates a /tmp/${cmd}/${cmd} file
 	    sudo install -m755 "/tmp/${cmd}/${cmd}" "/usr/local/bin/${cmd}"
         else   
@@ -882,15 +885,15 @@ function check_credentials () {
     chmod 600 /dev/shm/cloudify_credentials
   fi
 
-  # If a .env credential file is found, use it
-  if [[ -f ${HOME}/cloudify/.env ]]; then
+  # If a .credentials file is found, use it
+  if [[ -f ${HOME}/cloudify/.credentials ]]; then
      if [[ -f /dev/shm/cloudify_credentials ]]; then
-         msg "${GREEN}Credentials read from ${HOME}/.env file.${RESET}"
-         cp "${HOME}/cloudify/.env" /dev/shm/cloudify_credentials
+         msg "${GREEN}Credentials read from ${HOME}/cloudify/.credentials file.${RESET}"
+         cp "${HOME}/cloudify/.credentials" /dev/shm/cloudify_credentials
      else
          msg "${RED}File /dev/shm/cloudify_credentials already exist. Use 'force' option to overwrite.${RESET}"
      fi
-  # If no .env credential file is found, prompt the user for credentials
+  # If no .credentials file is found, prompt the user for credentials
   else
       # Ensure local host user is set
       if "$force_ask_credentials" || [[ -z "${CLOUDIFY_LOCALHOSTUSER-}" || -z "${CLOUDIFY_LOCALHOSTPWD-}" ]]; then
@@ -1406,6 +1409,8 @@ function pkg_uninstall {
 function preconfigure() {
   PKG_DEBUG "Running Preconfiguration"
   # Ensure all required credentials are set in proper environment variables
+
+  PKG_DEBUG  "Value of SKIPCREDENTIALS: $SKIPCREDENTIALS"
   $SKIPCREDENTIALS || check_credentials
 
   # Ensure tmp folder exists

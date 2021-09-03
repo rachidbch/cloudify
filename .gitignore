@@ -5,3 +5,4 @@ todo.txt
 dummify.sh
 inventory/
 .env
+.credentials

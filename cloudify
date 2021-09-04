@@ -67,8 +67,8 @@ export PKG_PLATFORM="ubuntu"
 export CLOUDIFY_DEBUG                                  # Export it so it's available in subshells
 
 # SKIP CREDENTIALS
-: "${SKIPCREDENTIALS:=false}"                           # If SKIPCREDENTIALS isn't set, set it to false. 
-export SKIPCREDENTIALS 
+: "${CLOUDIFY_SKIPCREDENTIALS:=false}"                           # If CLOUDIFY_SKIPCREDENTIALS isn't set, set it to false. 
+export CLOUDIFY_SKIPCREDENTIALS 
 
 #== CLEANUP BEFORE EXIT 
 # Call clean up function before exiting script
@@ -1274,7 +1274,8 @@ function git() {
 
 function cloudify_remote_payload_template() {
     export CLOUDIFY_DISABLE_COLORS={{CLOUDIFY_DISABLE_COLORS}}
-    export CLOUDIFY_FORCE_COLORS=true;                         # This is past to remote hosts to force colors even if there's no terminal (unless colors are disabled)
+    export CLOUDIFY_SKIPCREDENTIALS=true
+    export CLOUDIFY_FORCE_COLORS=true                         # This is past to remote hosts to force colors even if there's no terminal (unless colors are disabled)
     export CLOUDIFY_DEBUG={{CLOUDIFY_DEBUG}}
     export CLOUDIFY_HOSTUSER='{{CLOUDIFY_HOSTUSER}}'
     export CLOUDIFY_HOSTPWD='{{CLOUDIFY_HOSTPWD}}'
@@ -1338,9 +1339,6 @@ function cloudify_remote() {
       #ssh -tt workify "sudo -kS cat /etc/shadow" <<< "$CLOUDIFY_HOSTPWD"
   fi
 } 
-
-
-
 
 
 #== SCRIPT SUBCOMMANDS 
@@ -1410,8 +1408,8 @@ function preconfigure() {
   PKG_DEBUG "Running Preconfiguration"
   # Ensure all required credentials are set in proper environment variables
 
-  PKG_DEBUG  "Value of SKIPCREDENTIALS: $SKIPCREDENTIALS"
-  $SKIPCREDENTIALS || check_credentials
+  PKG_DEBUG  "Value of CLOUDIFY_SKIPCREDENTIALS: $CLOUDIFY_SKIPCREDENTIALS"
+  $CLOUDIFY_SKIPCREDENTIALS || check_credentials
 
   # Ensure tmp folder exists
   [[ -d "$CLOUDIFY_TMP" ]] || mkdir -p "$CLOUDIFY_TMP"
@@ -1557,7 +1555,7 @@ function cloudify () {
 	  setup_colors
 	  ;;
     inventory)          
-          SKIPCREDENTIALS=true preconfigure              # Initialize paths (but no need to check credentials)
+          CLOUDIFY_SKIPCREDENTIALS=true preconfigure              # Initialize paths (but no need to check credentials)
           if [[ -z "${2-}" || "${2-}" == "@all" ]]; then
 	    # If no arguments or if virtual label '@all' is given, list all inventory hosts 
             inventory 
@@ -1567,7 +1565,7 @@ function cloudify () {
           fi
           break ;; 
     packages | pkgs | pkg)          
-          SKIPCREDENTIALS=true preconfigure              # Initialize paths (but no need to check credentials)
+          CLOUDIFY_SKIPCREDENTIALS=true preconfigure              # Initialize paths (but no need to check credentials)
 	  if [[ "${2-}" == "show" ]]; then
 	    # Show packages installation code
             shift && shift && pkg_show "$@"
@@ -1581,7 +1579,7 @@ function cloudify () {
           break ;; 
     init)
 	  #pkg_pause "installing askpassstars"
-	  SKIPCREDENTIALS=true preconfigure
+	  CLOUDIFY_SKIPCREDENTIALS=true preconfigure
 	  SKIPDONEMESSAGE=true pkg_install askpassstars
 	  #pkg_pause "installing credentials"
 	  cloudify credentials

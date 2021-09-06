@@ -464,20 +464,22 @@ function add_in_hosts(){
   # Reserve cloudify space in /etc/hosts 
   $CLOUDIFY_DEBUG && pkg_pause "break 2"
   PKG_DEBUG_LN "Reserve cloudify space inside /etc/hosts"
-  grep -qFx "# CLOUDIFY HOSTS START" /etc/hosts || command sudo -kS -p '' sed -i -n -e '$a\\n# CLOUDIFY HOSTS START\n# CLOUDIFY HOSTS END' /etc/hosts <<<$CLOUDIFY_LOCALHOSTPWD
+  grep -qFx "# CLOUDIFY HOSTS START" /etc/hosts || command sudo -kS -p '' sed -i -e '$a\\n# CLOUDIFY HOSTS START\n# CLOUDIFY HOSTS END' /etc/hosts <<<$CLOUDIFY_LOCALHOSTPWD
   
   $CLOUDIFY_DEBUG && pkg_pause "break 3"
   # Insert new hosts lines 
   PKG_DEBUG_LN "Inserting host lines"
   for host_line in "${escaped_host_lines[@]}"; do
     PKG_DEBUG "Inserting: $host_line"
+    $CLOUDIFY_DEBUG && pkg_pause "break 4"
     # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". 
     #        Exact same line above didn't need that. Why that?
-    command sudo -kSp '' sed -i -n "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &> /dev/null <<<$CLOUDIFY_LOCALHOSTPWD
+    command sudo -kSp '' sed -i -e "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &> /dev/null <<<$CLOUDIFY_LOCALHOSTPWD
     PKG_DEBUG "Inserted: $host_line"
+    $CLOUDIFY_DEBUG && pkg_pause "break 5"
   done
 
-  $CLOUDIFY_DEBUG && pkg_pause "break 4"
+  $CLOUDIFY_DEBUG && pkg_pause "break 6"
 }
 
 
@@ -1579,7 +1581,7 @@ function cloudify () {
           break ;; 
     init)
 	  #pkg_pause "installing askpassstars"
-	  CLOUDIFY_SKIPCREDENTIALS=true preconfigure
+	  CLOUDIFY_SKIPCREDENTIALS=true preconfigure             # Initialize paths (but no need to check credentials)
 	  SKIPDONEMESSAGE=true pkg_install askpassstars
 	  #pkg_pause "installing credentials"
 	  cloudify credentials
@@ -1591,8 +1593,10 @@ function cloudify () {
 	  lxc list $LXDSERVER:$2
 	  ;;
     launch | run)
+
           local hostpwd="${CLOUDIFY_LOCALHOSTPWD}" 
           [[ -z ${hostpwd} ]] && die "Host password not set"
+
 	  local host_image="$2"
           local host="$3"
           local restparams=${@:4} 
@@ -1613,21 +1617,24 @@ function cloudify () {
 	  $CLOUDIFY_DEBUG && pkg_pause "line before add_in_hosts"
           add_in_hosts "$hostip $host $host.remote" 
 	  $CLOUDIFY_DEBUG && pkg_pause "line after add_in_hosts"
-          
           ;;
     delete | del)
           local hostpwd="${CLOUDIFY_LOCALHOSTPWD}" 
           [[ -z ${hostpwd} ]] && die "Host password not set"
           host="$2"
 
-          if ! lxc delete $LXDSERVER:"$host" ${@:3} &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
+	  PKG_DEBUG "Executing: lxc delete $LXDSERVER:"$host" ${@:3}"
+          if ! lxc delete $LXDSERVER:"$host" ${@:3} --force &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
 
           # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". Why that? 
+	  PKG_DEBUG "Executing: sudo sed -ri \"/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d\" /etc/hosts"
           command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts  &>/dev/null <<< "$hostpwd"
           ;;
     shell)
 	  [[ -z $2 ]] && die "Missing host"
-          ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" $2
+	  shift;
+          ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$@" 2>&1 | tail -n +2
+	  # =HACK= We remove the first line of the output because it's invariably: "Warning: Permanently added 'hostIP' (ECDSA) to the list of known hosts"
 	  ;;
     --on | on | o)  
           # Build hosts list

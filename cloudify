@@ -485,13 +485,13 @@ function add_in_hosts(){
 
 #== CLOUDIFY API 
 # THESE FUNCTION CAN BE CALLED FROM PACKAGE MODULES TO INSTALL SOFTWARE
-# Currently Cloudify API is as simple as 2 functions: 'pkg_depends' and 'pkg_in_startuprc' 
+# Currently Cloudify API is as simple as the following functions:
 #
-# pkg_depends:           Most used API function. Declares an explicit dependency. Tries to do its best to install dependencies
-# pkg_in_startuprc:      Safely adds to .bashrc (someday to .zshrc) list of single quoted string given as arguments
 # pkg_apt_repository:    Safely adds apt repository in apt repositories list 
 # pkg_apt_install:       Safely install an apt package   
-# pkg_install_release:   Install cloudify package (Run module code if found or calls pkg_apt_install 
+# pkg_install_release:   Install cloudify package (Run module code if found or calls pkg_apt_install)
+# pkg_depends:           Most used API function. Declares an explicit dependency. Tries to do its best to install dependencies
+# pkg_in_startuprc:      Safely adds to .bashrc (someday to .zshrc) list of single quoted string given as arguments
 
 
 # Backup files
@@ -1298,8 +1298,10 @@ function cloudify_remote_payload_template() {
 function cloudify_remote() {
   #local host="$1" && shift
   local host="$1" && shift
+  #PKG_DEBUG Exectuting cloudify_remote
 
   if [[ "$host" == "localhost" ]]; then
+      PKG_DEBUG  executing cloudify $@  
       cloudify $@  |& sed "s/^/$host: /"  |& sed "s/^$host: $//"
   else
       # Read remote payload template
@@ -1631,10 +1633,25 @@ function cloudify () {
           command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts  &>/dev/null <<< "$hostpwd"
           ;;
     shell)
+	  # =todo= If shell commands are given, they should be executed and after what you should stay in the shell
+	  # =todo= The shell should forced to be bash
 	  [[ -z $2 ]] && die "Missing host"
 	  shift;
-          ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$@" 2>&1 | tail -n +2
+	  local host="$1"; shift;
+          ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$host" "$@" 2>&1 | tail -n +2
 	  # =HACK= We remove the first line of the output because it's invariably: "Warning: Permanently added 'hostIP' (ECDSA) to the list of known hosts"
+	  ;;
+    exec)
+	  # Execute shell commands on local machine or one remote machines
+	  # The only upside is to have sudo command prefilled  
+	  [[ -z $2 ]] && die "Missing host"
+	  shift;
+	  local host="$1"; shift;
+	  if [[ $host == "localhost" ]]; then
+             source <(echo "$@")
+	  else
+             cloudify_remote "$host" exec localhost "$@" 
+	  fi
 	  ;;
     --on | on | o)  
           # Build hosts list

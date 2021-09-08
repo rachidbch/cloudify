@@ -1454,12 +1454,7 @@ function preconfigure() {
   fi
 }
 
-
-#== TEST CODE!  ############################################# 
-#############################################################
-# Test code that can be tested w/ 'cloudify test' 
-# Use this to test code before inserting it in cloudify 
-
+# Show packages filtered by labels 
 function packages() {
 
   # Without filter, return all packages 
@@ -1489,6 +1484,7 @@ function packages() {
   fi
 }
 
+# Show hosts inventory filtered by labels
 function inventory() {
 
   # Without filter, return all hosts
@@ -1512,8 +1508,43 @@ function inventory() {
   fi
 }
 
+#== TEST CODE!  ############################################# 
+#############################################################
+# Test code that can be tested w/ 'cloudify test' 
+# Use this to test code before inserting it in cloudify 
+
+function usage_info () {
+    echo "function 'usage_info' not implemented yet" >&2
+}
+
+# LXC doesn't make it easy to get specific info on containers.
+# But as it provides info in json format, this can be parsed with jq to extract specific bits of information
+function cloudify_info () {
+  local host="$1"; shift;
+  while :; do
+    [[ -z "$1" ]] && break
+    case "$1" in
+    -h  | --help | help)
+          usage_info
+          break
+          ;;
+    ipv4)          
+	  local ipv4=$(lxc list "$LXDSERVER:$host" --format=json | jq '.[].state.network.eth0.addresses[] | select (.family=="inet" and .scope=="global") .address')
+	  echo "ipv4=$ipv4"
+          break ;; 
+    ipv6)          
+	  local ipv6=$(lxc list "$LXDSERVER:$host" --format=json | jq '.[].state.network.eth0.addresses[] | select (.family=="inet6" and .scope=="global") .address')
+	  echo "ipv6=$ipv6"
+          break ;; 
+    -?*) die "Error: Unknown option of info subcommand: '$1'" 1;;
+    *) break ;;
+    esac
+    shift
+  done
+}
+
 function testCode () {
-  cloudify packages --labels 
+  cloudify info cloudify ipv4
 }
 
 
@@ -1784,6 +1815,9 @@ function cloudify () {
           ;;      
      --credentials | credentials | c) 
           check_credentials --force               # Ask all credentials 
+          break ;;
+     info) 
+	  shift && cloudify_info "$@"
           break ;;
      --test | test | t) 
           shift && testCode "$@"

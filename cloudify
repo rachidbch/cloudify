@@ -438,8 +438,11 @@ function is_git_url () {
 # Call to `add_in_hosts "IP1 hostname" "IP2 hostname2"` adds these two hostnames in /etc/hosts and makes sure there's no doublon
 
 function add_in_hosts(){
-  
   $CLOUDIFY_DEBUG && pkg_pause "About to execute: add_in_hosts"
+
+  local hostpwd="${CLOUDIFY_LOCALHOSTPWD-$CLOUDIFY_HOSTPWD}" 
+  [[ -z ${hostpwd} ]] && die "Host passord not set"
+
   # sed special characters have to be escaped. We're liberal here. 
   local escaped_hosts_lines=()
   for host_line in "${@}"; do                     # pkg_startuprc_line
@@ -466,7 +469,7 @@ function add_in_hosts(){
   # Reserve cloudify space in /etc/hosts 
   #$CLOUDIFY_DEBUG && pkg_pause "break 2"
   PKG_DEBUG_LN "Reserve cloudify space inside /etc/hosts"
-  grep -qFx "# CLOUDIFY HOSTS START" /etc/hosts || command sudo -kS -p '' sed -i -e '$a\\n# CLOUDIFY HOSTS START\n# CLOUDIFY HOSTS END' /etc/hosts <<<$CLOUDIFY_LOCALHOSTPWD
+  grep -qFx "# CLOUDIFY HOSTS START" /etc/hosts || command sudo -kS -p '' sed -i -e '$a\\n# CLOUDIFY HOSTS START\n# CLOUDIFY HOSTS END' /etc/hosts <<<$hostpwd
   
   #$CLOUDIFY_DEBUG && pkg_pause "break 3"
   # Insert new hosts lines 
@@ -476,7 +479,7 @@ function add_in_hosts(){
     #$CLOUDIFY_DEBUG && pkg_pause "break 4"
     # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". 
     #        Exact same line above didn't need that. Why that?
-    command sudo -kSp '' sed -i -e "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &> /dev/null <<<$CLOUDIFY_LOCALHOSTPWD
+    command sudo -kSp '' sed -i -e "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &> /dev/null <<<$hostpwd
     PKG_DEBUG "Inserted: $host_line"
     #$CLOUDIFY_DEBUG && pkg_pause "break 5"
   done

@@ -806,6 +806,7 @@ function pkg_install_release() {
                   && command sudo -kS -p '' install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ &> /dev/null <<< "$hostpwd"  \
                   && exit 0
       	  
+
                 # The 'install' command doesn't have a recursive option. We use find as a workaround 
                 # This will install each file in the archive at corresping path /usr/local
                 # Note we're excluding the first level, as this is the place of files, like LICENSE, that shouldn't be installed 
@@ -817,10 +818,20 @@ function pkg_install_release() {
                       command sudo -kS -p '' find . -mindepth 1 -type f  -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \; &> /dev/null <<< "$hostpwd" )
                     fi
       	        done
+
+                # Some install archive contain directly the binary but w/ a custom name...
+		# If the folder contains only one binary, that's the binary we want to install
+		local executables=$(find /tmp/"$cmd"/ -maxdepth 1 -type f -executable)
+		local executablesCount=$(echo "$executables" | wc -l)
+                if [[ $executablesCount == 1 ]]; then
+		  PKG_DEBUG "Installing $executables as /usr/local/bin/$cmd" 
+		  cp "$executables" "/tmp/$cmd/$cmd"
+                  command sudo -kS -p '' install -Dm 755 "/tmp/$cmd/$cmd" /usr/local/bin/ &> /dev/null <<< "$hostpwd"  &&  exit 0
+                fi
             )
         fi
-        PKG_DEBUG "Discarding tmp/$cmd/"
-        rm -rf "/tmp/${cmd}"
+        #PKG_DEBUG "Discarding tmp/$cmd/"
+        #rm -rf "/tmp/${cmd}"
     fi
 }
 

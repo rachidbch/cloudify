@@ -59,6 +59,9 @@ export EDITOR=vim                           # If an editor is needed during inst
 # Set CLOUDIFY_DISABLE_COLORS a default value if not already set
 : "${CLOUDIFY_DISABLE_COLORS:=false}" && export CLOUDIFY_DISABLE_COLORS
 
+# Set CLOUDIFY_FORCE_UPDATE a default value if not already set
+: "${CLOUDIFY_FORCE_UPDATE:=false}" && export CLOUDIFY_FORCE_UPDATE
+
 # Default assumed platform
 export PKG_PLATFORM="ubuntu"
 
@@ -1290,6 +1293,8 @@ function git() {
 #== REMOTING
 ##  Cloudify can execute cloudify package init scripts on remote machine
 
+# HACK! The ':' at the end of this function is there so that the '; cloudify ...' command that will be added by cloudify_remote can be on its own line.
+#       Without it it was concatained to the last 'fi' line, which was ugly
 function cloudify_remote_payload_template() {
     export CLOUDIFY_DISABLE_COLORS={{CLOUDIFY_DISABLE_COLORS}}
     export CLOUDIFY_SKIPCREDENTIALS=true
@@ -1307,7 +1312,10 @@ function cloudify_remote_payload_template() {
     export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID='{{CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}'
     export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='{{CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}'
     export RESTIC_PASSWORD='{{RESTIC_PASSWORD}}'
-    bash -c "$(curl -sL scripts.rachid.space/bootstrap/cloudify.sh)"
+    if {{CLOUDIFY_FORCE_UPDATE}} || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -30)" ]]; then 
+        bash -c "$(curl -sL scripts.rachid.space/bootstrap/cloudify.sh)";
+    fi
+    : 
 }
 
 # =TODO= Use envsubst instead of replacing env variables one by one!
@@ -1326,6 +1334,7 @@ function cloudify_remote() {
       # Load credentials in the payload template
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_DISABLE_COLORS}}/$CLOUDIFY_DISABLE_COLORS/g" <<< "$cloudify_remote_payload")
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_DEBUG}}/$CLOUDIFY_DEBUG/g" <<< "$cloudify_remote_payload")
+      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_FORCE_UPDATE}}/$CLOUDIFY_FORCE_UPDATE/g" <<< "$cloudify_remote_payload")
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTUSER}}/$CLOUDIFY_HOSTUSER/g" <<< "$cloudify_remote_payload")
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTPWD}}/$CLOUDIFY_HOSTPWD/g" <<< "$cloudify_remote_payload")
       cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBUSER}}/$CLOUDIFY_GITHUBUSER/g" <<< "$cloudify_remote_payload")
@@ -1603,7 +1612,7 @@ function cloudify_hostnames () {
 	       # We're manipulating a remote host '/etc/hosts' file. Neihter easy, nor peasy!
 	       if [[ -z "$ip" ]]; then
 	           cloudify_remote "$host" hostnames localhost add "$hostname" $ipv4
-	           #cloudify_remote "$host" hostnames localhost add "$hostname" $ipv6
+	           cloudify_remote "$host" hostnames localhost add "$hostname" $ipv6
 	       else
 	           cloudify_remote "$host" hostnames localhost add proxy "$ip"
                fi

@@ -435,9 +435,11 @@ function is_git_url () {
 
 # Write entry in /etc/hosts 
 # =todo= Make it compatible with zsh shell
+# Call to `add_in_hosts "IP1 hostname" "IP2 hostname2"` adds these two hostnames in /etc/hosts and makes sure there's no doublon
+
 function add_in_hosts(){
   
-  $CLOUDIFY_DEBUG && pkg_pause "break 1"
+  $CLOUDIFY_DEBUG && pkg_pause "About to execute: add_in_hosts"
   # sed special characters have to be escaped. We're liberal here. 
   local escaped_hosts_lines=()
   for host_line in "${@}"; do                     # pkg_startuprc_line
@@ -462,24 +464,24 @@ function add_in_hosts(){
   done;
   
   # Reserve cloudify space in /etc/hosts 
-  $CLOUDIFY_DEBUG && pkg_pause "break 2"
+  #$CLOUDIFY_DEBUG && pkg_pause "break 2"
   PKG_DEBUG_LN "Reserve cloudify space inside /etc/hosts"
   grep -qFx "# CLOUDIFY HOSTS START" /etc/hosts || command sudo -kS -p '' sed -i -e '$a\\n# CLOUDIFY HOSTS START\n# CLOUDIFY HOSTS END' /etc/hosts <<<$CLOUDIFY_LOCALHOSTPWD
   
-  $CLOUDIFY_DEBUG && pkg_pause "break 3"
+  #$CLOUDIFY_DEBUG && pkg_pause "break 3"
   # Insert new hosts lines 
   PKG_DEBUG_LN "Inserting host lines"
   for host_line in "${escaped_host_lines[@]}"; do
     PKG_DEBUG "Inserting: $host_line"
-    $CLOUDIFY_DEBUG && pkg_pause "break 4"
+    #$CLOUDIFY_DEBUG && pkg_pause "break 4"
     # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". 
     #        Exact same line above didn't need that. Why that?
     command sudo -kSp '' sed -i -e "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &> /dev/null <<<$CLOUDIFY_LOCALHOSTPWD
     PKG_DEBUG "Inserted: $host_line"
-    $CLOUDIFY_DEBUG && pkg_pause "break 5"
+    #$CLOUDIFY_DEBUG && pkg_pause "break 5"
   done
 
-  $CLOUDIFY_DEBUG && pkg_pause "break 6"
+  #$CLOUDIFY_DEBUG && pkg_pause "break 6"
 }
 
 
@@ -1508,17 +1510,15 @@ function inventory() {
   fi
 }
 
-#== TEST CODE!  ############################################# 
-#############################################################
-# Test code that can be tested w/ 'cloudify test' 
-# Use this to test code before inserting it in cloudify 
 
+# Help on 'info" subcommand 
 function usage_info () {
     echo "function 'usage_info' not implemented yet" >&2
 }
 
 # LXC doesn't make it easy to get specific info on containers.
-# But as it provides info in json format, this can be parsed with jq to extract specific bits of information
+# But as it provides info in json format, 'cloudify info' can parse it with jq to extract specific bits of information
+# The command `cloudify info proxy IPV4` (resp. `cloudify info proxy IPV4`) return the IPV4 address (resp. IPV6 address) of 'proxy' host 
 function cloudify_info () {
   local host="$1"; shift;
   while :; do
@@ -1530,11 +1530,81 @@ function cloudify_info () {
           ;;
     ipv4)          
 	  local ipv4=$(lxc list "$LXDSERVER:$host" --format=json | jq '.[].state.network.eth0.addresses[] | select (.family=="inet" and .scope=="global") .address')
-	  echo "ipv4=$ipv4"
+	  echo "$ipv4"
           break ;; 
     ipv6)          
 	  local ipv6=$(lxc list "$LXDSERVER:$host" --format=json | jq '.[].state.network.eth0.addresses[] | select (.family=="inet6" and .scope=="global") .address')
-	  echo "ipv6=$ipv6"
+	  echo "$ipv6"
+          break ;; 
+    -?*) die "Error: Unknown option of info subcommand: '$1'" 1;;
+    *) break ;;
+    esac
+    shift
+  done
+}
+
+
+
+#== TEST CODE!  ############################################# 
+#############################################################
+# Test code that can be tested w/ 'cloudify test' 
+# Use this to test code before inserting it in cloudify 
+
+function usage_hostnames () {
+    echo "function 'usage_hostnames' not implemented yet" >&2
+}
+
+# 'cloudify hostnames' subcommand can manipulate hosts '/etc/hosts' file to add hostnames 
+# Command `cloudify hostnames nginx1 add proxy` will add proxy's IPV4 and IPV6 addresses in nginx /etc/hosts as 'proxy' and 'proxy.remote'
+# Command `cloudify hostnames nginx1 add proxy <IP>` will add <IP> addresses in nginx /etc/hosts as 'proxy' 
+# =TODO=   Command `cloudify hostnames nginx1 add -r proxy <IP>` should add '<IP> proxy proxy.remote' to nginx1 /etc/hosts file
+function cloudify_hostnames () {
+  local host="$1"; shift;
+  while :; do
+    [[ -z "$1" ]] && break
+    case "$1" in
+    -h  | --help | help)
+          usage_hostnames
+          break
+          ;;
+    add)          
+	  shift;
+          local hostname="$1"
+	  local ip=""
+	  local ipv4=""
+	  local ipv6=""
+          if [[ -z $2 ]]; then 
+	      # No IP address is given we can assume we're still on localhost and we can ask lxc  
+	      # =TODO= Be defensive. What if this is called on the remote host w/o IP, we should detect that and die!
+	      ipv4=$(lxc list "$LXDSERVER:$hostname" --format=json | jq -r '.[].state.network.eth0.addresses[] | select (.family=="inet" and .scope=="global") .address')
+	      ipv6=$(lxc list "$LXDSERVER:$hostname" --format=json | jq -r '.[].state.network.eth0.addresses[] | select (.family=="inet6" and .scope=="global") .address')
+	  else
+              ip="$2"
+	      PKG_DEBUG "IP found: $2"
+	  fi
+	  # Manipulate local or remote /etc/host
+	  if [[ $host == localhost ]]; then
+	       # We're manipulating localhost '/etc/hosts' file. Easy, peasy!
+	       if [[ -z "$ip" ]]; then
+		   # =TODO= The .remote stuff is here to b coherent w/ how cloudify creates new containers
+		   #        Should we keep this?
+	           PKG_DEBUG add_in_hosts "$ipv4 $hostname $hostname.remote" "$ipv6 $hostname $hostname.remote"
+                   add_in_hosts "$ipv4 $hostname $hostname.remote" "$ipv6 $hostname $hostname.remote"
+	       else
+		   # =TODO= We should be able to replicate exactly the .remote stuff above
+		   #        How? 
+	           PKG_DEBUG add_in_hosts "$ip $hostname"
+                   add_in_hosts "$ip $hostname"
+               fi
+	  else
+	       # We're manipulating a remote host '/etc/hosts' file. Neihter easy, nor peasy!
+	       if [[ -z "$ip" ]]; then
+	           cloudify_remote "$host" hostnames localhost add "$hostname" $ipv4
+	           #cloudify_remote "$host" hostnames localhost add "$hostname" $ipv6
+	       else
+	           cloudify_remote "$host" hostnames localhost add proxy "$ip"
+               fi
+	  fi
           break ;; 
     -?*) die "Error: Unknown option of info subcommand: '$1'" 1;;
     *) break ;;
@@ -1544,9 +1614,9 @@ function cloudify_info () {
 }
 
 function testCode () {
-  cloudify info cloudify ipv4
+  PKG_DEBUG cloudify hostnames localhost add pebble 
+  cloudify hostnames test add pebble    
 }
-
 
 ###################################### END OF TEST CODE!
 #############################################################
@@ -1634,7 +1704,7 @@ function cloudify () {
 	  lxc list $LXDSERVER:
 	  ;;
     host)
-	  lxc list $LXDSERVER:$2
+	  lxc list "$LXDSERVER:$2"
 	  ;;
     launch | run)
 
@@ -1671,6 +1741,7 @@ function cloudify () {
           if ! lxc delete $LXDSERVER:"$host" ${@:3} --force &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
 
           # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". Why that? 
+	  # =TODO= Also remove IPV6 entries...
 	  PKG_DEBUG "Executing: sudo sed -ri \"/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d\" /etc/hosts"
           command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts  &>/dev/null <<< "$hostpwd"
           ;;
@@ -1695,6 +1766,19 @@ function cloudify () {
              cloudify_remote "$host" exec localhost "$@" 
 	  fi
 	  ;;
+    credentials | c) 
+          check_credentials --force               # Ask all credentials 
+          break ;;
+    info) 
+	  shift && cloudify_hostnames "$@"
+          break ;;
+    hostnames) 
+	  PKG_DEBUG "In cloudify, Running: " cloudify_hostnames "$@"
+	  shift && cloudify_hostnames "$@"
+          break ;;
+    test | t) 
+          shift && testCode "$@"
+          break ;;
     --on | on | o)  
           # Build hosts list
           [[ $packages_parsing == "started" ]] && die "Cloudify usage error: unexptected on block."
@@ -1813,15 +1897,6 @@ function cloudify () {
             shift
           done
           ;;      
-     --credentials | credentials | c) 
-          check_credentials --force               # Ask all credentials 
-          break ;;
-     info) 
-	  shift && cloudify_info "$@"
-          break ;;
-     --test | test | t) 
-          shift && testCode "$@"
-          break ;;
 #   -p  | --param) # Named parameter
 #         param="${2-}"
 #         shift

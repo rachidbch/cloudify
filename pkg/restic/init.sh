@@ -30,7 +30,7 @@ sudo tee /etc/cron.daily/cloudify-backup <<EOF
 /usr/bin/logger '\''BEGIN RESTIC'\''
 export RESTIC_PASSWORD='\''${RESTIC_PASSWORD}'\''
 export RCLONE_TIMEOUT=50m
-/usr/local/bin/resticfy All rbc >> /var/log/cloudify-backup.log  2>&1
+/usr/local/bin/resticfy All '\''${USER}'\'' >> /var/log/cloudify-backup.log  2>&1
 unset RESTIC_PASSWORD
 /usr/bin/logger '\''END RESTIC'\''
 EOF

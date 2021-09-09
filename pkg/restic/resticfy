@@ -35,7 +35,7 @@ function restic_backup_workspace() {
   RESTIC_REP=$(head -1 "$WORKSPACE"/.repo)
 
   export RESTIC_REPOSITORY="$RESTIC_REP"
-
+  echo -e "\n$(date +'%D %T'): Backing up Worspace $WORKSPACE"
   # 1. Init the repository
   echo "RCLONE_CONFIG = $RCLONE_CONFIG"
   echo "CONFIG_DIR = $CONFIG_DIR"
@@ -51,6 +51,7 @@ function restic_backup_workspace() {
 
   # 2. Backup
   echo "REPO BACKING UP"
+  #echo Running: /usr/local/bin/restic backup --verbose --verbose --exclude-caches --exclude-file "$WORKSPACE"/blacklist --files-from "$WORKSPACE"/whitelist "${@:2}" 
   /usr/local/bin/restic backup --verbose --verbose --exclude-caches --exclude-file "$WORKSPACE"/blacklist --files-from "$WORKSPACE"/whitelist "${@:2}" 
   echo "REPO BACKED UP" 
   unset RESTIC_REPOSITORY
@@ -59,7 +60,9 @@ function restic_backup_workspace() {
 if [[ "$TARGET" == "All" ]]; then
   # this will list only directories (not files) that doesn't begin with a dot
   for WORKSPACE in "$CONFIG_DIR"/Operations/*/; do
-    restic_backup_workspace "$WORKSPACE" "$@"
+    # Just be on the safe side, do nothing if 'for ... in' list an empty entry  
+    # The 'Operations/*/' will list only directories but all entries will have a '/' suffix, which we don't want 
+    [[ -z $WORKSPACE ]] || restic_backup_workspace "${WORKSPACE%/}" "$@"
   done
 else
   restic_backup_workspace "$TARGET" "$@"

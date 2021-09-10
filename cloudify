@@ -1776,17 +1776,21 @@ function cloudify () {
 	  # =HACK= We remove the first line of the output because it's invariably: "Warning: Permanently added 'hostIP' (ECDSA) to the list of known hosts"
 	  ;;
     exec)
-	      # Execute shell commands on local machine or one remote machines
-	      # The only upside is to have sudo command prefilled  
-	      shift;
-	      [[ -z $1 ]] && die "Missing host"
-	      local host="$1"; shift;
-	      if [[ $host == "localhost" ]]; then
-             source <(echo "$@")
-	      else
-             cloudify_remote "$host" exec localhost "$@" 
-	      fi
-	      break ;;
+        # Execute shell commands on local machine or one remote machines
+        # The only upside is to have sudo command prefilled  
+        shift;
+
+	    [[ -z $1 ]] && die "Missing host"
+	    local host="$1"; shift;
+	    if [[ $host == "localhost" ]]; then
+            source <(echo "$@")
+	    else
+            # Actual command is escaped because it can contain ';' which messes with how cloudify_remote works:
+            # Indeed as the `cloudify exec` command is executed on remote machine, whatever comes before ';' is executed 
+            # and what comes after the ';' is executed as an independant command
+            cloudify_remote "$host" exec localhost "\"$@\""
+        fi
+        break ;;
     credentials | c) 
           check_credentials --force               # Ask all credentials 
           break ;;

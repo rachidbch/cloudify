@@ -1323,55 +1323,63 @@ function cloudify_remote_payload_template() {
     : 
 }
 
-# =TODO= Use envsubst instead of replacing env variables one by one!
+# By default cloudify_remote executes remotely
 function cloudify_remote() {
-  #local host="$1" && shift
-  local host="$1" && shift
-  #PKG_DEBUG Exectuting cloudify_remote
+  (cloudify_remote_sync $@) & 
+}
 
-  if [[ "$host" == "localhost" ]]; then
-      PKG_DEBUG  executing cloudify $@  
-      cloudify $@  |& sed "s/^/$host: /"  |& sed "s/^$host: $//"
-  else
-      # Read remote payload template
-      local cloudify_remote_payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+# =TODO= Use envsubst instead of replacing env variables one by one!
+# For some sub-commands (eg. $ cloudify exec ...), we need synchronous exection
+function cloudify_remote_sync() {
+
+    local host="$1" && shift
+
+    #PKG_DEBUG Exectuting cloudify_remote
+
+    if [[ "$host" == "localhost" ]]; then
+        PKG_DEBUG  executing cloudify $@  
+        cloudify $@  |& sed "s/^/$host: /"  |& sed "s/^$host: $//"
+    else
+        # Read remote payload template
+        local cloudify_remote_payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
      
-      # Load credentials in the payload template
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_DISABLE_COLORS}}/$CLOUDIFY_DISABLE_COLORS/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_DEBUG}}/$CLOUDIFY_DEBUG/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_FORCE_UPDATE}}/$CLOUDIFY_FORCE_UPDATE/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTUSER}}/$CLOUDIFY_HOSTUSER/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTPWD}}/$CLOUDIFY_HOSTPWD/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBUSER}}/$CLOUDIFY_GITHUBUSER/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBPWD}}/$CLOUDIFY_GITHUBPWD/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABUSER}}/$CLOUDIFY_GITLABUSER/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABPWD}}/$CLOUDIFY_GITLABPWD/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE}}/$CLOUDIFY_RCLONE_REMOTE/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_REGION}}/$CLOUDIFY_RCLONE_REMOTE_REGION/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}/$CLOUDIFY_RCLONE_REMOTE_ENDPOINT/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}/$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}/$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY/g" <<< "$cloudify_remote_payload")
-      cloudify_remote_payload=$(sed "s/{{RESTIC_PASSWORD}}/$RESTIC_PASSWORD/g" <<< "$cloudify_remote_payload")
+        # Load credentials in the payload template
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_DISABLE_COLORS}}/$CLOUDIFY_DISABLE_COLORS/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_DEBUG}}/$CLOUDIFY_DEBUG/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_FORCE_UPDATE}}/$CLOUDIFY_FORCE_UPDATE/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTUSER}}/$CLOUDIFY_HOSTUSER/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_HOSTPWD}}/$CLOUDIFY_HOSTPWD/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBUSER}}/$CLOUDIFY_GITHUBUSER/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBPWD}}/$CLOUDIFY_GITHUBPWD/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABUSER}}/$CLOUDIFY_GITLABUSER/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABPWD}}/$CLOUDIFY_GITLABPWD/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE}}/$CLOUDIFY_RCLONE_REMOTE/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_REGION}}/$CLOUDIFY_RCLONE_REMOTE_REGION/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}/$CLOUDIFY_RCLONE_REMOTE_ENDPOINT/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}/$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}/$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY/g" <<< "$cloudify_remote_payload")
+        cloudify_remote_payload=$(sed "s/{{RESTIC_PASSWORD}}/$RESTIC_PASSWORD/g" <<< "$cloudify_remote_payload")
 
-      # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running 
-      cloudify_remote_payload="$cloudify_remote_payload; cloudify $@"
+        # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running 
+        cloudify_remote_payload="$cloudify_remote_payload; cloudify $@"
     
-      PKG_DEBUG "Payload to execute remotely on $host:" 
-      # Passwords are replaved by asterisks before printing
-      # HACK! Password are recognized only if env variable ends with 'PWD', contains 'PASSWORD' or contains 'SECRET'
-      local cloudify_remote_payload_secure="$(sed 's/PWD='\''\(.*\)'\''/PWD='\''***********'\''/g' <<< $cloudify_remote_payload)"
-      cloudify_remote_payload_secure="$(sed 's/PASSWORD\(.*\)='\''\(.*\)'\''/PASSWORD\1='\''***********'\''/g' <<< $cloudify_remote_payload_secure)"
-      cloudify_remote_payload_secure="$(sed 's/SECRET\(.*\)='\''\(.*\)'\''/SECRET\1='\''***********'\''/g' <<< $cloudify_remote_payload_secure)"
+        PKG_DEBUG "Payload to execute remotely on $host:" 
+        # Passwords are replaved by asterisks before printing
+        # HACK! Password are recognized only if env variable ends with 'PWD', contains 'PASSWORD' or contains 'SECRET'
+        local cloudify_remote_payload_secure="$(sed 's/PWD='\''\(.*\)'\''/PWD='\''***********'\''/g' <<< $cloudify_remote_payload)"
+        cloudify_remote_payload_secure="$(sed 's/PASSWORD\(.*\)='\''\(.*\)'\''/PASSWORD\1='\''***********'\''/g' <<< $cloudify_remote_payload_secure)"
+        cloudify_remote_payload_secure="$(sed 's/SECRET\(.*\)='\''\(.*\)'\''/SECRET\1='\''***********'\''/g' <<< $cloudify_remote_payload_secure)"
 
-      $CLOUDIFY_DEBUG && msg  "$cloudify_remote_payload_secure"
+        $CLOUDIFY_DEBUG && msg  "$cloudify_remote_payload_secure"
 
-      PKG_DEBUG "SSHing..."
-      # The SSH session is launched in the background to parallelize hosts cloudifcation
-      # =TODO= Remote hosts key checking has been totally disabled.
-      #        It's highly unsafe! Parse ssh messages and prompt the user for decision instead. 
-      (ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" $host "$cloudify_remote_payload" |& sed "s/^/$host: /"  |& sed "s/^$host: $//") &
-      #ssh -tt workify "sudo -kS cat /etc/shadow" <<< "$CLOUDIFY_HOSTPWD"
-  fi
+        PKG_DEBUG "SSHing..."
+        # The SSH session is launched in the background to parallelize hosts cloudifcation
+        # =TODO= Remote hosts key checking has been totally disabled.
+        #        It's highly unsafe! Parse ssh messages and prompt the user for decision instead. 
+
+        ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" $host "$cloudify_remote_payload" |& sed "s/^/$host: /"  |& sed "s/^$host: $//" |& tail -n +2 
+
+    fi
 } 
 
 
@@ -1788,7 +1796,7 @@ function cloudify () {
             # Actual command is escaped because it can contain ';' which messes with how cloudify_remote works:
             # Indeed as the `cloudify exec` command is executed on remote machine, whatever comes before ';' is executed 
             # and what comes after the ';' is executed as an independant command
-            cloudify_remote "$host" exec localhost "\"$@\""
+            cloudify_remote_sync "$host" exec localhost "\"$@\""
         fi
         break ;;
     credentials | c) 

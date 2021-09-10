@@ -1297,15 +1297,20 @@ function git() {
 #       Without it it was concatained to the last 'fi' line, which was ugly
 function cloudify_remote_payload_template() {
     export CLOUDIFY_DISABLE_COLORS={{CLOUDIFY_DISABLE_COLORS}}
-    export CLOUDIFY_SKIPCREDENTIALS=true
     export CLOUDIFY_FORCE_COLORS=true                         # This is past to remote hosts to force colors even if there's no terminal (unless colors are disabled)
+
+    export CLOUDIFY_SKIPCREDENTIALS=true
+    
     export CLOUDIFY_DEBUG={{CLOUDIFY_DEBUG}}
+
     export CLOUDIFY_HOSTUSER='{{CLOUDIFY_HOSTUSER}}'
     export CLOUDIFY_HOSTPWD='{{CLOUDIFY_HOSTPWD}}'
+
     export CLOUDIFY_GITHUBUSER='{{CLOUDIFY_GITHUBUSER}}'
     export CLOUDIFY_GITHUBPWD='{{CLOUDIFY_GITHUBPWD}}'
     export CLOUDIFY_GITLABUSER='{{CLOUDIFY_GITLABUSER}}'
     export CLOUDIFY_GITLABPWD='{{CLOUDIFY_GITLABPWD}}'
+
     export CLOUDIFY_RCLONE_REMOTE='{{CLOUDIFY_RCLONE_REMOTE}}'
     export CLOUDIFY_RCLONE_REMOTE_REGION='{{CLOUDIFY_RCLONE_REMOTE_REGION}}'
     export CLOUDIFY_RCLONE_REMOTE_ENDPOINT='{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}'
@@ -1555,13 +1560,7 @@ function cloudify_info () {
   done
 }
 
-
-
-#== TEST CODE!  ############################################# 
-#############################################################
-# Test code that can be tested w/ 'cloudify test' 
-# Use this to test code before inserting it in cloudify 
-
+# Usage of 'cloudify hostnames' sub-command
 function usage_hostnames () {
     echo "function 'usage_hostnames' not implemented yet" >&2
 }
@@ -1625,6 +1624,13 @@ function cloudify_hostnames () {
   done
 }
 
+
+
+#== TEST CODE!  ############################################# 
+#############################################################
+# Test code that can be tested w/ 'cloudify test' 
+# Use this to test code before inserting it in cloudify 
+
 function testCode () {
   PKG_DEBUG cloudify hostnames localhost add pebble 
   cloudify hostnames test add pebble    
@@ -1679,9 +1685,12 @@ function cloudify () {
 	  set -x 
 	  ;;
     -n  | --no-color) 
-	  export CLOUDIFY_DISABLE_COLORS=true 
-	  setup_colors
-	  ;;
+    	  export CLOUDIFY_DISABLE_COLORS=true 
+	      setup_colors
+	      ;;
+    --) 
+        # No more options
+	      ;;
     inventory)          
           CLOUDIFY_SKIPCREDENTIALS=true preconfigure              # Initialize paths (but no need to check credentials)
           if [[ -z "${2-}" || "${2-}" == "@all" ]]; then
@@ -1767,22 +1776,22 @@ function cloudify () {
 	  # =HACK= We remove the first line of the output because it's invariably: "Warning: Permanently added 'hostIP' (ECDSA) to the list of known hosts"
 	  ;;
     exec)
-	  # Execute shell commands on local machine or one remote machines
-	  # The only upside is to have sudo command prefilled  
-	  [[ -z $2 ]] && die "Missing host"
-	  shift;
-	  local host="$1"; shift;
-	  if [[ $host == "localhost" ]]; then
+	      # Execute shell commands on local machine or one remote machines
+	      # The only upside is to have sudo command prefilled  
+	      shift;
+	      [[ -z $1 ]] && die "Missing host"
+	      local host="$1"; shift;
+	      if [[ $host == "localhost" ]]; then
              source <(echo "$@")
-	  else
+	      else
              cloudify_remote "$host" exec localhost "$@" 
-	  fi
-	  ;;
+	      fi
+	      break ;;
     credentials | c) 
           check_credentials --force               # Ask all credentials 
           break ;;
     info) 
-	  shift && cloudify_hostnames "$@"
+	  shift && cloudify_info "$@"
           break ;;
     hostnames) 
 	  PKG_DEBUG "In cloudify, Running: " cloudify_hostnames "$@"
@@ -1899,7 +1908,7 @@ function cloudify () {
                     fi
                 else
                   PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
-		  # =TODO= Should this be done in a sub-process? 
+		              # =TODO= Should this be done in a sub-process? 
                   cloudify_remote "$host" "$packages"  && setup_in_progress=true 
                 fi
               done

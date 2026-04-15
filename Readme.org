@@ -1,16 +1,16 @@
-* CLOUDIFY PROJECT 
+* CLOUDIFY PROJECT
 
   =WARNING= This is an unfinished project. Use it with caution
 
-  cloudify Project deals with tools installation whereas bash-it is used for configuration 
+  cloudify Project deals with tools installation whereas bash-it is used for configuration
 
   cloudify Project installs a workable development environment on newly installed ubuntu box.
-  This environment should provide tools allowing the user to be fully productive: 
+  This environment should provide tools allowing the user to be fully productive:
 
   cloudify can bring a new machine or container up to speed in no time by installing MFC standard tools & setup
 
 
-** How to install cloudify 
+** How to install cloudify
 
 1) Install cloudify
 
@@ -20,15 +20,15 @@
  =NOTE=
   As scripts.rachid.space/cloudify.sh still doesn't exist, you can install cloudify with just:
   ```
-  cd 
+  cd
   git clone "https://gitlab.com/mobilefirstcentury/cloudify.git""
-  sudo ln -sfn ~/cloudify/cloudify    /usr/local/bin/cloudify
+  sudo ln -sfn $HOME/cloudify/cloudify    /usr/local/bin/cloudify
   ```
-  
+
 2) Install basics packages
   # 'basics' package contains, well ... basics tools
   cloudify i basics
-  
+
 3) Install cloufiles
   # Apart basics packages, dotfiles should be among the first packages to be setup
   # Unlike other pakcages that install tools, dotfiles will use stow to restore Standard dotfiles
@@ -37,7 +37,7 @@
 4) List installable tools
    $ cloudify ls
 
-5) Install some specific tool 
+5) Install some specific tool
    # Here we choose to install bash-it tool
    cloudify i bash-it
 
@@ -78,7 +78,7 @@
     - rclone (rsync with drivers for all cloud providers)
     - megadown (a tool to download from mega.nz)
 
-**** shell 
+**** shell
     - bash-it (bash configuration management, also called bashd)
     - fzf   (dir and file jumper)
     - jump  (idem. to remove)

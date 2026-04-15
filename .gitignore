@@ -1,8 +1,30 @@
 .#*
 *.swp
-logs
+*.swo
+*~
+
+# Logs
+logs/
+
+# Personal files
 todo.txt
 dummify.sh
-inventory/
+
+# Environment & secrets
 .env
 .credentials
+
+# Host inventory (machine-specific)
+inventory/
+
+# IDE
+.vscode/
+
+# Compiled/downloaded artifacts
+*.deb
+*.tar.gz
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db

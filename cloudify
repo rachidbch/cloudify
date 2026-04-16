@@ -1,26 +1,21 @@
 #!/usr/bin/env bash
 # Cloudify all-in-one machine, containers and software packages management tool
+#
+# Thin CLI router — all logic is in lib/*.sh modules
 
 # STRICT MODE ERROR HANDLING
-# set -Eeuo pipefail
-
-#== TODO
-## 1) Interactive scripts: The way we use "sudo -S" effectively forbids any interactive interaction
-##                         If interactive interaction is required, try solution explained in this [bash-sudo-s-mypassword-interactive-shell answer
-##                         on AskUbuntu](https://askubuntu.com/a/1121309).
-## 2) 12 Factors Principles:
-##                         Apply advices from https://medium.com/@jdxcode/12-factor-cli-apps-dd3c227a0e46
+set -Eeuo pipefail
 
 #== SCRIPT USAGE
 function usage() {
     cat <<'EOF'
     cloudify [action] [package]
     examples:
-        cloudify help                                   print this usage help 
+        cloudify help                                   print this usage help
         cloudify init                                   Initialize cloudify before use (required once per session)
         cloudify credentials|c                          Sets credentials (local host, remote hosts, github, gitlab)
-        cloudify packages|pkgs                          list installable packages 
-        cloudify packages|pkgs default                  list default packages 
+        cloudify packages|pkgs                          list installable packages
+        cloudify packages|pkgs default                  list default packages
         cloudify add | a <pkg>                          install package on local machine
         cloudify add | a  default                       install default packages on local machine
         cloudify remove| rem | r <pkg>                  uninstall package
@@ -28,7 +23,7 @@ function usage() {
         cloudify host <host>                            print <host> remote host status
         cloudify <host> shell                           open a shell session on <host> remote host
         cloudify ... --on <host>                                 <host> remote host to run action on
-        cloudify test|t                                 helper to test code 
+        cloudify test|t                                 helper to test code
         cloudify hostnames <host> [IP]                  Add <host>'IP in /etc/hosts
 EOF
 }
@@ -43,1461 +38,48 @@ function usage_hostnames() {
     echo "function 'usage_hostnames' not implemented yet" >&2
 }
 
-#== NOTES
-#   - Functions and Constant names:
-#       To avoid name collisions, all functions and non local variables and constants are prefixed w/ 'cloudify_' for functions and 'CLOUDIFY_' for env variables
-#       These very few excpetions:
-#           - Environment variables and functions that are part of the 'Cloudify API' (Those that can be called in packages setup scripts); they're prefixed with 'PKG_' for env varibales and 'pkg_' for functions
-#               (Except PKG_DEBUG & PKG_DEBUGLN which are uppercase named functions)
-#           - shadow functions whose purpose are to shadow normal commands/functions (sudo, etc.)
-#           - Functions that are expected to be used liberally (like msg, msg_ln, die, etc)
-#           - Function w/ expected names (like usage)
-
 #== SCRIPT PATH
-##  This onliner tries to cover all scenarios. It gets the real path of this script be it executed or sourced directly or through symlinks
-##  =TODO= Compare with [this (longer) version](https://gist.github.com/TheMengzor/968e5ea87e99d9c41782) and find out if we need it.
-CLOUDIFY_SCRIPT_DIR=$(cd "$(dirname $([ -L ${BASH_SOURCE[0]} ] && readlink -f ${BASH_SOURCE[0]} || echo ${BASH_SOURCE[0]}))" &>/dev/null && pwd -P)
+CLOUDIFY_SCRIPT_DIR=$(cd "$(dirname "$( [ -L "${BASH_SOURCE[0]}" ] && readlink -f "${BASH_SOURCE[0]}" || echo "${BASH_SOURCE[0]}" )")" &>/dev/null && pwd -P)
 
 #== CONSTANTS
-export CLOUDIFY_LOCAL_BIN="$HOME"/.local/bin # This is where scripts from cloudify packages will be insalled by default
-: "${EDITOR:=vim}" && export EDITOR          # If an editor is needed during install
-
-# Name of install script in cloudify packages
-# This is the file inside package that will be executed when installing a package
-# If Cloudify finds a file named [<version>.][<distro>.][<os>.]${CLOUDIFY_RECIPE_FILENAME} and os, or os/distro or os/distro/version matches the output of cloudify_osdetect, it
-# will execute that script instead.
-# =todo= We can bring more flexibility to install script by allowing multiple ordered script executions
-#   For instance, the following files would be executed recursively in this order
-#       - setup.sh
-#           - linux.setup.sh
-#               - ubuntu.linux.setup.sh
-#                   - 2004.ubuntu.linux.setup.sh
-#                   - 2004.ubuntu.linux.closeup.sh
-#               - ubuntu.linux.closeup.sh
-#           - linux.closeup.sh
-#       - closeup.sh
-export CLOUDIFY_RECIPE_FILENAME="recipe.sh"
-
-# Directory where cloudify temporary files will be placed
+export CLOUDIFY_LOCAL_BIN="$HOME"/.local/bin
+: "${EDITOR:=vim}" && export EDITOR
+export CLOUDIFY_RECIPE_FILENAME="init.sh"
+export CLOUDIFY_BOOTSTRAP_URL="https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh"
 export CLOUDIFY_TMP=/tmp/cloudify
 
 #== ENVIRONMENT
-# Cloudify is running locally
-# We assume we running locally unless CLOUDIFY_IS_LOCAL is explicitely set to false
 : "${CLOUDIFY_IS_LOCAL:=true}" && export CLOUDIFY_IS_LOCAL
-
-# Cloudify installation directory
-# The ':' at the beginning of the line is a "No Operation"; it does nothing. But the it forces the variable substitution to take place :)
 : "${CLOUDIFY_DIR:=$HOME/cloudify}" && export CLOUDIFY_DIR
-
-# Hostname of the LXD Server hosting the containers
-# =todo= Cloudify is coded against a unique LXD Server. Later on, we'll add LXD cluster management feature allowing to add/remove dynamically LXD servers
-#        Cloudify will let you launch a LXD container on a specific LXD server or will automatically choose the server with respect to user specified constraints
-# Set CLOUDIFY_LXDSERVER a defautl value if not already set
 : "${CLOUDIFY_LXDSERVER:=cloudhorse}" && export LXDSERVER=$CLOUDIFY_LXDSERVER
-
-# Switch to disable colorization
-# Functions 'msg' and 'msg_ln' let you colorize message.
-# Set CLOUDIFY_DISABLE_COLORS a default value if not already set
 : "${CLOUDIFY_DISABLE_COLORS:=false}" && export CLOUDIFY_DISABLE_COLORS
-
-# Minimum time interval between two updates of cloudify tool (in minutes)
-# Cloudify updates itself (on local and remote hosts) on each execution.
-# To avoid slowing execution, cloudify will maintain an update timestamp and won't try to update if the last updaet is too recent
-# Set CLOUDIFY_UPDATE_DELAY a default value if not already set
 : "${CLOUDIFY_UPDATE_DELAY:=30}" && export CLOUDIFY_UPDATE_DELAY
-
-# Switch to disable automatic update on each executino
-# Set CLOUDIFY_FORCE_UPDATE a default value if not already set
-# =todo= When in production, invert the default behaviour. No update unless a switch is activated
 : "${CLOUDIFY_FORCE_UPDATE:=false}" && export CLOUDIFY_FORCE_UPDATE
-
-# Default installed OS when launching a new container
 export CLOUDIFY_DEFAULT_OS="ubuntu"
-# Default installed version when launching a new container
 : "${CLOUDIFY_DEFAULT_OS_VERSION:=LTS}" && export CLOUDIFY_DEFAULT_OS_VERSION
-
-# Switch to skip prompting for user credentials
 : "${CLOUDIFY_SKIPCREDENTIALS:=false}" && export CLOUDIFY_SKIPCREDENTIALS
 
 #== DEBUG STATE
-# DEBUG mode switch
 : "${DEBUG:=false}" && export DEBUG
 
 #== CLEANUP BEFORE EXIT
-# Call clean up function before exiting script
 trap cleanup SIGINT SIGTERM ERR EXIT
-function cleanup() {
-    trap - SIGINT SIGTERM ERR EXIT
 
-    # Script cleanup here
-    $DEBUG || rm -rf "${CLOUDIFY_TMP}"
-}
-
-#== GENERAL UTILITIES
-
-# Print messages with colors
-# msg sends its output to stderr (See 12 Factors CLI app principles) and support special color codes
-# msg "This is a ${RED}very important${RESET} message, but not a script output value!"
-function msg() {
-    if [[ "${1-}" == "-n" ]]; then
-        shift
-        echo >&2 -n -e "$@"
-    else
-        echo >&2 -e "$@"
-    fi
-}
-
-# Same as 'msg' but adds an empty line
-function msg_ln() {
-    echo >&2 && msg "$@"
-}
-
-# Die gracefully
-# Usage: `die "This requirement isn't met" 1
-function die() {
-    local msg=$1
-    local code=${2-1} # default exit status 1
-    msg "${RED}$msg${RESET}"
-    exit "$code"
-}
-
-# Simple function to detect the OS we're running on
-# Usage:
-# $ os detect:                 returns "gnux/linux ubuntu 18.04 lts"
-# $ os detect --os:            returns "gnux/linux"
-# $ os detect --distro:        returns "ubuntu"
-# $ os detect --version:       returns "18.04"
-# $ os detect --lts:           returns "lts" (or nothing if not an lts version)
-# $ os detect --arch:          returns "x86_64"
-# $ os detect --kernel:           returns "4.15.0-147-generic"
-function cloudify_osdetect() {
-    # Is this Termux on Android?
-    local arch
-    local kernel
-    local os
-    local distro
-    local distroname
-    local lts
-    local version
-
-    if [ ! -z "$(pgrep -f com.termux)" ]; then
-        os="android"
-        distro="termux"
-        version="" # Not needed so far
-        lts=""     # Not needed so far
-        kernel=""  # Not needed so far
-        arch=""    # Not needed so far
-    else
-        arch=$(uname -m)
-        kernel=$(uname -r)
-
-        # Get distribution name
-        distroname
-        if [[ -n "$(command -v lsb_release)" ]]; then
-            distroname=$(lsb_release -s -d)
-        elif [[ -f "/etc/os-release" ]]; then
-            distroname=$(grep PRETTY_NAME /etc/os-release | sed 's/PRETTY_NAME=//g' | tr -d '="')
-        elif [[ -f "/etc/debian_version" ]]; then
-            distroname="Debian $(cat /etc/debian_version)"
-        elif [[ -f "/etc/redhat-release" ]]; then
-            distroname=$(cat /etc/redhat-release)
-        else
-            distroname="$(uname -s) $(uname -r)"
-        fi
-        distroname=$(echo $distroname | tr '[A-Z]' '[a-z]')
-
-        # Get OS
-        os
-        os=$(echo "$(uname -o)" | tr '[A-Z]' '[a-z]')
-        os=${os#gnu/}
-
-        # Get Distribution Version
-        distro
-        distro=$(echo "$distroname" | cut -d' ' -f 1)
-
-        # Get Distribution version
-        version
-        version=$(echo "$distroname" | cut -d' ' -f 2 | cut -c 1-5)
-
-        # Is it an LTS version?
-        lts
-        lts=$(echo "$distroname" | cut -d' ' -f 3)
-    fi
-
-    case "$1" in
-    --os)
-        echo $os
-        ;;
-    --distro)
-        echo $distro
-        ;;
-    --version)
-        echo $version
-        ;;
-    --lts)
-        echo $lts
-        ;;
-    --arch)
-        echo $arch
-        ;;
-    --kernel)
-        echo $kernel
-        ;;
-    *)
-        echo $os $distro $version $lts
-        ;;
-    esac
-}
-
-# Can we define a logical not operator that works as a function and as a command in a pipe?
-# =WARNING= Not ready. Don't use!
-function not() {
-    [[ ! -z "${1-}" ]] && local in=$1 || {
-        local in
-        read in
-    }
-    [[ -t 1 ]] && {
-        [[ "${in-}" == 0 ]] && return 1 || return 0
-    } || {
-        [[ "${in-}" == 0 ]] && echo 1 || echo 0
-    }
-}
-
-# Utility function to test if a directory is empty
-function cloudify_emptydir() {
-    ls -1qA "$1" | grep -q . && return 1 || return 0
-}
-
-# Utility function to test if something is a path
-# =Warning= Non-sensical on Linux. May be useful on other platforms one day
-function cloudify_is_path() {
-    # On linux anything can be a path!
-    return 0
-}
-
-# Utility function to test if a list contains a string
-function cloudify_list_contains() {
-    local aList="$1"
-    local anItem="$2"
-    (echo $aList | grep -w q "$anItem") && exit 0 || exit 1
-}
-
-# Simply prompt the user and read the stores answer in specified variable
-function cloudify_prompt2var() {
-    local prompt="$1"
-    local answervar="$2"
-    msg -n "${GREEN}$1${RESET} "
-    read "$answervar"
-}
-
-# Prompt the user for a password
-# Makes use of 'askpass_stars.sh' script from [antofthy](https://antofthy.gitlab.io/software/askpass_stars_v1.sh.txt)
-# Antofty also proposes more evolved scripts that may suit production more (See https://antofthy.gitlab.io/software/#askpass_stars)
-# Calling it witg "cloudify_prompt2pass MYVAR" will prompt 'password:' and and will export the entered password as variable 'MYVAR'
-# Calling it witg "cloudify_prompt2pass MYVAR 'Enter password'" will prompt 'Enter password:' and and will export the entered password as variable 'MYVAR'
-function cloudify_prompt2pass() {
-    local answervar="$1"
-    # This utility script reads the password in PWORD
-    local answer=$("$CLOUDIFY_LOCAL_BIN"/askpass_stars.sh $2)
-    export "$answervar"="$answer"
-}
-
-# Parse git urls
-# Description: Parse all git urls format
-# Syntax: cloudify_parse_git_url <url> [[url|proto|user|pass|host|domain|subdomain|port|path|account|project]]"
-# Example: cloudify_parse_git_url 'git@github.com/acme/project/repo.git/' 'host,account,project'
-#          This writes requested segments on stdout with a 'segment: <segment>' on each line
-# Example: cloudify_parse_git_url ssh://user@host.xz:port/path/to/repo.git/
-#          This writes all segments on stdout with a 'segment: <segment>' on each line
-# Code copied and tweaked from https://janikvonrotz.ch/2021/03/09/parse-url-in-shell-script/
-# Supported formats are listed on this [stackoverflow question](https://stackoverflow.com/questions/31801271/what-are-the-supported-git-url-formats)
-# Some results we should have
-#    url                       host_port        port        Prot       host_port        port   host
-#    -----------------------------------------------------------------------------------------------------
-#    github.com:/toto/tata     github.com:      ''          SSH        github.com        ''     github.com
-#    github.com:toto/tata      github.com:toto  toto        SSH        github.com        ''     github.com
-#    github.com:80/titi        github.com:80    80          HTTPS      github.com:80     80     github.com
-#    github.com/titi           github.com       ''          HTTPS      github.com        ''     github.com
-
-function cloudify_parse_git_url() {
-
-    # get protocol
-    # if proto isn't given, we're parsing a git format  (user@host.xz:path/to/repo.git)
-    [[ ! -z "${1-}" ]] || return 1
-    #echo >&2 $1
-
-    local proto="$(echo $1 | grep :// | sed -e's,^\(.*://\).*,\1,g')"
-    [[ -z "${proto-}" || "${proto-}" == *:// ]] || return 1
-
-    # remove the protocol
-    local url="$(echo ${1/$proto/})"
-    [[ ! -z "${url-}" ]] || return 1
-
-    # extract the user (if any)
-    local userpass="$(echo $url | grep @ | cut -d@ -f1)"
-    local pass="$(echo $userpass | grep : | cut -s -d: -f2)"
-    if [ -n "$pass" ]; then
-        local user="$(echo $userpass | grep : | cut -d: -f1)"
-    else
-        user=$userpass
-    fi
-
-    # remove the user and password
-    url="$(echo ${url/$userpass@/})"
-    [[ ! -z "${url-}" ]] || return 1
-
-    # extract the host and port
-    local host_port
-    host_port="$(echo ${url} | cut -d/ -f1)"
-    [[ ! -z "${host_port-}" ]] || return 1
-
-    port="$(echo ${host_port} | cut -s -d: -f2)"
-
-    if [[ ${host_port-} == *:* && ! ${port-} =~ ^[0-9]+$ ]]; then
-        [[ -z "${proto-}" ]] && proto="git://"
-        host_port="$(echo ${url} | cut -d: -f1)"
-        [[ ! -z "${host_port-}" ]] || return 1
-        port=""
-        host=$host_port
-    else
-        [[ -z "${proto-}" ]] && proto="https://"
-        host="$(echo ${host_port} | cut -d: -f1)"
-        [[ ! -z "${host-}" ]] || return 1
-    fi
-
-    # extract the path (if any)
-    local path
-    path="$(echo ${url#$host_port})"
-    path="$(echo ${path#:})"
-
-    # extract domain and subdomain
-
-    local levels=$(echo $host | grep -o "\." | wc -l)
-    if [ $levels -eq "1" ]; then
-        domain=$host
-    fi
-    if [ $levels -eq "2" ]; then
-        domain=$(echo $host | awk -F"." '{print $2 "." $3}')
-        subdomain=$(echo $host | awk -F"." '{print $1}')
-    fi
-    [[ ! -z "${domain-}" ]] || return 1
-
-    # extract account and project
-    local account
-    local project
-
-    # TODO just remove any leading slash
-    # account=$(echo $path | sed 's,^/,,' | cut -d/ -f1)
-    # project=$(echo $path | sed 's,^/,,' | cut -s -d/ -f2)
-
-    if [[ "$path" == /* ]]; then
-        account=$(echo $path | cut -s -d/ -f2)
-        project=$(echo $path | cut -s -d/ -f3)
-    else
-        account=$(echo $path | cut -d/ -f1)
-        project=$(echo $path | cut -s -d/ -f2)
-    fi
-
-    if [[ -z "${2-}" ]]; then
-        echo -e "url: $url\nproto: $proto\nuser: $user\npass: $pass\nhost_port: $host_port\nhost: $host\ndomain: $domain\nsubdomain: $subdomain\nport: $port\npath: $path\naccount: $account\nproject: $project"
-    else
-        for f in $(echo $2 | sed "s/,/ /g"); do
-            # =todo= simplify this! A 'case $f in url|proto|...' should do
-            case $f in
-            url)
-                echo $url
-                ;;
-            proto)
-                echo $proto
-                ;;
-            user)
-                echo $user
-                ;;
-            pass)
-                echo $pass
-                ;;
-            host)
-                echo $host
-                ;;
-            domain)
-                echo $domain
-                ;;
-            subdomain)
-                echo $subdomain
-                ;;
-            port)
-                echo $port
-                ;;
-            path)
-                echo $path
-                ;;
-            account)
-                echo $account
-                ;;
-            project)
-                echo $project
-                ;;
-            esac
-        done
-    fi
-
-    #   Unused
-    #   local port="$(echo $host_port | sed -e 's,^.*:,:,g' -e 's,.*:\([0-9]*\).*,\1,g' -e 's,[^0-9],,g')"
-}
-
-# Is an url a git url ?
-# Description: Checks if an url is a git url
-# under the hood, the url is parsed. If the parsing fails, we assume the input isn't an url
-function cloudify_is_git_url() {
-    cloudify_parse_git_url $1 &>/dev/null
-}
-
-# Get user and password of running cloudify
-# usage: cloudify_get_password password                 store current user's password in 'password' variable
-# usage: cloudify_get_password password user            also store current user in 'password' variable
-# usage: cloudify_get_password password user host       also store current host in 'host' variable
-function cloudify_get_password() {
-    local pwd_var_name="$1"
-    local user_var_name="$2"
-    local host_var_name="$3"
-
-    [[ -z $pwd_var_name ]] && die "cloudify_get_password function called with no argume"
-    [[ $pwd_var_name == *\ * ]] && die "cloudify_get_password function called with argument containing a space"
-    declare "$pwd_var_name"="$CLOUDIFY_HOSTPWD"
-    [[ -z "$user_var_name" ]] || declare "$user_var_name"=$(whoami)
-    [[ -z "$host_var_name" ]] || declare "$host_var_name"=$(hostname)
-}
-
-# Write entries in /etc/hosts
-# Usage: add_in_hosts "IP1 hostname" "IP2 hostname2"            add these two hostnames in /etc/hosts and makes sure there's no doublon
-# =todo= Make it compatible with zsh shell
-function add_in_hosts() {
-    $DEBUG && PKG_PAUSE "About to execute: add_in_hosts"
-
-    #local hostpwd="${CLOUDIFY_LOCAL_PWD-$CLOUDIFY_REMOTE_PWD}"
-    cloudify_get_password password user host
-    [[ -z ${password} ]] && die "Password not set for user $user on host $host."
-
-    # sed special characters have to be escaped. We're liberal here.
-    local escaped_hosts_lines=()
-    for host_line in "${@}"; do
-        PKG_DEBUG "Adding '$host_line'"
-        host_line=$(echo "$host_line" |
-            sed 's/\//\\\//g' |
-            sed 's/\*/\\*/g' |
-            sed 's/\-/\\-/g' |
-            sed 's/\!/\\!/g' |
-            sed 's/\=/\\=/g' |
-            sed 's/\:/\\:/g' |
-            sed 's/\[/\\[/g' | sed 's/\]/\\]/g' |
-            sed 's/\\(/\\(/g' | sed 's/\\)/\\)/g')
-
-        escaped_host_lines+=("$host_line")
-    done
-
-    PKG_DEBUG_LN "ENV TO SETUP:"
-    for host_line in "${escaped_host_lines[@]}"; do
-        PKG_DEBUG "About to insert: '$host_line'"
-    done
-
-    # Reserve cloudify space in /etc/hosts
-    PKG_DEBUG_LN "Reserve cloudify space inside /etc/hosts"
-    grep -qFx "# CLOUDIFY HOSTS START" /etc/hosts || command sudo -kS -p '' sed -i -e '$a\\n# CLOUDIFY HOSTS START\n# CLOUDIFY HOSTS END' /etc/hosts <<<$password
-
-    # Insert new hosts lines
-    PKG_DEBUG_LN "Inserting host lines"
-    for host_line in "${escaped_host_lines[@]}"; do
-        PKG_DEBUG "Inserting: $host_line"
-        #$DEBUG && PKG_PAUSE "break 4"
-        # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''".
-        #        Exact same line above didn't need that. Why that?
-        command sudo -kSp '' sed -i -e "/# CLOUDIFY HOSTS END/i $host_line" /etc/hosts &>/dev/null <<<$password
-        PKG_DEBUG "Inserted: $host_line"
-    done
-}
-
-# Farewell message when exiting without error
-function cloudify_print_done() {
-    msg "${GREEN}\n********************************************************************************${RESET}"
-    msg "${GREEN}  Now please Source ~/.bashrc (Or call rcreload is alias is set)${RESET}"
-    msg "${GREEN}********************************************************************************${RESET}"
-    msg "${GREEN}  Station cloudified!${RESET}"
-    msg "${GREEN}********************************************************************************${RESET}"
-}
-
-# Setup colors codes for more readable messages
-function cloudify_setup_colors() {
-    # Setup color codes if we have real terminal on stderr unless colors have been disabled
-    if ! ${CLOUDIFY_DISABLE_COLORS} && ($CLOUDIFY_FORCE_COLORS || ([[ -t 2 ]] && [[ "${TERM-}" != "dumb" ]])); then
-        RESET='\033[0m'
-        RED='\033[0;31m'
-        GREEN='\033[0;32m'
-        ORANGE='\033[0;33m'
-        BLUE='\033[0;34m'
-        PURPLE='\033[0;35m'
-        CYAN='\033[0;36m'
-        YELLOW='\033[1;33m'
-    else
-        RESET=''
-        RED=''
-        GREEN=''
-        ORANGE=''
-        BLUE=''
-        PURPLE=''
-        CYAN=''
-        YELLOW=''
-    fi
-}
-
-#== CLOUDIFY API
-# THESE FUNCTION CAN BE CALLED FROM PACKAGE MODULES TO INSTALL SOFTWARE
-# Currently Cloudify API is as simple as the following functions:
-# =todo= Complete by searching the code for function/variables beginning with 'pkg_/PKG_'
-#
-# pkg_apt_repository:    Safely adds apt repository in apt repositories list
-# pkg_apt_install:       Safely install an apt package
-# cloudify_install_package_release:   Install cloudify package (Run module code if found or calls pkg_apt_install)
-# pkg_depends:           Most used API function. Declares an explicit dependency. Tries to do its best to install dependencies
-# pkg_in_startuprc:      Safely adds to .bashrc (someday to .zshrc) list of single quoted string given as arguments
-# PKG_DEBUG:             Log a debug message in DEBUG mode
-# PKG_DEBUG_LN:          Log a debug message in DEBUG mode. Follow it by an empty line.
-# PKG_PAUSE:             Log a message and pause until a key is pressed
-
-#== DEBUG FUNCTIONS
-# Print a DEBUG message
-function PKG_DEBUG() {
-    $DEBUG && msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} ${@} ${RESET}" || true
-}
-
-# Print a DEBUG message after a new line
-function PKG_DEBUG_LN() {
-    $DEBUG && msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} ${@} ${RESET}" || true
-}
-
-# Simple break command to ease debug
-# Pauses until you type enter
-function PKG_PAUSE() {
-    local _
-    [[ -z $1 ]] && read -p "Cloudify is paused. Type enter to continue" _ || read -p "Cloudify is paused at $1. Type enter to continue" _
-}
-
-# Backup files
-# Usage: pkg_backup path            backup file or directory in /tmp/cloudify/backup/
-# =DANGER= function full of 'rm -rf'!!
-# =Warning= Prevent destructve actions. Example: What happens if called with path '/' ?
-# =todo= What about priviledge protected files?
-#        What about directories?
-# =todo= Add a '--temp' switch to force pkg_backup to remember which backup have been made and automatically undo them if the script closes unexpectedly
-function pkg_backup() {
-    PKG_DEBUG "Running pkg_backup for ${1-}"
-
-    # Do we keep the same name for the target and its target
-    local backup_name
-    local same=false
-    [[ "${1-}" == "--same" ]] && same=true && shift
-
-    if [[ ! -e ${1-} ]]; then
-        PKG_DEBUG "File or directory ${1-} not found"
-        return 1
-    fi
-
-    # Derive a unique file name for the backup by getting the absolute path of the target and replacing by '/' by '__'
-    if "$same"; then
-        backup_name=$(basename ${1-})
-    else
-        backup_name=$(dirname ${1-}) && backup_name="$(basename ${1-})${backup_name//\//@}"
-    fi
-    backup_name="${CLOUDIFY_TMP}"/backup/${backup_name}
-
-    PKG_DEBUG "Backing up ${1-} to ${backup_name}"
-
-    [[ -d "${CLOUDIFY_TMP}"/backup ]] || PKG_DEBUG "Creating ${CLOUDIFY_TMP}/backup directory" && mkdir -p "${CLOUDIFY_TMP}"/backup
-    rm -rf "${backup_name}.bak.5" 2>/dev/null
-    mv "${backup_name}.bak.4" "${backup_name}.bak.5" 2>/dev/null
-    rm -rf "${backup_name}.bak.4" 2>/dev/null
-    mv "${backup_name}.bak.3" "${backup_name}.bak.4" 2>/dev/null
-    rm -rf "${backup_name}.bak.3" 2>/dev/null
-    mv "${backup_name}.bak.2" "${backup_name}.bak.3" 2>/dev/null
-    rm -rf "${backup_name}.bak.2" 2>/dev/null
-    mv "${backup_name}.bak.1" "${backup_name}.bak.2" 2>/dev/null
-    rm -rf "${backup_name}.bak.1" 2>/dev/null
-    mv "${backup_name}.bak" "${backup_name}.bak.1" 2>/dev/null
-    rm -rf "${backup_name}.bak" 2>/dev/null
-    mv "${backup_name}" "${backup_name}.bak" 2>/dev/null
-    rm -rf "${backup_name}" 2>/dev/null
-    cp -paf "$1" "${backup_name}"
-
-    # Now, as we preserved links while copying, if the file/fodler we've backed up is a link, modifying the original will modify the backup...
-    # We need to break the original link so any modification of original file won't stain the backup
-    # =TODO= Simplify this mess!
-    #set -x
-    rm -rf "${backup_name}".atomic 2>/dev/null
-    cp -paL --no-preserve=links "$1" "${backup_name}".atomic
-    rm -rf "${1}" 2>/dev/null
-    cp -paL --no-preserve=links "${backup_name}".atomic "$1"
-    rm -rf "${backup_name}".atomic 2>/dev/null
-    #set +x
-
-    # Increment backup counter for this file
-    [[ -f "${backup_name}.index" ]] || touch "${backup_name}.index"
-    expr $(cat "${backup_name}.index") + 1 >"${backup_name}.index"
-}
-
-# Restore file/directory
-# Usage: pkg_restore /path/to/file            Backup file or directory in /tmp/cloudify/backup/path/to/file.bak
-#                                             If a relative path is given, it is first converted in absolute path
-#                                             File can be backed up multiple times ad backup files will be rolled (.bak, .bak.1, ..., .bak.5)
-# pkg_restore uses simple 'mv' to restore files.
-# This may mess with ownership and permissions...
-# =TODO= use rsync! For the backup and the restoration.
-pkg_restore() {
-    PKG_DEBUG "Running Restore"
-
-    [[ ! -d "${CLOUDIFY_TMP}"/backup ]] && PKG_DEBUG "No backup directory found" && return 1
-
-    # Do we keep the same name for the target and its target
-    same=false
-    [[ "${1-}" == "--same" ]] && same=true && shift
-
-    # Derive a unique file name for the backup by getting the absolute path of the target and replacing by '/' by '__'
-    "$same" && backup_name=${1-} || backup_name=$(dirname $1) && backup_name="$(basename ${1-})${backup_name//\//@}"
-    backup_name="${CLOUDIFY_TMP}"/backup/${backup_name}
-
-    if [[ ! -e "${backup_name-}" && ! -L "${backup_name-}" ]]; then
-        PKG_DEBUG "File or directory ${1-} has no backup"
-        PKG_DEBUG "File or directory ${backup_name-} doesn't exist"
-        return 1
-    fi
-
-    PKG_DEBUG "Restoring ${backup_name} to ${1-}"
-
-    trash-put "$1" 2>/dev/null
-    mv "${backup_name}" "$1" 2>/dev/null
-    rm -rf "${backup_name}" 2>/dev/null
-    mv "${backup_name}.bak" "${backup_name}" 2>/dev/null
-    rm -rf "${backup_name}.bak" 2>/dev/null
-    mv "${backup_name}.bak.1" "${backup_name}.bak" 2>/dev/null
-    rm -rf "${backup_name}.bak.1" 2>/dev/null
-    mv "${backup_name}.bak.2" "${backup_name}.bak.1" 2>/dev/null
-    rm -rf "${backup_name}.bak.2" 2>/dev/null
-    mv "${backup_name}.bak.3" "${backup_name}.bak.2" 2>/dev/null
-    rm -rf "${backup_name}.bak.3" 2>/dev/null
-    mv "${backup_name}.bak.4" "${backup_name}.bak.3" 2>/dev/null
-    rm -rf "${backup_name}.bak.4" 2>/dev/null
-    mv "${backup_name}.bak.5" "${backup_name}.bak.4" 2>/dev/null
-
-    # Decrement backup counter for this file
-    expr $(cat "${backup_name}.index") - 1 >"${backup_name}.index"
-    [[ $(cat "${backup_name}.index") == 0 ]] && rm "${backup_name-}.index"
-    return 0 # If we're then everything is ok. Roll back failures are exptected.
-}
-
-# Write lines listed as single-quoted arguments in .bashrc
-# =todo= Make it compatible with zsh shell
-function pkg_in_startuprc() {
-    # sed special characters have to be escaped. We're liberal here.
-    pkg_escaped_lines=()
-    for pkg_startuprc_line in "${@}"; do
-
-        pkg_startuprc_line=$(echo "$pkg_startuprc_line" |
-            sed 's/\//\\\//g' |
-            sed 's/\*/\\*/g' |
-            sed 's/\-/\\-/g' |
-            sed 's/\!/\\!/g' |
-            sed 's/\=/\\=/g' |
-            sed 's/\:/\\:/g' |
-            sed 's/\[/\\[/g' | sed 's/\]/\\]/g' |
-            sed 's/\\(/\\(/g' | sed 's/\\)/\\)/g')
-
-        #PKG_DEBUG "Adding '$pkg_startuprc_line'"
-        pkg_escaped_lines+=("$pkg_startuprc_line")
-    done
-
-    # Reserve cloudify space in bashrc
-    grep -qFx "# CLOUDIFY ENV START" $HOME/.bashrc || echo -e "\n# CLOUDIFY ENV START\n# CLOUDIFY ENV END" >>$HOME/.bashrc
-
-    # Remove previous pkg setup
-    for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
-        sed -i "/$pkg_startuprc_line/d" $HOME/.bashrc
-    done
-
-    # Insert pkg setup
-    #PKG_DEBUG_LN "Inserting pkg setup"
-    for pkg_startuprc_line in "${pkg_escaped_lines[@]}"; do
-        sed -i "/# CLOUDIFY ENV END/i $pkg_startuprc_line" $HOME/.bashrc
-    done
-}
-
-# Update apt cache
-function pkg_apt_update() {
-
-    cloudify_get_password password user host
-    [[ -z ${password} ]] && die "Password not set for user $user on host $host."
-
-    if [[ "${1-}" == "--force" || -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ]]; then
-        PKG_DEBUG "Updating apt packages lists"
-        command sudo -kS -p '' apt-get -q update <<<"$password"
-        local exitcode=$?
-        if [ $exitcode -ne 0 ]; then
-            die "Error updating apt packages lists:" $exitcode
-        else
-            PKG_DEBUG "Apt packages lists updated."
-        fi
-    fi
-}
-
-# Add apt source
-function pkg_apt_repository() {
-    cloudify_get_password password user host
-    [[ -z ${password} ]] && die "Password not set for user $user on host $host."
-
-    for apt_source in "${@}"; do
-        if ! grep -q "^deb .*${apt_source}" /etc/apt/sources.list.d/*; then
-            command sudo -kS -p '' add-apt-repository "ppa:${apt_source}" -y <<<"$password"
-        fi
-    done
-    pkg_apt_update --force
-}
-
-# Install apt package if not already installed
-function pkg_apt_install() {
-
-    cloudify_get_password password user host
-    [[ -z ${password} ]] && die "Password not set for user $user on host $host."
-
-    local pkgname=""
-
-    for pkg in "${@}"; do
-        pkg_apt_update
-
-        # If a deb file is passed, get the package name from it
-        # Of course, this only works if deb files are consistently named "/path/to/<package name>.deb"
-        if [[ $pkg == .deb ]] && [[ -f $pkg ]]; then
-            pkgname=$(basename "$pkg")
-            pkgname=${pkgname%.*}
-        else
-            pkgname=$pkg
-        fi
-
-        PKG_DEBUG_LN "Installing $pkgname apt package"
-
-        if ! dpkg -l "$pkgname" |& grep -q "^ii  $pkg"; then
-            # =TODO= Parse apt install output to detect error in installation
-            command sudo -kS -p '' apt-get -q install "$pkg" -y <<<"$password"
-            # If apt-get install failed, we stop cloudify
-            # =TODO= Instead of brutally exiting, log the error and continue with next package installations
-            local exitcode=$?
-            if [ $exitcode -ne 0 ]; then
-                die "Error installing $pkg" $exitcode
-            fi
-        else
-            PKG_DEBUG_LN "$pkg apt package already present"
-        fi
-    done
-}
-
-# Install latest release from Github
-# =TODO= Add an argument to force a specific release version
-#        Use 'https://api.github.com/repos/USER/REPO/releases' to list all releases
-# =TODO= Check if the package is already installed. Update if a newer version exist
-#        If a downgrade is requested, refuse and display an error
-# =TODO= Add installation from gitlab
-# =TODO= Should this use 'https://github.com/archf/ghi/blob/master/ghi' ?
-function cloudify_install_package_release() {
-    cloudify_get_password password user host
-    [[ -z ${password} ]] && die "Password not set for user $user on host $host."
-
-    # =TODO= be defensive here
-    cmd="$1"
-    repoId="$2"
-
-    PKG_DEBUG_LN "Retrieving $repoId last release"
-    # amd64 tag
-    #    -- tgz or tar.gz
-    release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'amd64\|x86_64' | grep -ive 'musl' | grep -ie '\.tgz\|\.tar\.gz\|\.bz2\|\.tar\.bz2')
-
-    #    -- deb
-    [[ -z $release_url ]] && release_url=$(curl -sSL "https://api.github.com/repos/${repoId}/releases/latest" | jq -r ".assets[].browser_download_url" | grep -ie 'linux' | grep -ie 'amd64\|x86_64' | grep -ive 'musl' | grep -ie '\.deb')
-    [[ -z $release_url ]] && die "Unable to find 64bits linux release for $repoId"
-
-    PKG_DEBUG_LN "Last release url: $release_url"
-
-    if [[ ! -z "$cmd" ]]; then
-        [[ -d /tmp/"$cmd" ]] && rm -rf /tmp/"$cmd"
-        mkdir /tmp/"$cmd"
-
-        if [[ $release_url == *.deb ]]; then
-            # Install from deb package
-            PKG_DEBUG "Extracting $repoId deb archive in /tmp/${cmd}/${cmd}.deb"
-            curl -sSL "$release_url" >"/tmp/${cmd}/${cmd}.deb"
-            PKG_DEBUG "Installing $repoId deb package."
-            pkg_apt_install "/tmp/${cmd}/${cmd}.deb"
-        elif [[ $release_url == *.bz2 ]]; then
-            # Install compressed binary
-            PKG_DEBUG "Extracting $repoId bz2 binary archive. in /tmp/$cmd/"
-            curl -sSL "$release_url" >"/tmp/${cmd}/${cmd}.bz2"
-            bzip2 -d "/tmp/${cmd}/${cmd}.bz2" # This creates a /tmp/${cmd}/${cmd} file
-            sudo install -m755 "/tmp/${cmd}/${cmd}" "/usr/local/bin/${cmd}"
-        else
-            # Install binary from tgz archive
-            PKG_DEBUG "Extracting $repoId tgz archive. in /tmp/$cmd/"
-            curl -sSL "$release_url" | tar -C /tmp/"$cmd" --strip-components=1 -xzf -
-
-            if cloudify_emptydir /tmp/"$cmd"; then
-                # Contrary to a widely shared practice, this repo doesn't include a top level folder into its release archive
-                curl -sSL "$release_url" | tar -C /tmp/"$cmd" -xzf -
-            fi
-
-            PKG_DEBUG "Installing $repoId in /usr/local/bin/"
-            (
-                # Some install archives have an install/setup script.
-                # If that's the case, let it do its thing (A lot of install/setup scripts read the install directory in a prefix variable )
-                [[ -f /tmp/"$cmd"/install ]] && PKG_DEBUG "Running archive setup script" &&
-                    command sudo -kS -p '' prefix=/usr/local bash /tmp/"$cmd"/install &>/dev/null <<<"$password" &&
-                    exit 0
-
-                [[ -f /tmp/"$cmd"/install.sh ]] && PKG_DEBUG "Running archive setup script" &&
-                    command sudo -kS -p '' prefix=/usr/local bash /tmp/"$cmd"/install.sh &>/dev/null <<<"$password" &&
-                    exit 0
-
-                [[ -f /tmp/"$cmd"/setup ]] && PKG_DEBUG "Running archive setup script" &&
-                    command sudo -kS -p '' prefix=/usr/local bash /tmp/"$cmd"/setup &>/dev/null <<<"$password" &&
-                    exit 0
-
-                [[ -f /tmp/"$cmd"/setup.sh ]] && PKG_DEBUG "Running archive setup script" &&
-                    command sudo -kS -p '' prefix=/usr/local bash /tmp/"$cmd"/setup.sh &>/dev/null <<<"$password" &&
-                    exit 0
-
-                # Some install archive contain directly the binary
-                [[ -f /tmp/"$cmd"/"$cmd" ]] && PKG_DEBUG "Installing $cmd binary" &&
-                    command sudo -kS -p '' install -Dm 755 /tmp/"$cmd"/"$cmd" /usr/local/bin/ &>/dev/null <<<"$password" &&
-                    exit 0
-
-                # The 'install' command doesn't have a recursive option. We use find as a workaround
-                # This will install each file in the archive at corresping path /usr/local
-                # Note we're excluding the first level, as this is the place of files, like LICENSE, that shouldn't be installed
-                for release_dir in 'bin' 'share' 'etc' 'doc'; do
-                    [[ -d /tmp/"$cmd"/"$release_dir" ]] && PKG_DEBUG "Installing /tmp/$cmd/$release_dir to /usr/local/$release_dir"
-                    if [[ -d /tmp/"$cmd"/"$release_dir" ]]; then
-                        (
-                            cd /tmp/"$cmd"/"$release_dir"
-                            command sudo -kS -p '' find . -mindepth 1 -type f -exec install -Dm 755 "{}" "/usr/local/"$release_dir"/{}" \; &>/dev/null <<<"$password"
-                        )
-                    fi
-                done
-
-                # Some install archive contain directly the binary but w/ a custom name...
-                # If the folder contains only one binary, that's the binary we want to install
-                local executables=$(find /tmp/"$cmd"/ -maxdepth 1 -type f -executable)
-                local executablesCount=$(echo "$executables" | wc -l)
-                if [[ $executablesCount == 1 ]]; then
-                    PKG_DEBUG "Installing $executables as /usr/local/bin/$cmd"
-                    cp "$executables" "/tmp/$cmd/$cmd"
-                    command sudo -kS -p '' install -Dm 755 "/tmp/$cmd/$cmd" /usr/local/bin/ &>/dev/null <<<"$password" && exit 0
-                fi
-            )
-        fi
-        # Discarding tmp/$cmd/
-        # =todo= Uncomment the following line.
-        #rm -rf "/tmp/${cmd}"
-    fi
-}
-
-# Adds a package dependeny
-function pkg_depends() {
-    local package_recipe_path
-    for pkg in "$@"; do
-        # Does the package even exit?
-        if cloudify_is_package "$pkg"; then
-            PKG_DEBUG "Installing $pkg cloudify package"
-            if cloudify_package_has_recipe "$pkg"; then
-                package_recipe_path=$(cloudify_package_recipe_path "$pkg")
-                PKG_DEBUG sourcing "$package_recipe_path"
-                source "$package_recipe_path"
-            else
-                msg "${GREEN}Package $pkg has no recipe. Trying Native Package Manager.${RESET}"
-                pkg_apt_install ${pkg}
-            fi
-
-            # Install package scripts in ~/.local/bin
-            for script in $(dirname "$package_recipe_path")/*.script; do
-                [[ -e "$script" ]] || continue # As per bash normal behaviour, when a glob expansion doesn't match any file,
-                # the glob pattern itself is processed. This protects against such a case.
-                # Note that this can also be prevented by setting the 'nullglob' option
-                script_basename=$(basename $script)
-                PKG_DEBUG copying $script to "$CLOUDIFY_LOCAL_BIN"/${script_basename%.script}
-                cp -paf $script "$CLOUDIFY_LOCAL_BIN"/${script_basename%.script}
-            done
-        else
-            msg "${GREEN}No package $pkg found. Trying Native Package Manager.${RESET}"
-            pkg_apt_install ${pkg}
-        fi
-    done
-}
-
-#== CREDENTIALS
-## Cloudify needs user credentials to manage hosts and packages
-
-# Ask host credentials
-function cloudify_ask_localhost_credentials() {
-    echo
-    cloudify_prompt2var "Host user:" "CLOUDIFY_LOCAL_USER" && export CLOUDIFY_LOCAL_USER
-    # Ensure user password is set
-    cloudify_prompt2pass "CLOUDIFY_LOCAL_PWD" && export CLOUDIFY_LOCAL_PWD
-    echo
-}
-
-# Ask host credentials
-function cloudify_ask_host_credentials() {
-    echo
-    cloudify_prompt2var "Remote Host user:" "CLOUDIFY_REMOTE_USER" && export CLOUDIFY_REMOTE_USER
-    # Ensure remote host user password is set
-    cloudify_prompt2pass "CLOUDIFY_REMOTE_PWD" && export CLOUDIFY_REMOTE_PWD
-    echo
-}
-
-# Ask Github credentials
-function cloudify_ask_github_credentials() {
-    echo
-    cloudify_prompt2var "Github user:" "CLOUDIFY_GITHUBUSER" && export CLOUDIFY_GITHUBUSER
-    # Ensure remote Github password is set
-    cloudify_prompt2pass "CLOUDIFY_GITHUBPWD" && export CLOUDIFY_GITHUBPWD
-    echo
-}
-
-# Ask for Gitlab credentials
-function cloudify_ask_gitlab_credentials() {
-    echo
-    cloudify_prompt2var "Gitlab user:" "CLOUDIFY_GITLABUSER" && export CLOUDIFY_GITLABUSER
-    # Ensure remote Gitlab user password is set
-    cloudify_prompt2pass "CLOUDIFY_GITLABPWD" && export CLOUDIFY_GITLABPWD
-    echo
-}
-
-# Ask Restic/Rclone credentials
-function cloudify_ask_restic_credentials() {
-    echo
-    # Ensure Restic variables and credentials are set
-    cloudify_prompt2var "Rclone Remote Name:" "CLOUDIFY_RCLONE_REMOTE" && export CLOUDIFY_RCLONE_REMOTE
-    cloudify_prompt2var "Rclone Remote Region:" "CLOUDIFY_RCLONE_REMOTE_REGION" && export CLOUDIFY_RCLONE_REMOTE_REGION
-    cloudify_prompt2var "Rclone Remote Endpoint:" "CLOUDIFY_RCLONE_REMOTE_ENDPOINT" && export CLOUDIFY_RCLONE_REMOTE_ENDPOINT
-    cloudify_prompt2var "Rclone Remote Access Key Id:" "CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID" && export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID
-    cloudify_prompt2var "Rclone Remote Secret Access Key:" "CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY" && export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY
-    cloudify_prompt2pass "RESTIC_PASSWORD" "Restic password" && export RESTIC_PASSWORD
-    echo
-}
-
-# Check if needed credentials are set in appropriate environment  variables
-# If not, ask for credentials and generate a script that the user will source to set the environment variables
-# =Note= Should be split!
-function cloudify_check_credentials() {
-    # Check for credentials environment variables
-    ## sudo user and password, gitlab and github user and password must be set in env variables
-    [[ "${1-}" == "-f" || "${1-}" == "--force" ]] && local force_ask_credentials=true || local force_ask_credentials=false
-
-    local new_credentials=false
-
-    if "$force_ask_credentials" || [[ -z "${CLOUDIFY_LOCAL_USER-}" || -z \
-    "${CLOUDIFY_LOCAL_PWD-}" || -z \
-    "${CLOUDIFY_REMOTE_USER-}" || -z \
-    "${CLOUDIFY_REMOTE_PWD-}" || -z \
-    "${CLOUDIFY_GITHUBUSER-}" || -z \
-    "${CLOUDIFY_GITHUBPWD-}" || -z \
-    "${CLOUDIFY_GITLABUSER-}" || -z \
-    "${CLOUDIFY_GITLABPWD-}" || -z \
-    "${CLOUDIFY_RCLONE_REMOTE-}" || -z \
-    "${CLOUDIFY_RCLONE_REMOTE_REGION-}" || -z \
-    "${CLOUDIFY_RCLONE_REMOTE_ENDPOINT-}" || -z \
-    "${CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID-}" || -z \
-    "${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY-}" || -z \
-    "${RESTIC_PASSWORD-}" ]]; then
-
-        local new_credentials=true
-        msg "${GREEN}Cloudify needs your Host, Github and Gitlab credentials.${RESET}"
-        [[ -f /dev/shm/cloudify_credentials ]] && rm -f "/dev/shm/cloudify_credentials"
-        touch /dev/shm/cloudify_credentials
-        chmod 600 /dev/shm/cloudify_credentials
-    fi
-
-    # If a .credentials file is found, use it
-    if [[ -f ${HOME}/cloudify/.credentials ]]; then
-        if [[ -f /dev/shm/cloudify_credentials ]]; then
-            msg "${GREEN}Credentials read from ${HOME}/cloudify/.credentials file.${RESET}"
-            cp "${HOME}/cloudify/.credentials" /dev/shm/cloudify_credentials
-        else
-            msg "${RED}File /dev/shm/cloudify_credentials already exist. Use 'force' option to overwrite.${RESET}"
-        fi
-    # If no .credentials file is found, prompt the user for credentials
-    else
-        # Ensure local host user is set
-        if "$force_ask_credentials" || [[ -z "${CLOUDIFY_LOCAL_USER-}" || -z "${CLOUDIFY_LOCAL_PWD-}" ]]; then
-            cloudify_ask_localhost_credentials
-            echo "export CLOUDIFY_LOCAL_USER=$CLOUDIFY_LOCAL_USER" >>/dev/shm/cloudify_credentials
-            echo "export CLOUDIFY_LOCAL_PWD=$CLOUDIFY_LOCAL_PWD" >>/dev/shm/cloudify_credentials
-        fi
-
-        # Ensure remote host user is set
-        if "$force_ask_credentials" || [[ -z "${CLOUDIFY_REMOTE_USER-}" || -z "${CLOUDIFY_REMOTE_PWD-}" ]]; then
-            cloudify_ask_host_credentials
-            echo "export CLOUDIFY_REMOTE_USER=$CLOUDIFY_REMOTE_USER" >>/dev/shm/cloudify_credentials
-            echo "export CLOUDIFY_REMOTE_PWD=$CLOUDIFY_REMOTE_PWD" >>/dev/shm/cloudify_credentials
-        fi
-
-        # Ensure remote Github user is set
-        if "$force_ask_credentials" || [[ -z "${CLOUDIFY_GITHUBUSER-}" || -z "${CLOUDIFY_GITHUBPWD-}" ]]; then
-            cloudify_ask_github_credentials
-            echo "export CLOUDIFY_GITHUBUSER=$CLOUDIFY_GITHUBUSER" >>/dev/shm/cloudify_credentials
-            echo "export CLOUDIFY_GITHUBPWD=$CLOUDIFY_GITHUBPWD" >>/dev/shm/cloudify_credentials
-        fi
-
-        # Ensure remote Gitlab host user is set
-        if "$force_ask_credentials" || [[ -z "${CLOUDIFY_GITLABUSER-}" || -z "${CLOUDIFY_GITLABPWD-}" ]]; then
-            cloudify_ask_gitlab_credentials
-            echo "export CLOUDIFY_GITLABUSER=$CLOUDIFY_GITLABUSER" >>/dev/shm/cloudify_credentials
-            echo "export CLOUDIFY_GITLABPWD=$CLOUDIFY_GITLABPWD" >>/dev/shm/cloudify_credentials
-        fi
-
-        # Ensure remote Restic/Rclone credentials are set
-        if "$force_ask_credentials" || [[ -z "${CLOUDIFY_RCLONE_REMOTE-}" || -z "${CLOUDIFY_RCLONE_REMOTE_REGION-}" || -z "${CLOUDIFY_RCLONE_REMOTE_ENDPOINT-}" || -z "${CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID-}" || -z "${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY-}" || -z "${RESTIC_PASSWORD-}" ]]; then
-            cloudify_ask_restic_credentials
-            echo "export CLOUDIFY_RCLONE_REMOTE=$CLOUDIFY_RCLONE_REMOTE" >>/dev/shm/cloudify_credentials
-            echo "export CLOUDIFY_RCLONE_REMOTE_REGION=$CLOUDIFY_RCLONE_REMOTE_REGION" >>/dev/shm/cloudify_credentials
-            echo "export CLOUDIFY_RCLONE_REMOTE_ENDPOINT=$CLOUDIFY_RCLONE_REMOTE_ENDPOINT" >>/dev/shm/cloudify_credentials
-            echo "export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID=$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID" >>/dev/shm/cloudify_credentials
-            echo "export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY=$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY" >>/dev/shm/cloudify_credentials
-            echo "export RESTIC_PASSWORD=$RESTIC_PASSWORD" >>/dev/shm/cloudify_credentials
-        fi
-    fi
-
-    if "$new_credentials"; then
-        echo
-        msg "${GREEN}A script was generated to store these credentials in environment variables.${RESET}"
-        msg "${GREEN}Please execute the following command line:${RESET}"
-        msg "source /dev/shm/cloudify_credentials"
-    fi
-}
-
-#== SHADOWING !
-##  Cloudify shadows some bash commands and programs to ensure seamless operations (auto-authentication, idempotence, etc)
-##  This way, package recipe scripts can be naive bash scripts while cloudify ensures high reliability, remote execution, etc
-
-## Sudo Shadowing
-#  To call commands requiring password based authentication, we generally supply the password (that is stored in CLOUDIFY_REMOTE_PWD or CLOUDIFY_LOCAL_PWD variable)
-#  using a Here String (which uses stdin). Sudo command stdin is often used for normal command processing (like in 'echo <commands> | sudo tee ...')
-#  So to suppy the password to sudo we need to rearrange the way sudo is called, passing everything as arguments to free stdin for password
-#  =TODO= So far, when a command is called w/ this shadow sudo function, we take care of special cases: this is done on a case by case basis in a switch case declaration
-#         This approach can only scale if we manage to abstract some general rules. For instance, the one problem encountered so far is commands that accept
-#         complex arguments that contain spaces.
-#         This can be abstracted away, arguments can traversed in a loop and those that contain spaces can be enclosed in quotes.
-function sudo() {
-    local lineargs=""
-    local pipeargs=""
-
-    cloudify_get_password password user host
-    [[ -z ${password} ]] && die "Password not set for user $user on host $host."
-
-    # Some commands arguments must be dealt with caution
-    case "$1" in
-    "add-apt-repository")
-        # In add-apt-repository the repository line must be enclosed in single quotes or add-apt-repository complains w/ "Error: need a single repository as argument"
-        lineargs="$1 '${@:2}'"
-        ;;
-    "sed")
-        # In a sed command, the sed expression argument must be surrounded with single quotes
-        # =TODO= Detect '-e' and '-f' options as those indicate a inline or in-file sed script resp.
-        local sedcmd="sed"
-        local arg=""
-        local arg_expr=""
-        local arg_file=""
-        shift
-        arg="$1"
-        while [[ ! -z "$arg" ]]; do
-            if [[ "$arg" == -* ]]; then
-                sedcmd="$sedcmd $arg"
-            else
-                [[ -z "$arg_expr" ]] && {
-                    arg_expr="$arg"
-                    sedcmd="$sedcmd '$arg_expr'"
-                } || {
-                    arg_file="$arg"
-                    sedcmd="$sedcmd $arg_file"
-                }
-            fi
-            shift
-            arg="$1"
-        done
-        lineargs="$sedcmd"
-        ;;
-    "find")
-        # In find command, the last ';' argument must be escaped or it will be interpreted out by the shell
-        local findcmd="find"
-        shift
-        arg="$1"
-        echo dealing with find
-        while [[ ! -z "$arg" ]]; do
-            if [[ "$arg" == ";" ]]; then
-                findcmd="$findcmd \\$arg"
-            else
-                findcmd="$findcmd $arg"
-            fi
-            shift
-            arg="$1"
-        done
-        lineargs="$findcmd"
-        ;;
-    *)
-        lineargs="${@}"
-        ;;
-    esac
-
-    # Find out if the sudo command have been called within a pipe, with arguments or both
-    # This if incantation can of course be simplified but I prefer to let it that way to make the different cases clear
-    if [ -t 0 ]; then
-        # 'sudo' not called in a pipe
-        : # Do nothing
-        #lineargs="$lineargs"
-    elif [[ -p /dev/stdin ]]; then
-        # 'sudo' called in a pipe.
-        pipeargs="$(cat -)"
-    else
-        # 'sudo' called with a here doc
-        pipeargs="$(cat -)"
-    fi
-
-    if [[ -z $pipeargs ]]; then
-        sudocmd="$lineargs"
-    else
-        sudocmd="echo '$pipeargs' | $lineargs"
-    fi
-
-    # As we pass everything, including piped input as arguments to 'bash -c', we can safely supply sudo password using a herestring
-    sudocmd_length=$(echo -n "'$sudocmd'" | wc -m)
-
-    if (($sudocmd_length < 10000)); then
-        PKG_DEBUG command sudo -kS bash -c "$sudocmd" \<\<\< "$password"
-        #command sudo -kS -p ""  bash -c "$sudocmd" 2>/dev/null <<< "$password"
-        command sudo -kS -p "" bash -c "$sudocmd" <<<"$password"
-    else
-        # The sudo command is much too long, create a temporary file and execute it
-        local tfile=$(mktemp /tmp/foo.XXXXXXXXX)
-        echo creating $tfile
-        echo "$pipeargs" >$tfile
-        PKG_DEBUG command sudo -kS "$lineargs" "$tfile" \<\<\< "$password"
-        command sudo -p " " -kS "$lineargs" "$tfile" <<<"$password"
-    fi
-}
-
-## Git shadowing
-function cloudify_git_authenticate() {
-    local git_remote_url="${1-}"
-    [[ -z "${git_remote_url-}" ]] && PKG_DEBUG "Remote url must be non null." return 1
-
-    # first backup current .gitconfig
-    pkg_backup "$HOME"/.gitconfig
-
-    # Only credentials per git domain are supported so far
-    # =TODO= Enable credential per account and per project.
-    local git_domain=$(cloudify_parse_git_url $git_remote_url domain)
-
-    case "${git_domain-}" in
-    gitlab.com)
-        export GIT_TOKEN=$CLOUDIFY_GITLABPWD
-        ;;
-    github.com)
-        export GIT_TOKEN=$CLOUDIFY_GITHUBPWD
-        ;;
-    *) die "Git Host $git_domain is not supported'" 1 ;;
-    esac
-    echo 'echo $GIT_TOKEN' >$HOME/.git-askpass
-    chmod +x $HOME/.git-askpass
-    export GIT_ASKPASS=$HOME/.git-askpass
-
-    # use 'insteadOf' git feature to force git to use https connection whatever the git url format used
-    command git config --global url."https://api@${git_domain}/".insteadOf "https://${git_domain}/"
-    command git config --global url."https://ssh@${git_domain}/".insteadOf "ssh://git@${git_domain}/"
-    command git config --global url."https://git@${git_domain}/".insteadOf "git@${git_domain}:"
-}
-
-# Undo the cloudify_git_authenticate magic
-function cloudify_git_deauthenticate() {
-    # Undo our git config modifications
-    pkg_restore "$HOME"/.gitconfig
-}
-
-# Does two remote url refer to the same remote repo?
-function cloudify_git_same_remote() {
-    local remote_url_1="${1-}"
-    local remote_url_2="${2-}"
-
-    local url_1
-    local url_2
-    local host_1
-    local host_2
-    local domain_1
-    local domain_2
-    local subdomain_1
-    local subdomain_2
-    local port_1
-    local port_2
-    local account_1
-    local account_2
-    local project_1
-    local project_2
-
-    local _
-    local segment
-
-    #cloudify_parse_git_url "${remote_url_1}"
-
-    # Parsing the output of 'cloudify_cloudify_parse_git_url' to get individual url segments. So meta :)
-    # Note without the 'IFS=' prefix, read discards leading and trailing whitespaces. But we need them to correctly parse the segments
-    cloudify_parse_git_url "${remote_url_1}" | {
-        IFS= read url_1
-        segment=$(echo $url_1 | cut -d: -f1)
-        url_1=${url_1#$segment: }
-        IFS= read _
-        IFS= read _
-        IFS= read _
-        IFS= read _
-        IFS= read host_1
-        segment=$(echo $host_1 | cut -d: -f1)
-        host_1=${host_1#$segment: }
-        IFS= read domain_1
-        segment=$(echo $domain_1 | cut -d: -f1)
-        domain_1=${domain_1#$segment: }
-        IFS= read subdomain_1
-        segment=$(echo $subdomain_1 | cut -d: -f1)
-        subdomain_1=${subdomain_1#$segment: }
-        IFS= read port_1
-        segment=$(echo $port_1 | cut -d: -f1)
-        port_1=${port_1#$segment: }
-        IFS= read _
-        IFS= read account_1
-        segment=$(echo $account_1 | cut -d: -f1)
-        account_1=${account_1#$segment: }
-        IFS= read project_1
-        segment=$(echo $project_1 | cut -d: -f1)
-        project_1=${project_1#$segment: }
-
-        cloudify_parse_git_url "${remote_url_2}" | {
-            IFS= read url_2
-            segment=$(echo $url_2 | cut -d: -f1)
-            url_2=${url_2#$segment: }
-            IFS= read _
-            IFS= read _
-            IFS= read _
-            IFS= read _
-            IFS= read host_2
-            segment=$(echo $host_2 | cut -d: -f1)
-            host_2=${host_2#$segment: }
-            IFS= read domain_2
-            segment=$(echo $domain_2 | cut -d: -f1)
-            domain_2=${domain_2#$segment: }
-            IFS= read subdomain_2
-            segment=$(echo $subdomain_2 | cut -d: -f1)
-            subdomain_2=${subdomain_2#$segment: }
-            IFS= read port_2
-            segment=$(echo $port_2 | cut -d: -f1)
-            port_2=${port_2#$segment: }
-            IFS= read _
-            IFS= read account_2
-            segment=$(echo $account_2 | cut -d: -f1)
-            account_2=${account_2#$segment: }
-            IFS= read project_2
-            segment=$(echo $project_2 | cut -d: -f1)
-            project_2=${project_2#$segment: }
-
-            [[ $url_1 == $url_2 ]] && [[ $host_1 == $host_2 ]] && [[ $domain_1 == $domain_2 ]] && [[ $subdomain_1 == $subdomain_2 ]] && [[ $port_1 == $port_2 ]] && [[ $account_1 == $account_2 ]] && [[ $project_1 == $project_2 ]] && return 0
-            return 1
-        }
-    }
-}
-
-# Shadow git
-function git() {
-    local inside_git_repo=false
-    local git_remote_url=""
-    if [[ "${1-}" == "clone" ]]; then
-        # We need to get the remote git host by parsing arguments passed to 'git clone'
-        # Any argument that isn't clone or an option, is deemed to be the url to clone
-        for arg in "$@"; do
-            [[ "${arg-}" != "clone" && "${arg-}" != "-*" ]] && {
-                if [[ -z "${git_remote_url}" ]] && cloudify_is_git_url "${arg-}"; then
-                    git_remote_url="${arg-}"
-                else
-                    [[ -z "${git_remote_url}" ]] && { PKG_DEBUG "Unable to git clone: Not a valid git url" && return 1; }
-                    git_repo_path="${arg-}"
-                    # No validity test here as anything can be a path on linux
-                    # But we can only clone into an existing folder
-                    [[ ! -d $(dirname "${arg-}") ]] && { PKG_DEBUG "Unable to git clone: path $(dirname ${arg-}) doesn't exist." && return 1; }
-                    break
-                fi
-            }
-        done
-
-        # If the directory exist, we simply update
-        if [[ -d "$git_repo_path" ]] && ! cloudify_emptydir "$git_repo_path"; then
-            PKG_DEBUG "$git_repo_path directory exist and isn't empty. Pulling updates."
-            (
-                cd "$git_repo_path"
-                inside_git_repo="$(command git rev-parse --is-inside-work-tree 2>/dev/null)"
-                $inside_git_repo || { PKG_DEBUG "Can't execute git commands. $git_repo_path isn't a git repo" && return 1; }
-
-                if cloudify_git_same_remote ${git_remote_url} $(command git remote get-url origin); then
-                    #set -x
-                    git pull
-                    #set +x
-                else
-                    PKG_DEBUG "Unable to git clone: Repo $(command git remote get-url origin) different from $git_remote_url you trying to clone." && return 1
-                fi
-            )
-        else
-            PKG_DEBUG "$git_repo_path doesn't exist directory exist or is empty. cloning"
-            cloudify_git_authenticate $git_remote_url
-            #set -x
-            command git "$@" -v
-            #set +x
-            cloudify_git_deauthenticate $git_remote_url
-        fi
-    else
-        # We can directly read remote url
-        inside_git_repo="$(command git rev-parse --is-inside-work-tree 2>/dev/null)"
-        if [[ ! "$inside_git_repo" ]]; then
-            PKG_DEBUG "Can't execute git commands. $PWD is not inside a git repo."
-            return 1
-        else
-            git_remote_url=$(command git remote get-url origin)
-            PKG_DEBUG "Git remote URL: $git_remote_url"
-        fi
-        cloudify_git_authenticate $git_remote_url
-        PKG_DEBUG "Actual git command executed:" echo git "$@" -v
-        #set -x
-        command git "$@" -v
-        #set +x
-        cloudify_git_deauthenticate $git_remote_url
-    fi
-}
-
-#== REMOTING
-##  Cloudify can execute cloudify package init scripts on remote host
-
-# HACK! The ':' at the end of this function is there so that the '; cloudify ...' command that will be added by cloudify_remote can be on its own line.
-#       Without it it was concatained to the last 'fi' line, which was ugly
-function cloudify_remote_payload_template() {
-#    export CLOUDIFY_IS_LOCAL=false # We're not running cloudify locally anymore
-#    export CLOUDIFY_DISABLE_COLORS={{CLOUDIFY_DISABLE_COLORS}}
-#    export CLOUDIFY_FORCE_COLORS=true # This is past to remote hosts to force colors even if there's no terminal (unless colors are disabled)
-#
-#    export CLOUDIFY_SKIPCREDENTIALS=true
-#
-#    export DEBUG={{DEBUG}}
-#
-#    # =todo= As we're going to run cloudify on a remote host, we subsitute password and user
-#    # =todo= user information is probably not needed here as it's always only a whoami away
-#    export CLOUDIFY_LOCAL_USER='{{CLOUDIFY_REMOTE_USER}}'
-#    export CLOUDIFY_LOCAL_PWD='{{CLOUDIFY_REMOTE_PWD}}'
-#
-#    export CLOUDIFY_GITHUBUSER='{{CLOUDIFY_GITHUBUSER}}'
-#    export CLOUDIFY_GITHUBPWD='{{CLOUDIFY_GITHUBPWD}}'
-#    export CLOUDIFY_GITLABUSER='{{CLOUDIFY_GITLABUSER}}'
-#    export CLOUDIFY_GITLABPWD='{{CLOUDIFY_GITLABPWD}}'
-#
-#    export CLOUDIFY_RCLONE_REMOTE='{{CLOUDIFY_RCLONE_REMOTE}}'
-#    export CLOUDIFY_RCLONE_REMOTE_REGION='{{CLOUDIFY_RCLONE_REMOTE_REGION}}'
-#    export CLOUDIFY_RCLONE_REMOTE_ENDPOINT='{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}'
-#    export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID='{{CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}'
-#    export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='{{CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}'
-#    export RESTIC_PASSWORD='{{RESTIC_PASSWORD}}'
-#
-#    if {{CLOUDIFY_FORCE_UPDATE}} || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -{{CLOUDIFY_UPDATE_DELAY}})" ]]; then
-#        bash -c "$(curl -sL scripts.rachid.space/bootstrap/cloudify.sh)"
-#    fi
-    :
-}
-
-# By default cloudify_remote executes remotely
-function cloudify_remote() {
-    (cloudify_remote_sync $@) &
-}
-
-# =TODO= Use envsubst instead of replacing env variables one by one!
-# For some sub-commands (eg. $ cloudify exec ...), we need synchronous exection
-function cloudify_remote_sync() {
-
-    # When you run "cloudify host1 cmd", the command shouldn't be allowed to call "cloudify host2 cmd2"
-    # =todo= Actually it's a nice feature to have as it allows bastion hosts
-    #        We should be able to call 'cloudify host1 host2 host3 cmd' and have cloudify call recursively itself
-    #        This requires ssh keys, user and sudo password management capability
-    #        One solution would be to have these informations stored in the inventory folder, and passed recursively from one cloudify call to the next
-    local host="$1" && shift
-    $CLOUDIFY_IS_LOCAL || [[ "$host" == "localhost" ]] || die "Cloudify is already running on a remote host. Can't call cloudify remotely on another host."
-
-    # =todo= Currenty credentials (ssh key, sudo user, sudo password) are limited:
-    #           - The remote user is unique and given by an env variable (CLOUDIFY_REMOTE_USER)
-    #           - The remote user password is unique and given by an env variable (CLOUDIFY_REMOTE_PWD)
-    #           - The ssh key is the default one of the user calling cloudify  (~/.ssh/id_rsa.pub)
-    #        We need  more flexibility. Each host in the inventory should have its own ssh key, user and password
-    #        This is where these credentials shoud be retrieved from the inventory directory
-
-    if [[ "$host" == "localhost" ]]; then
-        PKG_DEBUG executing cloudify $@
-        cloudify $@ |& sed "s/^/$host: /" |& sed "s/^$host: $//"
-    else
-
-        # Read remote payload template
-        local cloudify_remote_payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
-
-        # Load credentials in the payload template
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_DISABLE_COLORS}}/$CLOUDIFY_DISABLE_COLORS/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{DEBUG}}/$DEBUG/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_FORCE_UPDATE}}/$CLOUDIFY_FORCE_UPDATE/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_UPDATE_DELAY}}/$CLOUDIFY_UPDATE_DELAY/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_REMOTE_USER}}/$CLOUDIFY_REMOTE_USER/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_REMOTE_PWD}}/$CLOUDIFY_REMOTE_PWD/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBUSER}}/$CLOUDIFY_GITHUBUSER/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITHUBPWD}}/$CLOUDIFY_GITHUBPWD/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABUSER}}/$CLOUDIFY_GITLABUSER/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_GITLABPWD}}/$CLOUDIFY_GITLABPWD/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE}}/$CLOUDIFY_RCLONE_REMOTE/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_REGION}}/$CLOUDIFY_RCLONE_REMOTE_REGION/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_ENDPOINT}}/$CLOUDIFY_RCLONE_REMOTE_ENDPOINT/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID}}/$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY}}/$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY/g" <<<"$cloudify_remote_payload")
-        cloudify_remote_payload=$(sed "s/{{RESTIC_PASSWORD}}/$RESTIC_PASSWORD/g" <<<"$cloudify_remote_payload")
-
-        # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running
-        cloudify_remote_payload="$cloudify_remote_payload; cloudify $@"
-
-        PKG_DEBUG "Payload to execute remotely on $host:"
-        # Passwords are replaved by asterisks before printing
-        # HACK! Password are recognized only if env variable ends with 'PWD', contains 'PASSWORD' or contains 'SECRET'
-        local cloudify_remote_payload_secure="$(sed 's/PWD='\''\(.*\)'\''/PWD='\''***********'\''/g' <<<$cloudify_remote_payload)"
-        cloudify_remote_payload_secure="$(sed 's/PASSWORD\(.*\)='\''\(.*\)'\''/PASSWORD\1='\''***********'\''/g' <<<$cloudify_remote_payload_secure)"
-        cloudify_remote_payload_secure="$(sed 's/SECRET\(.*\)='\''\(.*\)'\''/SECRET\1='\''***********'\''/g' <<<$cloudify_remote_payload_secure)"
-
-        $DEBUG && msg "$cloudify_remote_payload_secure"
-
-        PKG_DEBUG "SSHing..."
-        # The SSH session is launched in the background to parallelize hosts cloudifcation
-        # =TODO= Remote hosts key checking has been totally disabled.
-        #        It's highly unsafe! Parse ssh messages and prompt the user for decision instead.
-        ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" $host "$cloudify_remote_payload" |& sed "s/^/$host: /" |& sed "s/^$host: $//" |& tail -n +2
-    fi
-}
+#== SOURCE LIBRARY MODULES
+source "$CLOUDIFY_SCRIPT_DIR/lib/utils.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/colors.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/os.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/package-api.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/credentials.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/shadow.sh"
+# shellcheck disable=SC1094
+source "$CLOUDIFY_SCRIPT_DIR/lib/remote.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/packages.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/hosts.sh"
 
 #== INITIALIZATION
-# Initial configurations before applying script actions
-#   - Ensure tmp folder exist,
-#   - Ensure local bin exist and is in the path
-#   - Test OS/Distro on which cloudify is running
-#   -
 function cloudify_init_paths() {
     PKG_DEBUG "Initializing Paths"
-
-    # Ensure all required credentials are set in proper environment variables
-    #PKG_DEBUG  "Value of CLOUDIFY_SKIPCREDENTIALS: $CLOUDIFY_SKIPCREDENTIALS"
-    #$CLOUDIFY_SKIPCREDENTIALS || cloudify_check_credentials
 
     # Ensure tmp folder exists
     [[ -d "$CLOUDIFY_TMP" ]] || mkdir -p "$CLOUDIFY_TMP"
@@ -1506,601 +88,21 @@ function cloudify_init_paths() {
     [[ -d "$CLOUDIFY_LOCAL_BIN" ]] || mkdir -p "$CLOUDIFY_LOCAL_BIN"
     [[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"
 
-    ## Make it persistent
-    ## DIRTY HACK! The comment '# CLOUDIFY LOCAL BIN:' is used by cloudify to avoid doublons in .bashrc
-    ## =todo= ISN'T IT POSSIBLE TO USE 'PKG_IN_STARTUPRC' TO ADD THIS LINE?
-    ##        REPLACED IT 'PKG_IN_STRATUPRC'. CHECK IF IT WORKS!
-
-    #   if ! grep -Fq "# CLOUDIFY LOCAL BIN:" $HOME/.bashrc; then
-    #       echo -e "\n# CLOUDIFY LOCAL BIN: Cloudify may install utility scripts in ~/.local/bin" >> "$HOME"/.bashrc
-    #       echo 'export CLOUDIFY_LOCAL_BIN="$HOME"/.local/bin' >> "$HOME"/.bashrc
-    #       echo '[[ -d "$CLOUDIFY_LOCAL_BIN" ]] || mkdir -p "$CLOUDIFY_LOCAL_BIN"' >> "$HOME"/.bashrc
-    #       echo '[[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"' >> "$HOME"/.bashrc
-    #   fi
+    # shellcheck disable=SC2016
     pkg_in_startuprc '[[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"' >>"$HOME"/.bashrc
-
-    # # Are we on Android Termux or Linux station?
-    # if [ ! -z "$(pgrep -f com.termux)" ]; then
-    #   export CLOUDIFY_DEFAULT_OS="termux"
-    #   packages_file=${CLOUDIFY_DIR}/defaults/termux.packages
-    #   pkg_init_file=$PKG_INIT_FILE_TERMUX
-    #   PKG_DEBUG "Package init file name: $pkg_init_file"
-    # else
-    #   packages_file=${CLOUDIFY_DIR}/defaults/station.packages
-    #   pkg_init_file=$PKG_INIT_FILE_DEFAULT
-    #   PKG_DEBUG "Package init file name: $pkg_init_file"
-    # fi
 }
 
-#== SCRIPT SUB-COMMANDS: PACKAGE MANAGEMENT
+#== SUB-COMMANDS
 
-# Does a package exist ?
-# Usage:
-#   cloudify_is_package
-#   Usage:
-#       cloudify_is_package pkg                       # Test if package exist
-function cloudify_is_package() {
-    [[ $# == 0 ]] && return 1 # With no package, return false
-    ls -d $CLOUDIFY_DIR/pkg/"$1"/ | xargs -I {} basename {}
-}
-
-# List packages OS tags
-function cloudify_list_packages_hashtags() {
-    ls -d "$CLOUDIFY_DIR/pkg/*/#*" | xargs -I {} basename {} | awk '!a[$0]++'
-    local exitcode=$?
-    [[ $exitcode == 0 ]] && echo @allos
-    return $exitcode
-}
-
-# List packages tags
-function cloudify_list_packages_tags() {
-    $CLOUDIFY_IS_LOCAL && die "Error: Can't list Tags on remote hosts." 1
-    ls -d $CLOUDIFY_DIR/pkg/*/@* | xargs -I {} basename {} | awk '!a[$0]++'
-    echo @default
-    echo @all
-}
-
-# List packages filtered by tags
-# Usage:
-#   cloudify_list_packages_by_tags
-#   Usage:
-#       cloudify_list_packages_by_tags  [#hashtag] [@tag...]     # Return packages with taged with ALL specified tags
-#                                                              # So: cloudify_list_packages_by_tags #linux #default
-#                                                              #     Returns packages taged #linux AND #default
-#       cloudify_list_packages_by_tags                         # Return all packages
-#       cloudify_list_packages_by_tag  pkg                     # Return pkg name if it exists
-#                                                              This is useful to check if a package exist
-function cloudify_list_packages_by_tags() {
-    # The awk incantation is here to remove dubplicates while conserving order
-    {
-        local current_packages_list
-        local packages_list=""
-        local filter
-
-        # Without tag filter, return all packages
-        # Remove packages duplicates while retaining packages order (see awk incantation below)
-        [[ $# == 0 ]] && packages_list=$(ls -1d $CLOUDIFY_DIR/pkg/*/ | xargs -I {} basename {})
-
-        # If multiple tags are given, list the packages that have all of them
-        for filter in "$@"; do
-            if ! [[ "$filter" == \@* && "$filter" == \#* ]]; then
-                # This isn't a tag. Do nothing.
-                :
-            # =todo= Remove this code
-            #elif [[ "$filter" == "@default"  ]]; then
-            #     # If filter is virtual tag '@default', list packages list default packages
-            #    cloudify_list_default_packages
-            else
-                # This is a tag
-
-                # unlike '#' tags (aka hashtags), normal '@' tags can't be taken for granted on remote hosts
-                ! $CLOUDIFY_IS_LOCAL && [[ "$filter" == \@* ]] &&
-                    die "{$RED}Error: Illegal tag $filter. Can't filter packages by tags on remote hosts. ${RESET}"
-
-                # If filter is a tag, filter all packages with that tag
-                if [[ $filter == @all ]]; then
-                    current_packages_list=$(ls -1d $CLOUDIFY_DIR/pkg/*/ | xargs -I {} basename {})
-                else
-                    current_packages_list=$(ls -1d $CLOUDIFY_DIR/pkg/*/"$filter" | xargs -I {} dirname {} | xargs -I {} basename {})
-                fi
-
-                echo "DEBUG -- Current package list:" $current_packages_list
-                if [[ -z $packages_list ]]; then
-                    packages_list=$current_packages_list
-                else
-                    # 'comm' is a standard linux utility that compares FILES line by line
-                    # It is used here to find the intersection of 2 LISTS
-                    # The 'echo ... | tr ...' is here to transform lists in simili-files that can be fed to comm command
-                    packages_list=$(comm -12 <(echo $packages_list | tr ' ' '\n') <(echo $current_packages_list | tr ' ' '\n'))
-                fi
-                echo "DEBUG -- Package list:" $packages_list
-            fi
-        done
-        echo $packages_list
-    } | awk '!a[$0]++'
-}
-
-# List all available packages for current platform
-# Usage:
-#   cloudify_list_packages                 List available packages for current OS
-#   cloudify_list_packages OS              List available package for OS Operating System
-function cloudify_list_packages() {
-    local os="$1"
-    [[ -z $os ]] && os=$(cloudify_osdetect --os)
-    cloudify_list_packages_by_tags "#${os}"
-}
-
-# List default available packages for current platform
-# Usage:
-#   cloudify_list_packages                 List default packages for current OS
-#   cloudify_list_packages OS              List default package for OS Operating System
-function cloudify_list_default_packages() {
-    $CLOUDIFY_IS_LOCAL || die "{$RED}Error: Illegal Operation. Can't list default packages on remote host $hostname. ${RESET}"
-    local os="$1"
-    [[ -z $os ]] && os=$(cloudify_osdetect --os)
-    cloudify_list_packages_by_tags "#${os}" @default
-}
-
-# Test if a package has a recipe
-function cloudify_package_has_recipe() {
-    # The easiest way to do that is to call 'cloudify_package_recipe_path' and propagate its exit code
-    cloudify_package_recipe_path $1
-    return $?
-}
-
-# Print path of package recipe
-# Usage:
-#   cloudify_package_recipe_path package                Get the path of the recipe of package 'package'
-function cloudify_package_recipe_path() {
-    local os=$(cloudify_osdetect --os)
-    local distro=$(cloudify_osdetect --distro)
-    local version=$(cloudify_osdetect --version)
-    local pkg="$1"
-
-    [[ -z $1 ]] && die "Missing argument: package name"
-
-    # Return recipe file (gives higher priority to recipes w/ higer specificity)
-    [[ ! -z $version ]] && [[ ! -z $distro ]] && [[ ! -z $os ]] &&
-        [[ -f $CLOUDIFY_DIR/pkg/${pkg}/${version}.${distro}.${os}.${CLOUDIFY_RECIPE_FILENAME} ]] &&
-        echo "$CLOUDIFY_DIR/pkg/${pkg}/${version}.${distro}.${os}.${CLOUDIFY_RECIPE_FILENAME}" &&
-        return 0
-    [[ ! -z $distro ]] && [[ ! -z $os ]] &&
-        [[ -f $CLOUDIFY_DIR/pkg/${pkg}/${distro}.${os}.${CLOUDIFY_RECIPE_FILENAME} ]] &&
-        echo "$CLOUDIFY_DIR/pkg/${pkg}/${version}.${distro}.${os}.${CLOUDIFY_RECIPE_FILENAME}" &&
-        return 0
-    [[ ! -z $os ]] &&
-        [[ -f $CLOUDIFY_DIR/pkg/${pkg}/${os}.${CLOUDIFY_RECIPE_FILENAME} ]] &&
-        echo "$CLOUDIFY_DIR/pkg/${pkg}/${version}.${distro}.${os}.${CLOUDIFY_RECIPE_FILENAME}" &&
-        return 0
-    [[ -f $CLOUDIFY_DIR/pkg/${pkg}/${CLOUDIFY_RECIPE_FILENAME} ]] &&
-        echo "$CLOUDIFY_DIR/pkg/${pkg}/${version}.${distro}.${os}.${CLOUDIFY_RECIPE_FILENAME}" &&
-        return 0
-    return 1 # No path found
-}
-
-# Print package recipe (ie the content of package's recipe file)
-function cloudify_print_package_recipe() {
-    # Show module code of packages
-    local package_recipe_path
-    for pkg in "$@"; do
-        if $(cloudify_is_package "$pkg"); then
-            package_recipe_path=$(cloudify_package_recipe_path "$pkg")
-            if [[ ! -z $package_recipe_path ]]; then
-                msg "${GREEN}${pkg%%*( )} cloudify package code\n${RESET}"
-                msg "${GREEN}>> Recipe: ${package_recipe_path}${RESET}"
-                cat "$package_recipe_path"
-                # We use bash expansion to trim spaces at the end of the package name
-                # Kept this line because it was doing fine with this weird variable subsitution incantation that I don't understand
-                # Something tells me that this was fixing a bug that has yet to come and bite me....
-                # cat "$CLOUDIFY_DIR"/pkg/${pkg%%*( )}/${pkg_init_file}
-            else
-                msg "${GREEN}No recipe found for package \"${pkg}\".${RESET}"
-            fi
-        else
-            msg "${RED}Error: \"${pkg}\" isn't a known package.${RESET}"
-        fi
-    done
-}
-
-# Install default packages for current platform
-# =Note= This will fail if executed on remote host. This is expected.
-function cloudify_install_default_packages {
-    for pkg in $(cloudify_list_default_packages); do
-        msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
-        pkg_depends "$pkg"
-    done
-    cloudify_print_done
-}
-
-# Install package or packages
-# Usage:
-#   cloudify_install_package  pkg [pkg...]                      Install one or serveral packages designated by name
-#                                                               Tags can't be used as arguments of cloudify_install_packages
-function cloudify_install_package {
-    # Install specific packages
-    for pkg in "$@"; do
-        if [[ "$pkg" != @* && "$pkg" != \#* ]]; then
-            # Current pkg isn't a tag
-            msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"
-            pkg_depends "$pkg"
-        else
-            # Current pkg is a tag. Log Error and ignore
-            msg "${RED}Error: Illegal tag. Cloudify_install_package does't accept tags as arguments. Ignoring \"$pkg\" Installation.${RESET}"
-            # # Current argument is a tag
-            # local tag="$pkg"
-            # msg "${GREEN}Installing ${pkg%%*( )} cloudify packages${RESET}"
-            # for pkg in $(packages "$tag"); do
-            # cloudify_install_package "$pkg"
-            # done
-        fi
-    done
-    $SKIPDONEMESSAGE || cloudify_print_done
-}
-
-# Uninstall Default packages
-function cloudify_uninstall_default_packages {
-    die "Uninstall package features not ready." 1
-}
-# Uninstall one or several package by name
-function cloudify_uninstall_package {
-    die "Uninstall package features not ready." 1
-}
-
-#== SCRIPT SUB-COMMANDS: INVENTORY MANAGEMENT
-
-# Is a host declared in host inventory?
-# Usage:
-#   cloudify_is_host_in_inventory host            Test if host is declared in the inventory
-# =Note= Function allowed to run locally only
-function cloudify_is_host_in_inventory() {
-    ! $CLOUDIFY_IS_LOCAL && die "Error: Operation \"cloudify_is_host_in_inventory\" not allowed on remote hosts." 1
-    [[ -z $1 ]] && msg "${RED}Error: Missing argument in \"cloudify_is_host_in_inventory\" call.${RESET}" && return 1
-
-    local host="$1"
-    ls -d $CLOUDIFY_DIR/inventory/"$host"/ | xargs -I {} basename {}
-}
-
-# List packages tags
-# Usage: cloudify_list_hosts_tags              List all host tags (Adding '@default' and '@all')
-function cloudify_list_hosts_tags() {
-    ! $CLOUDIFY_IS_LOCAL && die "Error: Can't list hosts Tags on remote hosts." 1
-    ls -d $CLOUDIFY_DIR/inventory/*/@* | xargs -I {} basename {} | awk '!a[$0]++'
-    echo @default
-    echo @all
-}
-
-# Show hosts inventory filtered by tags
-# Usage: cloudify_list_hosts_by_tags                           List all hosts
-#        cloudify_list_hosts_by_tags --tags                    List all hosts tags
-#        cloudify_list_hosts_by_tags [tag..]                   List all hosts having all tags given
-# =Note= Function allowed to run locally only
-# =Todo=
-#        - If '@all' list all tags
-function cloudify_list_hosts_by_tags() {
-
-    # Function allowed to run locally only
-    ! $CLOUDIFY_IS_LOCAL && die "Error: Operation \"cloudify_list_hosts_by_tags\" not allowed on remote hosts." 1
-
-    # The awk incantation is here to remove dubplicates while conserving order
-    {
-        local current_hosts_list
-        local hosts_list=""
-        local filter
-
-        # Without tag filter, return all hosts
-        # Remove hosts duplicates while retaining hosts order (see awk incantation below)
-        [[ $# == 0 ]] && hosts_list=$(ls -1d $CLOUDIFY_DIR/inventory/*/ | xargs -I {} basename {})
-
-        # If multiple tags are given, list the hosts that have all of them
-        for filter in "$@"; do
-            if ! [[ "$filter" == \@* ]]; then
-                # This isn't a tag. Do nothing.
-                :
-            else
-                # This the tag is '@all', list all hosts
-                if [[ $filter == @all ]]; then
-                    current_hosts_list=$(ls -1d $CLOUDIFY_DIR/inventory/*/ | xargs -I {} basename {})
-                else
-                    # Otherwise, filter by current tag
-                    current_hosts_list=$(ls -1d $CLOUDIFY_DIR/inventory/*/"$filter" | xargs -I {} dirname {} | xargs -I {} basename {})
-                fi
-
-                echo "DEBUG -- Current host list:" $current_hosts_list
-                if [[ -z $hosts_list ]]; then
-                    hosts_list=$current_hosts_list
-                else
-                    # 'comm' is a standard linux utility that compares FILES line by line
-                    # It is used here to find the intersection of 2 LISTS
-                    # The 'echo ... | tr ...' is here to transform lists in simili-files that can be fed to comm command
-                    hosts_list=$(comm -12 <(echo $hosts_list | tr ' ' '\n') <(echo $current_hosts_list | tr ' ' '\n'))
-                fi
-                echo "DEBUG -- Package list:" $hosts_list
-            fi
-        done
-        echo $hosts_list
-    } | awk '!a[$0]++'
-}
-
-# Get hosts informations
-# Usage:
-#   cloudify_info -h|--help                       Print help
-#   cloudify_info host ipv4                       Print host ipv4
-#   cloudify_info host ipv6                       Print host ipv6
-# =Note=
-#   LXC doesn't make it easy to get specific info on containers.
-#   But as it provides info in json format, 'cloudify info' can parse it with jq to extract specific bits of information
-#  The command `cloudify info proxy IPV4` (resp. `cloudify info proxy IPV4`) return the IPV4 address (resp. IPV6 address) of 'proxy' host
-function cloudify_info() {
-    # Function allowed to run locally only
-    ! $CLOUDIFY_IS_LOCAL && die "Error: Operation \"cloudify_info\" not allowed on remote hosts." 1
-
-    local host="$1"
-    shift
-    while :; do
-        [[ -z "$1" ]] && break
-        case "$1" in
-        -h | --help | help)
-            usage_info
-            break
-            ;;
-        ipv4)
-            local ipv4=$(lxc list "$LXDSERVER:$host" --format=json | jq '.[].state.network.eth0.addresses[] | select (.family=="inet" and .scope=="global") .address')
-            echo "$ipv4"
-            break
-            ;;
-        ipv6)
-            local ipv6=$(lxc list "$LXDSERVER:$host" --format=json | jq '.[].state.network.eth0.addresses[] | select (.family=="inet6" and .scope=="global") .address')
-            echo "$ipv6"
-            break
-            ;;
-        -?*) die "Error: Unknown option of info subcommand: '$1'" 1 ;;
-        *) break ;;
-        esac
-        shift
-    done
-}
-
-# Utility function to add or remove a hostname from '/etc/hosts' (locally or on remote host)
-# Usage:    cloudify_hostnames -h|--help|help                       Print help message
-#           cloudify_hostnames target_host add hostname             Add hostname IPV4 and IPV6 on target_host /etc/hosts files as 'hostname'
-#           cloudify_hostnames target_host add -r hostname          Add hostname IPV4 and IPV6 on target_host /etc/hosts files as 'hostname' and hostname.remote
-#           cloudify_hostnames target_host add hostname  IP         Add IP address to target_host /etc/hosts file as 'hostname'
-#           cloudify_hostnames target_host add -r hostname  IP      Add IP address to target_host /etc/hosts file as 'hostname' and 'hostname'.remote
-# =Todo=
-#       - Should exit w/ an error code and a message when things go wrong.
-#         This isn't the case yet.
-function cloudify_hostnames() {
-    local has_opt_remote=false
-    local host="$1"
-    shift
-    while :; do
-        [[ -z "$1" ]] && break
-        case "$1" in
-        -h)
-            usage_hostnames
-            break
-            ;;
-        add)
-            shift
-            case "$1" in
-            -r)
-                shift && has_opt_remote=true
-                ;;
-            *) ;;
-
-            esac
-            local hostname="$1"
-            local ip="$2"
-            local ipv4=""
-            local ipv6=""
-
-            if [[ -z $ip ]]; then
-                ! $CLOUDIFY_IS_LOCAL && die "Error: Illegal Operation. Calling \"cloudify_hostnames\" without explicit IP is not allowed on remote hosts." 1
-
-                # No IP address was given, As we're running locally, we can asssume access to lxc
-                # =Todo= What if lxc isn't intalled?
-                if [[ $hostname == localhost || $hostname == $(hostname) ]]; then
-                    # No need to query LXC :D
-                    ip=127.0.0.1
-                    ipv6="::1"
-                else
-                    ip=$(lxc list "$LXDSERVER:$hostname" --format=json | jq -r '.[].state.network.eth0.addresses[] | select (.family=="inet" and .scope=="global") .address')
-                    ipv6=$(lxc list "$LXDSERVER:$hostname" --format=json | jq -r '.[].state.network.eth0.addresses[] | select (.family=="inet6" and .scope=="global") .address')
-                    [[ -z $ip && -z $ipv6 ]] && die "Error: Unkown hostname $hostname" 1
-                fi
-            else
-                # =Todo= Remove the else branch
-                PKG_DEBUG "IP found: $2"
-            fi
-
-            # Now we have an IP (or two!), we can go ahead...
-
-            # Manipulate local or remote /etc/host file
-            if [[ $host == localhost || $host == $(hostname) ]]; then
-                # We're manipulating localhost '/etc/hosts' file. Easy, peasy!
-                # =Note= The .remote suffix is here to b coherent w/ how cloudify creates new containers
-                #        Should we keep it?
-                [[ ! -z "$ip" ]] && {
-                    if [[ $has_opt_remote && $hostname != localhost && $hostname != $(hostname) ]]; then
-                        PKG_DEBUG add_in_hosts "$ip $hostname $hostname.remote"
-                        add_in_hosts "$ip $hostname $hostname.remote"
-                    else
-                        PKG_DEBUG add_in_hosts "$ip $hostname"
-                        add_in_hosts "$ip $hostname"
-                    fi
-                }
-                [[ ! -z "$ipv6" ]] && {
-                    if [[ $has_opt_remote && $hostname != localhost && $hostname != $(hostname) ]]; then
-                        PKG_DEBUG add_in_hosts "$ipv6 $hostname $hostname.remote"
-                        add_in_hosts "$ipv6 $hostname $hostname.remote"
-                    else
-                        PKG_DEBUG add_in_hosts "$ipv6 $hostname"
-                        add_in_hosts "$ipv6 $hostname"
-                    fi
-                }
-            else
-                # We're manipulating a remote host '/etc/hosts' file. Neihter easy, nor peasy!
-                [[ -z "$ip" ]] && {
-                    cloudify_remote "$host" hostnames localhost add "$hostname" $ipv4
-                }
-                [[ -z "$ipv6" ]] && {
-                    cloudify_remote "$host" hostnames localhost add "$hostname" $ipv6
-                }
-            fi
-            break
-            ;;
-        -?*) die "Error: Unknown option of info subcommand: '$1'" 1 ;;
-        *) break ;;
-        esac
-        shift
-    done
-}
-
-#== TEST CODE!  #############################################
-#############################################################
-# Test code that can be tested w/ 'cloudify test'
-# Use this to test code before inserting it in cloudify
-
-function cloudify_piped() {
-    local lineargs=""
-    local pipeargs=""
-
-    # Find out if cloudify command have been called within a pipe, with arguments or both
-    # This if incantation can of course be simplified but I prefer to let it that way to make the different cases clearer
-
-    if [ -t 0 ]; then
-        # 'sudo' not called in a pipe
-        : # Do nothing
-        #lineargs="$lineargs"
-    elif [[ -p /dev/stdin ]]; then
-        # 'sudo' called in a pipe.
-        pipeargs="$(cat -)"
-    else
-        # 'sudo' called with a here doc
-        pipeargs="$(cat -)"
-    fi
-
-    if [[ -z $pipeargs ]]; then
-        cloudify_cmd="$lineargs"
-    else
-        cloudify_cmd="echo '$pipeargs' | $lineargs"
-    fi
-
-    # As we pass everything, including piped input as arguments to 'bash -c', we can safely supply sudo password using a herestring
-    cloudify_cmd_length=$(echo -n "'$cloudify_cmd'" | wc -m)
-
-    if (($cloudify_cmd_length < 10000)); then
-        PKG_DEBUG ""
-    else
-        # The sudo command is much too long, create a temporary file and execute it
-        local tfile=$(mktemp /tmp/foo.XXXXXXXXX)
-        echo creating $tfile
-        echo "$pipeargs" >$tfile
-        PKG_DEBUG command sudo -kS "$lineargs" "$tfile" \<\<\< "$password"
-        command sudo -p " " -kS "$lineargs" "$tfile" <<<"$password"
-    fi
-}
-
-function testCode() {
-    PKG_DEBUG cloudify hostnames localhost add pebble
-    cloudify hostnames test add pebble
-}
-
-###################################### END OF TEST CODE!
-#############################################################
-
-#=USAGE=
-#== MAIN PARSE SCRIPT PARAMETERS
-# cloudify -h                                                           Print this usage help
-#
-# cloudify environment|env init                                         Initialize cloudify before use (required once per session)
-# cloudify packages|pkg ls  --select [pkg...]                           List package(s) (1)
-# cloudify packages|pkg ls  --select [#hashtag...] [@tag...]            List packages filtered by hashtags and tags (1)(2)
-#                                                                       Packages must have ALL listed hastags and tags
-#                                                                       '--select' options can be repeated (2)
-# cloudify packages|pkg ls  --select [@tag...]                          List packages filtered by tags that are compatible with runtime platform (4)
-#                                                                       Packages must have ALL listed tags.
-#                                                                       '--select' options can be repeated (2)
-# cloudify packages|pkg ls  --select @all                               List all packages compatibles with runtime platform (4)
-# cloudify packages|pkg add --select [pkg...]                           Install package(s) on local machine
-#                                                                       Installation of packages is done in the order of appearance (3)
-#                                                                       '--select' options can be repeated (2)
-# cloudify packages|pkg add --select [@tag...]                          Install packages filtered by tags that are compatible with runtime platform (4)
-#                                                                       Packages must have ALL listed tags.
-#                                                                       Installation of package is done in the order of appearance (3)
-#                                                                       '--select' options can be repeated (2)
-# cloudify packages|pkg add --select @default                           Install packages tagged '@default' that are compatible with runtime platform (4)
-#                                                                       Installation of package is done in the order of appearance (3)
-#                                                                       '--select' options can be repeated (2)
-# cloudify packages|pkg add --select ... --on [host...]                 Add selected packages on host(s)
-#                                                                       Selected hosts must be alive
-# cloudify packages|pkg add --select ... --on [@tag...]                 Add selected packages on inventory hosts filtered by tags
-#                                                                       Hosts must have ALL listed tags and be alive
-#                                                                       '--on' options can be repeated (5)
-# cloudify hosts|hst ls  --select [host...]                             List inventory host(s) (1)
-# cloudify hosts|hst ls  --select [@tag...]                             List inventory hosts filtered by tags
-#                                                                       Hosts must have ALL listed tags.
-#                                                                       '--select' options can be repeated (3)
-# cloudify hosts|hst ls  --select @all                                  List all inventory hosts
-# cloudify hosts|hst ls [--select [...]] --state alive|stopped|dead     List inventory hosts that are alive|stopped|dead
-# cloudify hosts|hst shell host                                         Open a shell session on host
-# cloudify hostnames|hsn add host [IP]                                   Add IP/host in local /etc/hosts
-#                                                                       If IP isn't specified, cloudify tries to discover it (6)
-# cloudify credentials|crd add user [localhost|host|github|gitlab]      Interactively set user credentials of host, github, gitlab
-#                                                                       Defaults to localhost
-# cloudify credentials|crd remove user [localhost|host|github|gitlab]   Interactively unset user credentials of host, github, gitlab
-#                                                                       Defaults to localhost
-#
-# cloudify test|tst                                                     Development helper to test code
-#
-# Usage footnotes:
-# (1)   Print EXISTING packages/hosts. In future version, may also print informations related to listed packages/hosts
-# (2)   Inside a '--select' clause, a 'AND' logical operator is applied to conditions.  Between successive '--select' clauses a 'OR' logical operator is applied.
-# (3)   Order of appearance follows not-so-simple rules:
-#           - A package depended package always come before its dependent packages
-#           - Packages selected with a '--select' clause always come before packages selected by subsequent '--select' clause
-#           - Inside a '--select' clause, packages selected by name comes in the order they're named.
-#           - Inside a '--select' clause, packages selected by a tag|hashtag always come before packages selected by subsequent tags|hashtags
-#           - Inside a '--select' clause, packages selected by the same tag|hashtag come in alphabetic order of packag names.
-# (4)   The runtime platform is runtime environement of the host on which current instance of cloudify is running (Cloudify calls itself recursively on different hosts)
-#       The runtime environment can defined by OS, OS/distro or OS/distro/distro_version
-#       Current version of cloudify will only check that packages are compatible with the OS and Distro
-#       In the future:
-#           - Each package will have a .manifest.yml file describing supported OSs, distros and distro versions ranges
-#           - Each inventory host will have a .status.yml file containing its OS, distro and distro version
-#       With these, cloudify will be much smarter in assessing package/host compatibility
-# (5)   Inside a '--on' clause, actions (run|kill|add|exec) are performed in parallel on specified hosts
-#       hosts designated by an '--on' clause are always processed before hosts designated by a subsequent '--on' clause
-# (6)   IP is retrieved from the following source (in this order)
-#           - /etc/localhost (of runtime host)
-#           - LXD server
-#           - DNS
-
-#=SUB=
-# Cloudify hosts sub-command
-function cloudify_hosts() {
-    while :; do
-        [[ -z "$1" ]] && break
-        case "$1" in
-        init)
-            break
-            ;;
-        -?*) die "Error: Unknown option '$1' for command 'cloudify env'" 1 ;;
-        *) break ;;
-        esac
-    done
-}
-
-# Cloudify environement sub-command
+# Cloudify environment sub-command
 function cloudify_environment() {
     while :; do
         [[ -z "$1" ]] && break
         case "$1" in
         init)
-            # Initialize paths (but no need to check credentials)
             CLOUDIFY_SKIPCREDENTIALS=true cloudify_init_paths
-            # Install askpass only if it isn't already present
-            if ! source $CLOUDIFY_DIR/pkg/askpassstars/present.sh; then
+            # shellcheck source=/dev/null
+            if ! source "$CLOUDIFY_DIR"/pkg/askpassstars/present.sh 2>/dev/null; then
                 SKIPDONEMESSAGE=true cloudify_install_package askpassstars
                 cloudify credentials
             fi
@@ -2112,56 +114,13 @@ function cloudify_environment() {
     done
 }
 
-#>>>>>>>>>>>>>>
-#            -h)
-#            -v)
-#            -n)                        cloudify_setup_colors
-#            -d)                        # Debug mode
-#            environment | env)         cloudify_env $@
-#            hosts | hst)               cloudify_init_paths
-#                                       cloudify_list_hosts_by_tags
-#                                       cloudify_list_hosts_by_tags "$@"
-#                                       lxc list $LXDSERVER:
-#                                       lxc list "$LXDSERVER:$2"
-#                    --> launch | run)             local hostpwd="${CLOUDIFY_LOCAL_PWD}"
-#                                                    lxc launch "$host_image" $LXDSERVER:"$host" -p default $restparams
-#                                                    lxc launch "$host_image" $LXDSERVER:"$host" -p default $restparams
-#                                                    add_in_hosts "$hostip $host $host.remote"
-#                    --> delete | del)             lxc delete $LXDSERVER:"$host" ${@:3} --force
-#                                                    command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts  &>/dev/null <<< "$password"
-#                    --> shell | sh)                 ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$host" "$@" 2>&1 | tail -n +2
-#                    --> execute | exec)             source <(echo "$@")
-#                                                    cloudify_remote_sync "$host" exec localhost "\"$@\""
-#                    --> info)                       cloudify_info "$@"
-#            packages | pkg)            cloudify_init_paths
-#                                       cloudify_show_package_code "$@"
-#                                       packages | column
-#                                       packages "$@"
-#                    --> add)                        cloudify_init_paths
-#                                                    cloudify_uninstall_package ${packages/--$action}
-#                                                    cloudify_remote "$host" "$packages"  && is_setup_in_progress=true
-#                            --to)                   cloudify_list_hosts_by_tags "$2"
-#                    --> remove)                     cloudify_init_paths
-#                                                    cloudify_uninstall_package ${packages/--$action}
-#                                                    cloudify_remote "$host" "$packages"  && is_setup_in_progress=true
-#                            --from)                 cloudify_list_hosts_by_tags "$2"
-#            hostnames | hsn)           cloudify_hostnames "$@"
-#            credentials | crd)         cloudify_check_credentials --force
-#            test)                      testCode "$@"
-#            -?*) die "Error: Unknown option '$1'" 1;;
-#            *) break ;;
-#        esac
-#        shift
-#    done
-#<<<<<<<<<<<<<<<<<<<<<
-
-#=WORK=
+#=MAIN=
+#== MAIN PARSE SCRIPT PARAMETERS
 function main() {
 
     # Setup colors
     cloudify_setup_colors
 
-    #PKG_DEBUG_LN "*** Cloudify $@"
     local hosts=""
     local packages=""
 
@@ -2169,14 +128,14 @@ function main() {
     local is_parsing_packages=false
     local is_setup_in_progress=false
 
-    # No arguments are give, show usage
+    # No arguments given, show usage
     [[ "$#" == 0 ]] && usage && exit 0
 
     # Parse script parameters
     while :; do
         [[ -z "$1" ]] && break
         case "$1" in
-        -h)
+        -h | --help | help)
             usage
             break
             ;;
@@ -2187,38 +146,29 @@ function main() {
             export CLOUDIFY_DISABLE_COLORS=true
             cloudify_setup_colors
             ;;
-        environment | env) # =todo= init
-            shift && cloudify_env $@
+        environment | env)
+            shift && cloudify_environment "$@"
             break
             ;;
-        hosts | hst) # ex inventory
+        hosts | hst)
             shift
-            CLOUDIFY_SKIPCREDENTIALS=true cloudify_init_paths # Initialize paths (but no need to check credentials)
+            CLOUDIFY_SKIPCREDENTIALS=true cloudify_init_paths
             if [[ -z "${1-}" || "${1-}" == "@all" ]]; then
-                # If no arguments or if virtual tag '@all' is given, list all inventory hosts
                 cloudify_list_hosts_by_tags
             else
-                # List packages matching filters (packages names or tags)
                 cloudify_list_hosts_by_tags "$@"
             fi
             break
             ;;
-            # We info about servers: For LXD servers, we query LXd servers
-            #lxc list $LXDSERVER:
-            #lxc list "$LXDSERVER:$2"
-            #;;
         packages | pkg)
             shift
-            CLOUDIFY_SKIPCREDENTIALS=true cloudify_init_paths # Initialize paths (but no need to check credentials)
+            CLOUDIFY_SKIPCREDENTIALS=true cloudify_init_paths
             if [[ "${1-}" == "show" ]]; then
-                # Show packages installation code
-                shift && cloudify_show_package_code "$@"
+                shift && cloudify_print_package_recipe "$@"
             elif [[ -z "${1-}" || "${1-}" == "@all" ]]; then
-                # If no arguments or if virtual tag '@all' is given, list all packages
-                packages | column
+                cloudify_list_packages_by_tags | column 2>/dev/null || cloudify_list_packages_by_tags
             else
-                # List packages matching filters (packages names or tags)
-                packages "$@"
+                cloudify_list_packages_by_tags "$@"
             fi
             break
             ;;
@@ -2228,20 +178,19 @@ function main() {
 
             local host_image="$2"
             local host="$3"
-            local restparams=${@:4}
+            local restparams="${*:4}"
 
             if [[ "$host_image" != *:* ]]; then
                 host_image="ubuntu:"
                 host="$2"
-                restparams=${@:3}
+                restparams="${*:3}"
             fi
 
-            PKG_DEBUG lxc launch "$host_image" $LXDSERVER:"$host" -p default $restparams
-            lxc launch "$host_image" $LXDSERVER:"$host" -p default $restparams
-            # =TODO= test exit code
+            PKG_DEBUG lxc launch "$host_image" "$LXDSERVER":"$host" -p default "$restparams"
+            lxc launch "$host_image" "$LXDSERVER":"$host" -p default "$restparams"
             hostip=""
             while [[ ! $hostip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; do
-                hostip=$(lxc list -c4 --format csv $LXDSERVER:$host | cut -d' ' -f1)
+                hostip=$(lxc list -c4 --format csv "$LXDSERVER":"$host" | cut -d' ' -f1)
             done
 
             $DEBUG && PKG_PAUSE "line before add_in_hosts"
@@ -2253,44 +202,34 @@ function main() {
             [[ -z ${hostpwd} ]] && die "Host password not set"
             host="$2"
 
-            PKG_DEBUG "Executing: lxc delete $LXDSERVER:"$host" ${@:3}"
-            if ! lxc delete $LXDSERVER:"$host" ${@:3} --force &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
+            PKG_DEBUG "Executing: lxc delete $LXDSERVER:$host ${*:3}"
+            if ! lxc delete "$LXDSERVER":"$host" "${@:3}" --force &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
 
-            # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". Why that?
-            # =TODO= Also remove IPV6 entries...
             PKG_DEBUG "Executing: sudo sed -ri \"/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d\" /etc/hosts"
             command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts &>/dev/null <<<"$password"
             ;;
         shell | sh)
-            # =todo= If shell commands are given, they should be executed and after what you should stay in the shell
-            # =todo= The shell should forced to be bash
             [[ -z $2 ]] && die "Missing host"
             shift
             local host="$1"
             shift
             ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$host" "$@" 2>&1 | tail -n +2
-            # =HACK= We remove the first line of the output because it's invariably: "Warning: Permanently added 'hostIP' (ECDSA) to the list of known hosts"
             ;;
         execute | exec)
-            # Execute shell commands on local machine or one remote hosts
-            # The only upside is to have sudo command prefilled
             shift
-
             [[ -z $1 ]] && die "Missing host"
             local host="$1"
             shift
             if [[ $host == "localhost" ]]; then
-                source <(echo "$@")
+                # shellcheck source=/dev/null
+                source <(echo "$*")
             else
-                # Actual command is escaped because it can contain ';' which messes with how cloudify_remote works:
-                # Indeed as the `cloudify exec` command is executed on remote host, whatever comes before ';' is executed
-                # and what comes after the ';' is executed as an independant command
-                cloudify_remote_sync "$host" exec localhost "\"$@\""
+                cloudify_remote_sync "$host" exec localhost "\"$*\""
             fi
             break
             ;;
         credentials | crd)
-            cloudify_check_credentials --force # Ask all credentials
+            cloudify_check_credentials --force
             break
             ;;
         info)
@@ -2302,13 +241,9 @@ function main() {
             shift && cloudify_hostnames "$@"
             break
             ;;
-        test)
-            shift && testCode "$@"
-            break
-            ;;
         --on)
             # Build hosts list
-            [[ $is_parsing_packages == "started" ]] && die "Cloudify usage error: unexptected on block."
+            [[ $is_parsing_packages == "started" ]] && die "Cloudify usage error: unexpected on block."
             [[ $is_parsing_hosts == "started" ]] && die "cloudify usage error: 'on' statement already encountered"
 
             is_parsing_hosts="started"
@@ -2316,16 +251,13 @@ function main() {
             hosts=""
 
             while true; do
-                # first, die out on invalid argument
                 [[ "$2" == "--on" || "$2" == "on" || "$2" == "o" || "$2" == "--help" || "$2" == "help" || "$2" == "-h" || "$2" == "--list" || "$2" == "list" || "$2" == "l" || "$2" == "--credentials" || "$2" == "credentials" || "$2" == "c" || "$2" == "--test" || "$2" == "test" || "$2" == "t" ]] && die "Argument syntax error: '$2' invalid inside an 'on' block"
 
-                # If any of these is encountered, there's no more hosts, we can go ahead and setup the hosts
                 [[ -z "$2" || "$2" == -* || "$2" == "install" || "$2" == "inst" || "$2" == "i" || "$2" == "uninstall" || "$2" == "u" ]] && {
                     [[ -z "$hosts" ]] && die "Cloudify usage error: No host found."
                     is_parsing_hosts="ended"
-                    break # Hosts have been consummed, go ahead and parse next arguments
+                    break
                 }
-                # Add current host to hosts list
                 local hosts_to_add="$2"
                 [[ "$2" == @* ]] && hosts_to_add=$(cloudify_list_hosts_by_tags "$2")
 
@@ -2339,9 +271,7 @@ function main() {
             [[ -z "$2" ]] && die "No packages found for hosts: $hosts"
             ;;
         install | inst | i | uninstall | u)
-            # PKG_PAUSE "executing install subcommand"
-            # Build packages list
-            [[ $is_parsing_hosts == "started" ]] && die "Cloudify usage error: unexptected action '$1'"
+            [[ $is_parsing_hosts == "started" ]] && die "Cloudify usage error: unexpected action '$1'"
             [[ -z "$hosts" ]] && hosts="localhost"
             is_parsing_packages="started"
 
@@ -2358,69 +288,55 @@ function main() {
             [[ -z "$packages" ]] && packages="--$action" || packages="$packages --$action"
 
             while true; do
-                # first, die out on invalid argument
-                [[ "$2" == "--help" || "$2" == "help" || "$2" == "-h" || "$2" == "--list" || "$2" == "list" || "$2" == "l" || "$2" == "--credentials" || "$2" == "credentials" || "$2" == "c" || "$2" == "--test" || "$2" == "test" || "$2" == "t" ]] && die "Argument syntax error: '$2' invalid inside an action block."
+                [[ "${2:-}" == "--help" || "${2:-}" == "help" || "${2:-}" == "-h" || "${2:-}" == "--list" || "${2:-}" == "list" || "${2:-}" == "l" || "${2:-}" == "--credentials" || "${2:-}" == "credentials" || "${2:-}" == "c" || "${2:-}" == "--test" || "${2:-}" == "test" || "${2:-}" == "t" ]] && die "Argument syntax error: '$2' invalid inside an action block."
 
-                # If any of these is encountered, there's no more packages in this package section. Go ahead and parse next package section
-                [[ "$2" == "--install" || "$2" == "install" || "$2" == "i" || "$2" == "--uninstall" || "$2" == "uninstall" || "$2" == "u" ]] && {
+                [[ "${2:-}" == "--install" || "${2:-}" == "install" || "${2:-}" == "i" || "${2:-}" == "--uninstall" || "${2:-}" == "uninstall" || "${2:-}" == "u" ]] && {
                     [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
 
                     [[ "$hosts" == "localhost" ]] && {
-                        # Cloudify is executed on localhost. Either because cloudify is executed agains local machine,
-                        # we're inside a remote execution. Either way, we can safely execute each package sequentially.
-                        # Ensure environment variables are set and set default values otherwise
                         cloudify_init_paths
-                        # Go install or uninstall
                         if [[ "$action" == "install" ]]; then
                             PKG_DEBUG "${YELLOW}cloudify_install_package ${packages/--$action/}${RESET}"
-                            (cloudify_install_package ${packages/--$action/}) &
+                            (cloudify_install_package "${packages/--$action/}") &
                             is_setup_in_progress=true
                         elif [[ "$action" == "uninstall" ]]; then
                             PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${packages/--$action/}${RESET}"
-                            (cloudify_uninstall_package ${packages/--$action/}) &
+                            (cloudify_uninstall_package "${packages/--$action/}") &
                             is_setup_in_progress=true
                         else
-                            die "Unexecpected package action: $action"
+                            die "Unexpected package action: $action"
                         fi
-                        # Make sure each package is processed once
                         packages=""
                     }
 
-                    break # packages to install have been consummed, go ahead and gather packages to remove
-                }         # End of detect install / uninstall test
+                    break
+                }
 
-                # If any of these is encountered, there's no more packages, we can go ahead and install them
-                [[ -z "$2" || "$2" == "--on" || "$2" == "on" || "$2" == "o" ]] && {
+                [[ -z "${2:-}" || "${2:-}" == "--on" || "${2:-}" == "on" || "${2:-}" == "o" ]] && {
                     [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
                     is_parsing_packages="ended"
-                    # Install/Remove packages on hosts
                     for host in $hosts; do
                         if [[ "$hosts" == "localhost" ]]; then
-                            # Ensure environment variables are set and set default values otherwise
-                            # Cloudify is executed on localhost. Either because cloudify is executed agains local machine,
-                            # we're inside a remote execution. Either way, we can safely execute each package sequentially.
                             cloudify_init_paths
-                            # Go install or uninstall
                             if [[ "$action" == "install" ]]; then
                                 PKG_DEBUG "${YELLOW}cloudify_install_package ${packages/--$action/}${RESET}"
-                                (cloudify_install_package ${packages/--$action/}) &
+                                (cloudify_install_package "${packages/--$action/}") &
                                 is_setup_in_progress=true
                             elif [[ "$action" == "uninstall" ]]; then
                                 PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${packages/--$action/}${RESET}"
-                                (cloudify_uninstall_package ${packages/--$action/}) &
+                                (cloudify_uninstall_package "${packages/--$action/}") &
                                 is_setup_in_progress=true
                             else
-                                die "Unexecpected package action: $action"
+                                die "Unexpected package action: $action"
                             fi
                         else
                             PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
-                            # =TODO= Should this be done in a sub-process?
                             cloudify_remote "$host" "$packages" && is_setup_in_progress=true
                         fi
                     done
-                    break # All packages have been consummed, go ahead and install/remove them
+                    break
                 }
-                packages="$packages $2"
+                packages="$packages ${2:-}"
                 shift
             done
             ;;
@@ -2432,339 +348,12 @@ function main() {
 
     # Print Setup in progress only if we launched background setup
     $is_setup_in_progress && {
-        # Wait until all background tasks return
         msg "${GREEN}Setup of machines in progress...${RESET}"
         wait
         msg "${GREEN}Setup Done.${RESET}"
     }
     return 0
-
-    # Check required params and arguments
-    #  [[ -z "${param-}" ]] && die "Missing required parameter: param"
-    #  [[ ${#args[@]} -eq 0 ]] && die "Missing script arguments"
 }
-
-# CODE BACKUP
-# function cloudify () {
-
-#     # Setup colors
-#     cloudify_setup_colors
-
-#     #PKG_DEBUG_LN "*** Cloudify $@"
-#     local hosts=""
-#     local packages=""
-
-#     local hosts_parsing="not started"
-#     local packages_parsing="not started"
-#     local setup_in_progress=false
-
-#     # Get the host on which to execute, assume localhost if host not found
-#     local forbidden_host_names="inventory packages pkgs pkg init hosts host launch run delete del shell exec credentials c info hostnames test t on o  install inst i uninstall u"
-#     if [[ $1 != -* ]] && ! cloudify_list_contains "$forbidden_host_names" $1; then
-#      host=$1
-#      shift
-#     else
-#      host='localhost'
-#     fi
-
-#     =REMOTE= This code should be reused for cloudify_remote
-#     if [[ $host != "localhost" ]]; then
-#      # Actions are executed remotely (Escape cloudify command)
-#      # But we must pay attention to ';' that can wreak havoc in cloudify_remote
-#      # Indeed something like 'cloudify_remote <host> exec "cd /home ; ls -al"', would execute on <host>:
-#      #   1) 'cloudify exec "cd /home"'
-#      #   2) and then: 'ls -al'
-#      # instead of 'cloudify exec "cd /home ; ls -al"'
-#      # To avoid that we need to escape all ';' characters
-#      # That way cloudify_remote will be calling: 'cloudify exec cd /home \; ls -al'
-#      local remote_cmd="$@"
-#      local remote_cmd=$(echo "$@" | sed 's/;/\\;/g')
-#      cloudify_remote_sync "$host" "$remote_cmd"
-#      # =todo= Execute synchronously or not?
-#     endif
-
-#     # From now on we sure we're running cloudify on localhost!
-
-#     # Check arguments validity
-#     # Cloudify is run on localhost (run target); but, if we're are to add packages, on which host should we install them (action target)?
-#     # This is defined by '--on' option. But ambiguity should be avoided.
-#     # 'cloudify add git' is clear: it adds 'git' package on localhost (localhost is an implicit target)
-#     # 'cloudify <host> add git' is also clear: if will run 'cloudify add git' on <host>...
-#     # But what does mean 'cloudify add git --on <host>' ?
-#     # This will install 'git' on localhost (implicit target) and then complain about not having packages to install on <host>
-#     # To avoid that we have these 2 rules:
-#     #   - if no '--on' option is given, action is run on localhost
-#     #   - if one several '--on' are given, each action (add) must be preceded by it's '--on' option
-#     if [[ "$1" == "add" || "$1" == "a" ]]; then
-#      # "--on" close is forbidden with implicit localhost
-#      [[ "$@" == *--on* ]] && die "Error: Ambiguous host. Use 'cloudify add ...' for local installations only. Otherwise use explicit 'cloudify --on HOST add ...'"
-#     fi
-#     [[ "$#" == 0 ]] && usage && exit 0
-
-#     # Parse script parameters
-#     while :; do
-#      [[ -z "$1" ]] && break
-#      case "$1" in
-#      -h  | --help | help)
-#      usage
-#      break
-#      ;;
-#      -v  | --verbose | verbose)
-#      set -x
-#      ;;
-#      -n  | --no-color)
-#      export CLOUDIFY_DISABLE_COLORS=true
-#      cloudify_setup_colors
-#      ;;
-#      inventory)
-#      shift;
-#      CLOUDIFY_SKIPCREDENTIALS=true cloudify_init_paths              # Initialize paths (but no need to check credentials)
-#      if [[ -z "${1-}" || "${1-}" == "@all" ]]; then
-#      # If no arguments or if virtual tag '@all' is given, list all inventory hosts
-#      cloudify_list_hosts_by_tags
-#      else
-#      # List packages matching filters (packages names or tags)
-#      cloudify_list_hosts_by_tags "$@"
-#      fi
-#      break ;;
-#      packages | pkgs | pkg)
-#      shift;
-#      CLOUDIFY_SKIPCREDENTIALS=true cloudify_init_paths              # Initialize paths (but no need to check credentials)
-#      if [[ "${1-}" == "show" ]]; then
-#      # Show packages installation code
-#      shift && cloudify_show_package_code "$@"
-#      elif [[ -z "${1-}" || "${1-}" == "@all" ]]; then
-#      # If no arguments or if virtual tag '@all' is given, list all packages
-#      packages | column
-#      else
-#      # List packages matching filters (packages names or tags)
-#      packages "$@"
-#      fi
-#      break ;;
-#      init)
-#      CLOUDIFY_SKIPCREDENTIALS=true cloudify_init_paths             # Initialize paths (but no need to check credentials)
-#      # =todo= Don't install if it already done
-#      SKIPDONEMESSAGE=true cloudify_install_package askpassstars
-#      #
-#      cloudify credentials
-#      ;;
-#      hosts)
-#      lxc list $LXDSERVER:
-#      ;;
-#      host)
-#      lxc list "$LXDSERVER:$2"
-#      ;;
-#      launch | run)
-#      local hostpwd="${CLOUDIFY_LOCAL_PWD}"
-#      [[ -z ${hostpwd} ]] && die "Host password not set"
-
-#      local host_image="$2"
-#      local host="$3"
-#      local restparams=${@:4}
-
-#      if [[ "$host_image" != *:* ]]; then
-#      host_image="ubuntu:"
-#      host="$2"
-#      restparams=${@:3}
-#      fi
-
-#      PKG_DEBUG lxc launch "$host_image" $LXDSERVER:"$host" -p default $restparams
-#      lxc launch "$host_image" $LXDSERVER:"$host" -p default $restparams
-#      # =TODO= test exit code
-#      hostip=""
-#      while [[ ! $hostip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; do
-#      hostip=$(lxc list -c4 --format csv $LXDSERVER:$host | cut -d' ' -f1)
-#      done
-
-#      $DEBUG && PKG_PAUSE "line before add_in_hosts"
-#      add_in_hosts "$hostip $host $host.remote"
-#      $DEBUG && PKG_PAUSE "line after add_in_hosts"
-#      ;;
-#      delete | del)
-#      local hostpwd="${CLOUDIFY_LOCAL_PWD}"
-#      [[ -z ${hostpwd} ]] && die "Host password not set"
-#      host="$2"
-
-#      PKG_DEBUG "Executing: lxc delete $LXDSERVER:"$host" ${@:3}"
-#      if ! lxc delete $LXDSERVER:"$host" ${@:3} --force &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
-
-#      # =TODO= I had to redirect sudo output to /dev/null to avoid the prompt beeing displayed. Even with "-p ''". Why that?
-#      # =TODO= Also remove IPV6 entries...
-#      PKG_DEBUG "Executing: sudo sed -ri \"/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d\" /etc/hosts"
-#      command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts  &>/dev/null <<< "$password"
-#      ;;
-#      shell)
-#      # =todo= If shell commands are given, they should be executed and after what you should stay in the shell
-#      # =todo= The shell should forced to be bash
-#      [[ -z $2 ]] && die "Missing host"
-#      shift;
-#      local host="$1"; shift;
-#      ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$host" "$@" 2>&1 | tail -n +2
-#      # =HACK= We remove the first line of the output because it's invariably: "Warning: Permanently added 'hostIP' (ECDSA) to the list of known hosts"
-#      ;;
-#      exec)
-#      # Execute shell commands on local machine or one remote hosts
-#      # The only upside is to have sudo command prefilled
-#      shift;
-
-#      [[ -z $1 ]] && die "Missing host"
-#      local host="$1"; shift;
-#      if [[ $host == "localhost" ]]; then
-#      source <(echo "$@")
-#      else
-#      # Actual command is escaped because it can contain ';' which messes with how cloudify_remote works:
-#      # Indeed as the `cloudify exec` command is executed on remote host, whatever comes before ';' is executed
-#      # and what comes after the ';' is executed as an independant command
-#      cloudify_remote_sync "$host" exec localhost "\"$@\""
-#      fi
-#      break ;;
-#      credentials | c)
-#      cloudify_check_credentials --force               # Ask all credentials
-#      break ;;
-#      info)
-#      shift && cloudify_info "$@"
-#      break ;;
-#      hostnames)
-#      PKG_DEBUG "In cloudify, Running: " cloudify_hostnames "$@"
-#      shift && cloudify_hostnames "$@"
-#      break ;;
-#      test | t)
-#      shift && testCode "$@"
-#      break ;;
-#      --on | on | o)
-#      # Build hosts list
-#      [[ $packages_parsing == "started" ]] && die "Cloudify usage error: unexptected on block."
-#      [[ $hosts_parsing == "started" ]] && die "cloudify usage error: 'on' statement already encountered"
-
-#      hosts_parsing="started"
-#      packages=""
-#      hosts=""
-
-#      while true; do
-#      # first, die out on invalid argument
-#      [[ "$2" == "--on" || "$2" == "on" || "$2" == "o" ||  "$2" == "--help" ||  "$2" == "help" || "$2" == "-h" || "$2" == "--list" || "$2" == "list" || "$2" == "l" || "$2" == "--credentials" || "$2" == "credentials" ||  "$2" == "c" || "$2" == "--test" || "$2" == "test" || "$2" == "t" ]] &&  die "Argument syntax error: '$2' invalid inside an 'on' block"
-
-#      # If any of these is encountered, there's no more hosts, we can go ahead and setup the hosts
-#      [[ -z "$2" || "$2" == -* ||  "$2" == "install" || "$2" == "inst" || "$2" == "i" || "$2" == "uninstall" || "$2" == "u" ]] && {
-#      [[ -z "$hosts" ]] && die "Cloudify usage error: No host found."
-#      hosts_parsing="ended"
-#      break    # Hosts have been consummed, go ahead and parse next arguments
-#      }
-#      # Add current host to hosts list
-#      local hosts_to_add="$2"
-#      [[ "$2" == @* ]] && hosts_to_add=$(cloudify_list_hosts_by_tags "$2")
-
-#      if [[ -z "$hosts" ]]; then
-#      hosts="$hosts_to_add"
-#      else
-#      hosts="$hosts $hosts_to_add"
-#      fi
-#      shift
-#      done
-#      [[ -z "$2" ]] && die "No packages found for hosts: $hosts"
-#      ;;
-#      install | inst | i | uninstall | u)
-#      # PKG_PAUSE "executing install subcommand"
-#      # Build packages list
-#      [[ $hosts_parsing == "started" ]] && die "Cloudify usage error: unexptected action '$1'"
-#      [[ -z "$hosts" ]] && hosts="localhost"
-#      packages_parsing="started"
-
-#      local action=''
-#      case "$1" in
-#      --install | install |inst | i)
-#      action='install'
-#      ;;
-#      --uninstall | uninstall | u)
-#      action='uninstall'
-#      esac
-
-#      [[ -z "$packages" ]] &&  packages="--$action" || packages="$packages --$action"
-
-#      while true; do
-#      # first, die out on invalid argument
-#      [[ "$2" == "--help" ||  "$2" == "help" || "$2" == "-h" || "$2" == "--list" || "$2" == "list" || "$2" == "l" || "$2" == "--credentials" || "$2" == "credentials" ||  "$2" == "c" || "$2" == "--test" || "$2" == "test" || "$2" == "t" ]] &&  die "Argument syntax error: '$2' invalid inside an action block."
-
-#      # If any of these is encountered, there's no more packages in this package section. Go ahead and parse next package section
-#      [[ "$2" == "--install" || "$2" == "install" || "$2" == "i" ||  "$2" == "--uninstall" || "$2" == "uninstall" || "$2" == "u" ]] && {
-#      [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
-
-#      [[ "$hosts" == "localhost" ]] && {
-#      # Cloudify is executed on localhost. Either because cloudify is executed agains local machine,
-#      # we're inside a remote execution. Either way, we can safely execute each package sequentially.
-#      # Ensure environment variables are set and set default values otherwise
-#      cloudify_init_paths
-#      # Go install or uninstall
-#      if [[ "$action" == "install" ]]; then
-#      PKG_DEBUG "${YELLOW}cloudify_install_package ${packages/--$action}${RESET}"
-#      (cloudify_install_package ${packages/--$action}) & setup_in_progress=true
-#      elif [[ "$action" == "uninstall" ]]; then
-#      PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${packages/--$action}${RESET}"
-#      (cloudify_uninstall_package ${packages/--$action}) & setup_in_progress=true
-#      else
-#      die "Unexecpected package action: $action"
-#      fi
-#      # Make sure each package is processed once
-#      packages=""
-#      }
-
-#      break    # packages to install have been consummed, go ahead and gather packages to remove
-#      } # End of detect install / uninstall test
-
-#      # If any of these is encountered, there's no more packages, we can go ahead and install them
-#      [[ -z "$2" || "$2" == "--on" || "$2" == "on" || "$2" == "o" ]] && {
-#      [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
-#      packages_parsing="ended"
-#      # Install/Remove packages on hosts
-#      for host in $hosts; do
-#      if [[ "$hosts" == "localhost" ]]; then
-#      # Ensure environment variables are set and set default values otherwise
-#      # Cloudify is executed on localhost. Either because cloudify is executed agains local machine,
-#      # we're inside a remote execution. Either way, we can safely execute each package sequentially.
-#      cloudify_init_paths
-#      # Go install or uninstall
-#      if [[ "$action" == "install" ]]; then
-#      PKG_DEBUG "${YELLOW}cloudify_install_package ${packages/--$action}${RESET}"
-#      (cloudify_install_package ${packages/--$action})&
-#      setup_in_progress=true
-#      elif [[ "$action" == "uninstall" ]]; then
-#      PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${packages/--$action}${RESET}"
-#      (cloudify_uninstall_package ${packages/--$action})&
-#      setup_in_progress=true
-#      else
-#      die "Unexecpected package action: $action"
-#      fi
-#      else
-#      PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
-#      # =TODO= Should this be done in a sub-process?
-#      cloudify_remote "$host" "$packages"  && setup_in_progress=true
-#      fi
-#      done
-#      break    # All packages have been consummed, go ahead and install/remove them
-#      }
-#      packages="$packages $2"
-#      shift
-#      done
-#      ;;
-#      -?*) die "Error: Unknown option '$1'" 1;;
-#      *) break ;;
-#      esac
-#      shift
-#     done
-
-#     # Print Setup in progress only if we launched background setup
-#     $setup_in_progress && {
-#      # Wait until all background tasks return
-#      msg "${GREEN}Setup of machines in progress...${RESET}"
-#      wait
-#      msg "${GREEN}Setup Done.${RESET}"
-#     }
-#     return 0
-
-#     # Check required params and arguments
-#     #  [[ -z "${param-}" ]] && die "Missing required parameter: param"
-#     #  [[ ${#args[@]} -eq 0 ]] && die "Missing script arguments"
-# }
 
 #== MAIN: EXECUTE SCRIPT!
 main "$@"

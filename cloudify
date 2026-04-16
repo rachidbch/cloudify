@@ -97,7 +97,7 @@ function cloudify_init_paths() {
 # Cloudify environment sub-command
 function cloudify_environment() {
     while :; do
-        [[ -z "$1" ]] && break
+        [[ -z "${1:-}" ]] && break
         case "$1" in
         init)
             CLOUDIFY_SKIPCREDENTIALS=true cloudify_init_paths
@@ -133,7 +133,7 @@ function main() {
 
     # Parse script parameters
     while :; do
-        [[ -z "$1" ]] && break
+        [[ -z "${1:-}" ]] && break
         case "$1" in
         -h | --help | help)
             usage
@@ -209,7 +209,7 @@ function main() {
             command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts &>/dev/null <<<"$password"
             ;;
         shell | sh)
-            [[ -z $2 ]] && die "Missing host"
+            [[ -z "${2:-}" ]] && die "Missing host"
             shift
             local host="$1"
             shift
@@ -251,15 +251,15 @@ function main() {
             hosts=""
 
             while true; do
-                [[ "$2" == "--on" || "$2" == "on" || "$2" == "o" || "$2" == "--help" || "$2" == "help" || "$2" == "-h" || "$2" == "--list" || "$2" == "list" || "$2" == "l" || "$2" == "--credentials" || "$2" == "credentials" || "$2" == "c" || "$2" == "--test" || "$2" == "test" || "$2" == "t" ]] && die "Argument syntax error: '$2' invalid inside an 'on' block"
+                [[ "${2:-}" == "--on" || "${2:-}" == "on" || "${2:-}" == "o" || "${2:-}" == "--help" || "${2:-}" == "help" || "${2:-}" == "-h" || "${2:-}" == "--list" || "${2:-}" == "list" || "${2:-}" == "l" || "${2:-}" == "--credentials" || "${2:-}" == "credentials" || "${2:-}" == "c" || "${2:-}" == "--test" || "${2:-}" == "test" || "${2:-}" == "t" ]] && die "Argument syntax error: '$2' invalid inside an 'on' block"
 
-                [[ -z "$2" || "$2" == -* || "$2" == "install" || "$2" == "inst" || "$2" == "i" || "$2" == "uninstall" || "$2" == "u" ]] && {
+                [[ -z "${2:-}" || "${2:-}" == -* || "${2:-}" == "install" || "${2:-}" == "inst" || "${2:-}" == "i" || "${2:-}" == "uninstall" || "${2:-}" == "u" ]] && {
                     [[ -z "$hosts" ]] && die "Cloudify usage error: No host found."
                     is_parsing_hosts="ended"
                     break
                 }
-                local hosts_to_add="$2"
-                [[ "$2" == @* ]] && hosts_to_add=$(cloudify_list_hosts_by_tags "$2")
+                local hosts_to_add="${2:-}"
+                [[ "${2:-}" == @* ]] && hosts_to_add=$(cloudify_list_hosts_by_tags "$2")
 
                 if [[ -z "$hosts" ]]; then
                     hosts="$hosts_to_add"
@@ -268,7 +268,7 @@ function main() {
                 fi
                 shift
             done
-            [[ -z "$2" ]] && die "No packages found for hosts: $hosts"
+            [[ -z "${2:-}" ]] && die "No packages found for hosts: $hosts"
             ;;
         install | inst | i | uninstall | u)
             [[ $is_parsing_hosts == "started" ]] && die "Cloudify usage error: unexpected action '$1'"

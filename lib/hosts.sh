@@ -32,8 +32,6 @@ function cloudify_list_hosts_tags() {
 #        cloudify_list_hosts_by_tags --tags                    List all hosts tags
 #        cloudify_list_hosts_by_tags [tag..]                   List all hosts having all tags given
 # =Note= Function allowed to run locally only
-# =Todo=
-#        - If '@all' list all tags
 function cloudify_list_hosts_by_tags() {
 
     # Function allowed to run locally only
@@ -125,9 +123,6 @@ function cloudify_info() {
 #           cloudify_hostnames target_host add -r hostname          Add hostname IPV4 and IPV6 on target_host /etc/hosts files as 'hostname' and hostname.remote
 #           cloudify_hostnames target_host add hostname  IP         Add IP address to target_host /etc/hosts file as 'hostname'
 #           cloudify_hostnames target_host add -r hostname  IP      Add IP address to target_host /etc/hosts file as 'hostname' and 'hostname'.remote
-# =Todo=
-#       - Should exit w/ an error code and a message when things go wrong.
-#         This isn't the case yet.
 function cloudify_hostnames() {
     local has_opt_remote=false
     local host="$1"
@@ -161,7 +156,7 @@ function cloudify_hostnames() {
                 ! $CLOUDIFY_IS_LOCAL && die "Error: Illegal Operation. Calling \"cloudify_hostnames\" without explicit IP is not allowed on remote hosts." 1
 
                 # No IP address was given, As we're running locally, we can asssume access to lxc
-                # =Todo= What if lxc isn't intalled?
+                command -v lxc >/dev/null || die "lxc is not installed. Cannot resolve hostname to IP automatically."
                 if [[ $hostname == localhost || $hostname == "$(hostname)" ]]; then
                     # No need to query LXC :D
                     ip=127.0.0.1
@@ -172,7 +167,6 @@ function cloudify_hostnames() {
                     [[ -z $ip && -z $ipv6 ]] && die "Error: Unkown hostname $hostname" 1
                 fi
             else
-                # =Todo= Remove the else branch
                 PKG_DEBUG "IP found: $2"
             fi
 

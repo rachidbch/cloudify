@@ -32,9 +32,6 @@ function PKG_PAUSE() {
 # Usage: pkg_backup path            backup file or directory in /tmp/cloudify/backup/
 # =DANGER= function full of 'rm -rf'!!
 # =Warning= Prevent destructve actions. Example: What happens if called with path '/' ?
-# =todo= What about priviledge protected files?
-#        What about directories?
-# =todo= Add a '--temp' switch to force pkg_backup to remember which backup have been made and automatically undo them if the script closes unexpectedly
 function pkg_backup() {
     PKG_DEBUG "Running pkg_backup for ${1-}"
 
@@ -99,7 +96,6 @@ function pkg_backup() {
 #                                             File can be backed up multiple times ad backup files will be rolled (.bak, .bak.1, ..., .bak.5)
 # pkg_restore uses simple 'mv' to restore files.
 # This may mess with ownership and permissions...
-# =TODO= use rsync! For the backup and the restoration.
 pkg_restore() {
     PKG_DEBUG "Running Restore"
 
@@ -155,7 +151,6 @@ pkg_restore() {
 }
 
 # Write lines listed as single-quoted arguments in .bashrc
-# =todo= Make it compatible with zsh shell
 function pkg_in_startuprc() {
     # sed special characters have to be escaped. We're liberal here.
     local pkg_escaped_lines=()
@@ -248,7 +243,6 @@ function pkg_apt_install() {
         PKG_DEBUG_LN "Installing $pkgname apt package"
 
         if ! dpkg -l "$pkgname" |& grep -q "^ii  $pkg"; then
-            # =TODO= Parse apt install output to detect error in installation
             command sudo -kS -p '' apt-get -q install "$pkg" -y <<<"$password"
             # If apt-get install failed, we stop cloudify
             # =TODO= Instead of brutally exiting, log the error and continue with next package installations
@@ -263,18 +257,13 @@ function pkg_apt_install() {
 }
 
 # Install latest release from Github
-# =TODO= Add an argument to force a specific release version
-#        Use 'https://api.github.com/repos/USER/REPO/releases' to list all releases
-# =TODO= Check if the package is already installed. Update if a newer version exist
-#        If a downgrade is requested, refuse and display an error
-# =TODO= Add installation from gitlab
-# =TODO= Should this use 'https://github.com/archf/ghi/blob/master/ghi' ?
 function cloudify_install_package_release() {
     cloudify_get_password password user host
     # shellcheck disable=SC2154
     [[ -z ${password} ]] && die "Password not set for user $user on host $host."
 
-    # =TODO= be defensive here
+    [[ $# -lt 2 ]] && die "pkg_install_release requires <cmd> <repo>"
+
     local cmd="$1"
     local repoId="$2"
 
@@ -368,9 +357,8 @@ function cloudify_install_package_release() {
                 fi
             )
         fi
-        # Discarding tmp/$cmd/
-        # =todo= Uncomment the following line.
-        #rm -rf "/tmp/${cmd}"
+        # Clean up temp directory
+        rm -rf "/tmp/${cmd}"
     fi
 }
 

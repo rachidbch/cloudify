@@ -13,10 +13,6 @@ _CLOUDIFY_SHADOW_LOADED=1
 #  To call commands requiring password based authentication, we generally supply the password (that is stored in CLOUDIFY_REMOTE_PWD or CLOUDIFY_LOCAL_PWD variable)
 #  using a Here String (which uses stdin). Sudo command stdin is often used for normal command processing (like in 'echo <commands> | sudo tee ...')
 #  So to suppy the password to sudo we need to rearrange the way sudo is called, passing everything as arguments to free stdin for password
-#  =TODO= So far, when a command is called w/ this shadow sudo function, we take care of special cases: this is done on a case by case basis in a switch case declaration
-#         This approach can only scale if we manage to abstract some general rules. For instance, the one problem encountered so far is commands that accept
-#         complex arguments that contain spaces.
-#         This can be abstracted away, arguments can traversed in a loop and those that contain spaces can be enclosed in quotes.
 function sudo() {
     local lineargs=""
     local pipeargs=""
@@ -33,7 +29,6 @@ function sudo() {
         ;;
     "sed")
         # In a sed command, the sed expression argument must be surrounded with single quotes
-        # =TODO= Detect '-e' and '-f' options as those indicate a inline or in-file sed script resp.
         local sedcmd="sed"
         local arg=""
         local arg_expr=""
@@ -128,7 +123,6 @@ function cloudify_git_authenticate() {
     pkg_backup "$HOME"/.gitconfig
 
     # Only credentials per git domain are supported so far
-    # =TODO= Enable credential per account and per project.
     local git_domain
     git_domain=$(cloudify_parse_git_url "$git_remote_url" domain)
 

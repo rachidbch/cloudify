@@ -60,10 +60,6 @@ function cloudify_list_packages_by_tags() {
             if ! [[ "$filter" == \@* || "$filter" == \#* ]]; then
                 # This isn't a tag. Do nothing.
                 :
-            # =todo= Remove this code
-            #elif [[ "$filter" == "@default"  ]]; then
-            #     # If filter is virtual tag '@default', list packages list default packages
-            #    cloudify_list_default_packages
             else
                 # This is a tag
 

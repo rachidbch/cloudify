@@ -296,12 +296,16 @@ function main() {
                     [[ "$hosts" == "localhost" ]] && {
                         cloudify_init_paths
                         if [[ "$action" == "install" ]]; then
-                            PKG_DEBUG "${YELLOW}cloudify_install_package ${packages/--$action/}${RESET}"
-                            (cloudify_install_package "${packages/--$action/}") &
+                            local pkgs="${packages/--$action/}"
+                            pkgs="${pkgs# }"
+                            PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs}${RESET}"
+                            (cloudify_install_package ${pkgs}) &
                             is_setup_in_progress=true
                         elif [[ "$action" == "uninstall" ]]; then
-                            PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${packages/--$action/}${RESET}"
-                            (cloudify_uninstall_package "${packages/--$action/}") &
+                            local pkgs="${packages/--$action/}"
+                            pkgs="${pkgs# }"
+                            PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs}${RESET}"
+                            (cloudify_uninstall_package ${pkgs}) &
                             is_setup_in_progress=true
                         else
                             die "Unexpected package action: $action"
@@ -319,12 +323,16 @@ function main() {
                         if [[ "$hosts" == "localhost" ]]; then
                             cloudify_init_paths
                             if [[ "$action" == "install" ]]; then
-                                PKG_DEBUG "${YELLOW}cloudify_install_package ${packages/--$action/}${RESET}"
-                                (cloudify_install_package "${packages/--$action/}") &
+                                local pkgs="${packages/--$action/}"
+                                pkgs="${pkgs# }"
+                                PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs}${RESET}"
+                                (cloudify_install_package ${pkgs}) &
                                 is_setup_in_progress=true
                             elif [[ "$action" == "uninstall" ]]; then
-                                PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${packages/--$action/}${RESET}"
-                                (cloudify_uninstall_package "${packages/--$action/}") &
+                                local pkgs="${packages/--$action/}"
+                                pkgs="${pkgs# }"
+                                PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs}${RESET}"
+                                (cloudify_uninstall_package ${pkgs}) &
                                 is_setup_in_progress=true
                             else
                                 die "Unexpected package action: $action"

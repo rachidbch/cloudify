@@ -1,26 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install pandoc package (GitHub release path)
-# bats test_tags=integration
+# Integration test: install pandoc package (GitHub release path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package pandoc succeeds" {
-    run cloudify_install_package pandoc
+@test "cloudify --on $TEST_HOST install pandoc succeeds" {
+    run cloudify --on "$TEST_HOST" install pandoc
     [ "$status" -eq 0 ]
 }
 
-@test "pandoc binary exists after install" {
-    command -v pandoc
+@test "pandoc binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v pandoc'
+    [ "$status" -eq 0 ]
 }
 
-@test "pandoc binary runs" {
-    run pandoc --version
+@test "pandoc binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'pandoc --version'
     [ "$status" -eq 0 ]
 }

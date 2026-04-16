@@ -1,26 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install ufw package (apt path)
-# bats test_tags=integration
+# Integration test: install ufw package (apt path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package ufw succeeds" {
-    run cloudify_install_package ufw
+@test "cloudify --on $TEST_HOST install ufw succeeds" {
+    run cloudify --on "$TEST_HOST" install ufw
     [ "$status" -eq 0 ]
 }
 
-@test "ufw binary exists after install" {
-    command -v ufw
+@test "ufw binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v ufw'
+    [ "$status" -eq 0 ]
 }
 
-@test "ufw binary runs" {
-    run ufw version
+@test "ufw binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'ufw version'
     [ "$status" -eq 0 ]
 }

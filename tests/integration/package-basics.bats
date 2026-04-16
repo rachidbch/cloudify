@@ -1,30 +1,25 @@
 #!/usr/bin/env bats
-# Integration test: install basics package (apt install path)
-# bats test_tags=integration
+# Integration test: install basics package (apt install path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package basics succeeds" {
-    # basics package uses pkg_depends for apt packages
-    run cloudify_install_package basics
+@test "cloudify --on $TEST_HOST install basics succeeds" {
+    run cloudify --on "$TEST_HOST" install basics
     [ "$status" -eq 0 ]
 }
 
-@test "basics package installs curl" {
-    command -v curl
+@test "curl binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v curl'
+    [ "$status" -eq 0 ]
 }
 
-@test "basics package installs jq" {
-    command -v jq
+@test "jq binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v jq'
+    [ "$status" -eq 0 ]
 }
 
-@test "basics package installs tree" {
-    command -v tree
+@test "tree binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v tree'
+    [ "$status" -eq 0 ]
 }

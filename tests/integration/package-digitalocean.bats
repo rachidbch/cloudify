@@ -1,27 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install digitalocean (doctl) package (GitHub release path)
-# bats test_tags=integration
+# Integration test: install digitalocean (doctl) package via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package digitalocean succeeds" {
-    run cloudify_install_package digitalocean
+@test "cloudify --on $TEST_HOST install digitalocean succeeds" {
+    run cloudify --on "$TEST_HOST" install digitalocean
     [ "$status" -eq 0 ]
 }
 
-@test "doctl binary exists after install" {
-    [ -x "/usr/local/bin/doctl" ]
+@test "doctl binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v doctl'
+    [ "$status" -eq 0 ]
 }
 
-@test "doctl binary runs" {
-    command -v doctl
-    run doctl version
+@test "doctl binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'doctl version'
     [ "$status" -eq 0 ]
 }

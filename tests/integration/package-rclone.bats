@@ -1,27 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install rclone package (GitHub release path)
-# bats test_tags=integration
+# Integration test: install rclone package (GitHub release path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package rclone succeeds" {
-    run cloudify_install_package rclone
+@test "cloudify --on $TEST_HOST install rclone succeeds" {
+    run cloudify --on "$TEST_HOST" install rclone
     [ "$status" -eq 0 ]
 }
 
-@test "rclone binary exists after install" {
-    [ -x "/usr/local/bin/rclone" ] || [ -x "/usr/bin/rclone" ]
+@test "rclone binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v rclone'
+    [ "$status" -eq 0 ]
 }
 
-@test "rclone binary runs" {
-    command -v rclone
-    run rclone --version
+@test "rclone binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'rclone --version'
     [ "$status" -eq 0 ]
 }

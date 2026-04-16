@@ -1,26 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install emacs-nox package (apt path)
-# bats test_tags=integration
+# Integration test: install emacs-nox package (apt path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package emacs-nox succeeds" {
-    run cloudify_install_package emacs-nox
+@test "cloudify --on $TEST_HOST install emacs-nox succeeds" {
+    run cloudify --on "$TEST_HOST" install emacs-nox
     [ "$status" -eq 0 ]
 }
 
-@test "emacs binary exists after install" {
-    command -v emacs
+@test "emacs binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v emacs'
+    [ "$status" -eq 0 ]
 }
 
-@test "emacs binary runs" {
-    run emacs --version
+@test "emacs binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'emacs --version'
     [ "$status" -eq 0 ]
 }

@@ -1,26 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install fd package (GitHub release path)
-# bats test_tags=integration
+# Integration test: install fd package (GitHub release path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package fd succeeds" {
-    run cloudify_install_package fd
+@test "cloudify --on $TEST_HOST install fd succeeds" {
+    run cloudify --on "$TEST_HOST" install fd
     [ "$status" -eq 0 ]
 }
 
-@test "fd binary exists after install" {
-    command -v fd
+@test "fd binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v fd'
+    [ "$status" -eq 0 ]
 }
 
-@test "fd binary runs" {
-    run fd --version
+@test "fd binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'fd --version'
     [ "$status" -eq 0 ]
 }

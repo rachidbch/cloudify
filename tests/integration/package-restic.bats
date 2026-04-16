@@ -1,30 +1,24 @@
 #!/usr/bin/env bats
-# Integration test: install restic package (GitHub release path)
-# bats test_tags=integration
+# Integration test: install restic package (GitHub release path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package restic succeeds" {
+@test "cloudify --on $TEST_HOST install restic succeeds" {
     # restic depends on rclone which has complex config setup — may fail on envsubst
     # but the binary itself installs correctly
-    run cloudify_install_package restic
+    run cloudify --on "$TEST_HOST" install restic
     # Allow non-zero exit since rclone config may fail in test environment
-    [ -x "/usr/local/bin/restic" ] || [ "$status" -eq 0 ]
+    run $TEST_SSH "root@$TEST_HOST" '[ -x /usr/local/bin/restic ]'
+    [ "$status" -eq 0 ] || [ "$status" -eq 0 ]
 }
 
-@test "restic binary exists after install" {
-    [ -x "/usr/local/bin/restic" ]
+@test "restic binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" '[ -x /usr/local/bin/restic ]'
+    [ "$status" -eq 0 ]
 }
 
-@test "restic binary runs" {
-    command -v restic
-    run restic version
+@test "restic binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'restic version'
     [ "$status" -eq 0 ]
 }

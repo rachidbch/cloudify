@@ -1,26 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install ssh package (apt path — installs autossh)
-# bats test_tags=integration
+# Integration test: install ssh package (apt path — installs autossh) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package ssh succeeds" {
-    run cloudify_install_package ssh
+@test "cloudify --on $TEST_HOST install ssh succeeds" {
+    run cloudify --on "$TEST_HOST" install ssh
     [ "$status" -eq 0 ]
 }
 
-@test "autossh binary exists after install" {
-    command -v autossh
+@test "autossh binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v autossh'
+    [ "$status" -eq 0 ]
 }
 
-@test "autossh binary runs" {
-    run autossh -V
+@test "autossh binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'autossh -V'
     [ "$status" -eq 0 ]
 }

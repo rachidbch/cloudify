@@ -1,27 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install lazygit package (GitHub release path)
-# bats test_tags=integration
+# Integration test: install lazygit package (GitHub release path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package lazygit succeeds" {
-    run cloudify_install_package lazygit
+@test "cloudify --on $TEST_HOST install lazygit succeeds" {
+    run cloudify --on "$TEST_HOST" install lazygit
     [ "$status" -eq 0 ]
 }
 
-@test "lazygit binary exists after install" {
-    [ -x "/usr/local/bin/lazygit" ]
+@test "lazygit binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v lazygit'
+    [ "$status" -eq 0 ]
 }
 
-@test "lazygit binary runs" {
-    command -v lazygit
-    run lazygit --version
+@test "lazygit binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'lazygit --version'
     [ "$status" -eq 0 ]
 }

@@ -1,27 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install gh package (GitHub release path)
-# bats test_tags=integration
+# Integration test: install gh package (GitHub release path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package gh succeeds" {
-    run cloudify_install_package gh
+@test "cloudify --on $TEST_HOST install gh succeeds" {
+    run cloudify --on "$TEST_HOST" install gh
     [ "$status" -eq 0 ]
 }
 
-@test "gh binary exists after install" {
-    [ -x "/usr/local/bin/gh" ]
+@test "gh binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v gh'
+    [ "$status" -eq 0 ]
 }
 
-@test "gh binary runs" {
-    command -v gh
-    run gh --version
+@test "gh binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'gh --version'
     [ "$status" -eq 0 ]
 }

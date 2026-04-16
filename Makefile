@@ -23,13 +23,13 @@ test-unit: sync
 test-integration:
 	bash tests/run-integration.sh
 
-test-integration-%: sync
+test-integration-%:
 	bash tests/run-integration.sh "tests/integration/package-$(subst test-integration-,,$@).bats"
 
-itest-base: sync
+itest-base:
 	@incus snapshot list $(CONTAINER) --format csv 2>/dev/null | grep -q itest-base && \
 		echo "Snapshot itest-base already exists. Run 'make itest-clean && make itest-base' to recreate." || \
-		(ivps exec $(CONTAINER) -- bash -c 'apt-get update -qq && apt-get install -y -qq bats bats-assert bats-support bats-file' && \
+		(ssh root@cloudify 'DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq bats bats-assert bats-support bats-file' && \
 		incus snapshot create $(CONTAINER) itest-base --no-expiry && echo "Snapshot itest-base created.")
 
 itest-reset:

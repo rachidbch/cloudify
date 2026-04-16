@@ -1,26 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install vim package (apt path)
-# bats test_tags=integration
+# Integration test: install vim package (apt path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package vim succeeds" {
-    run cloudify_install_package vim
+@test "cloudify --on $TEST_HOST install vim succeeds" {
+    run cloudify --on "$TEST_HOST" install vim
     [ "$status" -eq 0 ]
 }
 
-@test "vim binary exists after install" {
-    command -v vim
+@test "vim binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v vim'
+    [ "$status" -eq 0 ]
 }
 
-@test "vim binary runs" {
-    run vim --version
+@test "vim binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'vim --version'
     [ "$status" -eq 0 ]
 }

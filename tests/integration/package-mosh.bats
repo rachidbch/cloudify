@@ -1,26 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install mosh package (apt path)
-# bats test_tags=integration
+# Integration test: install mosh package (apt path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package mosh succeeds" {
-    run cloudify_install_package mosh
+@test "cloudify --on $TEST_HOST install mosh succeeds" {
+    run cloudify --on "$TEST_HOST" install mosh
     [ "$status" -eq 0 ]
 }
 
-@test "mosh binary exists after install" {
-    command -v mosh
+@test "mosh binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v mosh'
+    [ "$status" -eq 0 ]
 }
 
-@test "mosh binary runs" {
-    run mosh --version
+@test "mosh binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'mosh --version'
     [ "$status" -eq 0 ]
 }

@@ -1,26 +1,21 @@
 #!/usr/bin/env bats
-# Integration test: install entr package (apt path)
-# bats test_tags=integration
+# Integration test: install entr package (apt path) via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package entr succeeds" {
-    run cloudify_install_package entr
+@test "cloudify --on $TEST_HOST install entr succeeds" {
+    run cloudify --on "$TEST_HOST" install entr
     [ "$status" -eq 0 ]
 }
 
-@test "entr binary exists after install" {
-    command -v entr
+@test "entr binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v entr'
+    [ "$status" -eq 0 ]
 }
 
-@test "entr binary runs" {
-    run entr
+@test "entr binary runs on $TEST_HOST" {
+    # entr exits non-zero when run without arguments (expected)
+    run $TEST_SSH "root@$TEST_HOST" 'entr'
     [ "$status" -ne 0 ]
 }

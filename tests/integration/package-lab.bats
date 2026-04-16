@@ -1,27 +1,20 @@
 #!/usr/bin/env bats
-# Integration test: install lab package (GitHub release path)
-# bats test_tags=integration
+# Integration test: install lab package via SSH
 
-setup() {
-    source tests/helpers/integration.bash
-    setup_integration_env
-}
+TEST_HOST="cloudify"
+TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-teardown() {
-    teardown_integration_env
-}
-
-@test "cloudify_install_package lab succeeds" {
-    run cloudify_install_package lab
+@test "cloudify --on $TEST_HOST install lab succeeds" {
+    run cloudify --on "$TEST_HOST" install lab
     [ "$status" -eq 0 ]
 }
 
-@test "lab binary exists after install" {
-    [ -x "/usr/local/bin/lab" ]
+@test "lab binary exists on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'command -v lab'
+    [ "$status" -eq 0 ]
 }
 
-@test "lab binary runs" {
-    command -v lab
-    run lab --version
+@test "lab binary runs on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'lab --version'
     [ "$status" -eq 0 ]
 }

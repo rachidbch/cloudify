@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# tests/run-integration.sh — Hermetic integration test orchestrator
-# Runs each package integration test in a fresh snapshot to guarantee isolation.
+# tests/run-integration.sh — SSH-based integration test orchestrator
+# Runs each package integration test in a fresh snapshot via the real
+# production path: cloudify install <pkg> --on <host> (SSH + bootstrap gist).
 set -euo pipefail
 
 CONTAINER="cloudai:cloudify"
-REPO_DIR="/root/cloudify"
 SNAPSHOT="itest-base"
+TEST_HOST="cloudify"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RESULTS_DIR="$PROJECT_DIR/results"
@@ -29,7 +30,7 @@ if [[ ${#TEST_FILES[@]} -eq 0 ]]; then
     exit 1
 fi
 
-echo "=== Hermetic Integration Test Runner ==="
+echo "=== SSH-Based Integration Test Runner ==="
 echo "Tests to run: ${#TEST_FILES[@]}"
 echo ""
 
@@ -39,20 +40,10 @@ ensure_snapshot() {
         echo "Snapshot '$SNAPSHOT' found."
     else
         echo "Snapshot '$SNAPSHOT' not found. Creating..."
-        ivps exec "$CONTAINER" -- bash -c 'apt-get update -qq && apt-get install -y -qq bats bats-assert bats-support bats-file'
+        ssh "root@$TEST_HOST" 'DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq bats bats-assert bats-support bats-file'
         incus snapshot create "$CONTAINER" "$SNAPSHOT" --no-expiry
         echo "Snapshot '$SNAPSHOT' created."
     fi
-}
-
-# Sync local files into the container
-sync_to_container() {
-    echo "Syncing files to container..."
-    incus file push -r "$PROJECT_DIR/lib"       "$CONTAINER/root/cloudify/" --create-dirs > /dev/null
-    incus file push -r "$PROJECT_DIR/tests"     "$CONTAINER/root/cloudify/" --create-dirs > /dev/null
-    incus file push -r "$PROJECT_DIR/pkg"       "$CONTAINER/root/cloudify/" --create-dirs > /dev/null
-    incus file push "$PROJECT_DIR/cloudify"     "$CONTAINER/root/cloudify/cloudify" > /dev/null
-    incus file push "$PROJECT_DIR/Makefile"     "$CONTAINER/root/cloudify/Makefile" > /dev/null
 }
 
 ensure_snapshot
@@ -72,16 +63,36 @@ for test_file in "${TEST_FILES[@]}"; do
 
     echo "--- Running: $test_name ---"
 
-    # 1. Restore clean snapshot
+    # 1. Restore clean snapshot (incus — host-side only)
     echo "  Restoring snapshot '$SNAPSHOT'..."
     incus snapshot restore "$CONTAINER" "$SNAPSHOT" > /dev/null 2>&1
 
-    # 2. Sync current code into the container
-    sync_to_container
+    # 2. Clear stale SSH host key (snapshot restore changes host identity)
+    echo "  Clearing stale SSH host key..."
+    ssh-keygen -R "$TEST_HOST" > /dev/null 2>&1 || true
 
-    # 3. Run bats inside the container
+    # 3. Ensure cloudify is on PATH (project dir contains the CLI router)
+    export PATH="$PROJECT_DIR:$PATH"
+
+    # 4. Set env vars for cloudify remote execution
+    export CLOUDIFY_DIR="$PROJECT_DIR"
+    export CLOUDIFY_REMOTE_USER=root
+    export CLOUDIFY_REMOTE_PWD=dummy
+    export CLOUDIFY_SKIPCREDENTIALS=true
+    export CLOUDIFY_GITHUBUSER="${CLOUDIFY_GITHUBUSER:-dummy}"
+    export CLOUDIFY_GITHUBPWD="${CLOUDIFY_GITHUBPWD:-dummy}"
+    export CLOUDIFY_GITLABUSER="${CLOUDIFY_GITLABUSER:-dummy}"
+    export CLOUDIFY_GITLABPWD="${CLOUDIFY_GITLABPWD:-dummy}"
+    export CLOUDIFY_RCLONE_REMOTE="${CLOUDIFY_RCLONE_REMOTE:-dummy}"
+    export CLOUDIFY_RCLONE_REMOTE_REGION="${CLOUDIFY_RCLONE_REMOTE_REGION:-dummy}"
+    export CLOUDIFY_RCLONE_REMOTE_ENDPOINT="${CLOUDIFY_RCLONE_REMOTE_ENDPOINT:-dummy}"
+    export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID="${CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID:-dummy}"
+    export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY="${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY:-dummy}"
+    export RESTIC_PASSWORD="${RESTIC_PASSWORD:-dummy}"
+
+    # 5. Run bats on localhost (tests SSH into container via cloudify --on)
     echo "  Running bats..."
-    if ivps exec "$CONTAINER" -- bash -c "cd $REPO_DIR && bats --output /tmp/tap --formatter tap '$test_file'" > "$tap_file" 2>&1; then
+    if bats "$test_file" > "$tap_file" 2>&1; then
         echo "  PASSED"
         ((passed++)) || true
     else

@@ -270,7 +270,7 @@ function main() {
             done
             [[ -z "${2:-}" ]] && die "No packages found for hosts: $hosts"
             ;;
-        install | inst | i | uninstall | u)
+        --install | install | inst | i | --uninstall | uninstall | u)
             [[ $is_parsing_hosts == "started" ]] && die "Cloudify usage error: unexpected action '$1'"
             [[ -z "$hosts" ]] && hosts="localhost"
             is_parsing_packages="started"

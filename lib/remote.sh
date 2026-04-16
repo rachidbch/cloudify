@@ -114,6 +114,6 @@ function cloudify_remote_sync() {
         # The SSH session is launched in the background to parallelize hosts cloudifcation
         # =TODO= Remote hosts key checking has been totally disabled.
         #        It's highly unsafe! Parse ssh messages and prompt the user for decision instead.
-        ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$host" "$cloudify_remote_payload" |& sed "s/^/$host: /" |& sed "s/^$host: $//" |& tail -n +2
+        ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$CLOUDIFY_REMOTE_USER@$host" "$cloudify_remote_payload" |& sed "s/^/$host: /" |& sed "s/^$host: $//" |& tail -n +2
     fi
 }

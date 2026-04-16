@@ -75,7 +75,7 @@ cloudify --on server1 server2 install git
 cloudify --on @web install nginx
 ```
 
-Remote execution flow: cloudify SSHes into the target host, runs the bootstrap gist which clones/pulls `~/cloudify` from GitHub, then executes the package recipe. Credentials are passed through environment variables.
+Remote execution flow: cloudify SSHes into the target host, runs the bootstrap gist which clones/pulls `~/cloudify` from GitHub, then executes the package recipe. Credentials are injected into the payload via `envsubst` with an explicit allow-list.
 
 ## Package List
 
@@ -86,10 +86,10 @@ Remote execution flow: cloudify SSHes into the target host, runs the bootstrap g
 | Shell | bash-it, fzf, fasd, jump, tmux, tmux-compile, entr, xsel |
 | Search & Browse | bat, fd, grep (silversearcher-ag via basics), pandoc |
 | GitHub tools | gh, hub, lab, lazygit |
-| Languages | python, go, ruby, php, nvm, pyenv, miniconda3, sdkman |
+| Languages | python, go, ruby, php, mise, nvm, pyenv, miniconda3, sdkman |
 | Databases | mysql, mariadb |
 | Cloud & Infra | docker, digitalocean, scaleway, rclone, restic, hugo |
-| Misc | croc, paping, yq, json, mosh, keepassxc, dotfiles, grv, snipster |
+| Misc | croc, paping (tcping), yq, json, mosh, keepassxc, dotfiles, grv, snipster |
 
 Run `cloudify packages` for the full list with tags.
 

@@ -1,0 +1,113 @@
+# Cloudify
+
+## Big Picture
+
+Cloudify is two things:
+
+### 1. A GitHub repository
+
+**https://github.com/rachidbch/cloudify**
+
+The repo contains both a library of package recipes and the code that makes installation work locally and remotely via SSH. It is a bash-based host provisioning and package management tool for Ubuntu/Debian systems.
+
+**Repository structure:**
+
+```
+cloudify              # CLI router (~300 lines) — sources lib/*.sh modules
+lib/                  # Extracted library modules
+  colors.sh           # Terminal color setup
+  credentials.sh      # Credential management and prompting
+  hosts.sh            # Host inventory (list, filter by tags)
+  os.sh               # OS detection (distro, version, arch)
+  package-api.sh      # Public pkg_* plugin API used by 65+ package scripts
+  packages.sh         # Package discovery, recipe resolution, install/uninstall
+  remote.sh           # Remote execution via SSH with payload template
+  shadow.sh           # Git shadow repo management
+  utils.sh            # Utilities: msg, die, backup/restore, git URL parsing
+pkg/                  # Package library — one directory per package
+  <pkg>/init.sh       # Package recipe (install script)
+  <pkg>/#<tag>        # Tag files for filtering
+  <pkg>/@<tag>        # Virtual tag files
+inventory/            # Host inventory — one directory per host
+  <host>/@<tag>       # Tag files for host grouping
+tests/                # Bats test suite
+  unit/               # Unit tests (mocked environment)
+  integration/        # Integration tests (real package installs)
+  helpers/            # Test setup/teardown helpers
+```
+
+### 2. A bootstrap URL
+
+**https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh**
+
+This is a small gist script that runs on remote hosts. It clones/pulls the GitHub repo into `~/cloudify` and symlinks `~/cloudify/cloudify` to `/usr/local/bin/cloudify`. It uses `CLOUDIFY_HOSTPWD` for non-interactive sudo when available, or falls back to interactive sudo.
+
+The `CLOUDIFY_BOOTSTRAP_URL` constant in the cloudify script points to this gist. During remote execution (`cloudify install <pkg> --on <host>`), the payload template curls this URL to ensure the remote host has the latest code before running the cloudify command.
+
+## Remote Execution Flow
+
+When `cloudify install bat --on myhost` runs:
+
+1. `cloudify_remote_sync("myhost", "install bat")` builds a payload from the template function
+2. `declare -f` extracts the template body (which uses `$VAR` references in single quotes), then `envsubst` with an explicit allow-list substitutes only the listed variables
+3. SSH sends the payload: env vars + `bash -c "$(curl -sL <gist_url>)"` + `cloudify install bat`
+4. On the remote host: the gist clones/pulls `~/cloudify` from GitHub, symlinks `/usr/local/bin/cloudify`, then `cloudify install bat` runs the package recipe
+
+## Contributing: Package Enriching & Updating
+
+Cloudify is open to community contributions via GitHub PRs. The development workflow is TDD-based:
+
+### 1. Develop locally with TDD
+
+All code changes follow a strict test-driven cycle. Tests run exclusively inside an Incus container (never on the local machine) to ensure a clean Ubuntu 24.04 environment.
+
+**Prerequisites:**
+- Incus installed and configured
+- `ivps` CLI tool available (`/home/rbc/PROJECTS/PROD/ivps/`)
+- A running container: `cloudai:cloudify`
+
+**TDD loop using the Makefile:**
+
+```bash
+make setup-container   # Install bats + libraries in container (one-time)
+make test-unit         # Push files + run unit tests in container
+make test              # Push files + run all tests (unit + integration)
+make lint              # Push files + run shellcheck in container
+```
+
+Never run `bats` locally. Always use `make test` or `make test-unit`. The `sync` target pushes local files into `/root/cloudify/` in the container before executing tests.
+
+**Test structure:**
+- `tests/unit/` — unit tests using mock `$CLOUDIFY_DIR` with fake `pkg/` and `inventory/` dirs (no real packages installed)
+- `tests/integration/` — integration tests that install real packages in the container
+- `tests/helpers/common.bash` — unit test setup: creates temp dirs, sets env vars, sources modules
+- `tests/helpers/integration.bash` — integration test setup: points to real repo, sources all lib modules
+
+### 2. Open a PR on GitHub
+
+```bash
+git checkout -b my-feature
+git add <changed files>
+git commit -m "Description of change"
+git push github my-feature
+gh pr create --title "Description" --body "Summary of changes"
+```
+
+The GitHub repo is at `github` remote (origin points to gitlab for historical reasons).
+
+## Architecture Notes
+
+- **Testing framework**: bats-core with bats-assert, bats-support, bats-file
+- **Module pattern**: each `lib/*.sh` has a guard `[[ -n "$_CLOUDIFY_X_LOADED" ]] && return 0`
+- **Plugin API stability**: `pkg_*` function signatures must not change — they are used by 65+ package scripts
+- **Remote payload template**: `lib/remote.sh` uses single-quoted `$VAR` references in the template function. `declare -f` extracts the body as literal text, then `envsubst` with an explicit allow-list substitutes only the listed variables. This avoids expanding `$HOME` or `$(...)` that must resolve on the remote side.
+- **Runtime manager**: mise (`pkg/mise`) is the preferred runtime manager for Go, Node.js, and Python. Legacy packages (gvm, nvm, pyenv) have been replaced with mise-based recipes.
+- **Container OS**: Ubuntu 24.04 (matches production target)
+
+## Working Plan
+
+The full refactoring plan with phases, module extraction order, and verification steps is at:
+
+**`~/.claude/plans/radiant-noodling-giraffe.md`**
+
+Consult this plan for extraction order, module boundaries, test specifications, and commit milestones.

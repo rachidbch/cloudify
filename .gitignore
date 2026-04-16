@@ -6,6 +6,9 @@
 # Logs
 logs/
 
+# Test results
+results/
+
 # Personal files
 todo.txt
 dummify.sh

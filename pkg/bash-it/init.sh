@@ -4,7 +4,6 @@
 pkg_depends bash-completion
 
 # Bash-it install complains if no ~/bin/ is found
-# =todo= Report Issue
 if [[ ! -e "$HOME"/bin ]]; then
   mkdir "$HOME"/bin
 elif [[ ! -d "$HOME"/bin ]]; then

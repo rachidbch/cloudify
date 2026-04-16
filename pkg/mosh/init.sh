@@ -7,8 +7,7 @@ pkg_apt_install mosh
 # The login message messes w/ mosh protocole
 touch ~/.hushlogin
 
-# Steps are to be done only if mosh complaints about locales
-# =todo= Find out if some of these steps can be left out.
+# Steps are to be done only if mosh complains about locales
 
 # Edit default locale
 mkdir -p ~/trash/etc/default

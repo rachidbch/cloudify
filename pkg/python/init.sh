@@ -80,12 +80,6 @@ if ! python3 -m argcomplete &>/dev/null; then
   # Most probably I shoud have done:
   
   python3 -m pip install argcomplete
-  # =todo= Try it on a fresh install 
 fi
-
-# echo "Installing python3-distutils"
-# =todo= The following package install fails on 16.04.06 LTS. As it was a workaround for the problem below, try to found out what to do with it!
-# without this, following pip3 install [[https://github.com/pypa/pip/issues/5367#issuecomment-387354705][fails]]
-#sudo apt-get -q install python3-distutils -y
 
 

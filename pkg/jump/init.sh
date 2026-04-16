@@ -1,11 +1,7 @@
-# notes: release links
-#   - v0.21.0  Linux 64 : https://github.com/gsamokovarov/jump/releases/download/v0.21.0/jump_0.21.0_amd64.deb
+# Install latest jump release from GitHub
+pkg_depends jq
+pkg_install_release jump "gsamokovarov/jump"
 
-# download bat deb in ~/workstation/install/deb
-rm ./jump.deb
-curl -LSs "https://github.com/gsamokovarov/jump/releases/download/v0.21.0/jump_0.21.0_amd64.deb" > jump.deb
-
-# install fd
-sudo apt-get -q update
-sudo apt-get -q install ./jump.deb -y
-
+pkg_in_startuprc \
+    '## JUMP ENV SETUP'\
+    'eval "$(jump shell bash)"'

@@ -157,6 +157,7 @@ pkg/mosh/@default
 
 ```
 cloudify              CLI router (367 lines) — sources lib/*.sh modules
+Taskfile.yml          Task runner definitions (task setup-container, task test, etc.)
 lib/
   colors.sh           Terminal color setup
   credentials.sh      Credential management and prompting
@@ -183,6 +184,8 @@ tests/
 ### Prerequisites
 
 - Incus installed and configured
+- `ivps` CLI tool for container file push/exec
+- `task` (Taskfile) — install via `mise use -g task`
 - A running Ubuntu 24.04 container (default: `cloudai:cloudify`)
 - `bats` 1.x on localhost for integration tests
 - Tailscale for SSH-based integration tests

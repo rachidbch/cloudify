@@ -189,14 +189,14 @@ tests/
 
 ### TDD Workflow
 
-All tests run inside the Incus container (unit tests) or via SSH against it (integration tests). Never run `bats` locally against your own machine.
+All tests run inside the Incus container (unit tests) or via SSH against it (integration tests). Always use `task test-unit` or `task test`.
 
 ```bash
-make setup-container    # Install bats + libraries in container (one-time)
-make test-unit          # Sync files + run unit tests in container
-make test-integration   # Run SSH-based integration tests from localhost
-make test               # Run all tests (unit + integration)
-make lint               # Run shellcheck in container
+task setup-container    # Install bats + libraries in container (one-time)
+task test-unit          # Sync files + run unit tests in container
+task test-integration   # Run SSH-based integration tests from localhost
+task test               # Run all tests (unit + integration)
+task lint               # Run shellcheck in container
 ```
 
 ### Writing a Package Recipe
@@ -238,9 +238,9 @@ pkg_in_startuprc 'export PATH="$HOME/.local/bin:$PATH"'
 Integration tests exercise the full production path: `cloudify --on <host> install <pkg>` over SSH. Each test gets a clean container via snapshot restore.
 
 ```bash
-make test-integration-bat       # Run single package test
-make test-integration-json      # Run another
-make test-integration           # Run all integration tests
+task test-integration:bat       # Run single package test
+task test-integration:json      # Run another
+task test-integration           # Run all integration tests
 ```
 
 Test file pattern (`tests/integration/package-<name>.bats`):
@@ -274,7 +274,7 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 Integration tests use an Incus snapshot (`itest-base`) for isolation:
 
 ```bash
-make itest-base    # Create snapshot (clean Ubuntu 24.04 + bats + tailscale)
-make itest-reset   # Restore clean snapshot
-make itest-clean   # Delete snapshot
+task itest-base    # Create snapshot (clean Ubuntu 24.04 + bats + tailscale)
+task itest-reset   # Restore clean snapshot
+task itest-clean   # Delete snapshot
 ```

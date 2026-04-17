@@ -66,16 +66,16 @@ All code changes follow a strict test-driven cycle. Tests run exclusively inside
 - `ivps` CLI tool available (`/home/rbc/PROJECTS/PROD/ivps/`)
 - A running container: `cloudai:cloudify`
 
-**TDD loop using the Makefile:**
+**TDD loop using Taskfile:**
 
 ```bash
-make setup-container   # Install bats + libraries in container (one-time)
-make test-unit         # Push files + run unit tests in container
-make test              # Push files + run all tests (unit + integration)
-make lint              # Push files + run shellcheck in container
+task setup-container   # Install bats + libraries in container (one-time)
+task test-unit         # Push files + run unit tests in container
+task test              # Push files + run all tests (unit + integration)
+task lint              # Push files + run shellcheck in container
 ```
 
-Never run `bats` locally. Always use `make test` or `make test-unit`. The `sync` target pushes local files into `/root/cloudify/` in the container before executing tests.
+Always use `task test-unit` or `task test`. The `sync` task pushes local files into `/root/cloudify/` in the container before executing tests.
 
 **Test structure:**
 - `tests/unit/` — unit tests using mock `$CLOUDIFY_DIR` with fake `pkg/` and `inventory/` dirs (no real packages installed)

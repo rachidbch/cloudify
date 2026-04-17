@@ -119,7 +119,7 @@ if [[ ${#failures[@]} -gt 0 ]]; then
     done
     echo ""
     echo "Container left in last-failed state for debugging."
-    echo "Run 'make itest-reset' to restore clean state when done."
+    echo "Run 'task itest-reset' to restore clean state when done."
     exit 1
 else
     # All passed: restore clean snapshot

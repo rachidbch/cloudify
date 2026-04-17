@@ -1,0 +1,83 @@
+version: '3'
+
+vars:
+  CONTAINER: cloudai:cloudify
+  HOST: cloudify
+  REPO_DIR: /root/cloudify
+  LOCAL_DIR:
+    sh: pwd
+
+env:
+  CLOUDIFY_REMOTE_USER: root
+  CLOUDIFY_REMOTE_PWD: dummy
+  CLOUDIFY_SKIPCREDENTIALS: "true"
+  CLOUDIFY_LOCAL_USER:
+    sh: whoami
+  CLOUDIFY_LOCAL_PWD: dummy
+  CLOUDIFY_GITHUBUSER: none
+  CLOUDIFY_GITHUBPWD: none
+  CLOUDIFY_GITLABUSER: none
+  CLOUDIFY_GITLABPWD: none
+
+tasks:
+  sync:
+    desc: Push local files into container
+    cmds:
+      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/lib {{.REPO_DIR}}/
+      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/tests {{.REPO_DIR}}/
+      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/pkg {{.REPO_DIR}}/
+      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/cloudify {{.REPO_DIR}}/
+      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/Taskfile.yml {{.REPO_DIR}}/
+
+  setup-container:
+    desc: Install test dependencies in container
+    cmds:
+      - task: sync
+      - bash {{.LOCAL_DIR}}/cloudify --on {{.HOST}} install bats-test
+
+  test-unit:
+    desc: Run unit tests in container
+    cmds:
+      - task: sync
+      - ivps exec {{.CONTAINER}} -- bash -c 'cd {{.REPO_DIR}} && bats --recursive tests/unit/'
+
+  test-integration:
+    desc: Run integration tests from localhost
+    cmds:
+      - bash tests/run-integration.sh
+
+  test-integration:*:
+    desc: Run a specific integration test (e.g. task test-integration:bat)
+    vars:
+      PACKAGE: "{{index .MATCH 0}}"
+    cmds:
+      - bash tests/run-integration.sh "tests/integration/package-{{.PACKAGE}}.bats"
+
+  test:
+    desc: Run all tests (unit + integration)
+    cmds:
+      - task: sync
+      - ivps exec {{.CONTAINER}} -- bash -c 'cd {{.REPO_DIR}} && bats tests/unit/ tests/integration/recipe-discovery.bats'
+      - bash tests/run-integration.sh
+
+  lint:
+    desc: Run shellcheck in container
+    cmds:
+      - task: sync
+      - ivps exec {{.CONTAINER}} -- bash -c 'cd {{.REPO_DIR}} && shellcheck -x lib/*.sh cloudify'
+
+  itest-base:
+    desc: Create clean test snapshot
+    cmds:
+      - task: setup-container
+      - ivps snapshot {{.CONTAINER}} itest-base
+
+  itest-reset:
+    desc: Restore clean test snapshot
+    cmds:
+      - ivps snapshot {{.CONTAINER}} itest-base --restore
+
+  itest-clean:
+    desc: Delete test snapshot
+    cmds:
+      - ivps snapshot {{.CONTAINER}} itest-base --delete

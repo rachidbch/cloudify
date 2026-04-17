@@ -1,11 +1,13 @@
 CONTAINER   := cloudai:cloudify
+HOST        := cloudify
 REPO_DIR    := /root/cloudify
 LOCAL_DIR   := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+CREDENTIALS := CLOUDIFY_REMOTE_USER=root CLOUDIFY_REMOTE_PWD=dummy CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_LOCAL_USER=$$USER CLOUDIFY_LOCAL_PWD=dummy CLOUDIFY_GITHUBUSER=none CLOUDIFY_GITHUBPWD=none CLOUDIFY_GITLABUSER=none CLOUDIFY_GITLABPWD=none
 
 .PHONY: setup-container sync test test-unit test-integration lint itest-base itest-reset itest-clean
 
-setup-container:
-	ivps exec $(CONTAINER) -- bash -c 'apt-get update -qq && apt-get install -y -qq bats bats-assert bats-support bats-file'
+setup-container: sync
+	$(CREDENTIALS) bash $(LOCAL_DIR)/cloudify --on $(HOST) install bats-test
 
 sync:
 	ivps push $(CONTAINER) $(LOCAL_DIR)/lib $(REPO_DIR)/
@@ -27,8 +29,7 @@ test-integration:
 test-integration-%:
 	bash tests/run-integration.sh "tests/integration/package-$(subst test-integration-,,$@).bats"
 
-itest-base:
-	ivps exec $(CONTAINER) -- bash -c 'apt-get update -qq && apt-get install -y -qq bats bats-assert bats-support bats-file'
+itest-base: setup-container
 	ivps snapshot $(CONTAINER) itest-base
 
 itest-reset:

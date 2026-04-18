@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Install gitless (using pipx)
 
 PKG_DEBUG "Installing gitless"

@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Install gh
 
 # Install Latest release from github

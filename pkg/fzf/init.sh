@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Install fzf
 
 # Declare dependencies
@@ -15,10 +16,13 @@ fi
 ln -sfn "$HOME"/.fzf/bin/fzf "$HOME"/.local/bin/fzf
 
 # Source fzf configuration files for bash 
+# shellcheck disable=SC1091 # files are created at runtime by fzf install above
 [[ -f "$HOME"/.fzf/shell/key-bindings.bash ]] && source "$HOME"/.fzf/shell/key-bindings.bash
+# shellcheck disable=SC1091 # file is created at runtime by fzf install above
 [[ -f "$HOME"/.fzf/shell/completion.bash ]] && source "$HOME"/.fzf/shell/completion.bash
 
 # Put env setup in bashrc 
+# shellcheck disable=SC2016 # single quotes are intentional: pkg_in_startuprc writes literal strings to .bashrc
 pkg_in_startuprc\
     '## FZF SETUP'\
     '[[ -f "$HOME"/.fzf/shell/completion.bash ]] && source "$HOME"/.fzf/shell/completion.bash'\

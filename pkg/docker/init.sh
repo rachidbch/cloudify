@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Docker CE installation
 # Docker Compose v2 is included as a plugin in docker-ce-cli ('docker compose')
 

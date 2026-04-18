@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Pipx Install
 
 pkg_depends python 

@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # PHP
 # ====
 
@@ -16,7 +17,7 @@ sudo apt-get -q install php -y
 # =todo= should install php 7.2 instead but no available repo for Ubuntu 17.10 (As it's not a LTS Ubuntu version)
 #sudo apt-get -q install php7.2-cli -y
 
-if [ -z $(which phpbrew) ]; then
+if [ -z "$(which phpbrew)" ]; then
   echo -e "\ninstalling phpbrew ..."
   # However for learning purpose, we install phpbrew  (note that phpenv is a pyenv like alternative to phpbrew)
   # phpbrew let us build any php version with any extension and switch between them
@@ -31,7 +32,7 @@ if [ -z $(which phpbrew) ]; then
 
   [[ -d ~/tmp ]] || mkdir ~/tmp
   (
-    cd ~/temp
+    cd ~/temp || exit 1
     curl -L -O https://github.com/phpbrew/phpbrew/raw/master/phpbrew
     chmod +x phpbrew
     # Move phpbrew to somewhere can be found by your $PATH
@@ -40,7 +41,7 @@ if [ -z $(which phpbrew) ]; then
   phpbrew init
 fi
 
-if [ -z $(which composer) ]; then
+if [ -z "$(which composer)" ]; then
   echo -e "\ninstalling composer ..."
   # next we install composer using a script taken [[here][https://getcomposer.org/doc/faqs/how-to-install-composer-programmatically.md]]
   # we only modified the install dir and executable file name in the second last line
@@ -57,14 +58,13 @@ if [ -z $(which composer) ]; then
   fi
   LOCAL_BIN="/usr/local/bin"
   sudo php composer-setup.php  --install-dir="$LOCAL_BIN" --filename=composer
-  RESULT=$?
   rm composer-setup.php
 fi
 
-if [ -z $(which psysh) ]; then
+if [ -z "$(which psysh)" ]; then
   # =todo= The whole thing should be in ~/.config/composer" instead of ~/.composer/"
   echo -e "\ninstalling psysh ..."
-  sudo chown -R $USER ~/.composer/                                # For some reason I had a permission denied because files from this fodler where owned by root  
+  sudo chown -R "$USER" ~/.composer/                                # For some reason I had a permission denied because files from this fodler where owned by root  
   composer global require psy/psysh:@stable
   # this should install psysh in ~/.config/composer/vendor/bin. 
   #That dir should be in the path

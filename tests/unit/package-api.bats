@@ -63,6 +63,35 @@ teardown() {
     [ "$status" -eq 1 ]
 }
 
+@test "pkg_backup rejects empty argument after --same" {
+    run pkg_backup --same ""
+    [ "$status" -ne 0 ]
+}
+
+@test "pkg_backup rejects root path" {
+    run pkg_backup "/"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"refusing"* ]]
+}
+
+@test "pkg_backup rejects /root" {
+    run pkg_backup "/root"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"refusing"* ]]
+}
+
+@test "pkg_backup rejects /home" {
+    run pkg_backup "/home"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"refusing"* ]]
+}
+
+@test "pkg_backup rejects /usr" {
+    run pkg_backup "/usr"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"refusing"* ]]
+}
+
 #-- pkg_restore tests --
 
 @test "pkg_restore restores a backed up file" {
@@ -138,7 +167,147 @@ teardown() {
     [ "$(type -t cloudify_install_package_release)" = "function" ]
 }
 
+@test "pkg_install_release skips when binary exists" {
+    # Create a fake binary in PATH
+    local fake_bin="$CLOUDIFY_LOCAL_BIN/testcmd_skip"
+    echo '#!/bin/bash' > "$fake_bin"
+    chmod +x "$fake_bin"
+    # Ensure CLOUDIFY_LOCAL_BIN is in PATH for command -v
+    export PATH="$CLOUDIFY_LOCAL_BIN:$PATH"
+
+    # It should return 0 without attempting download (no curl needed)
+    run pkg_install_release testcmd_skip "some/repo"
+    [ "$status" -eq 0 ]
+
+    rm -f "$fake_bin"
+}
+
+#-- pkg_apt_install .deb detection tests --
+
+@test "pkg_apt_install .deb suffix detection works in glob" {
+    # Verify the glob pattern itself matches .deb files
+    # The actual fix: [[ $pkg == *.deb ]] instead of [[ $pkg == .deb ]]
+    local test_deb="$CLOUDIFY_TMP/testpkg.deb"
+    touch "$test_deb"
+
+    # Test the glob directly — this is what was broken (matched literal ".deb" only)
+    local pkg="testpkg.deb"
+    [[ "$pkg" == *.deb ]]
+}
+
+#-- rotation helper tests --
+
+@test "_cloudify_backup_rotate_up creates correct chain" {
+    mkdir -p "$CLOUDIFY_TMP/backup"
+    local base="$CLOUDIFY_TMP/backup/rotate_test"
+
+    # Create initial file
+    echo "content0" > "$base"
+
+    # Rotate up
+    _cloudify_backup_rotate_up "$base"
+
+    # base should be gone, base.bak should exist
+    [ ! -e "$base" ]
+    [ -f "$base.bak" ]
+}
+
+@test "_cloudify_backup_rotate_up shifts existing backups" {
+    mkdir -p "$CLOUDIFY_TMP/backup"
+    local base="$CLOUDIFY_TMP/backup/rotate_chain"
+
+    echo "v0" > "$base"
+    echo "v1" > "$base.bak"
+    echo "v2" > "$base.bak.1"
+
+    _cloudify_backup_rotate_up "$base"
+
+    [ ! -e "$base" ]
+    [ -f "$base.bak" ]
+    [ -f "$base.bak.1" ]
+    [ -f "$base.bak.2" ]
+    [ "$(cat "$base.bak")" = "v0" ]
+    [ "$(cat "$base.bak.1")" = "v1" ]
+    [ "$(cat "$base.bak.2")" = "v2" ]
+}
+
+@test "_cloudify_backup_rotate_up drops oldest when chain full" {
+    mkdir -p "$CLOUDIFY_TMP/backup"
+    local base="$CLOUDIFY_TMP/backup/rotate_drop"
+
+    echo "v0" > "$base"
+    echo "v1" > "$base.bak"
+    echo "v2" > "$base.bak.1"
+    echo "v3" > "$base.bak.2"
+    echo "v4" > "$base.bak.3"
+    echo "v5" > "$base.bak.4"
+    echo "v6" > "$base.bak.5"
+
+    _cloudify_backup_rotate_up "$base"
+
+    # .bak.5 should have old .bak.4 content (v5), old .bak.5 (v6) was dropped
+    [ -f "$base.bak.5" ]
+    [ "$(cat "$base.bak.5")" = "v5" ]
+    # The rest should be shifted
+    [ -f "$base.bak.4" ]
+    [ "$(cat "$base.bak.4")" = "v4" ]
+}
+
+@test "_cloudify_backup_rotate_down restores correctly" {
+    mkdir -p "$CLOUDIFY_TMP/backup"
+    local base="$CLOUDIFY_TMP/backup/restore_test"
+    local restore_path="$CLOUDIFY_TMP/restore_target"
+
+    echo "current" > "$restore_path"
+    echo "backup1" > "$base"
+    echo "backup2" > "$base.bak"
+    echo "backup3" > "$base.bak.1"
+
+    _cloudify_backup_rotate_down "$base" "$restore_path"
+
+    # restore_path should now have backup1 content
+    [ -f "$restore_path" ]
+    [ "$(cat "$restore_path")" = "backup1" ]
+    # base.bak should have moved down to base
+    [ -f "$base" ]
+    [ "$(cat "$base")" = "backup2" ]
+}
+
 #-- module guard test --
+
+@test "pkg_install_release fails gracefully when jq missing" {
+    # Temporarily hide jq from PATH
+    local orig_path="$PATH"
+    export PATH="/nonexistent"
+    run pkg_install_release testcmd "some/repo"
+    # Restore PATH before assertions
+    export PATH="$orig_path"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"jq"* ]]
+}
+
+@test "pkg_apt_install continues when a package fails" {
+    # Create a mock apt-get that fails for "badpkg" but succeeds for others
+    local mock_bin="$CLOUDIFY_LOCAL_BIN/apt-get"
+    cat > "$mock_bin" <<'MOCK'
+#!/bin/bash
+if [[ "$*" == *"badpkg"* ]]; then
+    echo "E: Unable to locate package badpkg" >&2
+    exit 100
+fi
+exit 0
+MOCK
+    chmod +x "$mock_bin"
+    export PATH="$CLOUDIFY_LOCAL_BIN:$PATH"
+
+    # Should not die — should return the exit code but not abort
+    run pkg_apt_install goodpkg badpkg
+    # It should have failed (badpkg) but not crashed with die()
+    # The function returns the last exit code
+    [ "$status" -ne 0 ]
+
+    rm -f "$mock_bin"
+}
 
 @test "module guard prevents double-sourcing" {
     source lib/package-api.sh

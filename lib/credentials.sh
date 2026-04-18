@@ -6,40 +6,45 @@ set -Eeuo pipefail
 [[ -n "${_CLOUDIFY_CREDENTIALS_LOADED:-}" ]] && return 0
 _CLOUDIFY_CREDENTIALS_LOADED=1
 
+# Write a safe export line to credential file
+# Uses single quotes to prevent shell metacharacter issues in passwords
+function _cloudify_write_export() {
+    local var_name="$1"
+    local var_value="$2"
+    printf "export %s='%s'\n" "$var_name" "${var_value//\'/\'\\\'\'}"
+}
+
+# Generic helper to ask for credentials
+# Usage: _cloudify_ask_credentials <label> <user_var> <pwd_var>
+function _cloudify_ask_credentials() {
+    local label="$1"
+    local user_var="$2"
+    local pwd_var="$3"
+    echo
+    cloudify_prompt2var "${label} user:" "$user_var" && export "${user_var?}"
+    # shellcheck disable=SC2163
+    cloudify_prompt2pass "$pwd_var" && export "${pwd_var?}"
+    echo
+}
+
 # Ask host credentials
 function cloudify_ask_localhost_credentials() {
-    echo
-    cloudify_prompt2var "Host user:" "CLOUDIFY_LOCAL_USER" && export CLOUDIFY_LOCAL_USER
-    # Ensure user password is set
-    cloudify_prompt2pass "CLOUDIFY_LOCAL_PWD" && export CLOUDIFY_LOCAL_PWD
-    echo
+    _cloudify_ask_credentials "Host" "CLOUDIFY_LOCAL_USER" "CLOUDIFY_LOCAL_PWD"
 }
 
 # Ask host credentials
 function cloudify_ask_host_credentials() {
-    echo
-    cloudify_prompt2var "Remote Host user:" "CLOUDIFY_REMOTE_USER" && export CLOUDIFY_REMOTE_USER
-    # Ensure remote host user password is set
-    cloudify_prompt2pass "CLOUDIFY_REMOTE_PWD" && export CLOUDIFY_REMOTE_PWD
-    echo
+    _cloudify_ask_credentials "Remote Host" "CLOUDIFY_REMOTE_USER" "CLOUDIFY_REMOTE_PWD"
 }
 
 # Ask Github credentials
 function cloudify_ask_github_credentials() {
-    echo
-    cloudify_prompt2var "Github user:" "CLOUDIFY_GITHUBUSER" && export CLOUDIFY_GITHUBUSER
-    # Ensure remote Github password is set
-    cloudify_prompt2pass "CLOUDIFY_GITHUBPWD" && export CLOUDIFY_GITHUBPWD
-    echo
+    _cloudify_ask_credentials "Github" "CLOUDIFY_GITHUBUSER" "CLOUDIFY_GITHUBPWD"
 }
 
 # Ask for Gitlab credentials
 function cloudify_ask_gitlab_credentials() {
-    echo
-    cloudify_prompt2var "Gitlab user:" "CLOUDIFY_GITLABUSER" && export CLOUDIFY_GITLABUSER
-    # Ensure remote Gitlab user password is set
-    cloudify_prompt2pass "CLOUDIFY_GITLABPWD" && export CLOUDIFY_GITLABPWD
-    echo
+    _cloudify_ask_credentials "Gitlab" "CLOUDIFY_GITLABUSER" "CLOUDIFY_GITLABPWD"
 }
 
 # Ask Restic/Rclone credentials
@@ -104,8 +109,8 @@ function cloudify_check_credentials() {
         if "$force_ask_credentials" || [[ -z "${CLOUDIFY_LOCAL_USER-}" || -z "${CLOUDIFY_LOCAL_PWD-}" ]]; then
             cloudify_ask_localhost_credentials
             {
-                echo "export CLOUDIFY_LOCAL_USER=$CLOUDIFY_LOCAL_USER"
-                echo "export CLOUDIFY_LOCAL_PWD=$CLOUDIFY_LOCAL_PWD"
+                _cloudify_write_export CLOUDIFY_LOCAL_USER "$CLOUDIFY_LOCAL_USER"
+                _cloudify_write_export CLOUDIFY_LOCAL_PWD "$CLOUDIFY_LOCAL_PWD"
             } >>/dev/shm/cloudify_credentials
         fi
 
@@ -113,8 +118,8 @@ function cloudify_check_credentials() {
         if "$force_ask_credentials" || [[ -z "${CLOUDIFY_REMOTE_USER-}" || -z "${CLOUDIFY_REMOTE_PWD-}" ]]; then
             cloudify_ask_host_credentials
             {
-                echo "export CLOUDIFY_REMOTE_USER=$CLOUDIFY_REMOTE_USER"
-                echo "export CLOUDIFY_REMOTE_PWD=$CLOUDIFY_REMOTE_PWD"
+                _cloudify_write_export CLOUDIFY_REMOTE_USER "$CLOUDIFY_REMOTE_USER"
+                _cloudify_write_export CLOUDIFY_REMOTE_PWD "$CLOUDIFY_REMOTE_PWD"
             } >>/dev/shm/cloudify_credentials
         fi
 
@@ -122,8 +127,8 @@ function cloudify_check_credentials() {
         if "$force_ask_credentials" || [[ -z "${CLOUDIFY_GITHUBUSER-}" || -z "${CLOUDIFY_GITHUBPWD-}" ]]; then
             cloudify_ask_github_credentials
             {
-                echo "export CLOUDIFY_GITHUBUSER=$CLOUDIFY_GITHUBUSER"
-                echo "export CLOUDIFY_GITHUBPWD=$CLOUDIFY_GITHUBPWD"
+                _cloudify_write_export CLOUDIFY_GITHUBUSER "$CLOUDIFY_GITHUBUSER"
+                _cloudify_write_export CLOUDIFY_GITHUBPWD "$CLOUDIFY_GITHUBPWD"
             } >>/dev/shm/cloudify_credentials
         fi
 
@@ -131,8 +136,8 @@ function cloudify_check_credentials() {
         if "$force_ask_credentials" || [[ -z "${CLOUDIFY_GITLABUSER-}" || -z "${CLOUDIFY_GITLABPWD-}" ]]; then
             cloudify_ask_gitlab_credentials
             {
-                echo "export CLOUDIFY_GITLABUSER=$CLOUDIFY_GITLABUSER"
-                echo "export CLOUDIFY_GITLABPWD=$CLOUDIFY_GITLABPWD"
+                _cloudify_write_export CLOUDIFY_GITLABUSER "$CLOUDIFY_GITLABUSER"
+                _cloudify_write_export CLOUDIFY_GITLABPWD "$CLOUDIFY_GITLABPWD"
             } >>/dev/shm/cloudify_credentials
         fi
 
@@ -140,12 +145,12 @@ function cloudify_check_credentials() {
         if "$force_ask_credentials" || [[ -z "${CLOUDIFY_RCLONE_REMOTE-}" || -z "${CLOUDIFY_RCLONE_REMOTE_REGION-}" || -z "${CLOUDIFY_RCLONE_REMOTE_ENDPOINT-}" || -z "${CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID-}" || -z "${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY-}" || -z "${RESTIC_PASSWORD-}" ]]; then
             cloudify_ask_restic_credentials
             {
-                echo "export CLOUDIFY_RCLONE_REMOTE=$CLOUDIFY_RCLONE_REMOTE"
-                echo "export CLOUDIFY_RCLONE_REMOTE_REGION=$CLOUDIFY_RCLONE_REMOTE_REGION"
-                echo "export CLOUDIFY_RCLONE_REMOTE_ENDPOINT=$CLOUDIFY_RCLONE_REMOTE_ENDPOINT"
-                echo "export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID=$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID"
-                echo "export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY=$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY"
-                echo "export RESTIC_PASSWORD=$RESTIC_PASSWORD"
+                _cloudify_write_export CLOUDIFY_RCLONE_REMOTE "$CLOUDIFY_RCLONE_REMOTE"
+                _cloudify_write_export CLOUDIFY_RCLONE_REMOTE_REGION "$CLOUDIFY_RCLONE_REMOTE_REGION"
+                _cloudify_write_export CLOUDIFY_RCLONE_REMOTE_ENDPOINT "$CLOUDIFY_RCLONE_REMOTE_ENDPOINT"
+                _cloudify_write_export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID "$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID"
+                _cloudify_write_export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY "$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY"
+                _cloudify_write_export RESTIC_PASSWORD "$RESTIC_PASSWORD"
             } >>/dev/shm/cloudify_credentials
         fi
     fi

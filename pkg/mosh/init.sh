@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Mosh server
 
 # Install mosh

@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Pandoc installation
 
 pkg_install_release pandoc "jgm/pandoc"

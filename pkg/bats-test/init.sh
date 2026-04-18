@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Bats testing framework with assertion libraries
 # Used by cloudify's own test suite
 

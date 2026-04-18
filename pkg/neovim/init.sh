@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Neovim installation
 
 pkg_apt_install neovim

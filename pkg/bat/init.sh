@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # bat utility
 # bat is better cat
 

@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Install latest hub release from GitHub
 
 pkg_depends git

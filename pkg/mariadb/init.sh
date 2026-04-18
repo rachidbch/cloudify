@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # =warning= Mariadb is a drop-in replacement of MySQL and as such can't be installed alongside Mysql 
 #           However you [it's still possible to have it installed alongside Mysql](https://mariadb.com/kb/en/installing-mariadb-alongside-mysql/)
 

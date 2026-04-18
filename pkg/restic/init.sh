@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 
 # Restic Installation 
 
@@ -9,16 +10,16 @@ pkg_install_release restic "restic/restic"
 
 PKG_DEBUG "Creating /usr/local/bin/resticfy file"
 #  Ensure it's owned by root:root and it can be executed by everybody but not modified or read
-sudo cp $HOME/cloudify/pkg/restic/resticfy /usr/local/bin/resticfy
+sudo cp "$HOME/cloudify/pkg/restic/resticfy" /usr/local/bin/resticfy
 sudo chown root:root /usr/local/bin/resticfy
 sudo chmod 711 /usr/local/bin/resticfy
 PKG_DEBUG "Created /usr/local/bin/resticfy file"
 
 PKG_DEBUG "Creating 'Default' restic backup Operation"
-mkdir -p $HOME/.config/restic/Operations/Default/
-touch $HOME/.config/restic/Operations/Default/whitelist
-touch $HOME/.config/restic/Operations/Default/blacklist
-[[ -f $HOME/.config/restic/Operations/Default/.repo ]] || echo "rclone:${CLOUDIFY_RCLONE_REMOTE:-default}:cloudify/$(hostname)" > $HOME/.config/restic/Operations/Default/.repo 
+mkdir -p "$HOME/.config/restic/Operations/Default/"
+touch "$HOME/.config/restic/Operations/Default/whitelist"
+touch "$HOME/.config/restic/Operations/Default/blacklist"
+[[ -f "$HOME/.config/restic/Operations/Default/.repo" ]] || echo "rclone:${CLOUDIFY_RCLONE_REMOTE:-default}:cloudify/$(hostname)" > "$HOME/.config/restic/Operations/Default/.repo" 
 PKG_DEBUG "Created 'Default' restic backup Operation"
 
 # =NOTE= Look at the dance around the simple quote!

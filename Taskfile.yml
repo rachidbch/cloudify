@@ -64,7 +64,7 @@ tasks:
     desc: Run shellcheck in container
     cmds:
       - task: sync
-      - ivps exec {{.CONTAINER}} -- bash -c 'cd {{.REPO_DIR}} && shellcheck -x lib/*.sh cloudify'
+      - ivps exec {{.CONTAINER}} -- bash -c 'cd {{.REPO_DIR}} && shellcheck -x lib/*.sh cloudify pkg/*/init.sh'
 
   itest-base:
     desc: Create clean test snapshot

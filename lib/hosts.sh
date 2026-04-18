@@ -179,20 +179,20 @@ function cloudify_hostnames() {
                 #        Should we keep it?
                 [[ -n "$ip" ]] && {
                     if [[ $has_opt_remote == true && $hostname != localhost && $hostname != "$(hostname)" ]]; then
-                        PKG_DEBUG add_in_hosts "$ip $hostname $hostname.remote"
-                        add_in_hosts "$ip $hostname $hostname.remote"
+                        PKG_DEBUG cloudify_add_in_hosts "$ip $hostname $hostname.remote"
+                        cloudify_add_in_hosts "$ip $hostname $hostname.remote"
                     else
-                        PKG_DEBUG add_in_hosts "$ip $hostname"
-                        add_in_hosts "$ip $hostname"
+                        PKG_DEBUG cloudify_add_in_hosts "$ip $hostname"
+                        cloudify_add_in_hosts "$ip $hostname"
                     fi
                 }
                 [[ -n "$ipv6" ]] && {
                     if [[ $has_opt_remote == true && $hostname != localhost && $hostname != "$(hostname)" ]]; then
-                        PKG_DEBUG add_in_hosts "$ipv6 $hostname $hostname.remote"
-                        add_in_hosts "$ipv6 $hostname $hostname.remote"
+                        PKG_DEBUG cloudify_add_in_hosts "$ipv6 $hostname $hostname.remote"
+                        cloudify_add_in_hosts "$ipv6 $hostname $hostname.remote"
                     else
-                        PKG_DEBUG add_in_hosts "$ipv6 $hostname"
-                        add_in_hosts "$ipv6 $hostname"
+                        PKG_DEBUG cloudify_add_in_hosts "$ipv6 $hostname"
+                        cloudify_add_in_hosts "$ipv6 $hostname"
                     fi
                 }
             else

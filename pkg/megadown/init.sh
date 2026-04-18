@@ -1,5 +1,6 @@
-Megadown
-========
+#!/usr/bin/env bash
+# Megadown
+# --------
 # utility to download from mega.nz
 
 pkg_apt_install pv

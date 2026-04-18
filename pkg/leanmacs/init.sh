@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Emacs 
 
 # Declare dependency packages

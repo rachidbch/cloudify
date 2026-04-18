@@ -130,6 +130,50 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "cloudify_get_password dies on empty argument" {
+    run cloudify_get_password ""
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no argument"* ]]
+}
+
+@test "cloudify_get_password dies on space in argument" {
+    run cloudify_get_password "my pwd"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"space"* ]]
+}
+
+#-- _cloudify_sed_escape tests --
+
+@test "_cloudify_sed_escape escapes forward slash" {
+    run _cloudify_sed_escape "a/b"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"a\\/b"* ]]
+}
+
+@test "_cloudify_sed_escape escapes square brackets" {
+    run _cloudify_sed_escape "a[b]c"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"a\\[b\\]c"* ]]
+}
+
+@test "_cloudify_sed_escape escapes ampersand" {
+    run _cloudify_sed_escape "a&b"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"a\\&b"* ]]
+}
+
+@test "_cloudify_sed_escape escapes backslash" {
+    run _cloudify_sed_escape 'a\b'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"a\\\\b"* ]]
+}
+
+@test "_cloudify_sed_escape handles plain text without special chars" {
+    run _cloudify_sed_escape "hello world"
+    [ "$status" -eq 0 ]
+    [ "$output" = "hello world" ]
+}
+
 @test "module guard prevents double-sourcing" {
     source lib/utils.sh
     source lib/utils.sh

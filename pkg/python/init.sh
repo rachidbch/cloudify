@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 UBUNTU_VER="$(lsb_release -r | cut -f2)"
 
 # Python2 should always be accessible through `python` command

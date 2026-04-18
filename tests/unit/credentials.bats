@@ -54,3 +54,30 @@ teardown() {
     source lib/credentials.sh
     [ "$(type -t cloudify_check_credentials)" = "function" ]
 }
+
+@test "_cloudify_ask_credentials helper is defined" {
+    [ "$(type -t _cloudify_ask_credentials)" = "function" ]
+}
+
+@test "_cloudify_write_export helper is defined" {
+    [ "$(type -t _cloudify_write_export)" = "function" ]
+}
+
+@test "_cloudify_write_export produces valid export with simple value" {
+    run _cloudify_write_export "TEST_VAR" "simple_value"
+    [ "$status" -eq 0 ]
+    [ "$output" = "export TEST_VAR='simple_value'" ]
+}
+
+@test "_cloudify_write_export escapes single quotes in value" {
+    run _cloudify_write_export "TEST_VAR" "it's a test"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"it'\''s a test"* ]]
+}
+
+@test "_cloudify_write_export handles shell metacharacters" {
+    run _cloudify_write_export "TEST_VAR" '$HOME & `whoami` "test"'
+    [ "$status" -eq 0 ]
+    # Value should be single-quoted so metacharacters are literal
+    [ "$output" = "export TEST_VAR='\$HOME & \`whoami\` \"test\"'" ]
+}

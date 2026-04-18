@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Fasd
 
 pkg_apt_repository "aacebedo/fasd"

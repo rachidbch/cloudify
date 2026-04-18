@@ -1,15 +1,16 @@
+#!/usr/bin/env bash
 
 #export TODO_DIR=~/.todo  # exported from .bash.d
 
 (
 TODOTXT_VER=2.11.0
-cd /tmp/
+cd /tmp/ || exit 1
 [ -e todo.txt_cli.tar.gz ] || wget -O todo.txt_cli.tar.gz "https://github.com/todotxt/todo.txt-cli/releases/download/v${TODOTXT_VER}/todo.txt_cli-${TODOTXT_VER}.tar.gz"
 if [ ! -d /tmp/todo.txt_cli ]; then
   mkdir todo.txt_cli
   tar xzvf todo.txt_cli.tar.gz -C /tmp/todo.txt_cli --strip-components 1
 fi
-if [ -z $(which todo.sh) ]; then
+if [ -z "$(which todo.sh)" ]; then
   chmod +x /tmp/todo.txt_cli/todo.sh
   sudo mv /tmp/todo.txt_cli/todo.sh /usr/local/bin/
 fi

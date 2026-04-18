@@ -28,6 +28,46 @@ function PKG_PAUSE() {
     fi
 }
 
+# Rotate backups up (ascending): .bak→.bak.1→...→.bak.5
+# Usage: _cloudify_backup_rotate_up "$backup_name"
+function _cloudify_backup_rotate_up() {
+    local base="$1"
+    rm -rf "${base}.bak.5" 2>/dev/null
+    mv "${base}.bak.4" "${base}.bak.5" 2>/dev/null || true
+    rm -rf "${base}.bak.4" 2>/dev/null
+    mv "${base}.bak.3" "${base}.bak.4" 2>/dev/null || true
+    rm -rf "${base}.bak.3" 2>/dev/null
+    mv "${base}.bak.2" "${base}.bak.3" 2>/dev/null || true
+    rm -rf "${base}.bak.2" 2>/dev/null
+    mv "${base}.bak.1" "${base}.bak.2" 2>/dev/null || true
+    rm -rf "${base}.bak.1" 2>/dev/null
+    mv "${base}.bak" "${base}.bak.1" 2>/dev/null || true
+    rm -rf "${base}.bak" 2>/dev/null
+    mv "${base}" "${base}.bak" 2>/dev/null || true
+    rm -rf "${base}" 2>/dev/null
+}
+
+# Rotate backups down (descending): restore from base to restore_path
+# Usage: _cloudify_backup_rotate_down "$backup_name" "$restore_path"
+function _cloudify_backup_rotate_down() {
+    local base="$1"
+    local restore_path="$2"
+    trash-put "$restore_path" 2>/dev/null || true
+    mv "${base}" "$restore_path" 2>/dev/null || true
+    rm -rf "${base}" 2>/dev/null
+    mv "${base}.bak" "${base}" 2>/dev/null || true
+    rm -rf "${base}.bak" 2>/dev/null
+    mv "${base}.bak.1" "${base}.bak" 2>/dev/null || true
+    rm -rf "${base}.bak.1" 2>/dev/null
+    mv "${base}.bak.2" "${base}.bak.1" 2>/dev/null || true
+    rm -rf "${base}.bak.2" 2>/dev/null
+    mv "${base}.bak.3" "${base}.bak.2" 2>/dev/null || true
+    rm -rf "${base}.bak.3" 2>/dev/null
+    mv "${base}.bak.4" "${base}.bak.3" 2>/dev/null || true
+    rm -rf "${base}.bak.4" 2>/dev/null
+    mv "${base}.bak.5" "${base}.bak.4" 2>/dev/null || true
+}
+
 # Backup files
 # Usage: pkg_backup path            backup file or directory in /tmp/cloudify/backup/
 # =DANGER= function full of 'rm -rf'!!
@@ -39,6 +79,12 @@ function pkg_backup() {
     local backup_name
     local same=false
     [[ "${1-}" == "--same" ]] && same=true && shift
+
+    # Guard against destructive paths
+    local target="${1:-}"
+    [[ -z "$target" ]] && die "pkg_backup: refusing empty argument"
+    [[ "$target" == "/" || "$target" == "/root" || "$target" == "/home" || "$target" == "/usr" ]] && \
+        die "pkg_backup: refusing to back up system path '$target'"
 
     if [[ ! -e ${1-} ]]; then
         PKG_DEBUG "File or directory ${1-} not found"
@@ -57,31 +103,15 @@ function pkg_backup() {
     PKG_DEBUG "Backing up ${1-} to ${backup_name}"
 
     [[ -d "${CLOUDIFY_TMP}"/backup ]] || { PKG_DEBUG "Creating ${CLOUDIFY_TMP}/backup directory" && mkdir -p "${CLOUDIFY_TMP}"/backup; }
-    rm -rf "${backup_name}.bak.5" 2>/dev/null
-    mv "${backup_name}.bak.4" "${backup_name}.bak.5" 2>/dev/null || true
-    rm -rf "${backup_name}.bak.4" 2>/dev/null
-    mv "${backup_name}.bak.3" "${backup_name}.bak.4" 2>/dev/null || true
-    rm -rf "${backup_name}.bak.3" 2>/dev/null
-    mv "${backup_name}.bak.2" "${backup_name}.bak.3" 2>/dev/null || true
-    rm -rf "${backup_name}.bak.2" 2>/dev/null
-    mv "${backup_name}.bak.1" "${backup_name}.bak.2" 2>/dev/null || true
-    rm -rf "${backup_name}.bak.1" 2>/dev/null
-    mv "${backup_name}.bak" "${backup_name}.bak.1" 2>/dev/null || true
-    rm -rf "${backup_name}.bak" 2>/dev/null
-    mv "${backup_name}" "${backup_name}.bak" 2>/dev/null || true
-    rm -rf "${backup_name}" 2>/dev/null
+    _cloudify_backup_rotate_up "$backup_name"
     cp -paf "$1" "${backup_name}"
 
-    # Now, as we preserved links while copying, if the file/fodler we've backed up is a link, modifying the original will modify the backup...
-    # We need to break the original link so any modification of original file won't stain the backup
-    # =TODO= Simplify this mess!
-    #set -x
+    # Break symlinks so modifications to original won't affect the backup
     rm -rf "${backup_name}".atomic 2>/dev/null
     cp -paL --no-preserve=links "$1" "${backup_name}".atomic
     rm -rf "${1}" 2>/dev/null
     cp -paL --no-preserve=links "${backup_name}".atomic "$1"
     rm -rf "${backup_name}".atomic 2>/dev/null
-    #set +x
 
     # Increment backup counter for this file
     [[ -f "${backup_name}.index" ]] || echo "0" >"${backup_name}.index"
@@ -123,20 +153,7 @@ pkg_restore() {
 
     PKG_DEBUG "Restoring ${backup_name} to ${1-}"
 
-    trash-put "$1" 2>/dev/null || true
-    mv "${backup_name}" "$1" 2>/dev/null || true
-    rm -rf "${backup_name}" 2>/dev/null
-    mv "${backup_name}.bak" "${backup_name}" 2>/dev/null || true
-    rm -rf "${backup_name}.bak" 2>/dev/null
-    mv "${backup_name}.bak.1" "${backup_name}.bak" 2>/dev/null || true
-    rm -rf "${backup_name}.bak.1" 2>/dev/null
-    mv "${backup_name}.bak.2" "${backup_name}.bak.1" 2>/dev/null || true
-    rm -rf "${backup_name}.bak.2" 2>/dev/null
-    mv "${backup_name}.bak.3" "${backup_name}.bak.2" 2>/dev/null || true
-    rm -rf "${backup_name}.bak.3" 2>/dev/null
-    mv "${backup_name}.bak.4" "${backup_name}.bak.3" 2>/dev/null || true
-    rm -rf "${backup_name}.bak.4" 2>/dev/null
-    mv "${backup_name}.bak.5" "${backup_name}.bak.4" 2>/dev/null || true
+    _cloudify_backup_rotate_down "$backup_name" "$1"
 
     # Decrement backup counter for this file
     local count
@@ -152,22 +169,11 @@ pkg_restore() {
 
 # Write lines listed as single-quoted arguments in .bashrc
 function pkg_in_startuprc() {
-    # sed special characters have to be escaped. We're liberal here.
+    # sed special characters have to be escaped
     local pkg_escaped_lines=()
     local pkg_startuprc_line
     for pkg_startuprc_line in "${@}"; do
-
-        pkg_startuprc_line=$(echo "$pkg_startuprc_line" |
-            sed 's/\//\\\//g' |
-            sed 's/\*/\\*/g' |
-            sed 's/\-/\\-/g' |
-            sed 's/\!/\\!/g' |
-            sed 's/\=/\\=/g' |
-            sed 's/\:/\\:/g' |
-            sed 's/\[/\\[/g' | sed 's/\]/\\]/g' |
-            sed 's/\\(/\\(/g' | sed 's/\\)/\\)/g')
-
-        #PKG_DEBUG "Adding '$pkg_startuprc_line'"
+        pkg_startuprc_line=$(_cloudify_sed_escape "$pkg_startuprc_line")
         pkg_escaped_lines+=("$pkg_startuprc_line")
     done
 
@@ -227,13 +233,14 @@ function pkg_apt_install() {
     [[ -z ${password} ]] && die "Password not set for user $user on host $host."
 
     local pkgname=""
+    local had_error=0
+
+    pkg_apt_update
 
     for pkg in "${@}"; do
-        pkg_apt_update
-
         # If a deb file is passed, get the package name from it
         # Of course, this only works if deb files are consistently named "/path/to/<package name>.deb"
-        if [[ $pkg == .deb ]] && [[ -f $pkg ]]; then
+        if [[ $pkg == *.deb ]] && [[ -f $pkg ]]; then
             pkgname=$(basename "$pkg")
             pkgname=${pkgname%.*}
         else
@@ -242,22 +249,22 @@ function pkg_apt_install() {
 
         PKG_DEBUG_LN "Installing $pkgname apt package"
 
-        if ! dpkg -l "$pkgname" |& grep -q "^ii  $pkg"; then
+        if ! dpkg -l "$pkgname" |& grep -q "^ii  $pkgname"; then
             command sudo -kS -p '' apt-get -q install "$pkg" -y <<<"$password"
-            # If apt-get install failed, we stop cloudify
-            # =TODO= Instead of brutally exiting, log the error and continue with next package installations
             local exitcode=$?
             if [ "$exitcode" -ne 0 ]; then
-                die "Error installing $pkg" "$exitcode"
+                msg "${RED}Error installing $pkg (exit code $exitcode). Continuing with remaining packages.${RESET}"
+                had_error=1
             fi
         else
             PKG_DEBUG_LN "$pkg apt package already present"
         fi
     done
+    return "$had_error"
 }
 
 # Install latest release from Github
-function cloudify_install_package_release() {
+function pkg_install_release() {
     cloudify_get_password password user host
     # shellcheck disable=SC2154
     [[ -z ${password} ]] && die "Password not set for user $user on host $host."
@@ -266,6 +273,16 @@ function cloudify_install_package_release() {
 
     local cmd="$1"
     local repoId="$2"
+
+    # Check required tools
+    command -v jq &>/dev/null || die "pkg_install_release requires 'jq' to be installed"
+    command -v curl &>/dev/null || die "pkg_install_release requires 'curl' to be installed"
+
+    # Idempotency: skip if binary already installed
+    if command -v "$cmd" &>/dev/null; then
+        PKG_DEBUG_LN "$cmd already installed, skipping download"
+        return 0
+    fi
 
     PKG_DEBUG_LN "Retrieving $repoId last release"
     # amd64 tag
@@ -309,21 +326,14 @@ function cloudify_install_package_release() {
             (
                 # Some install archives have an install/setup script.
                 # If that's the case, let it do its thing (A lot of install/setup scripts read the install directory in a prefix variable )
-                [[ -f /tmp/"$cmd"/install ]] && PKG_DEBUG "Running archive setup script" &&
-                    command sudo -kS -p '' prefix=/usr/local bash /tmp/"$cmd"/install &>/dev/null <<<"$password" &&
-                    exit 0
-
-                [[ -f /tmp/"$cmd"/install.sh ]] && PKG_DEBUG "Running archive setup script" &&
-                    command sudo -kS -p '' prefix=/usr/local bash /tmp/"$cmd"/install.sh &>/dev/null <<<"$password" &&
-                    exit 0
-
-                [[ -f /tmp/"$cmd"/setup ]] && PKG_DEBUG "Running archive setup script" &&
-                    command sudo -kS -p '' prefix=/usr/local bash /tmp/"$cmd"/setup &>/dev/null <<<"$password" &&
-                    exit 0
-
-                [[ -f /tmp/"$cmd"/setup.sh ]] && PKG_DEBUG "Running archive setup script" &&
-                    command sudo -kS -p '' prefix=/usr/local bash /tmp/"$cmd"/setup.sh &>/dev/null <<<"$password" &&
-                    exit 0
+                local script
+                for script in install install.sh setup setup.sh; do
+                    if [[ -f /tmp/"$cmd"/"$script" ]]; then
+                        PKG_DEBUG "Running archive setup script: $script"
+                        command sudo -kS -p '' prefix=/usr/local bash "/tmp/$cmd/$script" &>/dev/null <<<"$password"
+                        exit 0
+                    fi
+                done
 
                 # Some install archive contain directly the binary
                 [[ -f /tmp/"$cmd"/"$cmd" ]] && PKG_DEBUG "Installing $cmd binary" &&
@@ -396,8 +406,7 @@ function pkg_depends() {
     done
 }
 
-# BUG FIX: Alias for packages that call the wrong name
-# 9 packages reference pkg_install_release instead of cloudify_install_package_release
-function pkg_install_release() {
-    cloudify_install_package_release "$@"
+# Alias: legacy name kept for backwards compatibility
+function cloudify_install_package_release() {
+    pkg_install_release "$@"
 }

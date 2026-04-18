@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Bash-it package
 
 ## # Bash-it complains if bash-completion is absent
@@ -7,14 +8,14 @@ pkg_depends bash-completion
 if [[ ! -e "$HOME"/bin ]]; then
   mkdir "$HOME"/bin
 elif [[ ! -d "$HOME"/bin ]]; then
-  echo "FATAL: ~/bin already exists and isn\'nt a directory"
+  echo "FATAL: ~/bin already exists and isn't a directory"
   exit 1
 fi
 
 # Clone bash-it repo
 if [ -d ~/.bash_it ]; then
   PKG_DEBUG_LN "Updating cloudify packages definitions"
-  ( cd "$HOME"/.bash_it; git pull)
+  ( cd "$HOME"/.bash_it || exit 1; git pull)
 else
   PKG_DEBUG_LN "Downloading cloudify packages definitions"
   git clone --depth=1 https://github.com/Bash-it/bash-it.git ~/.bash_it
@@ -29,6 +30,7 @@ fi
 # In .bashrc, we set BASH_IT_CUSTOM to ~/.bash.d/ just before sourcing bash_it.sh
 
 # Update env related setup in ~/.bashrc
+# shellcheck disable=SC2016 # single quotes are intentional: pkg_in_startuprc writes literal strings to .bashrc
 pkg_in_startuprc \
     '## BASH_IT SETUP'\
     'export BASH_IT="$HOME/.bash_it"'\
@@ -37,7 +39,7 @@ pkg_in_startuprc \
     'export SHORT_HOSTNAME=$(hostname -s)'\
     'export BASH_IT_RELOAD_LEGACY=1'\
     '[[ -d "$HOME/.bash.d" ]] && export BASH_IT_CUSTOM="$HOME/.bash.d" || unset BASH_IT_CUSTOM'\
-    'source $HOME/.bash_it/bash_it.sh' 
+    'source $HOME/.bash_it/bash_it.sh'
 
 # WARNING: before sourcing ~/.bashrc, directory defined by BASH_IT_CUSTOM (by default ~/.bashd.d) must be populated w/ mobilefirstcentury/bash-it.git   
 # NOTE: ~/.bash.d content is part of MFC dotfiles and can be setup with stow! 

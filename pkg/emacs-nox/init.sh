@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Emacs (no X) installation
 
 DISTRO_VER="$(cloudify_osdetect --version)"

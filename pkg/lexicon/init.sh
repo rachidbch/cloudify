@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Install lexion
 # Lexicon is a cli client for many dns providers
 # =TODO= Install with pipx?

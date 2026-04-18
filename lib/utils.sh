@@ -51,25 +51,11 @@ function cloudify_emptydir() {
     return 0
 }
 
-# Utility function to test if a directory is empty (returns 0 if empty)
-function cloudify_is_emptydir() {
-    local _entry
-    for _entry in "$1"/*; do
-        [[ -e "$_entry" ]] && return 1
-    done
-    return 0
-}
-
-# Utility function to test if something is a path
-function cloudify_is_path() {
-    return 0
-}
-
 # Utility function to test if a list contains a string
 function cloudify_list_contains() {
     local aList="$1"
     local anItem="$2"
-    (echo "$aList" | grep -qw "$anItem") && exit 0 || exit 1
+    [[ "$aList" == *"$anItem"* ]]
 }
 
 # Simply prompt the user and read the stores answer in specified variable
@@ -224,7 +210,7 @@ function cloudify_get_password() {
     local user_var_name="${2:-}"
     local host_var_name="${3:-}"
 
-    [[ -z $pwd_var_name ]] && die "cloudify_get_password function called with no argume"
+    [[ -z $pwd_var_name ]] && die "cloudify_get_password function called with no argument"
     [[ $pwd_var_name == *\ * ]] && die "cloudify_get_password function called with argument containing a space"
     # Use printf -v to set variables in caller's scope (declare is local to function)
     printf -v "$pwd_var_name" '%s' "$CLOUDIFY_HOSTPWD"
@@ -232,27 +218,38 @@ function cloudify_get_password() {
     [[ -z "$host_var_name" ]] || printf -v "$host_var_name" '%s' "$(hostname)"
 }
 
+# Escape special characters for use in sed patterns
+# Handles: / * - ! = : [ ] ( ) & \
+function _cloudify_sed_escape() {
+    local input="${1:-}"
+    # Escape backslash first (to avoid double-escaping), then all other specials
+    input="${input//\\/\\\\}"
+    input="${input//\//\\/}"
+    input="${input//\*/\\*}"
+    input="${input//\-/\\-}"
+    input="${input//\!/\\!}"
+    input="${input//\=/\\=}"
+    input="${input//\:/\\:}"
+    input="${input//\[/\\[}"
+    input="${input//\]/\\]}"
+    input="${input//\(/\\(}"
+    input="${input//\)/\\)}"
+    input="${input//\&/\\&}"
+    echo "$input"
+}
+
 # Write entries in /etc/hosts
-function add_in_hosts() {
-    $DEBUG && PKG_PAUSE "About to execute: add_in_hosts"
+function cloudify_add_in_hosts() {
+    $DEBUG && PKG_PAUSE "About to execute: cloudify_add_in_hosts"
 
     cloudify_get_password password user host
     [[ -z ${password} ]] && die "Password not set for user $user on host $host."
 
-    # sed special characters have to be escaped. We're liberal here.
+    # sed special characters have to be escaped
     local escaped_host_lines=()
     for host_line in "${@}"; do
         PKG_DEBUG "Adding '$host_line'"
-        host_line=$(echo "$host_line" |
-            sed 's/\//\\\//g' |
-            sed 's/\*/\\*/g' |
-            sed 's/\-/\\-/g' |
-            sed 's/\!/\\!/g' |
-            sed 's/\=/\\=/g' |
-            sed 's/\:/\\:/g' |
-            sed 's/\[/\\[/g' | sed 's/\]/\\]/g' |
-            sed 's/\\(/\\(/g' | sed 's/\\)/\\)/g')
-
+        host_line=$(_cloudify_sed_escape "$host_line")
         escaped_host_lines+=("$host_line")
     done
 
@@ -281,4 +278,9 @@ function cloudify_print_done() {
     msg "${GREEN}********************************************************************************${RESET}"
     msg "${GREEN}  Station cloudified!${RESET}"
     msg "${GREEN}********************************************************************************${RESET}"
+}
+
+# Alias: legacy name kept for backwards compatibility
+function add_in_hosts() {
+    cloudify_add_in_hosts "$@"
 }

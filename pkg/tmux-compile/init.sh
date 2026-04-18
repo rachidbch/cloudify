@@ -1,16 +1,17 @@
+#!/usr/bin/env bash
 VERSION=2.6
 sudo apt-get -y remove tmux
 sudo apt-get -y install wget tar libevent-dev libncurses-dev
 wget https://github.com/tmux/tmux/releases/download/${VERSION}/tmux-${VERSION}.tar.gz
 tar xf tmux-${VERSION}.tar.gz
 rm -f tmux-${VERSION}.tar.gz
-cd tmux-${VERSION}
+cd "tmux-${VERSION}" || return 1
 ./configure
 make
 sudo make install
-cd -
+cd - || return 1
 sudo rm -rf /usr/local/src/tmux-*
-sudo mv tmux-${VERSION} /usr/local/src
+sudo mv "tmux-${VERSION}" /usr/local/src
 
 # And be sure to kill any pending tmux server
 # killall -9 tmux

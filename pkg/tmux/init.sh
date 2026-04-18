@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Installing tmux
 pkg_apt_install tmux
 
@@ -6,6 +7,7 @@ pkg_apt_install tmux
 # alias tmux='TERM=xterm-256color tmux -f "${XDG_CONFIG_HOME:-~/.config}"/tmux/tmux.conf'
 
 # Setup in ~/.bashrc 
+# shellcheck disable=SC2016,SC1003 # single quotes + '\'' escaping are intentional: pkg_in_startuprc writes literal strings to .bashrc
 pkg_in_startuprc \
     '## TMUX SETUP' \
     'alias tmux='\''TERM=xterm-256color tmux -f "${XDG_CONFIG_HOME:-~/.config}"/tmux/tmux.conf\'\'''

@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Dotfiles Install 
 
 # To simplify for now we don't use XDG_CONGIG dir. Use it? 
@@ -8,17 +9,17 @@ pkg_depends stow
 # Clone cloudfiles repo
 if [ -d "$HOME"/.dotfiles ]; then
   PKG_DEBUG 'Updating dotfiles'
-  ( cd "$HOME"/.dotfiles;   
+  ( cd "$HOME"/.dotfiles || exit 1;
       echo "just before git pull"
-      #git pull --recurse-submodules 
-      git pull 
+      #git pull --recurse-submodules
+      git pull
       echo "just after git pull"
-      git submodule update --recursive --remote  
+      git submodule update --recursive --remote
   )
 else
   PKG_DEBUG_LN "Downloading dotfiles"
   git clone --recurse-submodules https://gitlab.com/mobilefirstcentury/dotfiles.git  "$HOME"/.dotfiles
-  ( cd "$HOME"/.dotfiles; git submodule update --recursive --remote )
+  ( cd "$HOME"/.dotfiles || exit 1; git submodule update --recursive --remote )
 fi
 
 PKG_DEBUG "Installing stowit"

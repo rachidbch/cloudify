@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 
 # tout d'abord scripter la configuration de pyenv pour avoir deux environements virtuels canoniques python2 et python3
 # i.e. repliquer la configuration pyenv versions de cloudstation

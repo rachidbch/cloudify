@@ -28,16 +28,6 @@ function usage() {
 EOF
 }
 
-# Usage of 'cloudify info' sub-command
-function usage_info() {
-    echo "function 'usage_info' not implemented yet" >&2
-}
-
-# Usage of 'cloudify hostnames' sub-command
-function usage_hostnames() {
-    echo "function 'usage_hostnames' not implemented yet" >&2
-}
-
 #== SCRIPT PATH
 CLOUDIFY_SCRIPT_DIR=$(cd "$(dirname "$( [ -L "${BASH_SOURCE[0]}" ] && readlink -f "${BASH_SOURCE[0]}" || echo "${BASH_SOURCE[0]}" )")" &>/dev/null && pwd -P)
 
@@ -93,6 +83,53 @@ function cloudify_init_paths() {
 }
 
 #== SUB-COMMANDS
+
+# Check if a word is a reserved keyword
+# Usage: _cloudify_is_reserved <word> [context]
+# context: "global" includes --on/on/o; "action" does not
+function _cloudify_is_reserved() {
+    local word="${1:-}"
+    local context="${2:-global}"
+    case "$word" in
+        --help | help | -h | --list | list | l | --credentials | credentials | c | --test | test | t)
+            return 0
+            ;;
+    esac
+    if [[ "$context" == "global" ]]; then
+        case "$word" in
+            --on | on | o) return 0 ;;
+        esac
+    fi
+    return 1
+}
+
+# Check if a word is a package action keyword
+function _cloudify_is_action() {
+    local word="${1:-}"
+    case "$word" in
+        --install | install | inst | i | --uninstall | uninstall | u) return 0 ;;
+    esac
+    return 1
+}
+
+# Execute a package action (install/uninstall) for localhost
+function _cloudify_execute_package_action() {
+    local action="$1"
+    shift
+    local pkgs=("$@")
+    cloudify_init_paths
+    if [[ "$action" == "install" ]]; then
+        PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs[*]}${RESET}"
+        (cloudify_install_package "${pkgs[@]}") &
+        is_setup_in_progress=true
+    elif [[ "$action" == "uninstall" ]]; then
+        PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs[*]}${RESET}"
+        (cloudify_uninstall_package "${pkgs[@]}") &
+        is_setup_in_progress=true
+    else
+        die "Unexpected package action: $action"
+    fi
+}
 
 # Cloudify environment sub-command
 function cloudify_environment() {
@@ -193,9 +230,9 @@ function main() {
                 hostip=$(lxc list -c4 --format csv "$LXDSERVER":"$host" | cut -d' ' -f1)
             done
 
-            $DEBUG && PKG_PAUSE "line before add_in_hosts"
-            add_in_hosts "$hostip $host $host.remote"
-            $DEBUG && PKG_PAUSE "line after add_in_hosts"
+            $DEBUG && PKG_PAUSE "line before cloudify_add_in_hosts"
+            cloudify_add_in_hosts "$hostip $host $host.remote"
+            $DEBUG && PKG_PAUSE "line after cloudify_add_in_hosts"
             ;;
         delete | del)
             local hostpwd="${CLOUDIFY_LOCAL_PWD}"
@@ -206,7 +243,7 @@ function main() {
             if ! lxc delete "$LXDSERVER":"$host" "${@:3}" --force &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
 
             PKG_DEBUG "Executing: sudo sed -ri \"/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d\" /etc/hosts"
-            command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts &>/dev/null <<<"$password"
+            command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts &>/dev/null <<<"$hostpwd"
             ;;
         shell | sh)
             [[ -z "${2:-}" ]] && die "Missing host"
@@ -221,8 +258,8 @@ function main() {
             local host="$1"
             shift
             if [[ $host == "localhost" ]]; then
-                # shellcheck source=/dev/null
-                source <(echo "$*")
+                # =Note= Intentional command execution via 'execute' subcommand
+                bash -c "$*"
             else
                 cloudify_remote_sync "$host" exec localhost "\"$*\""
             fi
@@ -251,13 +288,16 @@ function main() {
             hosts=""
 
             while true; do
-                [[ "${2:-}" == "--on" || "${2:-}" == "on" || "${2:-}" == "o" || "${2:-}" == "--help" || "${2:-}" == "help" || "${2:-}" == "-h" || "${2:-}" == "--list" || "${2:-}" == "list" || "${2:-}" == "l" || "${2:-}" == "--credentials" || "${2:-}" == "credentials" || "${2:-}" == "c" || "${2:-}" == "--test" || "${2:-}" == "test" || "${2:-}" == "t" ]] && die "Argument syntax error: '$2' invalid inside an 'on' block"
+                _cloudify_is_reserved "${2:-}" "global" && die "Argument syntax error: '$2' invalid inside an 'on' block"
 
-                [[ -z "${2:-}" || "${2:-}" == -* || "${2:-}" == "install" || "${2:-}" == "inst" || "${2:-}" == "i" || "${2:-}" == "uninstall" || "${2:-}" == "u" ]] && {
+                local is_end=false
+                [[ -z "${2:-}" || "${2:-}" == -* ]] && is_end=true
+                _cloudify_is_action "${2:-}" && is_end=true
+                if "$is_end"; then
                     [[ -z "$hosts" ]] && die "Cloudify usage error: No host found."
                     is_parsing_hosts="ended"
                     break
-                }
+                fi
                 local hosts_to_add="${2:-}"
                 [[ "${2:-}" == @* ]] && hosts_to_add=$(cloudify_list_hosts_by_tags "$2")
 
@@ -288,28 +328,17 @@ function main() {
             [[ -z "$packages" ]] && packages="--$action" || packages="$packages --$action"
 
             while true; do
-                [[ "${2:-}" == "--help" || "${2:-}" == "help" || "${2:-}" == "-h" || "${2:-}" == "--list" || "${2:-}" == "list" || "${2:-}" == "l" || "${2:-}" == "--credentials" || "${2:-}" == "credentials" || "${2:-}" == "c" || "${2:-}" == "--test" || "${2:-}" == "test" || "${2:-}" == "t" ]] && die "Argument syntax error: '$2' invalid inside an action block."
+                _cloudify_is_reserved "${2:-}" "action" && die "Argument syntax error: '$2' invalid inside an action block."
 
-                [[ "${2:-}" == "--install" || "${2:-}" == "install" || "${2:-}" == "i" || "${2:-}" == "--uninstall" || "${2:-}" == "uninstall" || "${2:-}" == "u" ]] && {
+                _cloudify_is_action "${2:-}" && {
                     [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
 
                     [[ "$hosts" == "localhost" ]] && {
-                        cloudify_init_paths
-                        if [[ "$action" == "install" ]]; then
-                            local pkgs="${packages/--$action/}"
-                            pkgs="${pkgs# }"
-                            PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs}${RESET}"
-                            (cloudify_install_package ${pkgs}) &
-                            is_setup_in_progress=true
-                        elif [[ "$action" == "uninstall" ]]; then
-                            local pkgs="${packages/--$action/}"
-                            pkgs="${pkgs# }"
-                            PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs}${RESET}"
-                            (cloudify_uninstall_package ${pkgs}) &
-                            is_setup_in_progress=true
-                        else
-                            die "Unexpected package action: $action"
-                        fi
+                        local pkgs_str="${packages/--$action/}"
+                        pkgs_str="${pkgs_str# }"
+                        local -a pkgs_array
+                        read -ra pkgs_array <<< "$pkgs_str"
+                        _cloudify_execute_package_action "$action" "${pkgs_array[@]}"
                         packages=""
                     }
 
@@ -321,22 +350,11 @@ function main() {
                     is_parsing_packages="ended"
                     for host in $hosts; do
                         if [[ "$hosts" == "localhost" ]]; then
-                            cloudify_init_paths
-                            if [[ "$action" == "install" ]]; then
-                                local pkgs="${packages/--$action/}"
-                                pkgs="${pkgs# }"
-                                PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs}${RESET}"
-                                (cloudify_install_package ${pkgs}) &
-                                is_setup_in_progress=true
-                            elif [[ "$action" == "uninstall" ]]; then
-                                local pkgs="${packages/--$action/}"
-                                pkgs="${pkgs# }"
-                                PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs}${RESET}"
-                                (cloudify_uninstall_package ${pkgs}) &
-                                is_setup_in_progress=true
-                            else
-                                die "Unexpected package action: $action"
-                            fi
+                            local pkgs_str="${packages/--$action/}"
+                            pkgs_str="${pkgs_str# }"
+                            local -a pkgs_array
+                            read -ra pkgs_array <<< "$pkgs_str"
+                            _cloudify_execute_package_action "$action" "${pkgs_array[@]}"
                         else
                             PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
                             cloudify_remote "$host" "$packages" && is_setup_in_progress=true

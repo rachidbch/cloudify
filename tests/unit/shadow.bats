@@ -43,3 +43,15 @@ teardown() {
     [ "$(type -t sudo)" = "function" ]
     [ "$(type -t git)" = "function" ]
 }
+
+@test "split shadow files are loaded by lib/shadow.sh loader" {
+    # After sourcing lib/shadow.sh, functions from lib/shadows/*.sh must be available
+    [ "$(type -t sudo)" = "function" ]
+    [ "$(type -t cloudify_git_authenticate)" = "function" ]
+    [ "$(type -t cloudify_git_deauthenticate)" = "function" ]
+    [ "$(type -t cloudify_git_same_remote)" = "function" ]
+    [ "$(type -t git)" = "function" ]
+    # Individual module guards must be set
+    [ "${_CLOUDIFY_SHADOW_SUDO_LOADED:-}" = "1" ]
+    [ "${_CLOUDIFY_SHADOW_GIT_LOADED:-}" = "1" ]
+}

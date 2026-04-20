@@ -246,7 +246,15 @@ function main() {
             shift
             local host="$1"
             shift
-            ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$host" "$@" 2>&1 | tail -n +2
+
+            if [[ "${1:-}" == "-i" ]]; then
+                # Interactive mode: allocate TTY so prompts work
+                shift
+                ssh -t -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$host" "$@"
+            else
+                # Non-interactive: pipe output, strip SSH banner
+                ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$host" "$@" 2>&1 | tail -n +2
+            fi
             ;;
         execute | exec)
             shift

@@ -101,12 +101,12 @@ function cloudify_info() {
             break
             ;;
         ipv4)
-            ipv4=$(lxc list "$LXDSERVER:$host" --format=json | jq '.[].state.network.eth0.addresses[] | select (.family=="inet" and .scope=="global") .address')
+            ipv4=$(cloudify_container_ip "$host")
             echo "$ipv4"
             break
             ;;
         ipv6)
-            ipv6=$(lxc list "$LXDSERVER:$host" --format=json | jq '.[].state.network.eth0.addresses[] | select (.family=="inet6" and .scope=="global") .address')
+            ipv6=$(cloudify_container_ipv6 "$host")
             echo "$ipv6"
             break
             ;;
@@ -155,15 +155,15 @@ function cloudify_hostnames() {
             if [[ -z $ip ]]; then
                 ! $CLOUDIFY_IS_LOCAL && die "Error: Illegal Operation. Calling \"cloudify_hostnames\" without explicit IP is not allowed on remote hosts." 1
 
-                # No IP address was given, As we're running locally, we can asssume access to lxc
-                command -v lxc >/dev/null || die "lxc is not installed. Cannot resolve hostname to IP automatically."
+                # No IP address was given, As we're running locally, resolve via ivps
+                cloudify_require_ivps
                 if [[ $hostname == localhost || $hostname == "$(hostname)" ]]; then
-                    # No need to query LXC :D
+                    # No need to query container :D
                     ip=127.0.0.1
                     ipv6="::1"
                 else
-                    ip=$(lxc list "$LXDSERVER:$hostname" --format=json | jq -r '.[].state.network.eth0.addresses[] | select (.family=="inet" and .scope=="global") .address')
-                    ipv6=$(lxc list "$LXDSERVER:$hostname" --format=json | jq -r '.[].state.network.eth0.addresses[] | select (.family=="inet6" and .scope=="global") .address')
+                    ip=$(cloudify_container_ip "$hostname")
+                    ipv6=$(cloudify_container_ipv6 "$hostname")
                     [[ -z $ip && -z $ipv6 ]] && die "Error: Unkown hostname $hostname" 1
                 fi
             else

@@ -41,7 +41,6 @@ export CLOUDIFY_TMP=/tmp/cloudify
 #== ENVIRONMENT
 : "${CLOUDIFY_IS_LOCAL:=true}" && export CLOUDIFY_IS_LOCAL
 : "${CLOUDIFY_DIR:=$HOME/cloudify}" && export CLOUDIFY_DIR
-: "${CLOUDIFY_LXDSERVER:=cloudhorse}" && export LXDSERVER=$CLOUDIFY_LXDSERVER
 : "${CLOUDIFY_DISABLE_COLORS:=false}" && export CLOUDIFY_DISABLE_COLORS
 : "${CLOUDIFY_UPDATE_DELAY:=30}" && export CLOUDIFY_UPDATE_DELAY
 : "${CLOUDIFY_FORCE_UPDATE:=false}" && export CLOUDIFY_FORCE_UPDATE
@@ -62,6 +61,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/os.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/package-api.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/credentials.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/shadow.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/containers.sh"
 # shellcheck disable=SC1094
 source "$CLOUDIFY_SCRIPT_DIR/lib/remote.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/packages.sh"
@@ -218,17 +218,14 @@ function main() {
             local restparams="${*:4}"
 
             if [[ "$host_image" != *:* ]]; then
-                host_image="ubuntu:"
+                host_image=""
                 host="$2"
                 restparams="${*:3}"
             fi
 
-            PKG_DEBUG lxc launch "$host_image" "$LXDSERVER":"$host" -p default "$restparams"
-            lxc launch "$host_image" "$LXDSERVER":"$host" -p default "$restparams"
-            hostip=""
-            while [[ ! $hostip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; do
-                hostip=$(lxc list -c4 --format csv "$LXDSERVER":"$host" | cut -d' ' -f1)
-            done
+            # shellcheck disable=SC2086
+            cloudify_container_launch "$host" "$host_image" $restparams
+            hostip=$(cloudify_container_ip "$host")
 
             $DEBUG && PKG_PAUSE "line before cloudify_add_in_hosts"
             cloudify_add_in_hosts "$hostip $host $host.remote"
@@ -239,8 +236,7 @@ function main() {
             [[ -z ${hostpwd} ]] && die "Host password not set"
             host="$2"
 
-            PKG_DEBUG "Executing: lxc delete $LXDSERVER:$host ${*:3}"
-            if ! lxc delete "$LXDSERVER":"$host" "${@:3}" --force &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
+            if ! cloudify_container_delete "$host" "${@:3}" --force &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
 
             PKG_DEBUG "Executing: sudo sed -ri \"/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d\" /etc/hosts"
             command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts &>/dev/null <<<"$hostpwd"

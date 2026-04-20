@@ -16,6 +16,7 @@ The repo contains both a library of package recipes and the code that makes inst
 cloudify              # CLI router (~300 lines) — sources lib/*.sh modules
 lib/                  # Extracted library modules
   colors.sh           # Terminal color setup
+  containers.sh       # Container operations via ivps (launch, delete, IP lookup)
   credentials.sh      # Credential management and prompting
   hosts.sh            # Host inventory (list, filter by tags)
   os.sh               # OS detection (distro, version, arch)
@@ -54,6 +55,8 @@ When `cloudify install bat --on myhost` runs:
 4. On the remote host: the gist clones/pulls `~/cloudify` from GitHub, symlinks `/usr/local/bin/cloudify`, then `cloudify install bat` runs the package recipe
 
 ## Contributing: Package Enriching & Updating
+
+**For package recipe conventions, API reference, and examples, see the "Writing a Package Recipe" section in `README.md`.** This doc is the single source of truth for how to create new packages.
 
 Cloudify is open to community contributions via GitHub PRs. The development workflow is TDD-based:
 

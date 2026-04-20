@@ -160,6 +160,7 @@ cloudify              CLI router (367 lines) — sources lib/*.sh modules
 Taskfile.yml          Task runner definitions (task setup-container, task test, etc.)
 lib/
   colors.sh           Terminal color setup
+  containers.sh       Container operations via ivps (launch, delete, IP lookup)
   credentials.sh      Credential management and prompting
   hosts.sh            Host inventory (list, filter by tags)
   os.sh               OS detection (distro, version, arch)
@@ -204,37 +205,64 @@ task lint               # Run shellcheck in container
 
 ### Writing a Package Recipe
 
-Each package lives in `pkg/<name>/init.sh`. Recipes use the `pkg_*` plugin API:
+Each package lives in `pkg/<name>/`. The only required file is `init.sh`.
 
-```bash
-# Simple apt package
-pkg_apt_install curl
+#### Directory structure
 
-# Install from GitHub release (auto-detects latest version + arch)
-pkg_install_release bat "sharkdp/bat"
-
-# Install another cloudify package as a dependency
-pkg_depends git
-
-# Backup a file before modifying it
-pkg_backup /etc/someconfig
-
-# Add a line to ~/.bashrc (within cloudify section marker)
-pkg_in_startuprc 'export PATH="$HOME/.local/bin:$PATH"'
+```
+pkg/hermes/
+├── init.sh        # Required — the install recipe
+└── @default       # Optional — tag file (empty file)
 ```
 
-**Available API functions:**
+Tag files are empty files used for filtering. `@default` means the package is installed by `cloudify install default`. Create custom tags with `@<tag>` (e.g., `@web`, `@dev`).
+
+#### Recipe conventions
+
+Recipes are plain bash scripts. They run with `set -Eeuo pipefail` inherited from the main router. The `pkg_*` API functions are available automatically (no sourcing needed). The script runs inside the target environment (local or remote via SSH), so commands like `curl`, `apt-get`, and `bash` are available directly.
+
+#### Minimal examples
+
+**APT package:**
+```bash
+#!/usr/bin/env bash
+# entr — run commands when files change
+# doc: http://entrproject.org/
+apt-get install -y entr
+```
+
+**GitHub release:**
+```bash
+#!/usr/bin/env bash
+# bat — better cat
+pkg_install_release bat "sharkdp/bat"
+```
+
+**Custom script with dependency:**
+```bash
+#!/usr/bin/env bash
+# my-tool — needs git first
+pkg_depends git
+curl -fsSL https://example.com/install.sh | bash
+```
+
+#### Available API functions
 
 | Function | Purpose |
 |----------|---------|
-| `pkg_apt_install <pkg>` | Install apt package (skips if present) |
+| `pkg_apt_install <pkg...>` | Install apt packages (skips already-installed) |
 | `pkg_apt_update [--force]` | Update apt cache |
 | `pkg_apt_repository <repo>` | Add apt repository |
-| `pkg_depends <pkg...>` | Install cloudify packages as dependencies |
-| `pkg_install_release <name> <repo>` | Install latest GitHub release |
-| `pkg_backup <path>` | Backup file/dir to temp location |
+| `pkg_depends <pkg...>` | Install cloudify packages as dependencies (falls back to apt) |
+| `pkg_install_release <name> <repo>` | Install latest GitHub release (auto-detects arch) |
+| `pkg_backup <path>` | Backup file/dir to temp location (rotated, up to 5) |
 | `pkg_restore <path>` | Restore from backup |
-| `pkg_in_startuprc <line>` | Add line to ~/.bashrc |
+| `pkg_in_startuprc <line>` | Add line to ~/.bashrc (deduplicated) |
+| `PKG_DEBUG <msg>` | Print debug message when `DEBUG=true` |
+
+#### `pkg_depends` behavior
+
+For each argument, `pkg_depends` checks if a cloudify recipe exists (`pkg/<name>/init.sh`). If yes, it runs that recipe. If not, it falls back to `pkg_apt_install`. This means `pkg_depends git jq bat` works regardless of whether those are cloudify packages or plain apt packages.
 
 ### Integration Tests
 

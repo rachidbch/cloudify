@@ -48,6 +48,41 @@ _run_shell_case() {
     local ssh_target="${CLOUDIFY_REMOTE_USER:+$CLOUDIFY_REMOTE_USER@}$host"
 
     if [[ $# -eq 0 ]] || [[ "${1:-}" == "-i" ]]; then
+        if [[ "${1:-}" == "-i" ]]; then
+            shift
+            # -i explicitly requests interactive: always use -t
+            ssh -t -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$ssh_target" "$@"
+        else
+            # Bare shell: use -t only when stdin is a TTY
+            local tty_flag=""
+            [ -t 0 ] && tty_flag="-t"
+            ssh $tty_flag -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$ssh_target" "$@"
+        fi
+    else
+        ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$ssh_target" "$@" 2>&1 | tail -n +2
+    fi
+}
+
+# Same as _run_shell_case but forces -t (simulates TTY being available)
+_run_shell_case_with_tty() {
+    source lib/colors.sh && cloudify_setup_colors
+    source lib/utils.sh
+    source lib/package-api.sh
+    source lib/containers.sh
+    source lib/remote.sh
+    source lib/packages.sh
+    source lib/hosts.sh
+
+    set -- "shell" "hermes" "$@"
+
+    [[ -z "${2:-}" ]] && die "Missing host"
+    shift
+    local host="$1"
+    shift
+
+    local ssh_target="${CLOUDIFY_REMOTE_USER:+$CLOUDIFY_REMOTE_USER@}$host"
+
+    if [[ $# -eq 0 ]] || [[ "${1:-}" == "-i" ]]; then
         [[ "${1:-}" == "-i" ]] && shift
         ssh -t -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$ssh_target" "$@"
     else
@@ -84,11 +119,19 @@ _run_shell_case() {
 # Bare shell (no command) → interactive with -t
 # ---------------------------------------------------------------
 
-@test "shell with no args uses ssh -t (interactive)" {
+@test "shell with no args uses ssh -t when stdin is a TTY" {
+    _create_ssh_stub
+    # Force TTY detection to true
+    _run_shell_case_with_tty
+
+    grep -q "\-t" "$STUB_DIR/ssh_calls.log"
+}
+
+@test "shell with no args omits -t when stdin is not a TTY" {
     _create_ssh_stub
     _run_shell_case
 
-    grep -q "\-t" "$STUB_DIR/ssh_calls.log"
+    ! grep -q "\-t" "$STUB_DIR/ssh_calls.log"
 }
 
 @test "shell with no args does NOT pipe through tail" {

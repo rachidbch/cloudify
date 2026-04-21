@@ -247,13 +247,15 @@ function main() {
             local host="$1"
             shift
 
+            local ssh_target="${CLOUDIFY_REMOTE_USER:+$CLOUDIFY_REMOTE_USER@}$host"
+
             if [[ $# -eq 0 ]] || [[ "${1:-}" == "-i" ]]; then
                 # Interactive: allocate TTY (bare shell or -i flag)
                 [[ "${1:-}" == "-i" ]] && shift
-                ssh -t -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$host" "$@"
+                ssh -t -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$ssh_target" "$@"
             else
                 # Non-interactive: pipe output, strip SSH banner
-                ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$host" "$@" 2>&1 | tail -n +2
+                ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$ssh_target" "$@" 2>&1 | tail -n +2
             fi
             ;;
         execute | exec)

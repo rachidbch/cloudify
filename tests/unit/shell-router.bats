@@ -123,3 +123,29 @@ _run_shell_case() {
 
     grep -q "hermes --version" "$STUB_DIR/ssh_calls.log"
 }
+
+# ---------------------------------------------------------------
+# Router: unrecognized arguments must not exit silently
+# ---------------------------------------------------------------
+
+@test "router exits with error on unrecognized positional argument" {
+    # Simulate: cloudify hermes shell (wrong order — 'hermes' hits *) break
+    _create_ssh_stub
+    source lib/colors.sh && cloudify_setup_colors
+    source lib/utils.sh
+    source lib/package-api.sh
+    source lib/containers.sh
+    source lib/remote.sh
+    source lib/packages.sh
+    source lib/hosts.sh
+
+    # Run the main parse loop with a wrong arg order
+    run bash -c "
+        export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true
+        export CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-test CLOUDIFY_TMP=/tmp/cf-test-tmp
+        export DEBUG=false CLOUDIFY_HOSTPWD=test
+        mkdir -p /tmp/cf-test/pkg /tmp/cf-test/inventory /tmp/cf-test-tmp
+        cd /root/cloudify && bash cloudify hermes shell 2>&1
+    "
+    [ "$status" -ne 0 ]
+}

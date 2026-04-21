@@ -367,6 +367,7 @@ function main() {
                 [[ -z "${2:-}" || "${2:-}" == "--on" || "${2:-}" == "on" || "${2:-}" == "o" ]] && {
                     [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
                     is_parsing_packages="ended"
+                    [[ "$hosts" != "localhost" ]] && cloudify_init_paths
                     for host in $hosts; do
                         if [[ "$hosts" == "localhost" ]]; then
                             local pkgs_str="${packages/--$action/}"

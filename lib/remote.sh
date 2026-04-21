@@ -63,7 +63,7 @@ function cloudify_remote_sync() {
     if [[ "$host" == "localhost" ]]; then
         PKG_DEBUG executing cloudify "$*"
         local cloudify_remote_exit_code=0
-        cloudify "$@" 2>&1 | sed "s/^/$host: /" | sed "s/^$host: $//" \
+        cloudify "$@" 2>&1 | sed "s/^/$host: /" | sed "s/^${host}: \$//" \
             | tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}" >&2 \
             || cloudify_remote_exit_code=$?
         echo "$cloudify_remote_exit_code" > "$CLOUDIFY_TMP/${host}.exit"
@@ -102,7 +102,7 @@ function cloudify_remote_sync() {
         ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" \
             "$CLOUDIFY_REMOTE_USER@$host" "$cloudify_remote_payload" 2>&1 \
             | sed "s/^/$host: /" \
-            | sed "s/^/$host: $//" \
+            | sed "s/^${host}: \$//" \
             | tail -n +2 \
             | tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}" >&2 \
             || cloudify_remote_exit_code=$?

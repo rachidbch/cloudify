@@ -74,6 +74,9 @@ function cloudify_init_paths() {
     # Ensure tmp folder exists
     [[ -d "$CLOUDIFY_TMP" ]] || mkdir -p "$CLOUDIFY_TMP"
 
+    # Initialize log file for this session
+    cloudify_init_log
+
     # Ensure ~/.local/bin exists and is in the path
     [[ -d "$CLOUDIFY_LOCAL_BIN" ]] || mkdir -p "$CLOUDIFY_LOCAL_BIN"
     [[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"
@@ -121,10 +124,12 @@ function _cloudify_execute_package_action() {
     if [[ "$action" == "install" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs[*]}${RESET}"
         (cloudify_install_package "${pkgs[@]}") &
+        _CLOUDIFY_BG_PIDS+=($!)
         is_setup_in_progress=true
     elif [[ "$action" == "uninstall" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs[*]}${RESET}"
         (cloudify_uninstall_package "${pkgs[@]}") &
+        _CLOUDIFY_BG_PIDS+=($!)
         is_setup_in_progress=true
     else
         die "Unexpected package action: $action"
@@ -164,6 +169,7 @@ function main() {
     local is_parsing_hosts=false
     local is_parsing_packages=false
     local is_setup_in_progress=false
+    local -a _CLOUDIFY_BG_PIDS=()
 
     # No arguments given, show usage
     [[ "$#" == 0 ]] && usage && exit 0
@@ -388,8 +394,19 @@ function main() {
     # Print Setup in progress only if we launched background setup
     $is_setup_in_progress && {
         msg "${GREEN}Setup of machines in progress...${RESET}"
-        wait
-        msg "${GREEN}Setup Done.${RESET}"
+
+        local had_failures=false
+        for _bg_pid in "${_CLOUDIFY_BG_PIDS[@]}"; do
+            if ! wait "$_bg_pid"; then
+                had_failures=true
+            fi
+        done
+
+        if $had_failures; then
+            msg "${RED}Setup completed with errors. Log: ${CLOUDIFY_LOG_FILE:-}${RESET}"
+        else
+            msg "${GREEN}Setup Done.${RESET}"
+        fi
     }
     return 0
 }

@@ -3,16 +3,14 @@ UBUNTU_VER="$(lsb_release -r | cut -f2)"
 
 # Python2 should always be accessible through `python` command
 
-if [ -z "$(command -v "python" 2>&1)"  ]; then 
+if [ -z "$(command -v "python" 2>&1)"  ]; then
   echo "Installing python2 as python"
-  [ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ] &&  sudo apt-get -q update
-  pkg_apt_install python 
+  pkg_apt_install python
 fi
 
 ## Python3 should always be accessible through `python3` command
-if [ -z "$(command -v "python3" 2>&1)"  ]; then 
+if [ -z "$(command -v "python3" 2>&1)"  ]; then
   echo "Installing python3 as python3"
-  [ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ] &&  sudo apt-get -q update
   pkg_apt_install python3
 fi
 

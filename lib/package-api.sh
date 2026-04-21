@@ -192,76 +192,14 @@ function pkg_in_startuprc() {
     done
 }
 
-# Update apt cache
-function pkg_apt_update() {
+# Update apt cache (thin wrapper — idempotency handled by apt-get shadow)
+pkg_apt_update() { apt-get update "${1:-}"; }
 
-    cloudify_get_password password user host
-    # shellcheck disable=SC2154
-    [[ -z ${password} ]] && die "Password not set for user $user on host $host."
+# Add apt source (thin wrapper — idempotency handled by add-apt-repository shadow)
+pkg_apt_repository() { for s in "$@"; do add-apt-repository "ppa:$s" -y; done; }
 
-    if [[ "${1-}" == "--force" || -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ]]; then
-        PKG_DEBUG "Updating apt packages lists"
-        command sudo -kS -p '' apt-get -q update <<<"$password"
-        local exitcode=$?
-        if [ "$exitcode" -ne 0 ]; then
-            die "Error updating apt packages lists:" "$exitcode"
-        else
-            PKG_DEBUG "Apt packages lists updated."
-        fi
-    fi
-}
-
-# Add apt source
-function pkg_apt_repository() {
-    cloudify_get_password password user host
-    # shellcheck disable=SC2154
-    [[ -z ${password} ]] && die "Password not set for user $user on host $host."
-
-    for apt_source in "${@}"; do
-        if ! grep -q "^deb .*${apt_source}" /etc/apt/sources.list.d/*; then
-            command sudo -kS -p '' add-apt-repository "ppa:${apt_source}" -y <<<"$password"
-        fi
-    done
-    pkg_apt_update --force
-}
-
-# Install apt package if not already installed
-function pkg_apt_install() {
-
-    cloudify_get_password password user host
-    # shellcheck disable=SC2154
-    [[ -z ${password} ]] && die "Password not set for user $user on host $host."
-
-    local pkgname=""
-    local had_error=0
-
-    pkg_apt_update
-
-    for pkg in "${@}"; do
-        # If a deb file is passed, get the package name from it
-        # Of course, this only works if deb files are consistently named "/path/to/<package name>.deb"
-        if [[ $pkg == *.deb ]] && [[ -f $pkg ]]; then
-            pkgname=$(basename "$pkg")
-            pkgname=${pkgname%.*}
-        else
-            pkgname=$pkg
-        fi
-
-        PKG_DEBUG_LN "Installing $pkgname apt package"
-
-        if ! dpkg -l "$pkgname" |& grep -q "^ii  $pkgname"; then
-            command sudo -kS -p '' apt-get -q install "$pkg" -y <<<"$password"
-            local exitcode=$?
-            if [ "$exitcode" -ne 0 ]; then
-                msg "${RED}Error installing $pkg (exit code $exitcode). Continuing with remaining packages.${RESET}"
-                had_error=1
-            fi
-        else
-            PKG_DEBUG_LN "$pkg apt package already present"
-        fi
-    done
-    return "$had_error"
-}
+# Install apt package (thin wrapper — idempotency handled by apt-get shadow)
+pkg_apt_install() { apt-get install -y "$@"; }
 
 # Install latest release from Github
 function pkg_install_release() {
@@ -376,6 +314,7 @@ function pkg_install_release() {
 function pkg_depends() {
     local package_recipe_path
     local script_basename
+    local -a failed_packages=()
     for pkg in "$@"; do
         # Does the package even exit?
         if cloudify_is_package "$pkg"; then
@@ -384,10 +323,16 @@ function pkg_depends() {
                 package_recipe_path=$(cloudify_package_recipe_path "$pkg")
                 PKG_DEBUG sourcing "$package_recipe_path"
                 # shellcheck source=/dev/null
-                source "$package_recipe_path"
+                if ! (source "$package_recipe_path"); then
+                    failed_packages+=("$pkg")
+                    continue
+                fi
             else
                 msg "${GREEN}Package $pkg has no recipe. Trying Native Package Manager.${RESET}"
-                pkg_apt_install "${pkg}"
+                if ! pkg_apt_install "${pkg}"; then
+                    failed_packages+=("$pkg")
+                    continue
+                fi
             fi
 
             # Install package scripts in ~/.local/bin
@@ -397,13 +342,23 @@ function pkg_depends() {
                 # Note that this can also be prevented by setting the 'nullglob' option
                 script_basename=$(basename "$script")
                 PKG_DEBUG copying "$script" to "$CLOUDIFY_LOCAL_BIN"/"${script_basename%.script}"
-                cp -paf "$script" "$CLOUDIFY_LOCAL_BIN"/"${script_basename%.script}"
+                if ! cp -paf "$script" "$CLOUDIFY_LOCAL_BIN"/"${script_basename%.script}"; then
+                    msg "${RED}Failed to install script: ${script_basename%.script}${RESET}"
+                    failed_packages+=("$pkg")
+                    break
+                fi
             done
         else
             msg "${GREEN}No package $pkg found. Trying Native Package Manager.${RESET}"
-            pkg_apt_install "${pkg}"
+            if ! pkg_apt_install "${pkg}"; then
+                failed_packages+=("$pkg")
+            fi
         fi
     done
+    if [[ ${#failed_packages[@]} -gt 0 ]]; then
+        msg "${RED}Failed packages: ${failed_packages[*]}${RESET}"
+        return 1
+    fi
 }
 
 # Alias: legacy name kept for backwards compatibility

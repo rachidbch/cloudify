@@ -8,11 +8,8 @@
 # dependencies management is done per project directory using composer
 
 
-if ! grep -q "^deb .*ondrej/php" /etc/apt/sources.list.d/*; then
-  sudo add-apt-repository ppa:ondrej/php -y
-  sudo apt-get -q update
-fi
-sudo apt-get -q install php -y
+add-apt-repository ppa:ondrej/php -y
+apt-get install -y php
 
 # =todo= should install php 7.2 instead but no available repo for Ubuntu 17.10 (As it's not a LTS Ubuntu version)
 #sudo apt-get -q install php7.2-cli -y
@@ -71,7 +68,7 @@ if [ -z "$(which psysh)" ]; then
   [[ ":${PATH}:" != *":$HOME/.composer/vendor/bin:"* ]] && export PATH="${PATH}:${HOME}/.composer/vendor/bin"
   # install sqlite php driver needed to read manual doc from within psysh
   echo "installing php-sqlite3 ..."
-  sudo apt-get -q install php-sqlite3 -y
+  apt-get install -y php-sqlite3
   echo "installing php manual doc ..."
   # install php manual doc
   [ -d ~/.local/share/psysh ] || wget -nv -P ~/.local/share/psysh/ "http://psysh.org/manual/en/php_manual.sqlite"

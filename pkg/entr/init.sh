@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-
-# install fd
+# install entr
 # doc: http://entrproject.org/
-sudo apt-get -q update
-sudo apt-get -q install entr -y
-
+apt-get install -y entr

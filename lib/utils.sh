@@ -12,8 +12,26 @@ _CLOUDIFY_UTILS_LOADED=1
 function cleanup() {
     trap - SIGINT SIGTERM ERR EXIT
 
-    # Script cleanup here
-    $DEBUG || rm -rf "${CLOUDIFY_TMP}"
+    if $DEBUG; then
+        return 0
+    fi
+    if [[ -d "$CLOUDIFY_TMP" ]]; then
+        if [[ -d "$CLOUDIFY_TMP/logs" ]]; then
+            find "$CLOUDIFY_TMP" -mindepth 1 -maxdepth 1 ! -name 'logs' -exec rm -rf {} +
+        else
+            rm -rf "${CLOUDIFY_TMP}"
+        fi
+    fi
+}
+
+# Initialize log file for this cloudify session
+function cloudify_init_log() {
+    export CLOUDIFY_LOG_DIR="$CLOUDIFY_TMP/logs"
+    mkdir -p "$CLOUDIFY_LOG_DIR"
+    local timestamp
+    timestamp=$(date +%Y%m%d-%H%M%S)
+    export CLOUDIFY_LOG_FILE="$CLOUDIFY_LOG_DIR/${timestamp}.log"
+    : > "$CLOUDIFY_LOG_FILE"
 }
 
 #== GENERAL UTILITIES

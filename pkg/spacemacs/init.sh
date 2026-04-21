@@ -4,11 +4,8 @@
 # spacemacs install
 
 if [[ -d "$HOME"/.dotfiles/spacemacs/.spacemacs.d ]]; then
-  if ! grep -q "^deb .*kelleyk/emacs" /etc/apt/sources.list.d/*; then
-    sudo add-apt-repository ppa:kelleyk/emacs
-    sudo apt-get -q update
-  fi
-  sudo apt-get -q install emacs26-nox -y #non-X version
+  add-apt-repository ppa:kelleyk/emacs -y
+  apt-get install -y emacs26-nox #non-X version
 
   # spacemacs install
   [ -d ~/.spacemacs.emacs.d ] || git clone https://github.com/syl20bnr/spacemacs ~/.spacemacs.emacs.d
@@ -23,7 +20,7 @@ if [[ -d "$HOME"/.dotfiles/spacemacs/.spacemacs.d ]]; then
   # 1. missing layers dir
   [ -d ~/.spacemacs.d/layers ] || mkdir ~/.spacemacs.d/layers
 
-  # 2. ac-ispell package bug: see https://github.com/syl20bnr/spacemacs/issues/11095 
+  # 2. ac-ispell package bug: see https://github.com/syl20bnr/spacemacs/issues/11095
   [ -d ~/.spacemacs.d/private/emacs-ac-ispell ] || git clone  https://github.com/syohex/emacs-ac-ispell.git ~/.spacemacs.d/private/emacs-ac-ispell
   # install package manually in spacemacs: SPC SPC package-install-file ~/.spacemacs.d/private/emacs-ac-ispell          ;; =todo= automate
 

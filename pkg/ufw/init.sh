@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
- [ -z "$(find /var/cache/apt/pkgcache.bin -mmin -60)" ] &&  sudo apt-get -q update
- sudo apt-get -q install ufw -y
- sudo ufw allow OpenSSH
- sudo ufw enable 
+apt-get install -y ufw
+sudo ufw allow OpenSSH
+sudo ufw enable

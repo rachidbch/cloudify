@@ -75,7 +75,7 @@ cloudify --on server1 server2 install git
 cloudify --on @web install nginx
 ```
 
-Remote execution flow: cloudify SSHes into the target host, runs the bootstrap gist which clones/pulls `~/cloudify` from GitHub, then executes the package recipe. Credentials are injected into the payload via `envsubst` with an explicit allow-list.
+Remote execution flow: cloudify SSHes into the target host, runs the bootstrap gist which clones/pulls `~/cloudify` from GitHub, then executes the package recipe. Credentials are injected into the payload via `envsubst` with an explicit allow-list. All remote SSH output is captured to a timestamped log file. If any host fails, the final status message reports the log path for debugging.
 
 ## Package List
 
@@ -120,6 +120,17 @@ To skip credential prompts in automated contexts:
 ```bash
 export CLOUDIFY_SKIPCREDENTIALS=true
 ```
+
+### Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `CLOUDIFY_TMP` | `/tmp/cloudify` | Temp directory for logs, exit code files, and backups. Log files persist here after exit. |
+| `CLOUDIFY_DIR` | `~/cloudify` | Path to the cloudify repository (used to find `pkg/` and `inventory/`). |
+| `CLOUDIFY_SKIPCREDENTIALS` | `false` | Skip credential prompts in automated contexts. |
+| `CLOUDIFY_DISABLE_COLORS` | `false` | Disable colored output. |
+| `CLOUDIFY_FORCE_UPDATE` | `false` | Force git pull on remote hosts regardless of update delay. |
+| `CLOUDIFY_UPDATE_DELAY` | `30` | Minutes before auto-updating the remote repo. |
 
 ### Host Inventory
 
@@ -167,7 +178,7 @@ lib/
   package-api.sh      Public pkg_* plugin API used by package recipes
   packages.sh         Package discovery, recipe resolution, install/uninstall
   remote.sh           Remote execution via SSH with payload template
-  shadow.sh           Git shadow repo management
+  shadow.sh           Shadow command loader (sources lib/shadows/*.sh)
   utils.sh            Utilities: msg, die, backup/restore, git URL parsing
 pkg/
   <pkg>/init.sh       Package recipe (install script)
@@ -264,6 +275,80 @@ curl -fsSL https://example.com/install.sh | bash
 
 For each argument, `pkg_depends` checks if a cloudify recipe exists (`pkg/<name>/init.sh`). If yes, it runs that recipe. If not, it falls back to `pkg_apt_install`. This means `pkg_depends git jq bat` works regardless of whether those are cloudify packages or plain apt packages.
 
+### Shadow Command System
+
+Package recipes call `sudo`, `apt-get`, `add-apt-repository`, and `git` as plain commands — no password handling, no idempotency checks, no authentication logic. These commands are **shadowed** by wrapper functions that transparently inject the necessary behavior. This is what makes a one-line recipe like `apt-get install -y entr` work both locally and on a remote host over SSH.
+
+**How shadowing works:** `lib/shadow.sh` sources all scripts in `lib/shadows/*.sh` at startup. Each script defines a function with the same name as the command it replaces (e.g., `function sudo() { ... }`). Inside the function, `command sudo` calls the real binary. Recipes never import or configure anything — the shadows are active by the time `init.sh` runs.
+
+#### Password flow (local to remote sudo)
+
+```
+Credentials collected              Password injected at point of use
+(interactive prompt or             (shadow sudo() function)
+ ~/.cloudify/.credentials)
+        │                                    │
+        ▼                                    ▼
+CLOUDIFY_LOCAL_PWD          cloudify_get_password reads CLOUDIFY_HOSTPWD
+CLOUDIFY_REMOTE_PWD                  │
+        │                             ▼
+        ▼                    command sudo -kS -p "" bash -c "$cmd" <<< "$password"
+envsubst injects                     │
+CLOUDIFY_REMOTE_PWD           -k forces re-auth
+into CLOUDIFY_HOSTPWD          -S reads password from stdin
+on remote host                 herestring supplies password
+```
+
+On the local machine, `CLOUDIFY_LOCAL_PWD` is used directly. For remote execution, `lib/remote.sh` uses `envsubst` with an explicit allow-list to inject `CLOUDIFY_REMOTE_PWD` as `CLOUDIFY_HOSTPWD` in the SSH payload. Passwords are redacted to `***********` in debug output.
+
+#### Shadow `sudo`
+
+The shadow `sudo()` (`lib/shadows/sudo.sh`) handles the core challenge: sudo needs the password on stdin (via `-S`), but stdin may already be in use by a pipe (e.g., `echo 'data' | sudo tee file`). The function:
+
+1. Calls `cloudify_get_password` to read `CLOUDIFY_HOSTPWD`
+2. Detects whether stdin is a pipe or a terminal
+3. If piped: captures stdin into a variable, then rearranges the call as `echo '<piped_data>' | <command>` passed as a string argument to `bash -c` — this frees stdin for the password herestring
+4. Executes `command sudo -kS -p "" bash -c "$sudocmd" <<< "$password"` — the herestring supplies the password via stdin while `-S` tells sudo to read it from stdin
+
+#### Shadow `apt-get`
+
+The shadow `apt-get()` (`lib/shadows/apt-get.sh`) adds two layers on top of the shadow `sudo`:
+
+- **Idempotency**: `apt-get install` checks `dpkg -l` and skips already-installed packages
+- **Auto-update**: if the apt cache is older than 60 minutes, it runs `apt-get update` automatically before installing
+
+The `apt` command is also shadowed as a simple alias to the `apt-get` shadow.
+
+#### Shadow `add-apt-repository`
+
+The shadow `add-apt-repository()` (`lib/shadows/add-apt-repository.sh`) adds:
+
+- **Idempotency**: checks `/etc/apt/sources.list.d/*` for the repository before adding
+- **Auto-update**: runs `apt-get update --force` after adding a new repository
+
+#### Shadow `git`
+
+The shadow `git()` (`lib/shadows/git.sh`) handles two concerns:
+
+- **Authentication**: for `git clone` and other operations against GitHub/GitLab, it sets up `GIT_ASKPASS` with a script that echoes the appropriate token (`CLOUDIFY_GITHUBPWD` or `CLOUDIFY_GITLABPWD`). It also configures `url.insteadOf` rules to force HTTPS connections.
+- **Clone-to-pull conversion**: if `git clone` targets a directory that already exists and contains a repo pointing to the same remote, it silently converts the operation to `git pull` instead of failing.
+
+### Logging & Error Reporting
+
+When cloudify runs package installations (locally or remotely), it captures all output to a timestamped log file and reports failures clearly.
+
+**What gets logged:** Every `cloudify_remote_sync` call (both localhost and SSH branches) tees its output to `$CLOUDIFY_TMP/logs/<timestamp>.log`. This includes the full SSH stdout/stderr from remote hosts, prefixed with the hostname.
+
+**Failure propagation:** Backgrounded installs run in parallel across hosts. Each one writes its exit code to `$CLOUDIFY_TMP/<host>.exit`. The main router waits for all background PIDs individually — if any fails, the final message shows:
+
+```
+Setup completed with errors. Log: /tmp/cloudify/logs/20260421-143052.log
+```
+
+**Log persistence:** The `cleanup()` function preserves `$CLOUDIFY_TMP/logs/` on exit, so log files survive for post-mortem debugging. All other temp files are removed. When `DEBUG=true`, everything is preserved.
+
+**Exit code files:** `$CLOUDIFY_TMP/<host>.exit` contains the numeric exit code from each host's SSH session. These are cleaned up with the rest of the temp directory (but logs persist).
+
 ### Integration Tests
 
 Integration tests exercise the full production path: `cloudify --on <host> install <pkg>` over SSH. Each test gets a clean container via snapshot restore.
@@ -299,6 +384,23 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 2. Write tests first, make them pass
 3. Commit and push: `git push github my-feature`
 4. Open a PR against `master` on GitHub
+
+### Security Considerations
+
+**Host key verification is disabled.** Both cloudify and ivps use `StrictHostKeyChecking=no` on all SSH connections (including rsync-over-SSH). This is necessary because:
+
+- Containers are created and destroyed frequently — their host keys change every time
+- Remote execution is non-interactive — there is no TTY to prompt for host key acceptance
+
+**The risk:** disabling host key checking means SSH will not detect man-in-the-middle attacks. An attacker who can intercept network traffic between your machine and a target host could impersonate that host.
+
+**Mitigations:**
+
+- On trusted networks (local Incus containers, Tailscale mesh), the MITM surface is minimal
+- For production hosts, pre-populate `~/.ssh/known_hosts` manually and remove `StrictHostKeyChecking=no` from your SSH config
+- Tailscale SSH provides its own host verification independent of SSH host keys — this is the recommended approach for remote hosts
+
+**Future improvement:** cloudify could pre-populate `known_hosts` from the inventory or parse SSH banners to prompt the user on first connection (as noted in `lib/remote.sh`).
 
 ### Snapshot Management
 

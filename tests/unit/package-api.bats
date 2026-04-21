@@ -6,6 +6,9 @@ setup() {
     setup_test_env
     source lib/colors.sh && cloudify_setup_colors
     source lib/utils.sh
+    source lib/os.sh
+    source lib/packages.sh
+    source lib/shadow.sh
     source lib/package-api.sh
 }
 
@@ -286,27 +289,30 @@ teardown() {
     [[ "$output" == *"jq"* ]]
 }
 
-@test "pkg_apt_install continues when a package fails" {
-    # Create a mock apt-get that fails for "badpkg" but succeeds for others
-    local mock_bin="$CLOUDIFY_LOCAL_BIN/apt-get"
-    cat > "$mock_bin" <<'MOCK'
+@test "pkg_apt_install propagates failure from shadow" {
+    # Mock dpkg to report packages as NOT installed
+    local mock_dpkg="$CLOUDIFY_LOCAL_BIN/dpkg"
+    cat > "$mock_dpkg" <<'MOCK'
 #!/bin/bash
-if [[ "$*" == *"badpkg"* ]]; then
-    echo "E: Unable to locate package badpkg" >&2
-    exit 100
-fi
-exit 0
+exit 1
 MOCK
-    chmod +x "$mock_bin"
+    chmod +x "$mock_dpkg"
+
+    # Override sudo to fail for badpkg
+    sudo() {
+        if [[ "$*" == *"badpkg"* ]]; then
+            return 100
+        fi
+        return 0
+    }
+
     export PATH="$CLOUDIFY_LOCAL_BIN:$PATH"
 
-    # Should not die — should return the exit code but not abort
-    run pkg_apt_install goodpkg badpkg
-    # It should have failed (badpkg) but not crashed with die()
-    # The function returns the last exit code
+    # Should propagate the failure from the shadow
+    run pkg_apt_install badpkg
     [ "$status" -ne 0 ]
 
-    rm -f "$mock_bin"
+    rm -f "$mock_dpkg"
 }
 
 @test "module guard prevents double-sourcing" {
@@ -319,4 +325,101 @@ MOCK
     [ "$(type -t cloudify_install_package_release)" = "function" ]
     [ "$(type -t pkg_install_release)" = "function" ]
     [ "$(type -t pkg_depends)" = "function" ]
+}
+
+#-- pkg_depends error collection tests --
+
+@test "pkg_depends returns 0 when all packages succeed" {
+    # Mock cloudify_is_package to return false (not a cloudify package)
+    cloudify_is_package() { return 1; }
+    # Mock pkg_apt_install to succeed
+    pkg_apt_install() { return 0; }
+
+    run pkg_depends pkg1 pkg2 pkg3
+    [ "$status" -eq 0 ]
+}
+
+@test "pkg_depends collects errors from multiple failing packages" {
+    # Mock cloudify_is_package to return false
+    cloudify_is_package() { return 1; }
+    # Mock pkg_apt_install to fail for specific packages
+    pkg_apt_install() {
+        if [[ "$1" == "badpkg1" || "$1" == "badpkg2" ]]; then
+            return 1
+        fi
+        return 0
+    }
+
+    run pkg_depends goodpkg badpkg1 badpkg2
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"badpkg1"* ]]
+    [[ "$output" == *"badpkg2"* ]]
+}
+
+@test "pkg_depends continues after a package fails" {
+    # Mock cloudify_is_package to return false
+    cloudify_is_package() { return 1; }
+    local install_log="$CLOUDIFY_TMP/install_log"
+    # Mock pkg_apt_install to log calls and fail for badpkg
+    pkg_apt_install() {
+        echo "$1" >> "$install_log"
+        if [[ "$1" == "badpkg" ]]; then
+            return 1
+        fi
+        return 0
+    }
+
+    run pkg_depends badpkg goodpkg
+    [ "$status" -eq 1 ]
+    # Both packages must have been attempted
+    grep -q "badpkg" "$install_log"
+    grep -q "goodpkg" "$install_log"
+}
+
+@test "pkg_depends isolates recipe failures in subshell" {
+    # Create a mock cloudify package with a failing recipe
+    mkdir -p "$CLOUDIFY_DIR/pkg/testfailpkg"
+    echo 'exit 1' > "$CLOUDIFY_DIR/pkg/testfailpkg/init.sh"
+
+    # Mock cloudify_is_package to return true for testfailpkg
+    cloudify_is_package() { [[ "$1" == "testfailpkg" ]]; }
+    # Mock cloudify_package_has_recipe
+    cloudify_package_has_recipe() { [[ "$1" == "testfailpkg" ]]; }
+    # Mock cloudify_package_recipe_path
+    cloudify_package_recipe_path() { echo "$CLOUDIFY_DIR/pkg/$1/init.sh"; }
+
+    # Also test that subsequent packages are still attempted
+    local install_log="$CLOUDIFY_TMP/install_log"
+    pkg_apt_install() { echo "$1" >> "$install_log"; return 0; }
+
+    run pkg_depends testfailpkg goodpkg
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"testfailpkg"* ]]
+    # goodpkg was still attempted (cloudify_is_package returns false for it)
+    grep -q "goodpkg" "$install_log"
+}
+
+@test "pkg_depends collects error when .script copy fails" {
+    # Create a mock cloudify package with a succeeding recipe and a .script file
+    mkdir -p "$CLOUDIFY_DIR/pkg/scriptpkg"
+    echo 'exit 0' > "$CLOUDIFY_DIR/pkg/scriptpkg/init.sh"
+    echo '#!/bin/bash' > "$CLOUDIFY_DIR/pkg/scriptpkg/mytool.script"
+    chmod +x "$CLOUDIFY_DIR/pkg/scriptpkg/mytool.script"
+
+    # Mock package discovery
+    cloudify_is_package() { [[ "$1" == "scriptpkg" ]]; }
+    cloudify_package_has_recipe() { [[ "$1" == "scriptpkg" ]]; }
+    cloudify_package_recipe_path() { echo "$CLOUDIFY_DIR/pkg/$1/init.sh"; }
+
+    # Override cp to simulate failure when copying .script files to CLOUDIFY_LOCAL_BIN
+    cp() {
+        if [[ "${*}" == *"$CLOUDIFY_LOCAL_BIN"* ]]; then
+            return 1
+        fi
+        command cp "$@"
+    }
+
+    run pkg_depends scriptpkg
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"scriptpkg"* ]]
 }

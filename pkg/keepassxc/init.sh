@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Keepassxc 
+# Keepassxc
 # Crucially Keepassxc features a commmand line tool: keepassxc-cli
 
-if ! grep -q "^deb .*phoerious/keepassxc" /etc/apt/sources.list.d/*; then
-  sudo add-apt-repository ppa:phoerious/keepassxc -y
-  sudo apt-get -q update 
-fi
-sudo apt-get -q install keepassxc  -y
+add-apt-repository ppa:phoerious/keepassxc -y
+apt-get install -y keepassxc
 
 # Install kip
 (

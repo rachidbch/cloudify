@@ -23,7 +23,7 @@ lib/                  # Extracted library modules
   package-api.sh      # Public pkg_* plugin API used by 65+ package scripts
   packages.sh         # Package discovery, recipe resolution, install/uninstall
   remote.sh           # Remote execution via SSH with payload template
-  shadow.sh           # Git shadow repo management
+  shadow.sh           # Shadow command loader (sources lib/shadows/*.sh)
   utils.sh            # Utilities: msg, die, backup/restore, git URL parsing
 pkg/                  # Package library — one directory per package
   <pkg>/init.sh       # Package recipe (install script)
@@ -105,6 +105,8 @@ The GitHub repo is at `github` remote (origin points to gitlab for historical re
 - **Plugin API stability**: `pkg_*` function signatures must not change — they are used by 65+ package scripts
 - **Remote payload template**: `lib/remote.sh` uses single-quoted `$VAR` references in the template function. `declare -f` extracts the body as literal text, then `envsubst` with an explicit allow-list substitutes only the listed variables. This avoids expanding `$HOME` or `$(...)` that must resolve on the remote side.
 - **Runtime manager**: mise (`pkg/mise`) is the preferred runtime manager for Go, Node.js, and Python. Legacy packages (gvm, nvm, pyenv) have been replaced with mise-based recipes.
+- **Shadow command system**: `lib/shadow.sh` sources `lib/shadows/*.sh` which override `sudo`, `apt-get`, `add-apt-repository`, and `git` with wrapper functions. This is the mechanism that makes remote sudo work without interactive prompts. The chain is: `CLOUDIFY_HOSTPWD` → `cloudify_get_password` → herestring to `command sudo -kS`. Package recipes call bare `sudo`/`apt-get`/`git` — the shadows handle password injection, idempotency, and authentication transparently. See "Shadow Command System" in README.md for full documentation.
+- **Logging & error propagation**: `cloudify_init_log()` in `lib/utils.sh` creates a timestamped log file under `$CLOUDIFY_TMP/logs/`. `cloudify_remote_sync()` tees all SSH/local output to this file. Each backgrounded host writes its exit code to `$CLOUDIFY_TMP/<host>.exit`. The main router tracks PIDs in `_CLOUDIFY_BG_PIDS` and waits for each individually, reporting failures with the log path. `cleanup()` preserves the `logs/` directory so log files survive after exit. See "Logging & Error Reporting" in README.md for full documentation.
 - **Container OS**: Ubuntu 24.04 (matches production target)
 
 ## Working Plan

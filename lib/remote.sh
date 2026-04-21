@@ -18,6 +18,9 @@ function cloudify_remote_payload_template() {
     export CLOUDIFY_DISABLE_COLORS='$CLOUDIFY_DISABLE_COLORS'
     export CLOUDIFY_FORCE_COLORS=true
 
+    export DEBIAN_FRONTEND=noninteractive
+    export NEEDRESTART_MODE=a
+
     export CLOUDIFY_SKIPCREDENTIALS=true
 
     export DEBUG='$DEBUG'
@@ -48,6 +51,7 @@ function cloudify_remote_payload_template() {
 # By default cloudify_remote executes remotely
 function cloudify_remote() {
     (cloudify_remote_sync "$@") &
+    _CLOUDIFY_BG_PIDS+=($!)
 }
 
 # For some sub-commands (eg. $ cloudify exec ...), we need synchronous exection
@@ -58,7 +62,12 @@ function cloudify_remote_sync() {
 
     if [[ "$host" == "localhost" ]]; then
         PKG_DEBUG executing cloudify "$*"
-        cloudify "$@" |& sed "s/^/$host: /" |& sed "s/^$host: $//"
+        local cloudify_remote_exit_code=0
+        cloudify "$@" 2>&1 | sed "s/^/$host: /" | sed "s/^$host: $//" \
+            | tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}" >&2 \
+            || cloudify_remote_exit_code=$?
+        echo "$cloudify_remote_exit_code" > "$CLOUDIFY_TMP/${host}.exit"
+        return "$cloudify_remote_exit_code"
     else
 
         # Read remote payload template
@@ -89,6 +98,15 @@ function cloudify_remote_sync() {
         # Known limitation: remote host key checking is disabled (StrictHostKeyChecking=no).
         # This avoids first-connection prompts but accepts a MITM risk. Future improvement:
         # pre-populate known_hosts from the inventory, or parse SSH banners to prompt the user.
-        ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$CLOUDIFY_REMOTE_USER@$host" "$cloudify_remote_payload" |& sed "s/^/$host: /" |& sed "s/^$host: $//" |& tail -n +2
+        local cloudify_remote_exit_code=0
+        ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" \
+            "$CLOUDIFY_REMOTE_USER@$host" "$cloudify_remote_payload" 2>&1 \
+            | sed "s/^/$host: /" \
+            | sed "s/^/$host: $//" \
+            | tail -n +2 \
+            | tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}" >&2 \
+            || cloudify_remote_exit_code=$?
+        echo "$cloudify_remote_exit_code" > "$CLOUDIFY_TMP/${host}.exit"
+        return "$cloudify_remote_exit_code"
     fi
 }

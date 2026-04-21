@@ -179,3 +179,54 @@ teardown() {
     source lib/utils.sh
     [ "$(type -t msg)" = "function" ]
 }
+
+#-- cloudify_init_log tests --
+
+@test "cloudify_init_log creates log directory" {
+    cloudify_init_log
+    [ -d "$CLOUDIFY_TMP/logs" ]
+}
+
+@test "cloudify_init_log creates log file" {
+    cloudify_init_log
+    [ -f "$CLOUDIFY_LOG_FILE" ]
+}
+
+@test "cloudify_init_log exports CLOUDIFY_LOG_FILE with timestamp" {
+    cloudify_init_log
+    [[ "$CLOUDIFY_LOG_FILE" == *".log" ]]
+    [[ "$CLOUDIFY_LOG_FILE" == "$CLOUDIFY_TMP/logs/"* ]]
+}
+
+@test "cloudify_init_log creates empty log file" {
+    cloudify_init_log
+    [ ! -s "$CLOUDIFY_LOG_FILE" ]
+}
+
+#-- cleanup preserving logs tests --
+
+@test "cleanup preserves logs directory when DEBUG=false" {
+    cloudify_init_log
+    # Create a non-log file that should be removed
+    touch "$CLOUDIFY_TMP/somefile"
+    mkdir -p "$CLOUDIFY_TMP/somedir"
+    touch "$CLOUDIFY_TMP/somedir/nested"
+
+    DEBUG=false cleanup
+
+    [ -d "$CLOUDIFY_TMP/logs" ]
+    [ ! -e "$CLOUDIFY_TMP/somefile" ]
+    [ ! -e "$CLOUDIFY_TMP/somedir" ]
+}
+
+@test "cleanup removes everything when no logs directory exists" {
+    touch "$CLOUDIFY_TMP/somefile"
+    DEBUG=false cleanup
+    [ ! -d "$CLOUDIFY_TMP" ]
+}
+
+@test "cleanup skips removal when DEBUG=true" {
+    touch "$CLOUDIFY_TMP/somefile"
+    DEBUG=true cleanup
+    [ -e "$CLOUDIFY_TMP/somefile" ]
+}

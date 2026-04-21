@@ -43,6 +43,7 @@ function cloudify_remote_payload_template() {
 
     # shellcheck disable=SC1009,SC1054,SC1056,SC1072,SC1073,SC1083,SC2016,SC2086
     if '$CLOUDIFY_FORCE_UPDATE' || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -'$CLOUDIFY_UPDATE_DELAY')" ]]; then
+        command -v git >/dev/null 2>&1 || apt-get install -y -qq git
         bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL')"
     fi
     :
@@ -99,7 +100,7 @@ function cloudify_remote_sync() {
         # This avoids first-connection prompts but accepts a MITM risk. Future improvement:
         # pre-populate known_hosts from the inventory, or parse SSH banners to prompt the user.
         local cloudify_remote_exit_code=0
-        ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" \
+        ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" -o "ConnectTimeout=10" \
             "$CLOUDIFY_REMOTE_USER@$host" "$cloudify_remote_payload" 2>&1 \
             | sed "s/^/$host: /" \
             | sed "s/^${host}: \$//" \

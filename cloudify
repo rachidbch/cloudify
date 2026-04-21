@@ -259,16 +259,16 @@ function main() {
                 if [[ "${1:-}" == "-i" ]]; then
                     shift
                     # -i explicitly requests interactive: always use -t
-                    ssh -t -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$ssh_target" "$@"
+                    ssh -t -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" -o "ConnectTimeout=10" "$ssh_target" "$@"
                 else
                     # Bare shell: use -t only when stdin is a TTY
                     local tty_flag=""
                     [ -t 0 ] && tty_flag="-t"
-                    ssh $tty_flag -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$ssh_target" "$@"
+                    ssh $tty_flag -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" -o "ConnectTimeout=10" "$ssh_target" "$@"
                 fi
             else
                 # Non-interactive: pipe output, strip SSH banner
-                ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" "$ssh_target" "$@" 2>&1 | tail -n +2
+                ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" -o "ConnectTimeout=10" "$ssh_target" "$@" 2>&1 | tail -n +2
             fi
             ;;
         execute | exec)

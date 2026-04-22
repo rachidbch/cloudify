@@ -19,12 +19,15 @@ function usage() {
         cloudify add | a <pkg>                          install package on local machine
         cloudify add | a  default                       install default packages on local machine
         cloudify remove| rem | r <pkg>                  uninstall package
+        cloudify launch|run [remote:]<name> [image]     Launch container (default image: ubuntu/24.04/cloud)
+        cloudify delete|del [remote:]<name>             Delete container
         cloudify hosts                                  list remote hosts
         cloudify host <host>                            print <host> remote host status
         cloudify <host> shell                           open a shell session on <host> remote host
         cloudify ... --on <host>                                 <host> remote host to run action on
         cloudify test|t                                 helper to test code
         cloudify hostnames <host> [IP]                  Add <host>'IP in /etc/hosts
+        cloudify exec <host> <cmd>                      Run command on remote host
 EOF
 }
 
@@ -49,7 +52,11 @@ export CLOUDIFY_DEFAULT_OS="ubuntu"
 : "${CLOUDIFY_SKIPCREDENTIALS:=false}" && export CLOUDIFY_SKIPCREDENTIALS
 
 #== DEBUG STATE
+: "${CLOUDIFY_LOG_LEVEL:=INFO}" && export CLOUDIFY_LOG_LEVEL
 : "${DEBUG:=false}" && export DEBUG
+if $DEBUG && [[ "$CLOUDIFY_LOG_LEVEL" != "DEBUG" ]]; then
+    export CLOUDIFY_LOG_LEVEL=DEBUG
+fi
 
 #== CLEANUP BEFORE EXIT
 trap cleanup SIGINT SIGTERM ERR EXIT
@@ -82,7 +89,18 @@ function cloudify_init_paths() {
     [[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"
 
     # shellcheck disable=SC2016
-    pkg_in_startuprc '[[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"' >>"$HOME"/.bashrc
+    pkg_in_startuprc '[[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"'
+}
+
+# Guard: ensure remote credentials are set before remote operations
+function _cloudify_require_remote_creds() {
+    if [[ -z "${CLOUDIFY_REMOTE_PWD+x}" ]]; then
+        die "CLOUDIFY_REMOTE_PWD is not set. Run 'cloudify credentials' to set remote credentials."
+    fi
+    if [[ -z "${CLOUDIFY_REMOTE_USER:-}" ]]; then
+        CLOUDIFY_REMOTE_USER="$(whoami)"
+        export CLOUDIFY_REMOTE_USER
+    fi
 }
 
 #== SUB-COMMANDS
@@ -163,6 +181,10 @@ function main() {
     # Setup colors
     cloudify_setup_colors
 
+    # Start session logging — ensures every invocation gets a log file
+    export _CLOUDIFY_CMDLINE="$*"
+    cloudify_init_log
+
     local hosts=""
     local packages=""
 
@@ -216,38 +238,24 @@ function main() {
             break
             ;;
         launch | run)
-            local hostpwd="${CLOUDIFY_LOCAL_PWD}"
-            [[ -z ${hostpwd} ]] && die "Host password not set"
-
-            local host_image="$2"
-            local host="$3"
+            local host="$2"
+            local host_image="${3:-}"
             local restparams="${*:4}"
 
-            if [[ "$host_image" != *:* ]]; then
-                host_image=""
-                host="$2"
-                restparams="${*:3}"
-            fi
-
+            log_info "Launching container $host"
             # shellcheck disable=SC2086
-            cloudify_container_launch "$host" "$host_image" $restparams
+            cloudify_container_launch "$host" ${host_image:+"$host_image"} $restparams
             hostip=$(cloudify_container_ip "$host")
-
-            $DEBUG && PKG_PAUSE "line before cloudify_add_in_hosts"
-            cloudify_add_in_hosts "$hostip $host $host.remote"
-            $DEBUG && PKG_PAUSE "line after cloudify_add_in_hosts"
+            log_info "Container $host IP: $hostip"
             ;;
         delete | del)
-            local hostpwd="${CLOUDIFY_LOCAL_PWD}"
-            [[ -z ${hostpwd} ]] && die "Host password not set"
             host="$2"
-
+            log_info "Deleting container $host"
             if ! cloudify_container_delete "$host" "${@:3}" --force &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
-
-            PKG_DEBUG "Executing: sudo sed -ri \"/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d\" /etc/hosts"
-            command sudo -kS -p '' sed -ri "/^[0-9]+.[0-9]+.[0-9]+.[0-9]+ $host $host.remote$/d" /etc/hosts &>/dev/null <<<"$hostpwd"
+            log_info "Container $host deleted"
             ;;
         shell | sh)
+            _cloudify_require_remote_creds
             [[ -z "${2:-}" ]] && die "Missing host"
             shift
             local host="$1"
@@ -280,6 +288,7 @@ function main() {
                 # =Note= Intentional command execution via 'execute' subcommand
                 bash -c "$*"
             else
+                _cloudify_require_remote_creds
                 cloudify_remote_sync "$host" exec localhost "\"$*\""
             fi
             break
@@ -367,7 +376,7 @@ function main() {
                 [[ -z "${2:-}" || "${2:-}" == "--on" || "${2:-}" == "on" || "${2:-}" == "o" ]] && {
                     [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
                     is_parsing_packages="ended"
-                    [[ "$hosts" != "localhost" ]] && cloudify_init_paths
+                    [[ "$hosts" != "localhost" ]] && { _cloudify_require_remote_creds; cloudify_init_paths; }
                     for host in $hosts; do
                         if [[ "$hosts" == "localhost" ]]; then
                             local pkgs_str="${packages/--$action/}"

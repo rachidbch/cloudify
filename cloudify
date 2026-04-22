@@ -88,12 +88,18 @@ function cloudify_init_paths() {
     # Initialize log file for this session
     cloudify_init_log
 
-    # Ensure ~/.local/bin exists and is in the path
-    [[ -d "$CLOUDIFY_LOCAL_BIN" ]] || mkdir -p "$CLOUDIFY_LOCAL_BIN"
+    # Ensure ~/.local/bin exists and is in PATH (one-time, persisted to ~/.profile)
+    if ! grep -qFx "# CLOUDIFY PATH END" "$HOME"/.profile 2>/dev/null; then
+        [[ -d "$CLOUDIFY_LOCAL_BIN" ]] || mkdir -p "$CLOUDIFY_LOCAL_BIN"
+        {
+            echo ""
+            echo "# CLOUDIFY PATH START"
+            # shellcheck disable=SC2016
+            echo '[[ ":${PATH}:" != *":${HOME}/.local/bin:"* ]] && export PATH="${PATH}:${HOME}/.local/bin"'
+            echo "# CLOUDIFY PATH END"
+        } >> "$HOME"/.profile
+    fi
     [[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"
-
-    # shellcheck disable=SC2016
-    pkg_in_startuprc '[[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"'
 }
 
 # Guard: ensure remote credentials are set before remote operations

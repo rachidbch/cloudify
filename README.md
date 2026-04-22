@@ -44,13 +44,20 @@ Actions:
 Commands:
   help                        Print usage help
   init                        Initialize cloudify (once per session)
-  credentials | c             Set credentials (local, remote, github, gitlab)
+  credentials | c             Set all credentials interactively
+  credentials remote          Set remote credentials only
+  credentials github          Set GitHub credentials only
+  credentials gitlab          Set GitLab credentials only
+  credentials restic          Set Restic/Rclone credentials only
+  credentials --check         Check credential status
   packages | pkgs             List installable packages
   packages | pkgs default     List default packages
+  launch | run [remote:]<name> [image]  Launch container (default image: ubuntu/24.04/cloud)
+  delete | del [remote:]<name>          Delete container
   hosts                       List remote hosts
   host <host>                 Print host status
   <host> shell                Open shell on remote host
-  <host> exec <cmd>           Run command on remote host
+  exec <host> <cmd>           Run command on remote host
   hostnames <host> [IP]       Add host IP to /etc/hosts
 ```
 
@@ -97,25 +104,39 @@ Run `cloudify packages` for the full list with tags.
 
 ### Credentials
 
-Credentials are stored in environment variables. Set them interactively:
+Credentials are stored in `~/.config/cloudify/credentials` (XDG-compliant, `chmod 600`). They are loaded automatically at startup — no need to source any file after reboot.
+
+Set all credentials interactively:
 
 ```bash
 cloudify credentials
 ```
 
-Or export them directly:
+Set only a specific section:
 
 ```bash
-export CLOUDIFY_LOCAL_USER=myuser
-export CLOUDIFY_LOCAL_PWD=mypassword
+cloudify credentials remote    # CLOUDIFY_REMOTE_USER, CLOUDIFY_REMOTE_PWD
+cloudify credentials github    # CLOUDIFY_GITHUBUSER, CLOUDIFY_GITHUBPWD
+cloudify credentials gitlab    # CLOUDIFY_GITLABUSER, CLOUDIFY_GITLABPWD
+cloudify credentials restic    # CLOUDIFY_RCLONE_*, RESTIC_PASSWORD
+```
+
+Check which sections are configured:
+
+```bash
+cloudify credentials --check
+```
+
+Or export them directly (overrides file values):
+
+```bash
 export CLOUDIFY_REMOTE_USER=root
 export CLOUDIFY_REMOTE_PWD=serverpassword
 export CLOUDIFY_GITHUBUSER=mygithub
 export CLOUDIFY_GITHUBPWD=myghptoken
-# ... see cloudify credentials for the full list
 ```
 
-To skip credential prompts in automated contexts:
+To skip credential loading in automated contexts:
 
 ```bash
 export CLOUDIFY_SKIPCREDENTIALS=true
@@ -127,10 +148,13 @@ export CLOUDIFY_SKIPCREDENTIALS=true
 |----------|---------|---------|
 | `CLOUDIFY_TMP` | `/tmp/cloudify` | Temp directory for logs, exit code files, and backups. Log files persist here after exit. |
 | `CLOUDIFY_DIR` | `~/cloudify` | Path to the cloudify repository (used to find `pkg/` and `inventory/`). |
-| `CLOUDIFY_SKIPCREDENTIALS` | `false` | Skip credential prompts in automated contexts. |
+| `CLOUDIFY_CREDENTIALS_DIR` | `~/.config/cloudify` | Directory for the credentials file (XDG-compliant). |
+| `CLOUDIFY_CREDENTIALS_FILE` | `~/.config/cloudify/credentials` | File where credentials are persisted (`chmod 600`). Loaded at startup. |
+| `CLOUDIFY_SKIPCREDENTIALS` | `false` | Skip credential loading in automated contexts. |
 | `CLOUDIFY_DISABLE_COLORS` | `false` | Disable colored output. |
 | `CLOUDIFY_FORCE_UPDATE` | `false` | Force git pull on remote hosts regardless of update delay. |
 | `CLOUDIFY_UPDATE_DELAY` | `30` | Minutes before auto-updating the remote repo. |
+| `CLOUDIFY_LOG_LEVEL` | `INFO` | Log verbosity: `SILENT`, `CRITICAL`, `ERROR`, `WARN`, `INFO`, `DEBUG`. |
 
 ### Host Inventory
 
@@ -172,7 +196,7 @@ Taskfile.yml          Task runner definitions (task setup-container, task test, 
 lib/
   colors.sh           Terminal color setup
   containers.sh       Container operations via ivps (launch, delete, IP lookup)
-  credentials.sh      Credential management and prompting
+  credentials.sh      Credential management: save, load, migrate, section-based prompting
   hosts.sh            Host inventory (list, filter by tags)
   os.sh               OS detection (distro, version, arch)
   package-api.sh      Public pkg_* plugin API used by package recipes
@@ -284,22 +308,21 @@ Package recipes call `sudo`, `apt-get`, `add-apt-repository`, and `git` as plain
 #### Password flow (local to remote sudo)
 
 ```
-Credentials collected              Password injected at point of use
-(interactive prompt or             (shadow sudo() function)
- ~/.cloudify/.credentials)
+Credentials stored in               Password injected at point of use
+~/.config/cloudify/credentials      (shadow sudo() function)
         │                                    │
         ▼                                    ▼
-CLOUDIFY_LOCAL_PWD          cloudify_get_password reads CLOUDIFY_HOSTPWD
-CLOUDIFY_REMOTE_PWD                  │
-        │                             ▼
-        ▼                    command sudo -kS -p "" bash -c "$cmd" <<< "$password"
-envsubst injects                     │
-CLOUDIFY_REMOTE_PWD           -k forces re-auth
-into CLOUDIFY_HOSTPWD          -S reads password from stdin
-on remote host                 herestring supplies password
+cloudify_credentials_load       cloudify_get_password reads CLOUDIFY_HOSTPWD
+sets CLOUDIFY_REMOTE_PWD                 │
+        │                                ▼
+        ▼                       command sudo -kS -p "" bash -c "$cmd" <<< "$password"
+envsubst injects                        │
+CLOUDIFY_REMOTE_PWD              -k forces re-auth
+into CLOUDIFY_HOSTPWD             -S reads password from stdin
+on remote host                    herestring supplies password
 ```
 
-On the local machine, `CLOUDIFY_LOCAL_PWD` is used directly. For remote execution, `lib/remote.sh` uses `envsubst` with an explicit allow-list to inject `CLOUDIFY_REMOTE_PWD` as `CLOUDIFY_HOSTPWD` in the SSH payload. Passwords are redacted to `***********` in debug output.
+Credentials are loaded from `~/.config/cloudify/credentials` at startup. Environment variables override file values. For remote execution, `lib/remote.sh` uses `envsubst` with an explicit allow-list to inject `CLOUDIFY_REMOTE_PWD` as `CLOUDIFY_HOSTPWD` in the SSH payload. Passwords are redacted to `***********` in debug output.
 
 #### Shadow `sudo`
 

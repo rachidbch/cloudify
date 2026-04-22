@@ -132,7 +132,6 @@ function cloudify_credentials_load() {
             continue
         fi
         eval "$line"
-        export "$var_name"
     done < "$cred_file"
 }
 

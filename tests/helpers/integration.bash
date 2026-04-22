@@ -26,6 +26,10 @@ setup_integration_env() {
     export CLOUDIFY_LOCAL_USER=root
     export CLOUDIFY_LOCAL_PWD=root
 
+    export CLOUDIFY_CREDENTIALS_DIR="$CLOUDIFY_TMP/config"
+    export CLOUDIFY_CREDENTIALS_FILE="$CLOUDIFY_CREDENTIALS_DIR/credentials"
+    mkdir -p "$CLOUDIFY_CREDENTIALS_DIR"
+
     # Default settings
     export CLOUDIFY_IS_LOCAL=true
     export CLOUDIFY_LOCAL_BIN="$CLOUDIFY_TMP/.local/bin"

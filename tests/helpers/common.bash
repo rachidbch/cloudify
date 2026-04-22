@@ -34,9 +34,14 @@ setup_test_env() {
     export CLOUDIFY_HOSTPWD=testpwd
     export CLOUDIFY_RECIPE_FILENAME=init.sh
 
+    export CLOUDIFY_CREDENTIALS_DIR="$CLOUDIFY_TMP/config"
+    export CLOUDIFY_CREDENTIALS_FILE="$CLOUDIFY_CREDENTIALS_DIR/credentials"
+    mkdir -p "$CLOUDIFY_CREDENTIALS_DIR"
+
     export CLOUDIFY_BOOTSTRAP_URL="https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh"
 
     export DEBUG=false
+    export CLOUDIFY_LOG_LEVEL=INFO
 
     # Set script dir to the real cloudify repo
     export CLOUDIFY_SCRIPT_DIR="/root/cloudify"

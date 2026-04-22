@@ -36,7 +36,7 @@ function apt-get() {
     install)
         shift
         # Auto-update if cache stale
-        _cloudify_apt_cache_stale && sudo apt-get -q update
+        _cloudify_apt_cache_stale && sudo apt-get -qq update
         # Install each package with idempotency check
         local pkg pkgname
         for pkg in "$@"; do
@@ -45,14 +45,14 @@ function apt-get() {
             if _cloudify_pkg_installed "$pkgname"; then
                 PKG_DEBUG "$pkgname already present"
             else
-                sudo apt-get -q install "$pkg" -y
+                sudo apt-get -qq install "$pkg" -y
             fi
         done
         ;;
     update)
         shift
         if [[ "${1:-}" == "--force" ]] || _cloudify_apt_cache_stale; then
-            sudo apt-get -q update
+            sudo apt-get -qq update
         fi
         ;;
     remove | purge)

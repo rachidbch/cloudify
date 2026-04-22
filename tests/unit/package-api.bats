@@ -27,6 +27,7 @@ teardown() {
 
 @test "PKG_DEBUG outputs when DEBUG=true" {
     export DEBUG=true
+    export CLOUDIFY_LOG_LEVEL=DEBUG
     run PKG_DEBUG "test message"
     [ "$status" -eq 0 ]
     [[ "$output" == *"test message"* ]]

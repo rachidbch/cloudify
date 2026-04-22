@@ -97,3 +97,24 @@ teardown() {
     # Verify the PID is valid (still running or just finished)
     kill -0 "${_CLOUDIFY_BG_PIDS[0]}" 2>/dev/null || true
 }
+
+#-- Payload template content tests --
+
+@test "payload template suppresses find stderr on missing .#last_update" {
+    local payload
+    payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+    [[ "$payload" == *"2>"*"/dev/null"* ]]
+}
+
+@test "payload template exports CLOUDIFY_LOCAL_BIN" {
+    local payload
+    payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+    [[ "$payload" == *"CLOUDIFY_LOCAL_BIN"* ]]
+    [[ "$payload" == *".local/bin"* ]]
+}
+
+@test "payload template exports CLOUDIFY_LOG_LEVEL" {
+    local payload
+    payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+    [[ "$payload" == *"CLOUDIFY_LOG_LEVEL"* ]]
+}

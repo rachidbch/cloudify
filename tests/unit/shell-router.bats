@@ -211,7 +211,7 @@ STUB
     PATH="$STUB_DIR:$PATH" run bash -c "
         export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true
         export CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-test CLOUDIFY_TMP=/tmp/cf-test-tmp
-        export DEBUG=false CLOUDIFY_HOSTPWD=test CLOUDIFY_REMOTE_USER=root
+        export DEBUG=false CLOUDIFY_HOSTPWD=test CLOUDIFY_REMOTE_PWD=test CLOUDIFY_REMOTE_USER=root
         mkdir -p /tmp/cf-test/pkg /tmp/cf-test/inventory /tmp/cf-test-tmp
         cd /root/cloudify && bash cloudify shell testhost echo ok 2>&1
     "

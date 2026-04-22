@@ -190,3 +190,29 @@ MOCK
     source lib/shadows/add-apt-repository.sh
     [ "$(type -t add-apt-repository)" = "function" ]
 }
+
+#-- Quiet output tests --
+
+@test "apt-get install uses -qq for quiet output" {
+    local mock_bin="$CLOUDIFY_LOCAL_BIN/dpkg"
+    cat > "$mock_bin" <<'MOCK'
+#!/bin/bash
+exit 1
+MOCK
+    chmod +x "$mock_bin"
+    export PATH="$CLOUDIFY_LOCAL_BIN:$PATH"
+
+    apt-get install somepkg -y
+
+    grep -q "\-qq" "$_SUDO_LOG"
+    rm -f "$mock_bin"
+}
+
+@test "apt-get update --force uses -qq for quiet output" {
+    mkdir -p /var/cache/apt 2>/dev/null || true
+    touch /var/cache/apt/pkgcache.bin
+
+    apt-get update --force
+
+    grep -q "\-qq" "$_SUDO_LOG"
+}

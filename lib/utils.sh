@@ -6,13 +6,75 @@ set -Eeuo pipefail
 [[ -n "${_CLOUDIFY_UTILS_LOADED:-}" ]] && return 0
 _CLOUDIFY_UTILS_LOADED=1
 
+#== LOG LEVEL SYSTEM
+
+function _cloudify_log_level_num() {
+    case "${1:-INFO}" in
+        SILENT)   echo 0 ;;
+        CRITICAL) echo 1 ;;
+        ERROR)    echo 2 ;;
+        WARN)     echo 3 ;;
+        INFO)     echo 4 ;;
+        DEBUG)    echo 5 ;;
+        *)        echo 4 ;;
+    esac
+}
+
+function _cloudify_log_level() {
+    local level_num
+    local configured_num
+    level_num=$(_cloudify_log_level_num "$1")
+    configured_num=$(_cloudify_log_level_num "${CLOUDIFY_LOG_LEVEL:-INFO}")
+    (( level_num <= configured_num ))
+}
+
+function log_critical() {
+    _cloudify_log_level "CRITICAL" || return 0
+    local line="${RED}[CRITICAL]${RESET} $*"
+    msg "$line"
+    [[ -n "${CLOUDIFY_LOG_FILE:-}" ]] && echo "$line" >> "$CLOUDIFY_LOG_FILE"
+    return 0
+}
+
+function log_error() {
+    _cloudify_log_level "ERROR" || return 0
+    local line="${RED}[ERROR]${RESET} $*"
+    msg "$line"
+    [[ -n "${CLOUDIFY_LOG_FILE:-}" ]] && echo "$line" >> "$CLOUDIFY_LOG_FILE"
+    return 0
+}
+
+function log_warn() {
+    _cloudify_log_level "WARN" || return 0
+    local line="${ORANGE}[WARN]${RESET} $*"
+    msg "$line"
+    [[ -n "${CLOUDIFY_LOG_FILE:-}" ]] && echo "$line" >> "$CLOUDIFY_LOG_FILE"
+    return 0
+}
+
+function log_info() {
+    _cloudify_log_level "INFO" || return 0
+    local line="${GREEN}[INFO]${RESET} $*"
+    msg "$line"
+    [[ -n "${CLOUDIFY_LOG_FILE:-}" ]] && echo "$line" >> "$CLOUDIFY_LOG_FILE"
+    return 0
+}
+
+function log_debug() {
+    _cloudify_log_level "DEBUG" || return 0
+    local line="${PURPLE}[DEBUG]${RESET} $*"
+    msg "$line"
+    [[ -n "${CLOUDIFY_LOG_FILE:-}" ]] && echo "$line" >> "$CLOUDIFY_LOG_FILE"
+    return 0
+}
+
 #== CLEANUP BEFORE EXIT
 # Call clean up function before exiting script
 # Note: trap is set in the main script
 function cleanup() {
     trap - SIGINT SIGTERM ERR EXIT
 
-    if $DEBUG; then
+    if [[ "${CLOUDIFY_LOG_LEVEL:-INFO}" == "DEBUG" ]]; then
         return 0
     fi
     if [[ -d "$CLOUDIFY_TMP" ]]; then
@@ -26,12 +88,16 @@ function cleanup() {
 
 # Initialize log file for this cloudify session
 function cloudify_init_log() {
+    [[ -n "${CLOUDIFY_LOG_FILE:-}" && -f "${CLOUDIFY_LOG_FILE:-}" ]] && return 0
     export CLOUDIFY_LOG_DIR="$CLOUDIFY_TMP/logs"
     mkdir -p "$CLOUDIFY_LOG_DIR"
     local timestamp
     timestamp=$(date +%Y%m%d-%H%M%S)
     export CLOUDIFY_LOG_FILE="$CLOUDIFY_LOG_DIR/${timestamp}.log"
     : > "$CLOUDIFY_LOG_FILE"
+    if [[ -n "${_CLOUDIFY_CMDLINE:-}" ]]; then
+        echo "# cloudify $_CLOUDIFY_CMDLINE" >> "$CLOUDIFY_LOG_FILE"
+    fi
 }
 
 #== GENERAL UTILITIES
@@ -231,7 +297,7 @@ function cloudify_get_password() {
     [[ -z $pwd_var_name ]] && die "cloudify_get_password function called with no argument"
     [[ $pwd_var_name == *\ * ]] && die "cloudify_get_password function called with argument containing a space"
     # Use printf -v to set variables in caller's scope (declare is local to function)
-    printf -v "$pwd_var_name" '%s' "$CLOUDIFY_HOSTPWD"
+    printf -v "$pwd_var_name" '%s' "${CLOUDIFY_HOSTPWD:-}"
     [[ -z "$user_var_name" ]] || printf -v "$user_var_name" '%s' "$(whoami)"
     [[ -z "$host_var_name" ]] || printf -v "$host_var_name" '%s' "$(hostname)"
 }
@@ -258,6 +324,7 @@ function _cloudify_sed_escape() {
 
 # Write entries in /etc/hosts
 function cloudify_add_in_hosts() {
+    log_info "Updating /etc/hosts"
     $DEBUG && PKG_PAUSE "About to execute: cloudify_add_in_hosts"
 
     cloudify_get_password password user host

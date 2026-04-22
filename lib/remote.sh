@@ -24,6 +24,9 @@ function cloudify_remote_payload_template() {
     export CLOUDIFY_SKIPCREDENTIALS=true
 
     export DEBUG='$DEBUG'
+    export CLOUDIFY_LOG_LEVEL='$CLOUDIFY_LOG_LEVEL'
+
+    export CLOUDIFY_LOCAL_BIN="$HOME/.local/bin"
 
     export CLOUDIFY_LOCAL_USER='$CLOUDIFY_REMOTE_USER'
     export CLOUDIFY_LOCAL_PWD='$CLOUDIFY_REMOTE_PWD'
@@ -42,7 +45,7 @@ function cloudify_remote_payload_template() {
     export RESTIC_PASSWORD='$RESTIC_PASSWORD'
 
     # shellcheck disable=SC1009,SC1054,SC1056,SC1072,SC1073,SC1083,SC2016,SC2086
-    if '$CLOUDIFY_FORCE_UPDATE' || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -'$CLOUDIFY_UPDATE_DELAY')" ]]; then
+    if '$CLOUDIFY_FORCE_UPDATE' || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -'$CLOUDIFY_UPDATE_DELAY' 2>/dev/null)" ]]; then
         command -v git >/dev/null 2>&1 || apt-get install -y -qq git
         bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL')"
     fi
@@ -78,7 +81,7 @@ function cloudify_remote_sync() {
         # Substitute template variables via envsubst (only listed variables are expanded)
         # shellcheck disable=SC2016
         cloudify_remote_payload=$(envsubst \
-            '$CLOUDIFY_DISABLE_COLORS $DEBUG $CLOUDIFY_FORCE_UPDATE $CLOUDIFY_UPDATE_DELAY $CLOUDIFY_REMOTE_USER $CLOUDIFY_REMOTE_PWD $CLOUDIFY_GITHUBUSER $CLOUDIFY_GITHUBPWD $CLOUDIFY_GITLABUSER $CLOUDIFY_GITLABPWD $CLOUDIFY_RCLONE_REMOTE $CLOUDIFY_RCLONE_REMOTE_REGION $CLOUDIFY_RCLONE_REMOTE_ENDPOINT $CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID $CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY $RESTIC_PASSWORD $CLOUDIFY_BOOTSTRAP_URL' \
+            '$CLOUDIFY_DISABLE_COLORS $DEBUG $CLOUDIFY_LOG_LEVEL $CLOUDIFY_FORCE_UPDATE $CLOUDIFY_UPDATE_DELAY $CLOUDIFY_REMOTE_USER $CLOUDIFY_REMOTE_PWD $CLOUDIFY_GITHUBUSER $CLOUDIFY_GITHUBPWD $CLOUDIFY_GITLABUSER $CLOUDIFY_GITLABPWD $CLOUDIFY_RCLONE_REMOTE $CLOUDIFY_RCLONE_REMOTE_REGION $CLOUDIFY_RCLONE_REMOTE_ENDPOINT $CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID $CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY $RESTIC_PASSWORD $CLOUDIFY_BOOTSTRAP_URL' \
             <<< "$cloudify_remote_payload")
 
         # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running

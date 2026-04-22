@@ -9,12 +9,14 @@ _CLOUDIFY_PACKAGE_API_LOADED=1
 #== DEBUG FUNCTIONS
 # Print a DEBUG message
 function PKG_DEBUG() {
-    if $DEBUG; then msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE[0]}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} ${*} ${RESET}"; fi
+    _cloudify_log_level "DEBUG" || return 0
+    msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE[0]}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} ${*} ${RESET}"
 }
 
 # Print a DEBUG message after a new line
 function PKG_DEBUG_LN() {
-    if $DEBUG; then msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE[0]}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} ${*} ${RESET}"; fi
+    _cloudify_log_level "DEBUG" || return 0
+    msg "${RED}*** DEBUG *** ${ORANGE}+(${BASH_SOURCE[0]}:${BASH_LINENO[0]}):${PURPLE} ${FUNCNAME[1]:+${FUNCNAME[1]}()}${ORANGE} ${*} ${RESET}"
 }
 
 # Simple break command to ease debug

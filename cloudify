@@ -88,15 +88,6 @@ function cloudify_init_paths() {
     # Initialize log file for this session
     cloudify_init_log
 
-    # Load credentials from XDG config file
-    $CLOUDIFY_SKIPCREDENTIALS || cloudify_credentials_load
-
-    # One-time migration from legacy locations
-    cloudify_credentials_migrate
-
-    # Map local password to unified variable (for cloudify_hostnames localhost)
-    : "${CLOUDIFY_HOSTPWD:="${CLOUDIFY_LOCAL_PWD:-}"}" && export CLOUDIFY_HOSTPWD
-
     # Ensure ~/.local/bin exists and is in the path
     [[ -d "$CLOUDIFY_LOCAL_BIN" ]] || mkdir -p "$CLOUDIFY_LOCAL_BIN"
     [[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"
@@ -198,6 +189,12 @@ function main() {
     export _CLOUDIFY_CMDLINE="$*"
     cloudify_init_log
 
+    # Load credentials from XDG config file (before any cred checks)
+    $CLOUDIFY_SKIPCREDENTIALS || cloudify_credentials_load
+
+    # Map local password to unified variable (for cloudify_hostnames localhost)
+    : "${CLOUDIFY_HOSTPWD:="${CLOUDIFY_LOCAL_PWD:-}"}" && export CLOUDIFY_HOSTPWD
+
     local hosts=""
     local packages=""
 
@@ -260,12 +257,14 @@ function main() {
             cloudify_container_launch "$host" ${host_image:+"$host_image"} $restparams
             hostip=$(cloudify_container_ip "$host")
             log_info "Container $host IP: $hostip"
+            break
             ;;
         delete | del)
             host="$2"
             log_info "Deleting container $host"
             if ! cloudify_container_delete "$host" "${@:3}" --force &>/dev/null; then die "Error deleting $host. Are you sure the host exist?"; fi
             log_info "Container $host deleted"
+            break
             ;;
         shell | sh)
             _cloudify_require_remote_creds

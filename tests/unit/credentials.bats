@@ -20,7 +20,6 @@ teardown() {
     [ "$(type -t cloudify_credentials_ensure_dir)" = "function" ]
     [ "$(type -t cloudify_credentials_save)" = "function" ]
     [ "$(type -t cloudify_credentials_load)" = "function" ]
-    [ "$(type -t cloudify_credentials_migrate)" = "function" ]
     [ "$(type -t cloudify_credentials_check)" = "function" ]
     [ "$(type -t cloudify_credentials_setup)" = "function" ]
 }
@@ -171,57 +170,6 @@ teardown() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"remote:  INCOMPLETE"* ]]
     [[ "$output" == *"github:  INCOMPLETE"* ]]
-}
-
-@test "cloudify_credentials_migrate copies from ~/cloudify/.credentials" {
-    mkdir -p "${HOME}/cloudify"
-    echo "export CLOUDIFY_REMOTE_USER='migrated'" > "${HOME}/cloudify/.credentials"
-    echo "export CLOUDIFY_REMOTE_PWD='migpwd'" >> "${HOME}/cloudify/.credentials"
-
-    # Remove new file if it exists
-    rm -f "$CLOUDIFY_CREDENTIALS_FILE"
-
-    cloudify_credentials_migrate
-    [ -f "$CLOUDIFY_CREDENTIALS_FILE" ]
-    grep -q "migrated" "$CLOUDIFY_CREDENTIALS_FILE"
-
-    # Cleanup
-    rm -f "${HOME}/cloudify/.credentials"
-}
-
-@test "cloudify_credentials_migrate copies from /dev/shm as fallback" {
-    # Ensure no ~/cloudify/.credentials
-    rm -f "${HOME}/cloudify/.credentials"
-    # Create /dev/shm file
-    echo "export CLOUDIFY_REMOTE_USER='shm_user'" > /dev/shm/cloudify_credentials
-
-    # Remove new file if it exists
-    rm -f "$CLOUDIFY_CREDENTIALS_FILE"
-
-    cloudify_credentials_migrate
-    [ -f "$CLOUDIFY_CREDENTIALS_FILE" ]
-    grep -q "shm_user" "$CLOUDIFY_CREDENTIALS_FILE"
-
-    # Cleanup
-    rm -f /dev/shm/cloudify_credentials
-}
-
-@test "cloudify_credentials_migrate does nothing when file exists" {
-    export CLOUDIFY_REMOTE_USER=existing
-    export CLOUDIFY_REMOTE_PWD=existing_pwd
-    cloudify_credentials_save remote
-
-    # Try to migrate — should be a no-op
-    mkdir -p "${HOME}/cloudify"
-    echo "export CLOUDIFY_REMOTE_USER='should_not_appear'" > "${HOME}/cloudify/.credentials"
-
-    cloudify_credentials_migrate
-    # Original file should be unchanged
-    grep -q "existing" "$CLOUDIFY_CREDENTIALS_FILE"
-    ! grep -q "should_not_appear" "$CLOUDIFY_CREDENTIALS_FILE"
-
-    # Cleanup
-    rm -f "${HOME}/cloudify/.credentials"
 }
 
 @test "cloudify_credentials_save saves all sections when no argument" {

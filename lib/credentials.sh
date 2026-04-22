@@ -119,35 +119,6 @@ function cloudify_credentials_load() {
     done < "$cred_file"
 }
 
-# One-time migration from legacy credential locations
-# No-op if new file already exists
-function cloudify_credentials_migrate() {
-    local cred_file="${CLOUDIFY_CREDENTIALS_FILE:-"${XDG_CONFIG_HOME:-$HOME/.config}/cloudify/credentials"}"
-    local cred_dir
-    cred_dir=$(dirname "$cred_file")
-
-    # Already migrated
-    [[ -f "$cred_file" ]] && return 0
-
-    # Try ~/cloudify/.credentials first
-    if [[ -f "${HOME}/cloudify/.credentials" ]]; then
-        mkdir -p "$cred_dir"
-        cp "${HOME}/cloudify/.credentials" "$cred_file"
-        chmod 600 "$cred_file"
-        msg "${GREEN}Credentials migrated from ${HOME}/cloudify/.credentials to $cred_file${RESET}"
-        return 0
-    fi
-
-    # Try /dev/shm/cloudify_credentials as fallback
-    if [[ -f /dev/shm/cloudify_credentials ]]; then
-        mkdir -p "$cred_dir"
-        cp /dev/shm/cloudify_credentials "$cred_file"
-        chmod 600 "$cred_file"
-        msg "${GREEN}Credentials migrated from /dev/shm/cloudify_credentials to $cred_file${RESET}"
-        return 0
-    fi
-}
-
 # Print status of each credential section
 function cloudify_credentials_check() {
     local all_ok=true

@@ -88,6 +88,15 @@ function cloudify_init_paths() {
     # Initialize log file for this session
     cloudify_init_log
 
+    # Load credentials from XDG config file
+    $CLOUDIFY_SKIPCREDENTIALS || cloudify_credentials_load
+
+    # One-time migration from legacy locations
+    cloudify_credentials_migrate
+
+    # Map local password to unified variable (for cloudify_hostnames localhost)
+    : "${CLOUDIFY_HOSTPWD:="${CLOUDIFY_LOCAL_PWD:-}"}" && export CLOUDIFY_HOSTPWD
+
     # Ensure ~/.local/bin exists and is in the path
     [[ -d "$CLOUDIFY_LOCAL_BIN" ]] || mkdir -p "$CLOUDIFY_LOCAL_BIN"
     [[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"

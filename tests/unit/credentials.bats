@@ -18,7 +18,6 @@ teardown() {
     [ "$(type -t cloudify_ask_github_credentials)" = "function" ]
     [ "$(type -t cloudify_ask_gitlab_credentials)" = "function" ]
     [ "$(type -t cloudify_ask_restic_credentials)" = "function" ]
-    [ "$(type -t cloudify_check_credentials)" = "function" ]
     [ "$(type -t cloudify_credentials_ensure_dir)" = "function" ]
     [ "$(type -t cloudify_credentials_save)" = "function" ]
     [ "$(type -t cloudify_credentials_load)" = "function" ]
@@ -27,37 +26,10 @@ teardown() {
     [ "$(type -t cloudify_credentials_setup)" = "function" ]
 }
 
-@test "cloudify_check_credentials with pre-set env vars doesn't prompt" {
-    export CLOUDIFY_LOCAL_USER=testuser
-    export CLOUDIFY_LOCAL_PWD=testpwd
-    export CLOUDIFY_REMOTE_USER=testremote
-    export CLOUDIFY_REMOTE_PWD=testremotepwd
-    export CLOUDIFY_GITHUBUSER=testghuser
-    export CLOUDIFY_GITHUBPWD=testghpwd
-    export CLOUDIFY_GITLABUSER=testgluser
-    export CLOUDIFY_GITLABPWD=testglpwd
-    export CLOUDIFY_RCLONE_REMOTE=testremote
-    export CLOUDIFY_RCLONE_REMOTE_REGION=testregion
-    export CLOUDIFY_RCLONE_REMOTE_ENDPOINT=testendpoint
-    export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID=testaccesskey
-    export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY=testsecretkey
-    export RESTIC_PASSWORD=testresticpwd
-
-    # Remove any .credentials file that might exist in test HOME
-    rm -f "${HOME}/cloudify/.credentials"
-
-    # cloudify_check_credentials should not prompt (i.e. not call read)
-    # and should succeed without error
-    run cloudify_check_credentials
-    [ "$status" -eq 0 ]
-    # No prompts should appear in output (no "user:" or "password" prompts)
-    [[ "$output" != *"user:"* ]] || [[ "$output" != *"User:"* ]]
-}
-
 @test "module guard prevents double-sourcing" {
     source lib/credentials.sh
     source lib/credentials.sh
-    [ "$(type -t cloudify_check_credentials)" = "function" ]
+    [ "$(type -t cloudify_credentials_save)" = "function" ]
 }
 
 @test "_cloudify_ask_credentials helper is defined" {

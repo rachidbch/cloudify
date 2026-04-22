@@ -14,12 +14,17 @@ teardown() {
 }
 
 @test "all credential functions are defined after sourcing" {
-    [ "$(type -t cloudify_ask_localhost_credentials)" = "function" ]
     [ "$(type -t cloudify_ask_host_credentials)" = "function" ]
     [ "$(type -t cloudify_ask_github_credentials)" = "function" ]
     [ "$(type -t cloudify_ask_gitlab_credentials)" = "function" ]
     [ "$(type -t cloudify_ask_restic_credentials)" = "function" ]
     [ "$(type -t cloudify_check_credentials)" = "function" ]
+    [ "$(type -t cloudify_credentials_ensure_dir)" = "function" ]
+    [ "$(type -t cloudify_credentials_save)" = "function" ]
+    [ "$(type -t cloudify_credentials_load)" = "function" ]
+    [ "$(type -t cloudify_credentials_migrate)" = "function" ]
+    [ "$(type -t cloudify_credentials_check)" = "function" ]
+    [ "$(type -t cloudify_credentials_setup)" = "function" ]
 }
 
 @test "cloudify_check_credentials with pre-set env vars doesn't prompt" {
@@ -80,4 +85,205 @@ teardown() {
     [ "$status" -eq 0 ]
     # Value should be single-quoted so metacharacters are literal
     [ "$output" = "export TEST_VAR='\$HOME & \`whoami\` \"test\"'" ]
+}
+
+#== NEW CREDENTIAL MANAGEMENT TESTS ==
+
+@test "cloudify_credentials_ensure_dir creates directory" {
+    local test_dir="$CLOUDIFY_TMP/test_config"
+    CLOUDIFY_CREDENTIALS_DIR="$test_dir"
+    cloudify_credentials_ensure_dir
+    [ -d "$test_dir" ]
+}
+
+@test "cloudify_credentials_ensure_dir sets chmod 700" {
+    local test_dir="$CLOUDIFY_TMP/test_config2"
+    CLOUDIFY_CREDENTIALS_DIR="$test_dir"
+    cloudify_credentials_ensure_dir
+    local perms
+    perms=$(stat -c '%a' "$test_dir")
+    [ "$perms" = "700" ]
+}
+
+@test "cloudify_credentials_save creates credentials file" {
+    export CLOUDIFY_REMOTE_USER=testuser
+    export CLOUDIFY_REMOTE_PWD=testpwd
+    cloudify_credentials_save remote
+    [ -f "$CLOUDIFY_CREDENTIALS_FILE" ]
+}
+
+@test "cloudify_credentials_save writes correct format" {
+    export CLOUDIFY_REMOTE_USER=testuser
+    export CLOUDIFY_REMOTE_PWD=testpwd
+    cloudify_credentials_save remote
+    grep -q "^export CLOUDIFY_REMOTE_USER='testuser'" "$CLOUDIFY_CREDENTIALS_FILE"
+    grep -q "^export CLOUDIFY_REMOTE_PWD='testpwd'" "$CLOUDIFY_CREDENTIALS_FILE"
+}
+
+@test "cloudify_credentials_save sets chmod 600" {
+    export CLOUDIFY_REMOTE_USER=testuser
+    export CLOUDIFY_REMOTE_PWD=testpwd
+    cloudify_credentials_save remote
+    local perms
+    perms=$(stat -c '%a' "$CLOUDIFY_CREDENTIALS_FILE")
+    [ "$perms" = "600" ]
+}
+
+@test "cloudify_credentials_load reads saved credentials" {
+    export CLOUDIFY_REMOTE_USER=loaduser
+    export CLOUDIFY_REMOTE_PWD=loadpwd
+    cloudify_credentials_save remote
+
+    # Unset the vars
+    unset CLOUDIFY_REMOTE_USER
+    unset CLOUDIFY_REMOTE_PWD
+
+    cloudify_credentials_load
+    [ "$CLOUDIFY_REMOTE_USER" = "loaduser" ]
+    [ "$CLOUDIFY_REMOTE_PWD" = "loadpwd" ]
+}
+
+@test "cloudify_credentials_load does not overwrite existing env vars" {
+    export CLOUDIFY_REMOTE_USER=original
+    export CLOUDIFY_REMOTE_PWD=saved_pwd
+    cloudify_credentials_save remote
+
+    export CLOUDIFY_REMOTE_USER=overridden
+    cloudify_credentials_load
+    [ "$CLOUDIFY_REMOTE_USER" = "overridden" ]
+}
+
+@test "cloudify_credentials_load returns 0 when file missing" {
+    CLOUDIFY_CREDENTIALS_FILE="$CLOUDIFY_TMP/nonexistent"
+    cloudify_credentials_load
+}
+
+@test "cloudify_credentials_save updates existing values" {
+    export CLOUDIFY_REMOTE_USER=user1
+    export CLOUDIFY_REMOTE_PWD=pwd1
+    cloudify_credentials_save remote
+
+    export CLOUDIFY_REMOTE_USER=user2
+    export CLOUDIFY_REMOTE_PWD=pwd2
+    cloudify_credentials_save remote
+
+    # Should have only one line per var
+    local user_count
+    user_count=$(grep -c "^export CLOUDIFY_REMOTE_USER=" "$CLOUDIFY_CREDENTIALS_FILE")
+    [ "$user_count" -eq 1 ]
+    grep -q "^export CLOUDIFY_REMOTE_USER='user2'" "$CLOUDIFY_CREDENTIALS_FILE"
+    grep -q "^export CLOUDIFY_REMOTE_PWD='pwd2'" "$CLOUDIFY_CREDENTIALS_FILE"
+}
+
+@test "cloudify_credentials_check reports OK when all set" {
+    export CLOUDIFY_REMOTE_USER=u
+    export CLOUDIFY_REMOTE_PWD=p
+    export CLOUDIFY_GITHUBUSER=u
+    export CLOUDIFY_GITHUBPWD=p
+    export CLOUDIFY_GITLABUSER=u
+    export CLOUDIFY_GITLABPWD=p
+    export CLOUDIFY_RCLONE_REMOTE=r
+    export CLOUDIFY_RCLONE_REMOTE_REGION=r
+    export CLOUDIFY_RCLONE_REMOTE_ENDPOINT=e
+    export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID=a
+    export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY=s
+    export RESTIC_PASSWORD=p
+
+    run cloudify_credentials_check
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"remote:  OK"* ]]
+    [[ "$output" == *"github:  OK"* ]]
+    [[ "$output" == *"gitlab:  OK"* ]]
+    [[ "$output" == *"restic:  OK"* ]]
+}
+
+@test "cloudify_credentials_check reports INCOMPLETE when missing" {
+    unset CLOUDIFY_REMOTE_USER
+    unset CLOUDIFY_REMOTE_PWD
+    unset CLOUDIFY_GITHUBUSER
+    unset CLOUDIFY_GITHUBPWD
+
+    run cloudify_credentials_check
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"remote:  INCOMPLETE"* ]]
+    [[ "$output" == *"github:  INCOMPLETE"* ]]
+}
+
+@test "cloudify_credentials_migrate copies from ~/cloudify/.credentials" {
+    mkdir -p "${HOME}/cloudify"
+    echo "export CLOUDIFY_REMOTE_USER='migrated'" > "${HOME}/cloudify/.credentials"
+    echo "export CLOUDIFY_REMOTE_PWD='migpwd'" >> "${HOME}/cloudify/.credentials"
+
+    # Remove new file if it exists
+    rm -f "$CLOUDIFY_CREDENTIALS_FILE"
+
+    cloudify_credentials_migrate
+    [ -f "$CLOUDIFY_CREDENTIALS_FILE" ]
+    grep -q "migrated" "$CLOUDIFY_CREDENTIALS_FILE"
+
+    # Cleanup
+    rm -f "${HOME}/cloudify/.credentials"
+}
+
+@test "cloudify_credentials_migrate copies from /dev/shm as fallback" {
+    # Ensure no ~/cloudify/.credentials
+    rm -f "${HOME}/cloudify/.credentials"
+    # Create /dev/shm file
+    echo "export CLOUDIFY_REMOTE_USER='shm_user'" > /dev/shm/cloudify_credentials
+
+    # Remove new file if it exists
+    rm -f "$CLOUDIFY_CREDENTIALS_FILE"
+
+    cloudify_credentials_migrate
+    [ -f "$CLOUDIFY_CREDENTIALS_FILE" ]
+    grep -q "shm_user" "$CLOUDIFY_CREDENTIALS_FILE"
+
+    # Cleanup
+    rm -f /dev/shm/cloudify_credentials
+}
+
+@test "cloudify_credentials_migrate does nothing when file exists" {
+    export CLOUDIFY_REMOTE_USER=existing
+    export CLOUDIFY_REMOTE_PWD=existing_pwd
+    cloudify_credentials_save remote
+
+    # Try to migrate — should be a no-op
+    mkdir -p "${HOME}/cloudify"
+    echo "export CLOUDIFY_REMOTE_USER='should_not_appear'" > "${HOME}/cloudify/.credentials"
+
+    cloudify_credentials_migrate
+    # Original file should be unchanged
+    grep -q "existing" "$CLOUDIFY_CREDENTIALS_FILE"
+    ! grep -q "should_not_appear" "$CLOUDIFY_CREDENTIALS_FILE"
+
+    # Cleanup
+    rm -f "${HOME}/cloudify/.credentials"
+}
+
+@test "cloudify_credentials_save saves all sections when no argument" {
+    export CLOUDIFY_REMOTE_USER=ruser
+    export CLOUDIFY_REMOTE_PWD=rpwd
+    export CLOUDIFY_GITHUBUSER=ghuser
+    export CLOUDIFY_GITHUBPWD=ghpwd
+    export CLOUDIFY_GITLABUSER=gluser
+    export CLOUDIFY_GITLABPWD=glpwd
+
+    cloudify_credentials_save
+
+    grep -q "CLOUDIFY_REMOTE_USER" "$CLOUDIFY_CREDENTIALS_FILE"
+    grep -q "CLOUDIFY_GITHUBUSER" "$CLOUDIFY_CREDENTIALS_FILE"
+    grep -q "CLOUDIFY_GITLABUSER" "$CLOUDIFY_CREDENTIALS_FILE"
+}
+
+@test "cloudify_credentials_save saves only specified section" {
+    export CLOUDIFY_REMOTE_USER=ruser
+    export CLOUDIFY_REMOTE_PWD=rpwd
+    export CLOUDIFY_GITHUBUSER=ghuser
+    export CLOUDIFY_GITHUBPWD=ghpwd
+
+    cloudify_credentials_save remote
+
+    grep -q "CLOUDIFY_REMOTE_USER" "$CLOUDIFY_CREDENTIALS_FILE"
+    # GitHub should NOT be in the file
+    ! grep -q "CLOUDIFY_GITHUBUSER" "$CLOUDIFY_CREDENTIALS_FILE"
 }

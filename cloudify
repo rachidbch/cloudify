@@ -14,7 +14,7 @@ function usage() {
         cloudify help                                   print this usage help
         cloudify init                                   Initialize cloudify before use (required once per session)
         cloudify credentials|c                          Set all credentials interactively
-        cloudify credentials <section>                  Set specific credentials (remote, github, gitlab, restic)
+        cloudify credentials <section>                  Set specific credentials (remote, github, gitlab)
         cloudify credentials --check                    Check credential status
         cloudify packages|pkgs                          list installable packages
         cloudify packages|pkgs default                  list default packages
@@ -312,7 +312,7 @@ function main() {
                     cloudify_credentials_load
                     cloudify_credentials_check
                     ;;
-                remote | github | gitlab | restic)
+                remote | github | gitlab)
                     cloudify_credentials_setup "$2"
                     ;;
                 "")

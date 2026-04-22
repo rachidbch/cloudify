@@ -48,7 +48,6 @@ Commands:
   credentials remote          Set remote credentials only
   credentials github          Set GitHub credentials only
   credentials gitlab          Set GitLab credentials only
-  credentials restic          Set Restic/Rclone credentials only
   credentials --check         Check credential status
   packages | pkgs             List installable packages
   packages | pkgs default     List default packages
@@ -118,7 +117,6 @@ Set only a specific section:
 cloudify credentials remote    # CLOUDIFY_REMOTE_USER, CLOUDIFY_REMOTE_PWD
 cloudify credentials github    # CLOUDIFY_GITHUBUSER, CLOUDIFY_GITHUBPWD
 cloudify credentials gitlab    # CLOUDIFY_GITLABUSER, CLOUDIFY_GITLABPWD
-cloudify credentials restic    # CLOUDIFY_RCLONE_*, RESTIC_PASSWORD
 ```
 
 Check which sections are configured:

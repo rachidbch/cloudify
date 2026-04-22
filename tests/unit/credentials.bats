@@ -17,7 +17,6 @@ teardown() {
     [ "$(type -t cloudify_ask_host_credentials)" = "function" ]
     [ "$(type -t cloudify_ask_github_credentials)" = "function" ]
     [ "$(type -t cloudify_ask_gitlab_credentials)" = "function" ]
-    [ "$(type -t cloudify_ask_restic_credentials)" = "function" ]
     [ "$(type -t cloudify_credentials_ensure_dir)" = "function" ]
     [ "$(type -t cloudify_credentials_save)" = "function" ]
     [ "$(type -t cloudify_credentials_load)" = "function" ]
@@ -154,19 +153,12 @@ teardown() {
     export CLOUDIFY_GITHUBPWD=p
     export CLOUDIFY_GITLABUSER=u
     export CLOUDIFY_GITLABPWD=p
-    export CLOUDIFY_RCLONE_REMOTE=r
-    export CLOUDIFY_RCLONE_REMOTE_REGION=r
-    export CLOUDIFY_RCLONE_REMOTE_ENDPOINT=e
-    export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID=a
-    export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY=s
-    export RESTIC_PASSWORD=p
 
     run cloudify_credentials_check
     [ "$status" -eq 0 ]
     [[ "$output" == *"remote:  OK"* ]]
     [[ "$output" == *"github:  OK"* ]]
     [[ "$output" == *"gitlab:  OK"* ]]
-    [[ "$output" == *"restic:  OK"* ]]
 }
 
 @test "cloudify_credentials_check reports INCOMPLETE when missing" {

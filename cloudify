@@ -13,7 +13,9 @@ function usage() {
     examples:
         cloudify help                                   print this usage help
         cloudify init                                   Initialize cloudify before use (required once per session)
-        cloudify credentials|c                          Sets credentials (local host, remote hosts, github, gitlab)
+        cloudify credentials|c                          Set all credentials interactively
+        cloudify credentials <section>                  Set specific credentials (remote, github, gitlab, restic)
+        cloudify credentials --check                    Check credential status
         cloudify packages|pkgs                          list installable packages
         cloudify packages|pkgs default                  list default packages
         cloudify add | a <pkg>                          install package on local machine
@@ -296,7 +298,21 @@ function main() {
             break
             ;;
         credentials | crd)
-            cloudify_check_credentials --force
+            case "${2:-}" in
+                --check)
+                    cloudify_credentials_load
+                    cloudify_credentials_check
+                    ;;
+                remote | github | gitlab | restic)
+                    cloudify_credentials_setup "$2"
+                    ;;
+                "")
+                    cloudify_credentials_setup
+                    ;;
+                *)
+                    die "Unknown credentials subcommand: $2"
+                    ;;
+            esac
             break
             ;;
         info)

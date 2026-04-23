@@ -99,7 +99,10 @@ function cloudify_init_paths() {
             echo "# CLOUDIFY PATH END"
         } >> "$HOME"/.profile
     fi
-    [[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]] && export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"
+    # shellcheck disable=SC2016
+    if [[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]]; then
+        export PATH="${PATH}:${CLOUDIFY_LOCAL_BIN}"
+    fi
 }
 
 # Guard: ensure remote credentials are set before remote operations

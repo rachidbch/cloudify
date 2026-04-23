@@ -49,6 +49,7 @@ function cloudify_remote_payload_template() {
         command -v git >/dev/null 2>&1 || apt-get install -y -qq git
         bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL')"
     fi
+    cloudify init
     :
 }
 

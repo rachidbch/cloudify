@@ -12,7 +12,7 @@ function usage() {
     cloudify [action] [package]
     examples:
         cloudify help                                   print this usage help
-        cloudify init                                   Initialize cloudify before use (required once per session)
+        cloudify init                                   Full setup: PATH, tools, credentials (once per machine)
         cloudify credentials|c                          Set all credentials interactively
         cloudify credentials <section>                  Set specific credentials (remote, github, gitlab)
         cloudify credentials --check                    Check credential status
@@ -46,6 +46,7 @@ export CLOUDIFY_TMP=/tmp/cloudify
 #== ENVIRONMENT
 : "${CLOUDIFY_IS_LOCAL:=true}" && export CLOUDIFY_IS_LOCAL
 : "${CLOUDIFY_DIR:=$HOME/cloudify}" && export CLOUDIFY_DIR
+export CLOUDIFY_INIT_COOKIE="$CLOUDIFY_DIR/.initialized"
 : "${CLOUDIFY_DISABLE_COLORS:=false}" && export CLOUDIFY_DISABLE_COLORS
 : "${CLOUDIFY_UPDATE_DELAY:=30}" && export CLOUDIFY_UPDATE_DELAY
 : "${CLOUDIFY_FORCE_UPDATE:=false}" && export CLOUDIFY_FORCE_UPDATE
@@ -88,16 +89,48 @@ function cloudify_init_paths() {
     # Initialize log file for this session
     cloudify_init_log
 
-    # Ensure ~/.local/bin exists and is in PATH (one-time, persisted to ~/.profile)
-    if ! grep -qFx "# CLOUDIFY PATH END" "$HOME"/.profile 2>/dev/null; then
-        [[ -d "$CLOUDIFY_LOCAL_BIN" ]] || mkdir -p "$CLOUDIFY_LOCAL_BIN"
-        {
-            echo ""
-            echo "# CLOUDIFY PATH START"
-            # shellcheck disable=SC2016
-            echo '[[ ":${PATH}:" != *":${HOME}/.local/bin:"* ]] && export PATH="${PATH}:${HOME}/.local/bin"'
-            echo "# CLOUDIFY PATH END"
-        } >> "$HOME"/.profile
+    # Ensure ~/.local/bin exists and is in PATH (one-time, persisted to ~/.bashrc)
+    # We use ~/.bashrc (not ~/.profile) so the PATH is available in non-login
+    # SSH sessions (ssh user@host 'cmd') which never source ~/.profile.
+    [[ -d "$CLOUDIFY_LOCAL_BIN" ]] || mkdir -p "$CLOUDIFY_LOCAL_BIN"
+    if ! grep -qFx "# CLOUDIFY PATH END" "$HOME"/.bashrc 2>/dev/null; then
+        # Insert before the interactive guard (e.g. "[ -z "$PS1" ] && return" or "case $- in")
+        local _bashrc_tmp
+        _bashrc_tmp=$(mktemp)
+        if [[ -f "$HOME"/.bashrc ]]; then
+            # Insert the PATH block before the first interactive guard line
+            awk '
+                !done && (/^\[ -z "\$PS1" \] && return/ || /^case \$- in/) {
+                    print ""
+                    print "# CLOUDIFY PATH START"
+                    print "[[ \":${PATH}:\" != *\":${HOME}/.local/bin:\"* ]] && export PATH=\"${PATH}:${HOME}/.local/bin\""
+                    print "# CLOUDIFY PATH END"
+                    print ""
+                    done=1
+                }
+                { print }
+            ' "$HOME"/.bashrc > "$_bashrc_tmp" && mv "$_bashrc_tmp" "$HOME"/.bashrc
+        else
+            # No .bashrc yet — create a minimal one
+            {
+                echo "# CLOUDIFY PATH START"
+                # shellcheck disable=SC2016
+                # Intentional single quotes: $PATH and $HOME must be written as literal text into .bashrc,
+                # not expanded here — they resolve when .bashrc is sourced at login.
+                echo '[[ ":${PATH}:" != *":${HOME}/.local/bin:"* ]] && export PATH="${PATH}:${HOME}/.local/bin"'
+                echo "# CLOUDIFY PATH END"
+            } > "$HOME"/.bashrc
+        fi
+    fi
+    # Remove stale PATH block from ~/.profile (migrated to ~/.bashrc)
+    if grep -qFx "# CLOUDIFY PATH END" "$HOME"/.profile 2>/dev/null; then
+        local _profile_tmp
+        _profile_tmp=$(mktemp)
+        awk '
+            /^# CLOUDIFY PATH START/ { skip=1; next }
+            /^# CLOUDIFY PATH END/   { skip=0; next }
+            !skip { print }
+        ' "$HOME"/.profile > "$_profile_tmp" && mv "$_profile_tmp" "$HOME"/.profile
     fi
     # shellcheck disable=SC2016
     if [[ ":${PATH}:" != *":${CLOUDIFY_LOCAL_BIN}:"* ]]; then
@@ -167,23 +200,26 @@ function _cloudify_execute_package_action() {
     fi
 }
 
-# Cloudify environment sub-command
-function cloudify_environment() {
-    while :; do
-        [[ -z "${1:-}" ]] && break
-        case "$1" in
-        init)
-            CLOUDIFY_SKIPCREDENTIALS=true cloudify_init_paths
-            # shellcheck source=/dev/null
-            if ! source "$CLOUDIFY_DIR"/pkg/askpassstars/present.sh 2>/dev/null; then
-                SKIPDONEMESSAGE=true cloudify_install_package askpassstars
-                cloudify credentials
-            fi
-            break
-            ;;
-        -?*) die "Error: Unknown option '$1' for command 'cloudify env'" 1 ;;
-        *) break ;;
-        esac
+# Dispatch package action to localhost or remote hosts
+function _cloudify_dispatch() {
+    local action="$1"
+    local hosts="$2"
+    local packages="$3"
+
+    [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
+    [[ "$hosts" != "localhost" ]] && _cloudify_require_remote_creds
+
+    for host in $hosts; do
+        if [[ "$hosts" == "localhost" ]]; then
+            local pkgs_str="${packages/--$action/}"
+            pkgs_str="${pkgs_str# }"
+            local -a pkgs_array
+            read -ra pkgs_array <<< "$pkgs_str"
+            _cloudify_execute_package_action "$action" "${pkgs_array[@]}"
+        else
+            PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
+            cloudify_remote "$host" "$packages" && is_setup_in_progress=true
+        fi
     done
 }
 
@@ -230,8 +266,18 @@ function main() {
             export CLOUDIFY_DISABLE_COLORS=true
             cloudify_setup_colors
             ;;
-        environment | env)
-            shift && cloudify_environment "$@"
+        init)
+            if [[ -f "$CLOUDIFY_INIT_COOKIE" ]]; then
+                break
+            fi
+            cloudify_init_paths
+            command -v rsync >/dev/null 2>&1 || cloudify_install_package rsync
+            # shellcheck source=/dev/null
+            if ! source "$CLOUDIFY_DIR"/pkg/askpassstars/present.sh 2>/dev/null; then
+                SKIPDONEMESSAGE=true cloudify_install_package askpassstars
+                $CLOUDIFY_SKIPCREDENTIALS || cloudify credentials
+            fi
+            touch "$CLOUDIFY_INIT_COOKIE"
             break
             ;;
         hosts | hst)
@@ -394,36 +440,16 @@ function main() {
                 _cloudify_is_reserved "${2:-}" "action" && die "Argument syntax error: '$2' invalid inside an action block."
 
                 _cloudify_is_action "${2:-}" && {
-                    [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
-
                     [[ "$hosts" == "localhost" ]] && {
-                        local pkgs_str="${packages/--$action/}"
-                        pkgs_str="${pkgs_str# }"
-                        local -a pkgs_array
-                        read -ra pkgs_array <<< "$pkgs_str"
-                        _cloudify_execute_package_action "$action" "${pkgs_array[@]}"
+                        _cloudify_dispatch "$action" "$hosts" "$packages"
                         packages=""
                     }
-
                     break
                 }
 
                 [[ -z "${2:-}" || "${2:-}" == "--on" || "${2:-}" == "on" || "${2:-}" == "o" ]] && {
-                    [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
                     is_parsing_packages="ended"
-                    [[ "$hosts" != "localhost" ]] && { _cloudify_require_remote_creds; cloudify_init_paths; }
-                    for host in $hosts; do
-                        if [[ "$hosts" == "localhost" ]]; then
-                            local pkgs_str="${packages/--$action/}"
-                            pkgs_str="${pkgs_str# }"
-                            local -a pkgs_array
-                            read -ra pkgs_array <<< "$pkgs_str"
-                            _cloudify_execute_package_action "$action" "${pkgs_array[@]}"
-                        else
-                            PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
-                            cloudify_remote "$host" "$packages" && is_setup_in_progress=true
-                        fi
-                    done
+                    _cloudify_dispatch "$action" "$hosts" "$packages"
                     break
                 }
                 packages="$packages ${2:-}"

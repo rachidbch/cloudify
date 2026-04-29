@@ -188,6 +188,14 @@ function _cloudify_execute_package_action() {
     local pkgs=("$@")
     cloudify_init_paths
     if [[ "$action" == "install" ]]; then
+        # Auto-install @default packages first (idempotent — apt skips already-installed)
+        local defaults
+        defaults=$(cloudify_list_default_packages)
+        if [[ -n "$defaults" ]]; then
+            PKG_DEBUG "${YELLOW}Installing @default packages: ${defaults}${RESET}"
+            cloudify_install_package $defaults
+        fi
+        # Then user-requested packages (backgrounded)
         PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs[*]}${RESET}"
         (cloudify_install_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
@@ -273,6 +281,7 @@ function main() {
                 break
             fi
             cloudify_init_paths
+            cloudify_install_package required
             command -v rsync >/dev/null 2>&1 || cloudify_install_package rsync
             # shellcheck source=/dev/null
             if ! source "$CLOUDIFY_DIR"/pkg/askpassstars/present.sh 2>/dev/null; then

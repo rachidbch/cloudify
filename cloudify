@@ -20,13 +20,15 @@ function usage() {
         cloudify packages|pkgs default                  list default packages
         cloudify add | a <pkg>                          install package on local machine
         cloudify add | a  default                       install default packages on local machine
+        cloudify --on <host> install <pkg>              install package on remote host
         cloudify remove| rem | r <pkg>                  uninstall package
+        cloudify --on <host> uninstall <pkg>            uninstall package on remote host
+        Note: --on must come BEFORE install/uninstall, not after
         cloudify launch|run [remote:]<name> [image]     Launch container (default image: ubuntu/24.04/cloud)
         cloudify delete|del [remote:]<name>             Delete container
         cloudify hosts                                  list remote hosts
         cloudify host <host>                            print <host> remote host status
         cloudify <host> shell                           open a shell session on <host> remote host
-        cloudify ... --on <host>                                 <host> remote host to run action on
         cloudify test|t                                 helper to test code
         cloudify hostnames <host> [IP]                  Add <host>'IP in /etc/hosts
         cloudify exec <host> <cmd>                      Run command on remote host

@@ -18,9 +18,9 @@ This sets up:
 - `/opt/signal-gateway/docker-compose.yml` — signal-cli REST API container (json-rpc mode)
 - `/opt/signal-gateway/data/` — persistent Signal account data (survives container restarts)
 - `/opt/signal-gateway/link-device.sh` — helper to link your phone via QR code
-- `hermes-signal-gateway.service` — systemd unit (auto-starts on boot)
+- `hermes-signal-gateway.service` — systemd unit (starts immediately, restarts on boot)
 
-The container listens on `127.0.0.1:8080` by default.
+The service starts as soon as `cloudify install` completes. No reboot needed. The container listens on `127.0.0.1:8080` by default.
 
 ## Post-Install Setup
 

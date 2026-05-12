@@ -34,52 +34,55 @@ The service starts immediately when install completes (no reboot needed). The co
 
 ## Post-Install Setup
 
-After install, you need to link your phone and configure Hermes. There are two ways:
+After install, you need to register a Signal identity and configure Hermes. Choose **Path A** or **Path B**:
 
-### One-shot (recommended)
+### Path A — Link your personal number (QR scan)
 
-SSH into the host and run:
+Use this if you want to chat with Hermes through your own Signal account. Signal-cli becomes a linked device (like Signal Desktop) on your phone number. You talk to the bot via "Note to Self" — one thread, no second SIM needed.
 
 ```bash
 /opt/signal-gateway/link-device.sh --phone +15551234567 --name mybot
 hermes gateway start
 ```
 
-- `--phone` — the **bot's** Signal phone number in E.164 format (its dedicated number). You message this number from your personal phone to talk to the bot.
-- `--name` — device name shown in Signal → Settings → Linked Devices on the bot's phone. Defaults to `Hermes-<hostname>`.
-- `--invites` — optional. Additional phone numbers allowed to message the bot (e.g. teammates), comma-separated. Example: `--invites +15559876543,+15551112222`
+- `--phone` — your personal Signal phone number in E.164 format (the number being linked)
+- `--name` — device name shown in Signal → Settings → Linked Devices. Defaults to `Hermes-<hostname>`
+- `--invites` — optional. Additional phone numbers allowed to message the bot (e.g. teammates), comma-separated
 
-The script will:
+The script will display a QR code — scan it with your phone (Signal → Settings → Linked Devices → Link New Device), then it configures Hermes automatically.
 
-1. Display a QR code in your terminal — scan it with your phone (Signal → Settings → Linked Devices → Link New Device)
-2. Wait for the scan to complete (polls the REST API every 3 seconds)
-3. Run `hermes config set` to configure the Signal adapter automatically — no wizard needed
+### Path B — Register a dedicated bot number (SMS verification)
 
-### Step by step (interactive)
-
-If you prefer the interactive wizard, or need to set advanced options (group access, home channel):
-
-**Step 1: Link your phone**
+Use this to give the bot its own Signal identity. You message the bot's number from your personal phone — separate contact, separate conversations. Supports Signal groups for project-based sessions. **Recommended for multi-project setups.**
 
 ```bash
-/opt/signal-gateway/link-device.sh
+/opt/signal-gateway/link-device.sh --register --phone +BOT_NUMBER
+hermes gateway start
 ```
 
-Scan the QR code with your phone. The script polls the REST API until the link succeeds.
+- `--register` — switch to SMS/voice registration mode
+- `--phone` — the **bot's dedicated number** in E.164 format (not your personal number)
+- `--captcha` — optional. Captcha token if Signal requires one (get it at `https://signalcaptchas.org/registration/generate.html`)
+- `--voice` — optional. Receive verification code via voice call instead of SMS (useful for landlines/VoIP)
+- `--invites` — optional. Phone numbers allowed to message the bot (your personal number, teammates, etc.)
 
-**Step 2: Configure Hermes**
+The script will send a verification code to the bot's number, prompt you for it, register the account, restart the service, and configure Hermes automatically.
+
+**Important:** Registering a number with signal-cli de-authenticates the Signal mobile app for that number. Only register a dedicated bot number — never your personal number.
+
+### Advanced setup (interactive wizard)
+
+If you need to set advanced options (group access, home channel), you can run the linking/registration first, then use the wizard:
 
 ```bash
+# Link first (Path A or B)
+/opt/signal-gateway/link-device.sh --phone +15551234567 --name mybot
+
+# Then configure with the wizard
 hermes gateway setup
 ```
 
-Select **Signal** from the platform menu. The wizard will:
-
-1. Check that signal-cli is reachable at `http://127.0.0.1:8080` (press Enter to accept the default)
-2. Ask for your phone number (E.164 format, e.g. `+1234567890`)
-3. Ask which users are allowed to message the bot
-
-See the [Hermes Signal docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/signal) for the full list of environment variables you can set manually.
+Select **Signal** from the platform menu. See the [Hermes Signal docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/signal) for the full list of environment variables you can set manually.
 
 ## Configuration
 
@@ -108,21 +111,42 @@ Hermes-level settings (allowed users, group access, home channel) are managed th
 
 ## How Signal Works with Hermes
 
-Signal doesn't have "bot accounts" like Slack or Discord. Instead, signal-cli registers as a **linked device** on a phone number — the bot's own phone number. You (and anyone you allow) message that number, and Hermes responds. Think of it as giving your AI assistant its own phone.
+Signal doesn't have "bot accounts" like Slack or Discord. Instead, signal-cli either **links as a secondary device** on an existing number (Path A) or **registers a number directly** (Path B). In both cases, `SIGNAL_ACCOUNT` is the phone number the bot uses, and `SIGNAL_ALLOWED_USERS` controls who can message it.
 
-### The normal setup: dedicated phone number
+### Path A — Linked device (your personal number)
 
-The standard Hermes + Signal setup gives the bot **its own Signal phone number**. This can be a second SIM, a VoIP number, or any number registered with Signal. You then:
+signal-cli links to your existing Signal account as a secondary device (like Signal Desktop). You chat with Hermes through Signal's "Note to Self" thread — send a message to yourself, and Hermes responds.
 
-1. Open a regular Signal conversation with the bot's number from your phone
-2. Send messages — Hermes reads them and replies in the same thread
-3. You and the bot are separate contacts, just like messaging a person
+- **What you need:** your existing Signal phone number, no second SIM
+- **Conversations:** one thread (Note to Self), no identity separation
+- **Good for:** personal assistant, privacy, simple setup
+- **Setup:** `link-device.sh --phone +YOUR_NUMBER --name mybot`
 
-`SIGNAL_ALLOWED_USERS` controls which phone numbers can message the bot. `SIGNAL_ACCOUNT` is the bot's own phone number.
+Limitation: only one conversation thread. In groups, your messages and the bot's replies both come from your number.
 
-### Project-based conversations with Signal groups
+### Path B — Dedicated bot number (recommended for multi-project)
 
-Once the bot has its own number, you can create **Signal groups** to organize conversations by project:
+signal-cli registers a dedicated phone number directly on the server — no phone scanning needed. The bot gets its own Signal identity. You message the bot's number from your personal phone like messaging a separate person.
+
+- **What you need:** a dedicated phone number (second SIM, VoIP, landline)
+- **Conversations:** DM + groups with isolated sessions per project
+- **Good for:** multiple projects, team access, multi-agent setups
+- **Setup:** `link-device.sh --register --phone +BOT_NUMBER`
+
+**Warning:** Registering a number with signal-cli de-authenticates the Signal mobile app for that number. Only register a dedicated bot number — never your personal number.
+
+#### Captcha requirement
+
+Signal sometimes requires solving a captcha during registration. If you get a captcha error:
+
+1. Visit `https://signalcaptchas.org/registration/generate.html`
+2. Solve the captcha
+3. Copy the resulting `signalcaptcha://...` token
+4. Re-run with `--captcha 'signalcaptcha://...'`
+
+#### Project-based conversations with Signal groups
+
+Once the bot has its own number (Path B), you can create **Signal groups** to organize conversations by project:
 
 1. Create groups named after your projects (e.g. "hermes-cloudify", "hermes-website")
 2. Add the bot's number to each group
@@ -142,12 +166,6 @@ Hermes creates a **separate session per group**, so each project has isolated co
 
 To get a group's ID for the allowlist, send a message in the group and check the Hermes gateway logs — the session key contains the group ID.
 
-### "Note to Self" (single number, no second SIM)
-
-If you don't have a dedicated number, signal-cli can link to **your own** phone number as a secondary device. You chat with Hermes through Signal's built-in "Note to Self" thread — send a message to yourself, and Hermes responds. This works automatically with echo-back protection.
-
-Limitation: you only get one conversation thread, and in groups your messages and the bot's replies both come from your number (no identity separation). Good for a simple personal assistant, but not for multi-project workflows.
-
 ### Multiple Hermes agents (profiles)
 
 Hermes supports [profiles](https://hermes-agent.nousresearch.com/docs/user-guide/profiles) — multiple independent agents on the same machine, each with its own config, memory, skills, and personality. Each profile using Signal needs its own signal-cli instance (this package) and its own phone number. You can run multiple `hermes-signal` instances on different ports:
@@ -164,11 +182,11 @@ Then configure each profile's `SIGNAL_HTTP_URL` to point to its own instance.
 
 **Summary:**
 
-| Setup | What you need | Conversations |
-|-------|---------------|---------------|
-| Dedicated number (standard) | Phone number for the bot | DM + groups with isolated sessions per project |
-| Note to Self | Your existing number | 1 thread, no SIM needed |
-| Multi-agent | 1 number per agent | Each agent in its own groups |
+| Setup | What you need | Conversations | Setup command |
+|-------|---------------|---------------|---------------|
+| Linked device (Path A) | Your existing number | 1 thread (Note to Self) | `--phone +YOUR_NUMBER` |
+| Dedicated number (Path B) | A separate phone number | DM + groups per project | `--register --phone +BOT_NUMBER` |
+| Multi-agent | 1 number per agent | Each agent in its own groups | One instance per port |
 
 ## Service Management
 
@@ -215,6 +233,8 @@ cd /opt/signal-gateway && docker compose down
 | **"Cannot reach signal-cli" in hermes setup** | Check the service is running: `systemctl start hermes-signal-gateway`. Then test: `curl http://127.0.0.1:8080/v1/about` |
 | **Messages not received** | Check `SIGNAL_ALLOWED_USERS` in `~/.hermes/.env` — must include sender's number in E.164 format (with `+` prefix). Without it, the gateway denies all incoming messages by default. |
 | **Link device fails after reinstall** | Old session data conflicts with new container. Remove it: `rm -rf /opt/signal-gateway/data/*`, then `sudo systemctl restart hermes-signal-gateway`, then re-run `link-device.sh` |
+| **Registration fails with captcha error** | Signal requires a captcha. Visit `https://signalcaptchas.org/registration/generate.html`, solve it, and re-run with `--captcha 'signalcaptcha://...'` |
+| **Verification code not received** | Try `--voice` for a voice call instead of SMS. Make sure the number can receive SMS/calls. |
 | **Container keeps restarting** | Check `docker compose logs` — usually a port conflict (something else on 8080) or corrupt data directory |
 | **Hermes gateway disconnects** | The hermes-signal adapter auto-reconnects with exponential backoff. If it stays down, check that the signal-cli container is healthy and the REST API responds at the configured URL. |
 | **Bot responds to no one** | Either `SIGNAL_ALLOWED_USERS` is misconfigured, or no users have been approved via DM pairing (`hermes pairing approve signal CODE`). |

@@ -3,9 +3,12 @@
 # Optionally configure Hermes Signal adapter in one shot.
 #
 # Usage:
-#   link-device.sh [--phone +1234567890] [--users +1234567890,+0987654321]
+#   link-device.sh --phone +15551234567 [--invites +15559876543,+15551112222]
 #
-# With --phone and --users: configures Hermes automatically after linking.
+# --phone: your Signal phone number (E.164). Also added to allowed users.
+# --invites: additional phone numbers allowed to message the bot.
+#
+# With --phone: configures Hermes automatically after linking.
 # Without flags: prints instructions to run 'hermes gateway setup' manually.
 set -euo pipefail
 
@@ -13,7 +16,7 @@ API_PORT="${CLOUDIFY_SIGNAL_PORT:-8080}"
 API_URL="http://127.0.0.1:${API_PORT}"
 DEVICE_NAME="HermesVPS"
 SIGNAL_PHONE=""
-SIGNAL_USERS=""
+SIGNAL_INVITES=""
 
 # --- Parse flags ---
 while [[ $# -gt 0 ]]; do
@@ -22,20 +25,29 @@ while [[ $# -gt 0 ]]; do
             SIGNAL_PHONE="${2:-}"
             shift 2
             ;;
-        --users)
-            SIGNAL_USERS="${2:-}"
+        --invites)
+            SIGNAL_INVITES="${2:-}"
             shift 2
             ;;
         *)
-            echo "Usage: $0 [--phone +1234567890] [--users +1234567890,+0987654321]"
+            echo "Usage: $0 --phone +15551234567 [--invites +15559876543,+15551112222]"
             exit 1
             ;;
     esac
 done
 
-if [[ -n "$SIGNAL_PHONE" && -z "$SIGNAL_USERS" ]] || [[ -z "$SIGNAL_PHONE" && -n "$SIGNAL_USERS" ]]; then
-    echo "Error: --phone and --users must be used together (or both omitted for manual setup)."
+if [[ -n "$SIGNAL_INVITES" && -z "$SIGNAL_PHONE" ]]; then
+    echo "Error: --invites requires --phone."
     exit 1
+fi
+
+# Build the allowed users list: owner + invites
+if [[ -n "$SIGNAL_PHONE" ]]; then
+    if [[ -n "$SIGNAL_INVITES" ]]; then
+        SIGNAL_ALLOWED_USERS="${SIGNAL_PHONE},${SIGNAL_INVITES}"
+    else
+        SIGNAL_ALLOWED_USERS="${SIGNAL_PHONE}"
+    fi
 fi
 
 # --- Check API is up ---
@@ -53,7 +65,7 @@ if [ "$ACCOUNTS" != "[]" ] && [ -n "$ACCOUNTS" ]; then
         echo "Configuring Hermes..."
         hermes config set SIGNAL_HTTP_URL "http://127.0.0.1:${API_PORT}"
         hermes config set SIGNAL_ACCOUNT "$SIGNAL_PHONE"
-        hermes config set SIGNAL_ALLOWED_USERS "$SIGNAL_USERS"
+        hermes config set SIGNAL_ALLOWED_USERS "$SIGNAL_ALLOWED_USERS"
         echo "Done. Start the gateway: hermes gateway start"
     fi
     exit 0
@@ -98,7 +110,7 @@ while true; do
             echo "Configuring Hermes..."
             hermes config set SIGNAL_HTTP_URL "http://127.0.0.1:${API_PORT}"
             hermes config set SIGNAL_ACCOUNT "$SIGNAL_PHONE"
-            hermes config set SIGNAL_ALLOWED_USERS "$SIGNAL_USERS"
+            hermes config set SIGNAL_ALLOWED_USERS "$SIGNAL_ALLOWED_USERS"
             echo ""
             echo "Done. Start the gateway:"
             echo "  hermes gateway start"
@@ -107,11 +119,11 @@ while true; do
             echo "  hermes gateway setup"
             echo "  - Select 'Signal'"
             echo "  - Endpoint: http://127.0.0.1:${API_PORT}"
-            echo "  - Enter your phone number (E.164 format, e.g. +1234567890)"
+            echo "  - Enter your phone number (E.164 format, e.g. +15551234567)"
             echo "  - Set allowed users"
             echo ""
             echo "Or use the one-liner for next time:"
-            echo "  $0 --phone +1234567890 --users +1234567890"
+            echo "  $0 --phone +15551234567"
         fi
         break
     fi

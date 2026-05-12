@@ -41,12 +41,12 @@ After install, you need to link your phone and configure Hermes. There are two w
 SSH into the host and run:
 
 ```bash
-/opt/signal-gateway/link-device.sh --phone +15551234567 --users +15551234567
+/opt/signal-gateway/link-device.sh --phone +15551234567
 hermes gateway start
 ```
 
-- `--phone` — your Signal phone number in E.164 format (the one linked to your Signal account)
-- `--users` — phone numbers allowed to message the bot, comma-separated. If you're the only user, this is your own number. To allow additional people: `--users +15551234567,+15559876543`
+- `--phone` — your Signal phone number in E.164 format (the one linked to your Signal account). You are automatically added as an allowed user.
+- `--invites` — optional. Additional phone numbers allowed to message the bot, comma-separated. Example: `--invites +15559876543,+15551112222`
 
 The script will:
 

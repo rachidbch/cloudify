@@ -14,7 +14,7 @@ set -euo pipefail
 
 API_PORT="${CLOUDIFY_SIGNAL_PORT:-8080}"
 API_URL="http://127.0.0.1:${API_PORT}"
-DEVICE_NAME="HermesVPS"
+DEVICE_NAME="Hermes-$(hostname)"
 SIGNAL_PHONE=""
 SIGNAL_INVITES=""
 

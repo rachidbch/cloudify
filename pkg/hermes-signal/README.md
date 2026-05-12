@@ -97,13 +97,60 @@ CLOUDIFY_SIGNAL_PORT=9090 cloudify install hermes-signal
 CLOUDIFY_SIGNAL_PORT=9090 cloudify --on myserver install hermes-signal
 ```
 
-Hermes-level settings (allowed users, group access, home channel) are managed through `hermes gateway setup` or by editing `~/.hermes/.env` directly. The key variables are:
+Hermes-level settings (allowed users, group access, home channel) are managed through `hermes gateway setup`, `hermes config set`, or by editing `~/.hermes/.env` directly. The key variables are:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SIGNAL_HTTP_URL` | Yes | signal-cli endpoint (default: `http://127.0.0.1:8080`) |
 | `SIGNAL_ACCOUNT` | Yes | Bot phone number in E.164 format |
 | `SIGNAL_ALLOWED_USERS` | No | Comma-separated phone numbers/UUIDs who can message the bot |
+| `SIGNAL_GROUP_ALLOWED_USERS` | No | Group IDs to monitor, or `*` for all groups (default: groups disabled) |
+
+## How Signal Is Different from Slack/Discord
+
+Signal is fundamentally different from Slack or Discord. There is no "bot account" with its own name and workspace. Signal-cli links as a **secondary device** on a phone number — like adding Signal Desktop on another laptop.
+
+**How you chat with the bot depends on your setup:**
+
+### Option A: "Note to Self" (single phone number)
+
+If signal-cli is linked to **your own** phone number, you chat with the bot through Signal's built-in **"Note to Self"** conversation. It looks like you're texting yourself — but Hermes is reading and responding.
+
+This is the simplest setup. One phone number, no second SIM needed. But you only get one conversation thread.
+
+### Option B: Dedicated bot number
+
+If you have a second phone number (second SIM, VoIP number, etc.), link signal-cli to that number. Then you open a regular Signal conversation with that number from your personal phone. It feels more like a separate contact.
+
+### Option C: Signal groups for project-based conversations (recommended)
+
+To get **multiple isolated conversations** (like Slack channels), use **Signal groups**:
+
+1. Create Signal groups named after your projects (e.g. "hermes-cloudify", "hermes-website")
+2. Add the bot's number to each group
+3. Enable group access:
+
+```bash
+hermes config set SIGNAL_GROUP_ALLOWED_USERS '*'
+```
+
+Or restrict to specific group IDs:
+
+```bash
+hermes config set SIGNAL_GROUP_ALLOWED_USERS 'group-id-1,group-id-2'
+```
+
+Hermes creates a **separate session per group**, so each project has isolated context and conversation history. With `group_sessions_per_user: true` (the default in Hermes), even within a group each user gets their own session.
+
+To get a group's ID for the allowlist, send a message in the group and check the Hermes gateway logs — the session key contains the group ID.
+
+**Summary:**
+
+| Setup | Conversations | Best for |
+|-------|---------------|----------|
+| Note to Self | 1 thread | Quick testing, single project |
+| Dedicated number | 1 DM thread | Personal assistant |
+| Signal groups | 1 per group | Multiple projects with isolated context |
 
 ## Service Management
 

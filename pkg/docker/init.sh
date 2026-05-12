@@ -10,12 +10,15 @@ curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/doc
 chmod a+r /etc/apt/keyrings/docker.asc
 
 # Add Docker's apt repository (DEB822 format)
+# shellcheck source=/dev/null
+. /etc/os-release
+DOCKER_ARCH=$(dpkg --print-architecture)
 tee /etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
-Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Suites: ${UBUNTU_CODENAME:-$VERSION_CODENAME}
 Components: stable
-Architectures: $(dpkg --print-architecture)
+Architectures: ${DOCKER_ARCH}
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
 

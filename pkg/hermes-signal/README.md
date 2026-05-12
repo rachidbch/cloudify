@@ -34,29 +34,38 @@ The service starts immediately when install completes (no reboot needed). The co
 
 ## Post-Install Setup
 
-After install, two steps remain: linking your phone and telling Hermes how to reach the API.
+After install, you need to link your phone and configure Hermes. There are two ways:
 
-### Step 1: Link your phone
-
-Signal-cli works as a **linked device** (like Signal Desktop). Your phone stays the primary device — the gateway is a secondary.
+### One-shot (recommended)
 
 SSH into the host and run:
+
+```bash
+/opt/signal-gateway/link-device.sh --phone +1234567890 --users +1234567890
+hermes gateway start
+```
+
+Replace `+1234567890` with your Signal phone number (E.164 format). The `--users` flag sets which numbers are allowed to message the bot.
+
+The script will:
+
+1. Display a QR code in your terminal — scan it with your phone (Signal → Settings → Linked Devices → Link New Device)
+2. Wait for the scan to complete (polls the REST API every 3 seconds)
+3. Run `hermes config set` to configure the Signal adapter automatically — no wizard needed
+
+### Step by step (interactive)
+
+If you prefer the interactive wizard, or need to set advanced options (group access, home channel):
+
+**Step 1: Link your phone**
 
 ```bash
 /opt/signal-gateway/link-device.sh
 ```
 
-The script requests a pairing code from the signal-cli REST API and displays it as a QR code in your terminal. On your phone:
+Scan the QR code with your phone. The script polls the REST API until the link succeeds.
 
-1. Open Signal → Settings → Linked Devices
-2. Tap **Link New Device**
-3. Scan the QR code
-
-After you scan, the script **polls the REST API every 3 seconds** (`GET /v1/accounts`) until it detects that a device was linked. This is necessary because the QR code scan happens out-of-band on your phone — the script has no direct way to know when it completes, so it checks periodically until the account appears.
-
-Once confirmed, you'll see `Device linked successfully!`.
-
-### Step 2: Configure Hermes
+**Step 2: Configure Hermes**
 
 ```bash
 hermes gateway setup
@@ -68,9 +77,7 @@ Select **Signal** from the platform menu. The wizard will:
 2. Ask for your phone number (E.164 format, e.g. `+1234567890`)
 3. Ask which users are allowed to message the bot
 
-The wizard writes its configuration to `~/.hermes/.env`. See the [Hermes Signal docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/signal) for the full list of environment variables you can set manually.
-
-That's it — Hermes is now reachable on Signal.
+See the [Hermes Signal docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/signal) for the full list of environment variables you can set manually.
 
 ## Configuration
 

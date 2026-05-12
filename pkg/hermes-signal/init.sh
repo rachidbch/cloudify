@@ -11,6 +11,10 @@
 #   1. /opt/signal-gateway/link-device.sh   — scan QR to link your phone
 #   2. hermes gateway setup                  — select Signal, confirm endpoint
 #
+# Or in one shot (links phone + configures Hermes):
+#   /opt/signal-gateway/link-device.sh --phone +1234567890 --users +1234567890
+#   hermes gateway start
+#
 # Config:
 #   CLOUDIFY_SIGNAL_PORT  — API port (default: 8080)
 #
@@ -75,9 +79,13 @@ msg ""
 msg "${GREEN}Signal gateway installed and running on port ${API_PORT}.${RESET}"
 msg ""
 msg "Next steps:"
-msg "  1. Link your phone:  ${GATEWAY_DIR}/link-device.sh"
-msg "  2. Configure Hermes: hermes gateway setup"
-msg "     (select Signal, use http://127.0.0.1:${API_PORT} as the endpoint)"
+msg "  Link phone + configure Hermes in one shot:"
+msg "    ${GATEWAY_DIR}/link-device.sh --phone +1234567890 --users +1234567890"
+msg "    hermes gateway start"
+msg ""
+msg "  Or step by step:"
+msg "    1. ${GATEWAY_DIR}/link-device.sh"
+msg "    2. hermes gateway setup"
 msg ""
 msg "Service management:"
 msg "  systemctl status hermes-signal-gateway"

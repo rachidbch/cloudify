@@ -12,7 +12,7 @@
 #   2. hermes gateway setup                  — select Signal, confirm endpoint
 #
 # Or in one shot (links phone + configures Hermes):
-#   /opt/signal-gateway/link-device.sh --phone +1234567890 --users +1234567890
+#   /opt/signal-gateway/link-device.sh --phone +15551234567 --users +15551234567
 #   hermes gateway start
 #
 # Config:
@@ -80,7 +80,7 @@ msg "${GREEN}Signal gateway installed and running on port ${API_PORT}.${RESET}"
 msg ""
 msg "Next steps:"
 msg "  Link phone + configure Hermes in one shot:"
-msg "    ${GATEWAY_DIR}/link-device.sh --phone +1234567890 --users +1234567890"
+msg "    ${GATEWAY_DIR}/link-device.sh --phone +15551234567 --users +15551234567"
 msg "    hermes gateway start"
 msg ""
 msg "  Or step by step:"

@@ -4,27 +4,41 @@ Signal messaging gateway for [Hermes Agent](https://hermes-agent.nousresearch.co
 
 ## Prerequisites
 
-- **Hermes installed and configured** — `cloudify install hermes` + `hermes setup` (API keys, model)
+- **Hermes installed and configured** — `cloudify install hermes` then run `hermes setup` to configure your model provider and API keys
 - **Docker** — installed automatically via `pkg_depends docker`
 
 ## Install
+
+**On the local machine:**
 
 ```bash
 cloudify install hermes-signal
 ```
 
-This sets up:
+**On a remote host:**
 
-- `/opt/signal-gateway/docker-compose.yml` — signal-cli REST API container (json-rpc mode)
-- `/opt/signal-gateway/data/` — persistent Signal account data (survives container restarts)
-- `/opt/signal-gateway/link-device.sh` — helper to link your phone via QR code
-- `hermes-signal-gateway.service` — systemd unit (starts immediately, restarts on boot)
+```bash
+cloudify --on myserver install hermes-signal
+```
 
-The service starts as soon as `cloudify install` completes. No reboot needed. The container listens on `127.0.0.1:8080` by default.
+This creates:
+
+| Path | Purpose |
+|------|---------|
+| `/opt/signal-gateway/docker-compose.yml` | Container definition (signal-cli REST API, json-rpc mode) |
+| `/opt/signal-gateway/data/` | Persistent storage — Signal encryption keys, linked device session, account identity. **This directory is the credential store.** If deleted, you must re-link your phone from scratch. |
+| `/opt/signal-gateway/link-device.sh` | Helper script to link your phone via QR code |
+| `/etc/systemd/system/hermes-signal-gateway.service` | Systemd unit — starts the container, restarts on failure and on boot |
+
+The service starts immediately when install completes (no reboot needed). The container listens on `127.0.0.1:8080` by default.
 
 ## Post-Install Setup
 
+After install, two steps remain: linking your phone and telling Hermes how to reach the API.
+
 ### Step 1: Link your phone
+
+Signal-cli works as a **linked device** (like Signal Desktop). Your phone stays the primary device — the gateway is a secondary.
 
 SSH into the host and run:
 
@@ -32,13 +46,15 @@ SSH into the host and run:
 /opt/signal-gateway/link-device.sh
 ```
 
-This displays a QR code in your terminal. On your phone:
+The script requests a pairing code from the signal-cli REST API and displays it as a QR code in your terminal. On your phone:
 
 1. Open Signal → Settings → Linked Devices
 2. Tap **Link New Device**
 3. Scan the QR code
 
-The script polls until the link succeeds, then confirms.
+After you scan, the script **polls the REST API every 3 seconds** (`GET /v1/accounts`) until it detects that a device was linked. This is necessary because the QR code scan happens out-of-band on your phone — the script has no direct way to know when it completes, so it checks periodically until the account appears.
+
+Once confirmed, you'll see `Device linked successfully!`.
 
 ### Step 2: Configure Hermes
 
@@ -48,9 +64,11 @@ hermes gateway setup
 
 Select **Signal** from the platform menu. The wizard will:
 
-1. Detect signal-cli at `http://127.0.0.1:8080` (press Enter to accept the default)
+1. Check that signal-cli is reachable at `http://127.0.0.1:8080` (press Enter to accept the default)
 2. Ask for your phone number (E.164 format, e.g. `+1234567890`)
 3. Ask which users are allowed to message the bot
+
+The wizard writes its configuration to `~/.hermes/.env`. See the [Hermes Signal docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/signal) for the full list of environment variables you can set manually.
 
 That's it — Hermes is now reachable on Signal.
 
@@ -58,50 +76,152 @@ That's it — Hermes is now reachable on Signal.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `CLOUDIFY_SIGNAL_PORT` | `8080` | Port for the signal-cli REST API |
+| `CLOUDIFY_SIGNAL_PORT` | `8080` | Port for the signal-cli REST API (both Docker mapping and systemd service) |
 
-To use a custom port, set it before installing:
+To use a custom port, set it before installing. The variable is forwarded to remote hosts automatically:
 
 ```bash
+# Local
 CLOUDIFY_SIGNAL_PORT=9090 cloudify install hermes-signal
+
+# Remote — works the same way
+CLOUDIFY_SIGNAL_PORT=9090 cloudify --on myserver install hermes-signal
 ```
 
-Access control and other Signal settings are managed through Hermes (`hermes gateway setup` or `~/.hermes/.env`). See the [Hermes Signal docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/signal) for the full list of environment variables.
+Hermes-level settings (allowed users, group access, home channel) are managed through `hermes gateway setup` or by editing `~/.hermes/.env` directly. The key variables are:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SIGNAL_HTTP_URL` | Yes | signal-cli endpoint (default: `http://127.0.0.1:8080`) |
+| `SIGNAL_ACCOUNT` | Yes | Bot phone number in E.164 format |
+| `SIGNAL_ALLOWED_USERS` | No | Comma-separated phone numbers/UUIDs who can message the bot |
 
 ## Service Management
 
 ```bash
-systemctl status hermes-signal-gateway     # check status
-systemctl restart hermes-signal-gateway    # restart container
-journalctl -u hermes-signal-gateway -f     # live logs
+# Check if the container is running
+systemctl status hermes-signal-gateway
+
+# Start / stop / restart
+sudo systemctl start hermes-signal-gateway
+sudo systemctl stop hermes-signal-gateway
+sudo systemctl restart hermes-signal-gateway
+
+# View live logs
+journalctl -u hermes-signal-gateway -f
+
+# View container logs directly
+cd /opt/signal-gateway && docker compose logs -f
 ```
 
-## How It Works
+**Common scenarios:**
 
-```
-Signal servers
-     │
-     ▼
-signal-cli-rest-api (Docker, port 8080)
-  - Handles Signal protocol, encryption, linking
-  - Exposes JSON-RPC + SSE over HTTP
-     │
-     ▼
-Hermes gateway (hermes-signal adapter)
-  - Connects to http://127.0.0.1:8080
-  - Streams inbound messages via SSE
-  - Sends outbound messages via JSON-RPC
-     │
-     ▼
-Your LLM provider (OpenRouter, Anthropic, etc.)
+```bash
+# Pull the latest signal-cli image and restart
+cd /opt/signal-gateway && docker compose pull && sudo systemctl restart hermes-signal-gateway
+
+# Check if the API is responding
+curl -s http://127.0.0.1:8080/v1/about | jq .
+
+# List linked accounts
+curl -s http://127.0.0.1:8080/v1/accounts | jq .
+
+# Stop and remove everything (keeps data/)
+sudo systemctl stop hermes-signal-gateway
+cd /opt/signal-gateway && docker compose down
 ```
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| Container not starting | `systemctl status hermes-signal-gateway` and check journal |
-| QR code won't scan | Maximize your terminal — wrapped lines break the QR code |
-| "Cannot reach signal-cli" in hermes setup | Ensure the service is running: `systemctl start hermes-signal-gateway` |
-| Messages not received | Check `SIGNAL_ALLOWED_USERS` includes sender's number (E.164 format with `+` prefix) |
-| Link device fails after reinstall | Remove old data: `rm -rf /opt/signal-gateway/data/*`, then restart the service and re-link |
+| **Container not starting** | `systemctl status hermes-signal-gateway` and `journalctl -u hermes-signal-gateway --no-pager -n 50` |
+| **Docker permission denied** | Your user needs docker group: `sudo usermod -aG docker $USER` then `newgrp docker` |
+| **QR code won't scan** | Maximize your terminal (at least 80 columns). If lines wrap, the QR code is corrupted and won't scan. |
+| **"Cannot reach signal-cli" in hermes setup** | Check the service is running: `systemctl start hermes-signal-gateway`. Then test: `curl http://127.0.0.1:8080/v1/about` |
+| **Messages not received** | Check `SIGNAL_ALLOWED_USERS` in `~/.hermes/.env` — must include sender's number in E.164 format (with `+` prefix). Without it, the gateway denies all incoming messages by default. |
+| **Link device fails after reinstall** | Old session data conflicts with new container. Remove it: `rm -rf /opt/signal-gateway/data/*`, then `sudo systemctl restart hermes-signal-gateway`, then re-run `link-device.sh` |
+| **Container keeps restarting** | Check `docker compose logs` — usually a port conflict (something else on 8080) or corrupt data directory |
+| **Hermes gateway disconnects** | The hermes-signal adapter auto-reconnects with exponential backoff. If it stays down, check that the signal-cli container is healthy and the REST API responds at the configured URL. |
+| **Bot responds to no one** | Either `SIGNAL_ALLOWED_USERS` is misconfigured, or no users have been approved via DM pairing (`hermes pairing approve signal CODE`). |
+
+## How It Works
+
+When a user sends a Signal message to your bot, here is the full path it takes — and the path the response takes back:
+
+```
+USER'S PHONE                                     YOUR SERVER (VPS)
+                                          ┌──────────────────────────┐
+                                          │                          │
+                                          │  Docker container:       │
+                                          │  signal-cli-rest-api     │
+  Signal ─── Signal protocol ──────────►  │  (port 8080)             │
+  app       (end-to-end encrypted)         │                          │
+                                          │  Maintains persistent    │
+                                          │  connection to Signal    │
+                                          │  servers. Receives       │
+                                          │  inbound messages and    │
+                                          │  exposes them via HTTP.  │
+                                          │                          │
+                                          └──────────┬───────────────┘
+                                                     │
+                                                     │ HTTP GET /v1/receive
+                                                     │ (SSE — Server-Sent Events)
+                                                     │ signal-cli pushes new
+                                                     │ messages as JSON events
+                                                     ▼
+                                          ┌──────────────────────────┐
+                                          │  Hermes gateway process  │
+                                          │  (hermes-signal adapter) │
+                                          │                          │
+                                          │  Reads each inbound      │
+                                          │  message. Forwards it    │
+                                          │  to the LLM with the     │
+                                          │  user's conversation     │
+                                          │  context.                │
+                                          │                          │
+                                          └──────────┬───────────────┘
+                                                     │
+                                                     │ HTTP API
+                                                     │ (OpenAI-compatible)
+                                                     ▼
+                                          ┌──────────────────────────┐
+                                          │  LLM provider            │
+                                          │  (OpenRouter, Anthropic, │
+                                          │   OpenAI, local model…)  │
+                                          └──────────┬───────────────┘
+                                                     │
+                                                     │ LLM response text
+                                                     ▼
+                                          ┌──────────────────────────┐
+                                          │  Hermes gateway          │
+                                          │  Sends response back via │
+                                          │  HTTP POST (JSON-RPC)    │
+                                          │  to signal-cli REST API  │
+                                          └──────────┬───────────────┘
+                                                     │
+                                                     │ HTTP POST /v1/send
+                                                     │ (JSON-RPC over HTTP)
+                                                     ▼
+                                          ┌──────────────────────────┐
+                                          │  signal-cli-rest-api     │
+                                          │  Encrypts and sends via  │
+                                          │  Signal protocol         │
+                                          └──────────┬───────────────┘
+                                                     │
+  Signal ◄── Signal protocol ────────────────────────┘
+  app       (end-to-end encrypted)
+
+Interfaces summary:
+  - Signal servers ↔ signal-cli: Signal protocol (encrypted, persistent TCP)
+  - signal-cli ↔ Hermes: HTTP (SSE for inbound, JSON-RPC for outbound)
+  - Hermes ↔ LLM: HTTP (OpenAI-compatible chat completions API)
+```
+
+There are three interfaces at play:
+
+1. **Signal servers ↔ signal-cli** (inside the Docker container): The container maintains a persistent encrypted connection to Signal's servers. It acts as a linked device on your account — similar to Signal Desktop.
+
+2. **signal-cli ↔ Hermes gateway** (localhost HTTP): Hermes connects to `http://127.0.0.1:8080`. Inbound messages arrive as **Server-Sent Events (SSE)** — a long-lived HTTP GET where the server pushes JSON events. Outbound messages are sent as **JSON-RPC over HTTP POST**. Both are plain HTTP on localhost (no TLS needed — traffic never leaves the machine).
+
+3. **Hermes gateway ↔ LLM provider** (HTTPS): Hermes calls your configured LLM provider's chat completions API. This is standard HTTPS outbound.

@@ -3,9 +3,10 @@
 # Optionally configure Hermes Signal adapter in one shot.
 #
 # Usage:
-#   link-device.sh --phone +15551234567 [--invites +15559876543,+15551112222]
+#   link-device.sh --phone +15551234567 [--name mybot] [--invites +15559876543,+15551112222]
 #
 # --phone: your Signal phone number (E.164). Also added to allowed users.
+# --name: device name shown in Signal → Linked Devices (default: Hermes-<hostname>).
 # --invites: additional phone numbers allowed to message the bot.
 #
 # With --phone: configures Hermes automatically after linking.
@@ -25,12 +26,16 @@ while [[ $# -gt 0 ]]; do
             SIGNAL_PHONE="${2:-}"
             shift 2
             ;;
+        --name)
+            DEVICE_NAME="${2:-}"
+            shift 2
+            ;;
         --invites)
             SIGNAL_INVITES="${2:-}"
             shift 2
             ;;
         *)
-            echo "Usage: $0 --phone +15551234567 [--invites +15559876543,+15551112222]"
+            echo "Usage: $0 --phone +15551234567 [--name mybot] [--invites +15559876543,+15551112222]"
             exit 1
             ;;
     esac
@@ -123,7 +128,7 @@ while true; do
             echo "  - Set allowed users"
             echo ""
             echo "Or use the one-liner for next time:"
-            echo "  $0 --phone +15551234567"
+            echo "  $0 --phone +15551234567 --name mybot"
         fi
         break
     fi

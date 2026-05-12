@@ -5,7 +5,8 @@
 # Usage:
 #   link-device.sh --phone +15551234567 [--name mybot] [--invites +15559876543,+15551112222]
 #
-# --phone: your Signal phone number (E.164). Also added to allowed users.
+# --phone: the bot's Signal phone number in E.164 format (dedicated number for this agent).
+#          Also added to allowed users so you can message the bot from your personal number.
 # --name: device name shown in Signal → Linked Devices (default: Hermes-<hostname>).
 # --invites: additional phone numbers allowed to message the bot.
 #

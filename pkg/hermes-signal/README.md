@@ -45,9 +45,9 @@ SSH into the host and run:
 hermes gateway start
 ```
 
-- `--phone` — your Signal phone number in E.164 format (the one linked to your Signal account). You are automatically added as an allowed user.
-- `--name` — device name shown in Signal → Settings → Linked Devices on your phone. Defaults to `Hermes-<hostname>`. Useful when linking multiple Hermes nodes to distinguish them.
-- `--invites` — optional. Additional phone numbers allowed to message the bot, comma-separated. Example: `--invites +15559876543,+15551112222`
+- `--phone` — the **bot's** Signal phone number in E.164 format (its dedicated number). You message this number from your personal phone to talk to the bot.
+- `--name` — device name shown in Signal → Settings → Linked Devices on the bot's phone. Defaults to `Hermes-<hostname>`.
+- `--invites` — optional. Additional phone numbers allowed to message the bot (e.g. teammates), comma-separated. Example: `--invites +15559876543,+15551112222`
 
 The script will:
 
@@ -106,45 +106,69 @@ Hermes-level settings (allowed users, group access, home channel) are managed th
 | `SIGNAL_ALLOWED_USERS` | No | Comma-separated phone numbers/UUIDs who can message the bot |
 | `SIGNAL_GROUP_ALLOWED_USERS` | No | Group IDs to monitor, or `*` for all groups (default: groups disabled) |
 
-## How Signal Is Different from Slack/Discord
+## How Signal Works with Hermes
 
-Signal is fundamentally different from Slack or Discord. There is no "bot account" concept — no bot name, no workspace, no channels. Signal-cli links as a **secondary device** on a phone number, like adding Signal Desktop on another laptop.
+Signal doesn't have "bot accounts" like Slack or Discord. Instead, signal-cli registers as a **linked device** on a phone number — the bot's own phone number. You (and anyone you allow) message that number, and Hermes responds. Think of it as giving your AI assistant its own phone.
 
-### You and the bot share the same identity
+### The normal setup: dedicated phone number
 
-If signal-cli is linked to **your** phone number, both you and Hermes appear as the same person in any conversation. In a Signal group, there is no way to distinguish your messages from Hermes's responses — Signal sees one phone number, one identity.
+The standard Hermes + Signal setup gives the bot **its own Signal phone number**. This can be a second SIM, a VoIP number, or any number registered with Signal. You then:
 
-This means the Slack model — multiple channels, @mention the bot, each channel its own project context — **does not exist on Signal**.
+1. Open a regular Signal conversation with the bot's number from your phone
+2. Send messages — Hermes reads them and replies in the same thread
+3. You and the bot are separate contacts, just like messaging a person
 
-### How you can interact with the bot
+`SIGNAL_ALLOWED_USERS` controls which phone numbers can message the bot. `SIGNAL_ACCOUNT` is the bot's own phone number.
 
-**"Note to Self" (single number):** Chat with Hermes through Signal's built-in "Note to Self" thread. It looks like you're texting yourself, but Hermes reads and responds. One conversation thread, no second SIM needed. Good for a single-project personal assistant.
+### Project-based conversations with Signal groups
 
-**Dedicated bot number:** If you have a second phone number (second SIM, VoIP), link signal-cli to that number. You open a regular Signal conversation with it from your personal phone. The bot becomes a separate contact — closer to the Slack experience, but still one DM thread.
+Once the bot has its own number, you can create **Signal groups** to organize conversations by project:
 
-**Signal groups:** You can create groups named after projects and add the bot's number. Hermes gets a separate session per group, so project contexts stay isolated. Enable with:
+1. Create groups named after your projects (e.g. "hermes-cloudify", "hermes-website")
+2. Add the bot's number to each group
+3. Enable group access:
 
 ```bash
 hermes config set SIGNAL_GROUP_ALLOWED_USERS '*'
 ```
 
-However, since you and the bot share the same number, **group conversations have an echo problem** — your messages and the bot's replies both come from the same number. This only works cleanly with a dedicated bot number.
+Or restrict to specific group IDs:
+
+```bash
+hermes config set SIGNAL_GROUP_ALLOWED_USERS 'group-id-1,group-id-2'
+```
+
+Hermes creates a **separate session per group**, so each project has isolated context and conversation history. With `group_sessions_per_user: true` (the default in Hermes), even within a group each participant gets their own session.
+
+To get a group's ID for the allowlist, send a message in the group and check the Hermes gateway logs — the session key contains the group ID.
+
+### "Note to Self" (single number, no second SIM)
+
+If you don't have a dedicated number, signal-cli can link to **your own** phone number as a secondary device. You chat with Hermes through Signal's built-in "Note to Self" thread — send a message to yourself, and Hermes responds. This works automatically with echo-back protection.
+
+Limitation: you only get one conversation thread, and in groups your messages and the bot's replies both come from your number (no identity separation). Good for a simple personal assistant, but not for multi-project workflows.
 
 ### Multiple Hermes agents (profiles)
 
-Hermes supports [profiles](https://hermes-agent.nousresearch.com/docs/user-guide/profiles) — multiple independent agents on the same machine, each with its own config, memory, skills, and personality. However, **each profile that uses Signal needs its own signal-cli instance and its own phone number**. Two profiles cannot share one signal-cli connection.
+Hermes supports [profiles](https://hermes-agent.nousresearch.com/docs/user-guide/profiles) — multiple independent agents on the same machine, each with its own config, memory, skills, and personality. Each profile using Signal needs its own signal-cli instance (this package) and its own phone number. You can run multiple `hermes-signal` instances on different ports:
 
-For multi-agent setups, **Telegram or Discord are the practical choice** — they support bot accounts, channels, threads, and @mentions natively. Signal's architecture (phone-number identity, no bots) makes it a poor fit for multi-project, multi-agent workflows.
+```bash
+# Agent 1: default port 8080
+cloudify install hermes-signal
+
+# Agent 2: custom port 8081
+CLOUDIFY_SIGNAL_PORT=8081 cloudify install hermes-signal
+```
+
+Then configure each profile's `SIGNAL_HTTP_URL` to point to its own instance.
 
 **Summary:**
 
-| Setup | Conversations | Multi-agent? | Best for |
-|-------|---------------|--------------|----------|
-| Note to Self | 1 thread | No | Personal assistant, privacy-focused |
-| Dedicated number | 1 DM + groups | 1 agent per number | Single-agent with project groups |
-| Telegram/Discord | Unlimited channels + threads | Multiple bots, one workspace | Multi-project, multi-agent |
-
-**Signal's strength is privacy** (end-to-end encryption, minimal metadata). If your use case is a single personal assistant with strong privacy guarantees, Signal is the right choice. If you need Slack-like channel organization or multiple specialized agents, use Telegram or Discord instead.
+| Setup | What you need | Conversations |
+|-------|---------------|---------------|
+| Dedicated number (standard) | Phone number for the bot | DM + groups with isolated sessions per project |
+| Note to Self | Your existing number | 1 thread, no SIM needed |
+| Multi-agent | 1 number per agent | Each agent in its own groups |
 
 ## Service Management
 

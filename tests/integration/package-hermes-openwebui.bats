@@ -19,6 +19,7 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 @test "hermes configured with keyless Pollinations endpoint on $TEST_HOST" {
     run $TEST_SSH "root@$TEST_HOST" 'mkdir -p ~/.hermes && cat > ~/.hermes/.env <<EOF
 API_SERVER_ENABLED=true
+API_SERVER_HOST=0.0.0.0
 API_SERVER_PORT=8642
 API_SERVER_KEY=test-integration-key
 EOF'
@@ -73,6 +74,11 @@ EOF'
     [ "$status" -eq 0 ]
 }
 
+@test "API_SERVER_HOST is 0.0.0.0 in hermes env on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'grep -q "^API_SERVER_HOST=0.0.0.0" ~/.hermes/.env'
+    [ "$status" -eq 0 ]
+}
+
 @test "API_SERVER_KEY is set in hermes env on $TEST_HOST" {
     run $TEST_SSH "root@$TEST_HOST" 'grep -q "^API_SERVER_KEY=.\+" ~/.hermes/.env'
     [ "$status" -eq 0 ]
@@ -85,6 +91,11 @@ EOF'
 
 @test "docker-compose.yml has API key on $TEST_HOST" {
     run $TEST_SSH "root@$TEST_HOST" 'grep -q "OPENAI_API_KEY=" /opt/open-webui/docker-compose.yml'
+    [ "$status" -eq 0 ]
+}
+
+@test "Docker container can reach hermes API on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'docker exec open-webui curl -sf --max-time 5 http://host.docker.internal:8642/v1/models -H "Authorization: Bearer test-integration-key"'
     [ "$status" -eq 0 ]
 }
 

@@ -43,6 +43,7 @@ get_hermes_var() {
 API_SERVER_ENABLED=$(get_hermes_var "API_SERVER_ENABLED")
 API_SERVER_KEY=$(get_hermes_var "API_SERVER_KEY")
 API_SERVER_PORT=$(get_hermes_var "API_SERVER_PORT")
+API_SERVER_HOST=$(get_hermes_var "API_SERVER_HOST")
 needs_restart=false
 
 # --- Enable API server if needed ---
@@ -77,6 +78,19 @@ if [[ -z "$API_SERVER_PORT" ]]; then
     else
         echo "API_SERVER_PORT=${API_SERVER_PORT}" >> "$HERMES_ENV"
     fi
+    needs_restart=true
+fi
+
+# --- Bind to 0.0.0.0 so Docker containers can reach the API server ---
+# Default is 127.0.0.1 which is unreachable from Docker bridge (172.17.0.1).
+if [[ "$API_SERVER_HOST" != "0.0.0.0" ]]; then
+    log_info "Setting API_SERVER_HOST=0.0.0.0 for Docker container access"
+    if grep -q "^API_SERVER_HOST=" "$HERMES_ENV"; then
+        sed -i 's/^API_SERVER_HOST=.*/API_SERVER_HOST=0.0.0.0/' "$HERMES_ENV"
+    else
+        echo "API_SERVER_HOST=0.0.0.0" >> "$HERMES_ENV"
+    fi
+    API_SERVER_HOST="0.0.0.0"
     needs_restart=true
 fi
 

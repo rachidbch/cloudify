@@ -1,5 +1,18 @@
 # Cloudify
 
+## CRITICAL: Token Efficiency
+
+When editing .md files (including CLAUDE.md, README.md, etc.), ALWAYS BE TOKEN EFFICIENT.
+
+                        --- TOKEN EFFICIENT = MIN TOKEN WITH MAX SIGNAL ---
+
+## CRITICAL: Append-only Project History
+
+- ALWAYS log you actions/outcomes in the append-only `HISTORY.md` at repo root.
+- NEVER edit or delete previous entries.
+
+Format: `## YYYY-MM-DD — <short description>` + bullets (changes, files, decisions, next steps).
+
 ## Big Picture
 
 Cloudify is two things:

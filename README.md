@@ -399,6 +399,58 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 }
 ```
 
+### Testing Docker & AI Packages
+
+Packages that run Docker containers (e.g. `open-webui`) or connect to AI services (e.g. `hermes-openwebui`) need special handling in integration tests because they have heavier dependencies (Docker, a running LLM backend).
+
+#### Docker packages
+
+Docker is declared as a dependency via `pkg_depends docker` in the recipe. The integration test doesn't need to pre-install Docker — `cloudify install` pulls it in automatically. Tests verify the systemd service, container status, and health endpoint.
+
+#### AI packages requiring an LLM backend
+
+Testing `hermes-openwebui` requires a running Hermes gateway with an active LLM provider. Using a paid API (OpenRouter, Anthropic, etc.) is risky because:
+- API keys are tied to accounts with billing enabled
+- Keys can leak in test output or CI logs
+- Free tiers on major providers still require a credit card on file
+
+The solution is **KeylessAI** — a free, keyless, no-account, no-credit-card OpenAI-compatible endpoint with auto-failover across Pollinations and ApiAirforce:
+
+```
+Base URL: https://keylessai.thryx.workers.dev/v1
+Model:    openai-fast
+API key:  not-needed (any string works)
+```
+
+Hermes supports a `custom` provider that can point at any OpenAI-compatible URL. The test fixture configures it like this:
+
+```bash
+# Test fixture: write to ~/.hermes/.env on the container
+API_SERVER_ENABLED=true
+API_SERVER_PORT=8642
+API_SERVER_KEY=test-integration-key
+```
+
+```bash
+# Test fixture: write to ~/.hermes/config.yaml on the container
+model: openai-fast
+provider: custom
+base_url: https://keylessai.thryx.workers.dev/v1
+```
+
+No secrets, no environment variables, no risk. If the URL leaks, it's already public. The Hermes gateway talks to KeylessAI for LLM inference (which auto-fails over across providers), and Open WebUI connects to the Hermes API server at `http://127.0.0.1:8642/v1`.
+
+**Pattern for AI integration tests:**
+
+1. Install the AI package (`hermes`) — `cloudify --on cloudify install hermes`
+2. Write config files to `~/.hermes/` with the KeylessAI endpoint
+3. Start the gateway in the background, wait for `/health`
+4. Install the UI package (`open-webui`)
+5. Install the glue package (`hermes-openwebui`)
+6. Assert the wiring is correct (backend URL in docker-compose.yml, API key set, services healthy)
+
+**Caveat:** KeylessAI is a free community service with no SLA. It wraps Pollinations and ApiAirforce with auto-failover, so it's more resilient than a single provider — but if all upstreams are down, AI-related tests will fail. For CI reliability, consider making these tests skippable with a guard check on the endpoint.
+
 ### Contributing
 
 1. Create a feature branch: `git checkout -b my-feature`

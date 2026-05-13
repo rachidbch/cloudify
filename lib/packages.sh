@@ -104,7 +104,6 @@ function cloudify_list_packages() {
 #   cloudify_list_packages OS              List default package for OS Operating System
 # shellcheck disable=SC2120
 function cloudify_list_default_packages() {
-    $CLOUDIFY_IS_LOCAL || die "{$RED}Error: Illegal Operation. Can't list default packages on remote host $(hostname). ${RESET}"
     local os="${1-}"
     [[ -z $os ]] && os=$(cloudify_osdetect --os)
     cloudify_list_packages_by_tags "#${os}" @default

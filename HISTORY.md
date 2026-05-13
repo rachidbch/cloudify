@@ -24,3 +24,13 @@
 - End-to-end verified: openwebui -> hermes -> keylessai -> response. User confirmed "hello" -> "How can I help you"
 - Also: added token efficiency + history sections to CLAUDE.md, fixed CLAUDE.md git remote docs (origin=GitHub, push with `git push`)
 - Files changed: `CLAUDE.md`, `HISTORY.md` (new), `pkg/hermes-openwebui/init.sh`, `pkg/open-webui/init.sh`, `tests/integration/package-hermes-openwebui.bats`
+
+## 2026-05-13 — Hardened hermes-openwebui for production use
+
+- hermes-openwebui: gateway now installed as systemd user service (`hermes gateway install` + linger) instead of nohup
+- open-webui: added `CLOUDIFY_OPENWEBUI_BIND` config (default `127.0.0.1`, set `0.0.0.0` for Tailscale access)
+- open-webui: added `ENABLE_WEBSOCKET_SUPPORT=true` for mobile clients (Conduit)
+- Test updated to use systemd service instead of nohup
+- 13/13 tests passing, gateway confirmed running as systemd service with linger=yes
+- Documented Docker-to-host networking in pkg READMEs
+- Files: `pkg/hermes-openwebui/init.sh`, `pkg/open-webui/init.sh`, `tests/integration/package-hermes-openwebui.bats`, `pkg/hermes/README.md` (new), `pkg/hermes-openwebui/README.md`, `pkg/open-webui/README.md`

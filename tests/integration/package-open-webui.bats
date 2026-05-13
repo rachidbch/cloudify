@@ -15,9 +15,9 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 }
 
 @test "systemd service is active on $TEST_HOST" {
-    # Wait for service to become active (Docker image pull can take time)
+    # Wait for service to become active (Docker image pull can be slow)
     local attempt=0
-    while (( attempt < 30 )); do
+    while (( attempt < 60 )); do
         run $TEST_SSH "root@$TEST_HOST" 'systemctl is-active open-webui'
         [[ "$output" == "active" ]] && break
         sleep 2
@@ -35,7 +35,7 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 @test "health endpoint responds on $TEST_HOST" {
     # Wait for health endpoint (container may still be starting)
     local attempt=0
-    while (( attempt < 30 )); do
+    while (( attempt < 60 )); do
         run $TEST_SSH "root@$TEST_HOST" 'curl -sf http://127.0.0.1:3000/health'
         [[ "$status" -eq 0 ]] && break
         sleep 2

@@ -22,7 +22,7 @@ Architectures: ${DOCKER_ARCH}
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
 
-apt-get update
+pkg_apt_update --force
 pkg_apt_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 msg "Docker version installed"

@@ -80,7 +80,7 @@ cloudify install open-webui
 ```
 
 **Can't reach backend from container:**
-The `extra_hosts` directive maps `host.docker.internal` to the host gateway. Use `http://host.docker.internal:<port>` (not `localhost`) in backend URLs.
+The `extra_hosts` directive maps `host.docker.internal` to the host gateway. Use `http://host.docker.internal:<port>` (not `localhost`) in backend URLs. The backend must bind to `0.0.0.0` (not `127.0.0.1`) and the host firewall must allow Docker bridge traffic (`172.16.0.0/12`).
 
 ## Data Persistence
 

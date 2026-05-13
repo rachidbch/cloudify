@@ -36,7 +36,22 @@ The install script reads `~/.hermes/.env` and updates `/opt/open-webui/docker-co
 - `OPENAI_API_BASE_URL=http://host.docker.internal:<port>/v1` — points to the Hermes API server
 - `OPENAI_API_KEY=<generated-key>` — the API key for authentication
 
-The `host.docker.internal` hostname is configured in the Open WebUI container via `extra_hosts`, allowing it to reach host services.
+### Docker-to-Host Networking
+
+Open WebUI runs inside Docker. Hermes runs on the host. The connection crosses a network boundary:
+
+```
+Open WebUI (Docker) → host.docker.internal:8642 → Hermes (host process) → LLM API
+```
+
+Docker containers can't use `localhost` to reach the host — it means the container itself. `host.docker.internal` resolves to the host's Docker bridge IP (`172.17.0.1`), and is configured in the container via `extra_hosts`.
+
+Two settings make this work:
+
+1. **`API_SERVER_HOST=0.0.0.0`** — Hermes binds all interfaces (default is `127.0.0.1`, unreachable from Docker bridge)
+2. **UFW rule** — opens hermes port for Docker bridge subnet only (`172.16.0.0/12`)
+
+If UFW is active (Ubuntu cloud images ship it enabled with deny-all incoming), the install opens the hermes port for the Docker bridge range only. Hermes is not exposed to other networks.
 
 ## Reconnecting
 

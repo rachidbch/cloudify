@@ -16,14 +16,16 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
 @test "systemd service is active on $TEST_HOST" {
     # Wait for service to become active (Docker image pull can be slow)
+    # Service is "activating" while docker pulls the image, then "active"
     local attempt=0
-    while (( attempt < 60 )); do
-        run $TEST_SSH "root@$TEST_HOST" 'systemctl is-active open-webui'
-        [[ "$output" == "active" ]] && break
+    local svc_status=""
+    while (( attempt < 90 )); do
+        svc_status=$($TEST_SSH "root@$TEST_HOST" 'systemctl is-active open-webui' 2>/dev/null || true)
+        [[ "$svc_status" == "active" ]] && break
         sleep 2
         attempt=$((attempt + 1))
     done
-    [ "$output" = "active" ]
+    [ "$svc_status" = "active" ]
 }
 
 @test "docker container is running on $TEST_HOST" {

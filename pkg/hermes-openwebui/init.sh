@@ -94,6 +94,15 @@ if [[ "$API_SERVER_HOST" != "0.0.0.0" ]]; then
     needs_restart=true
 fi
 
+# --- Open firewall for Docker bridge to reach hermes ---
+# UFW default INPUT policy is DROP; containers reach host via 172.16.0.0/12.
+if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "active"; then
+    if ! ufw status | grep -q "${API_SERVER_PORT}"; then
+        log_info "Opening UFW port ${API_SERVER_PORT} for Docker bridge access"
+        ufw allow from 172.16.0.0/12 to any port "${API_SERVER_PORT}" proto tcp
+    fi
+fi
+
 # --- Restart Hermes gateway if config changed ---
 if [[ "$needs_restart" == "true" ]]; then
     log_info "Restarting Hermes gateway to apply API server changes..."

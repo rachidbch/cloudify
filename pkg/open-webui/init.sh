@@ -12,6 +12,7 @@
 #
 # Config:
 #   CLOUDIFY_OPENWEBUI_PORT  — host port (default: 3000)
+#   CLOUDIFY_OPENWEBUI_BIND  — bind address (default: 127.0.0.1, use 0.0.0.0 for Tailscale)
 #   WEBUI_ADMIN_EMAIL        — admin email (default: changeme@example.com)
 #   WEBUI_ADMIN_PASSWORD     — admin password (default: changeme)
 #   OPENAI_API_BASE_URL      — backend URL (optional)
@@ -23,6 +24,7 @@
 
 OWUI_DIR="/opt/open-webui"
 OWUI_PORT="${CLOUDIFY_OPENWEBUI_PORT:-3000}"
+OWUI_BIND="${CLOUDIFY_OPENWEBUI_BIND:-127.0.0.1}"
 OWUI_ADMIN_EMAIL="${WEBUI_ADMIN_EMAIL:-changeme@example.com}"
 OWUI_ADMIN_PASSWORD="${WEBUI_ADMIN_PASSWORD:-changeme}"
 
@@ -41,13 +43,14 @@ services:
     container_name: open-webui
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${OWUI_PORT}:8080"
+      - "${OWUI_BIND}:${OWUI_PORT}:8080"
     environment:
       - WEBUI_ADMIN_EMAIL=${OWUI_ADMIN_EMAIL}
       - WEBUI_ADMIN_PASSWORD=${OWUI_ADMIN_PASSWORD}
       - ENABLE_SIGNUP=False
       - BYPASS_MODEL_ACCESS_CONTROL=True
       - ENABLE_OLLAMA_API=False
+      - ENABLE_WEBSOCKET_SUPPORT=true
       - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     volumes:
@@ -98,7 +101,7 @@ fi
 msg ""
 msg "${GREEN}Open WebUI installed and running on port ${OWUI_PORT}.${RESET}"
 msg ""
-msg "Access:  http://127.0.0.1:${OWUI_PORT}"
+msg "Access:  http://${OWUI_BIND}:${OWUI_PORT}"
 msg "Login:   ${OWUI_ADMIN_EMAIL}"
 msg ""
 msg "Service management:"

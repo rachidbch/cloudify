@@ -103,11 +103,24 @@ if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "active"; then
     fi
 fi
 
+# --- Install and start Hermes gateway systemd service ---
+if ! systemctl --user list-unit-files 2>/dev/null | grep -q "hermes-gateway"; then
+    log_info "Installing Hermes gateway as systemd user service..."
+    hermes gateway install 2>/dev/null
+    # Enable linger so the user service survives logout
+    loginctl enable-linger "$USER" 2>/dev/null || true
+fi
+
+# Start the gateway if not running
+if ! systemctl --user is-active hermes-gateway >/dev/null 2>&1; then
+    log_info "Starting Hermes gateway service..."
+    systemctl --user start hermes-gateway 2>/dev/null || true
+fi
+
 # --- Restart Hermes gateway if config changed ---
 if [[ "$needs_restart" == "true" ]]; then
     log_info "Restarting Hermes gateway to apply API server changes..."
-    hermes gateway restart 2>/dev/null || log_warn "Could not restart Hermes gateway automatically. Restart it manually: hermes gateway restart"
-    # Give it a moment to start
+    hermes gateway restart 2>/dev/null || systemctl --user restart hermes-gateway 2>/dev/null || log_warn "Could not restart Hermes gateway. Try: hermes gateway restart"
     sleep 3
 fi
 
@@ -130,7 +143,8 @@ msg "Reconnect after config changes:"
 msg "  /opt/open-webui/connect.sh"
 msg ""
 msg "Service management:"
+msg "  systemctl --user status hermes-gateway"
+msg "  systemctl --user restart hermes-gateway"
 msg "  systemctl status open-webui"
 msg "  systemctl restart open-webui"
-msg "  journalctl -u open-webui -f"
 msg ""

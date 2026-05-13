@@ -34,8 +34,8 @@ EOF'
 }
 
 @test "hermes gateway started on $TEST_HOST" {
-    # Start gateway in background and wait for API server health
-    $TEST_SSH "root@$TEST_HOST" 'nohup hermes gateway > /tmp/hermes-gateway.log 2>&1 &'
+    # Install as systemd user service, enable linger, start
+    $TEST_SSH "root@$TEST_HOST" 'hermes gateway install && loginctl enable-linger root && systemctl --user start hermes-gateway'
 
     # Wait up to 30s for the API server health endpoint
     local attempt=0

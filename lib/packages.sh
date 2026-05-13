@@ -63,10 +63,6 @@ function cloudify_list_packages_by_tags() {
             else
                 # This is a tag
 
-                # unlike '#' tags (aka hashtags), normal '@' tags can't be taken for granted on remote hosts
-                ! $CLOUDIFY_IS_LOCAL && [[ "$filter" == \@* ]] &&
-                    die "{$RED}Error: Illegal tag $filter. Can't filter packages by tags on remote hosts. ${RESET}"
-
                 # If filter is a tag, filter all packages with that tag
                 if [[ $filter == @all ]]; then
                     current_packages_list=$(find "$CLOUDIFY_DIR"/pkg -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | tr '\n' ' ')

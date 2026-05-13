@@ -3,6 +3,9 @@
 *.swo
 *~
 
+# Scratchapd
+scratchpad/
+
 # Logs
 logs/
 

@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # wezterm — GPU-accelerated terminal emulator
-# Installs from the apt.fury.io APT repo
-# TODO: Cross-distro support — branch to init-<distro>.sh scripts (apt.fury.io is Debian-only;
-#       other distros would use GitHub releases via pkg_install_release)
+# https://wezfurlong.org/wezterm/
+#
+# Installs from GitHub releases .deb (Ubuntu 22.04 build, compatible with 24.04).
+# The apt.fury.io repo is unreliable — direct .deb is more dependable.
 
-curl -fsSL https://apt.fury.io/wez/gpg.key -o /tmp/wezterm-fury.gpg.key
-sudo gpg --yes --dearmor -o /usr/share/keyrings/wezterm-fury.gpg /tmp/wezterm-fury.gpg.key
+WEZTERM_VERSION="20240203-110809-5046fc22"
+WEZTERM_DEB="wezterm-${WEZTERM_VERSION}.Ubuntu22.04.deb"
+WEZTERM_URL="https://github.com/wezterm/wezterm/releases/download/${WEZTERM_VERSION}/${WEZTERM_DEB}"
 
-echo 'deb [signed-by=/usr/share/keyrings/wezterm-fury.gpg] https://apt.fury.io/wez/ * *' | sudo tee /etc/apt/sources.list.d/wezterm.list > /dev/null
+# Skip if already installed
+command -v wezterm >/dev/null 2>&1 && exit 0
 
-sudo chmod 644 /usr/share/keyrings/wezterm-fury.gpg
-
-pkg_apt_update
-
-pkg_apt_install wezterm
+curl -LO "${WEZTERM_URL}"
+pkg_apt_install "./${WEZTERM_DEB}"
+rm -f "${WEZTERM_DEB}"

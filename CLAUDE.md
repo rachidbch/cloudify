@@ -116,11 +116,11 @@ Always use `task test-unit` or `task test`. The `sync` task pushes local files i
 git checkout -b my-feature
 git add <changed files>
 git commit -m "Description of change"
-git push github my-feature
+git push -u origin my-feature
 gh pr create --title "Description" --body "Summary of changes"
 ```
 
-The GitHub repo is at `github` remote (origin points to gitlab for historical reasons).
+Push with `git push` — `origin` is the GitHub repo (`https://github.com/rachidbch/cloudify.git`).
 
 ## Architecture Notes
 

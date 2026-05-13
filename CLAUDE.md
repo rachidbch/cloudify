@@ -52,7 +52,9 @@ When `cloudify install bat --on myhost` runs:
 1. `cloudify_remote_sync("myhost", "install bat")` builds a payload from the template function
 2. `declare -f` extracts the template body (which uses `$VAR` references in single quotes), then `envsubst` with an explicit allow-list substitutes only the listed variables
 3. SSH sends the payload: env vars + `bash -c "$(curl -sL <gist_url>)"` + `cloudify install bat`
-4. On the remote host: the gist clones/pulls `~/cloudify` from GitHub, symlinks `/usr/local/bin/cloudify`, then `cloudify install bat` runs the package recipe
+4. On the remote host: the gist clones/pulls `~/cloudify` from **GitHub** (not local), symlinks `/usr/local/bin/cloudify`, then `cloudify install bat` runs the package recipe
+
+**Remote hosts run code from GitHub, not your local checkout.** Push before running integration tests. Tags (`@default`, `@web`) are files in `pkg/<name>/` — they travel with the repo and resolve identically on local and remote hosts.
 
 ## Contributing: Package Enriching & Updating
 
@@ -63,6 +65,8 @@ Cloudify is open to community contributions via GitHub PRs. The development work
 ### 1. Develop locally with TDD
 
 All code changes follow a strict test-driven cycle. Tests run exclusively inside an Incus container (never on the local machine) to ensure a clean Ubuntu 24.04 environment.
+
+**Critical: remote hosts run code from GitHub.** Integration tests SSH into the container, clone/pull from GitHub, and run the code there. `git push` before integration tests or your changes won't take effect.
 
 **Prerequisites:**
 - Incus installed and configured
@@ -79,6 +83,13 @@ task lint              # Push files + run shellcheck in container
 ```
 
 Always use `task test-unit` or `task test`. The `sync` task pushes local files into `/root/cloudify/` in the container before executing tests.
+
+**Debugging integration test failures — fix one thing at a time:**
+
+1. Read the logs: `/tmp/cloudify/logs/<timestamp>.log` on localhost (full SSH output), `/tmp/cloudify/logs/` on container (remote-side)
+2. Identify the first failure — execution is sequential: `cloudify init` → `@default` packages → your package. If `init` dies, your package never runs
+3. Fix one issue, push, re-test. Don't stack fixes
+4. Check if the failure is yours or a pre-existing `@default` package — `@default` packages install before yours. Fix the broken package (or remove its `@default` tag), push, then re-test yours
 
 **Test structure:**
 - `tests/unit/` — unit tests using mock `$CLOUDIFY_DIR` with fake `pkg/` and `inventory/` dirs (no real packages installed)

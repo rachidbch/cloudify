@@ -178,13 +178,34 @@ cloudify --on @web install bat  # install on all @web hosts
 
 ### Package Tags
 
-Tag packages with files in `pkg/<name>/`:
+Tag packages with empty files in `pkg/<name>/`:
 
 ```
 pkg/bat/@default     # bat is a default package
 pkg/git/@basics      # git is a basic tool
 pkg/mosh/@default
 ```
+
+**Two types of tags:**
+
+| Type | Example | Purpose |
+|------|---------|---------|
+| `@<tag>` | `@default`, `@web` | Grouping — used to install sets of packages (`cloudify install @web`) |
+| `#<tag>` | `#linux`, `#darwin` | Platform filtering — only install on matching OS |
+
+Tags are **files in the package directory** that travel with the git repo. When a remote host clones cloudify from GitHub, it gets the same tags. This means `@default` packages are auto-installed on both local and remote hosts — the tag resolution works identically everywhere.
+
+`@default` packages are installed automatically before any user-requested package. They represent packages that should be present on every node. `cloudify install <pkg>` triggers `cloudify_list_default_packages()` which finds all packages tagged `@default` for the current OS and installs them first.
+
+### Remote Execution Flow
+
+When `cloudify install bat --on myhost` runs:
+
+1. **Local** cloudify parses the command, builds a payload, SSHes into `myhost`
+2. **Remote:** bootstrap gist clones/pulls `~/cloudify` from **GitHub** (not your local machine)
+3. **Remote:** `cloudify init` runs, then `cloudify install bat` runs (auto-installs `@default` packages first)
+
+**Remote hosts run code from GitHub.** Push before integration tests or your changes won't take effect.
 
 ## Repository Structure
 

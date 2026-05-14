@@ -11,9 +11,9 @@
 - Added `--no-defaults` flag for minimal installs (basics + target only)
 - Trimmed `basics` meta-pkg: removed mosh and silversearcher-ag; promoted silversearcher-ag to @default
 - Normal installs unchanged (same packages via restructured @default tags)
+- Fixed `pkg_depends` unbound variable: moved .script glob inside recipe branch
 - All 221 unit tests pass, integration tests pass (bat, basics, mosh)
-- Branch: `feature/remote-live-logging`, pushed to origin
-- Next: manual verification on hermes, merge to master
+- Merged to master, verified on hermes — mosh install succeeds with `--no-defaults`
 
 ## 2026-05-13 — Diagnosed hermes-openwebui connectivity failure
 

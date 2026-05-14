@@ -119,7 +119,6 @@ function cloudify_remote_sync() {
             "$CLOUDIFY_REMOTE_USER@$host" "$cloudify_remote_payload" 2>&1 \
             | sed "s/^/$host: /" \
             | sed "s/^${host}: \$//" \
-            | tail -n +2 \
             | tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}" >&2 \
             || cloudify_remote_exit_code=$?
         echo "$cloudify_remote_exit_code" > "$CLOUDIFY_TMP/${host}.exit"

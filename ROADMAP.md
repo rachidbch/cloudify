@@ -25,3 +25,53 @@ Many packages use bare `echo` instead of `msg`/`log_*` functions, so their outpu
 Remote execution pipes SSH output through `sed | tail | tee`, which buffers everything — logs appear only after the SSH session completes. During long installs (docker pulls, locale generation), the user sees `Setup of machines in progress...` with no feedback, and the log file on localhost is empty until the remote finishes.
 
 **Proposed fix**: Write logs live on the remote host (e.g. `tee` to a remote log file inside the payload template) so they can be inspected during install with `ssh myhost tail -f /tmp/cloudify/logs/...`. Also surface the log path to the user in the "Setup of machines in progress..." message so they know where to look.
+
+## Per-package remote env var declarations
+
+### Problem
+
+When `cloudify --on hermes install open-webui` runs, a fresh bash session starts on the remote host. It knows nothing about local env vars. The bridge is the payload template in `lib/remote.sh`, which uses `envsubst` with a hardcoded allow-list to substitute local values into the remote payload.
+
+Currently, every env var that must reach the remote host requires **two manual edits** in `lib/remote.sh`:
+1. Add `export MY_VAR='$MY_VAR'` to `cloudify_remote_payload_template()`
+2. Add `$MY_VAR` to the `envsubst` allow-list string
+
+If either is forgotten, the var arrives empty on the remote — no error, no warning, just silent default behavior.
+
+This means the cloudify core (`lib/remote.sh`) must be modified every time a package needs a new env var remotely. The open-webui package (`WEBUI_ADMIN_EMAIL`, `WEBUI_ADMIN_PASSWORD`), rclone (`CLOUDIFY_RCLONE_REMOTE_*`), restic (`RESTIC_PASSWORD`), etc. — all required touching cloudify core. This does not scale.
+
+### Design constraint
+
+`envsubst` with an explicit allow-list is intentional and must stay. Without it, `envsubst` would expand *every* `$VAR` in the template — including ones like `$HOME`, `$(...)`, and backticks that must resolve on the remote side, not locally. The allow-list is the security boundary.
+
+### Proposed fix: `.remote-vars` convention
+
+Each package declares its own remote vars in a file inside its directory:
+
+```
+pkg/open-webui/.remote-vars
+pkg/rclone/.remote-vars
+pkg/hermes-openwebui/.remote-vars
+```
+
+Format: one var name per line, comments allowed:
+
+```
+# pkg/open-webui/.remote-vars
+WEBUI_ADMIN_EMAIL
+WEBUI_ADMIN_PASSWORD
+```
+
+`cloudify_remote_sync()` would then:
+1. Resolve which packages are being installed (already known at dispatch time)
+2. Scan each package directory for `.remote-vars`
+3. Collect all var names into a single deduplicated list
+4. Dynamically build the `export` lines and the `envsubst` allow-list
+
+The core vars (`CLOUDIFY_REMOTE_USER`, `CLOUDIFY_REMOTE_PWD`, `DEBUG`, etc.) would stay hardcoded in the template — they're infrastructure, not package-specific.
+
+**Benefits:**
+- Packages are self-contained — add a `.remote-vars` file, no core changes needed
+- No silent failures — if a var is declared but not set locally, we can warn
+- The allow-list security boundary is preserved
+- Package authors can work independently without touching cloudify core

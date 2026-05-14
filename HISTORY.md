@@ -7,7 +7,8 @@
 - Root cause: `CLOUDIFY_LOG_FILE` not set in parent shell (cloudify init exports to child, not parent)
 - Fix: pre-create log file in parent shell, then `exec 3>&1 1> >(tee -a "$CLOUDIFY_LOG_FILE" >&3) 2>&1`
 - Remote log file now gets 124 lines during install (verified), single file (idempotent init)
-- All 221 unit tests pass, integration tests pass (bat, basics)
+- Live logging revealed mosh pkg stall: removed fragile `sudo tee` heredoc, made locale-gen idempotent
+- All 221 unit tests pass, integration tests pass (bat, basics, mosh)
 - Branch: `feature/remote-live-logging`, pushed to origin
 - Next: manual verification on hermes, merge to master
 

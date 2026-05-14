@@ -53,6 +53,7 @@ function cloudify_remote_payload_template() {
         bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL')"
     fi
     cloudify init
+    exec > >(tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}") 2>&1
     :
 }
 

@@ -8,6 +8,9 @@
 - Fix: pre-create log file in parent shell, then `exec 3>&1 1> >(tee -a "$CLOUDIFY_LOG_FILE" >&3) 2>&1`
 - Remote log file now gets 124 lines during install (verified), single file (idempotent init)
 - Live logging revealed mosh pkg stall: removed fragile `sudo tee` heredoc, made locale-gen idempotent
+- Added `--no-defaults` flag for minimal installs (basics + target only)
+- Trimmed `basics` meta-pkg: removed mosh and silversearcher-ag; promoted silversearcher-ag to @default
+- Normal installs unchanged (same packages via restructured @default tags)
 - All 221 unit tests pass, integration tests pass (bat, basics, mosh)
 - Branch: `feature/remote-live-logging`, pushed to origin
 - Next: manual verification on hermes, merge to master

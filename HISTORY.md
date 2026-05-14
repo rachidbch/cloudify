@@ -3,11 +3,13 @@
 ## 2026-05-14 — Add live remote logging to payload template
 
 - Added `exec > >(tee -a ...)` after `cloudify init` — caused SSH hang (process substitution doesn't exit cleanly)
-- Fixed: pipe `cloudify $*` itself through `tee -a "${CLOUDIFY_LOG_FILE}"` with `exit ${PIPESTATUS[0]}` to preserve exit code
-- Local pipe chain (`sed | tail | tee`) unchanged — no behavior change for local logging
+- Tried piping `cloudify $*` through `tee` — broke shadow sudo (`cat -` blocked on stdin pipe)
+- Root cause: `CLOUDIFY_LOG_FILE` not set in parent shell (cloudify init exports to child, not parent)
+- Fix: pre-create log file in parent shell, then `exec 3>&1 1> >(tee -a "$CLOUDIFY_LOG_FILE" >&3) 2>&1`
+- Remote log file now gets 124 lines during install (verified), single file (idempotent init)
 - All 221 unit tests pass, integration tests pass (bat, basics)
 - Branch: `feature/remote-live-logging`, pushed to origin
-- Next: manual verification on real host, merge to master
+- Next: manual verification on hermes, merge to master
 
 ## 2026-05-13 — Diagnosed hermes-openwebui connectivity failure
 

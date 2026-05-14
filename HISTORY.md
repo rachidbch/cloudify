@@ -1,5 +1,14 @@
 # Cloudify — Session History
 
+## 2026-05-14 — Add live remote logging to payload template
+
+- Added `exec > >(tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}") 2>&1` after `cloudify init` in `lib/remote.sh` payload template
+- Remote log file now receives output line-by-line during execution instead of only after SSH completes
+- Local pipe chain (`sed | tail | tee`) unchanged — no behavior change for local logging
+- All 221 unit tests pass, 3/3 integration smoke tests pass (bat, fd, basics), recipe-discovery pass
+- Branch: `feature/remote-live-logging`, pushed to origin
+- Next: manual verification on real host, merge to master
+
 ## 2026-05-13 — Diagnosed hermes-openwebui connectivity failure
 
 - Ran full integration test suite (11/11 passing) for hermes-openwebui in container

@@ -2,10 +2,10 @@
 
 ## 2026-05-14 — Add live remote logging to payload template
 
-- Added `exec > >(tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}") 2>&1` after `cloudify init` in `lib/remote.sh` payload template
-- Remote log file now receives output line-by-line during execution instead of only after SSH completes
+- Added `exec > >(tee -a ...)` after `cloudify init` — caused SSH hang (process substitution doesn't exit cleanly)
+- Fixed: pipe `cloudify $*` itself through `tee -a "${CLOUDIFY_LOG_FILE}"` with `exit ${PIPESTATUS[0]}` to preserve exit code
 - Local pipe chain (`sed | tail | tee`) unchanged — no behavior change for local logging
-- All 221 unit tests pass, 3/3 integration smoke tests pass (bat, fd, basics), recipe-discovery pass
+- All 221 unit tests pass, integration tests pass (bat, basics)
 - Branch: `feature/remote-live-logging`, pushed to origin
 - Next: manual verification on real host, merge to master
 

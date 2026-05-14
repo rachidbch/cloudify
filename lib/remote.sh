@@ -57,7 +57,7 @@ function cloudify_remote_payload_template() {
     export CLOUDIFY_LOG_FILE="/tmp/cloudify/logs/$(date +%Y%m%d-%H%M%S).log"
     : > "$CLOUDIFY_LOG_FILE"
     cloudify init
-    exec 3>&1 1> >(tee -a "$CLOUDIFY_LOG_FILE" >&3) 2>&1
+    exec >> "$CLOUDIFY_LOG_FILE" 2>&1
     :
 }
 

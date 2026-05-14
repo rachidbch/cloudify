@@ -21,6 +21,8 @@ function usage() {
         cloudify add | a <pkg>                          install package on local machine
         cloudify add | a  default                       install default packages on local machine
         cloudify --on <host> install <pkg>              install package on remote host
+        cloudify --no-defaults install <pkg>            install only basics + <pkg> (skip @default)
+        cloudify --no-defaults --on <host> install <pkg>  minimal install on remote host
         cloudify remove| rem | r <pkg>                  uninstall package
         cloudify --on <host> uninstall <pkg>            uninstall package on remote host
         Note: --on must come BEFORE install/uninstall, not after
@@ -189,8 +191,14 @@ function _cloudify_execute_package_action() {
     cloudify_init_paths
     if [[ "$action" == "install" ]]; then
         # Auto-install @default packages first (idempotent — apt skips already-installed)
+        # With --no-defaults, install only basics (essential tooling) instead of all defaults
         local defaults
-        defaults=$(cloudify_list_default_packages)
+        if [[ "${CLOUDIFY_NO_DEFAULTS:-}" == "true" ]]; then
+            PKG_DEBUG "${YELLOW}--no-defaults: installing basics only${RESET}"
+            defaults="basics"
+        else
+            defaults=$(cloudify_list_default_packages)
+        fi
         if [[ -n "$defaults" ]]; then
             PKG_DEBUG "${YELLOW}Installing @default packages: ${defaults}${RESET}"
             cloudify_install_package $defaults
@@ -275,6 +283,9 @@ function main() {
         -n)
             export CLOUDIFY_DISABLE_COLORS=true
             cloudify_setup_colors
+            ;;
+        --no-defaults)
+            export CLOUDIFY_NO_DEFAULTS=true
             ;;
         init)
             if [[ -f "$CLOUDIFY_INIT_COOKIE" ]]; then

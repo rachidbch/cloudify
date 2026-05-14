@@ -53,7 +53,6 @@ function cloudify_remote_payload_template() {
         bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL')"
     fi
     cloudify init
-    exec > >(tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}") 2>&1
     :
 }
 
@@ -89,8 +88,8 @@ function cloudify_remote_sync() {
             '$CLOUDIFY_DISABLE_COLORS $DEBUG $CLOUDIFY_LOG_LEVEL $CLOUDIFY_FORCE_UPDATE $CLOUDIFY_UPDATE_DELAY $CLOUDIFY_REMOTE_USER $CLOUDIFY_REMOTE_PWD $CLOUDIFY_GITHUBUSER $CLOUDIFY_GITHUBPWD $CLOUDIFY_GITLABUSER $CLOUDIFY_GITLABPWD $CLOUDIFY_RCLONE_REMOTE $CLOUDIFY_RCLONE_REMOTE_REGION $CLOUDIFY_RCLONE_REMOTE_ENDPOINT $CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID $CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY $RESTIC_PASSWORD $CLOUDIFY_BOOTSTRAP_URL $CLOUDIFY_SIGNAL_PORT $CLOUDIFY_OPENWEBUI_PORT' \
             <<< "$cloudify_remote_payload")
 
-        # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running
-        cloudify_remote_payload="$cloudify_remote_payload; cloudify $*"
+        # Add actual cloudify command — tee to remote log for live visibility, preserve exit code
+        cloudify_remote_payload="$cloudify_remote_payload; cloudify $* 2>&1 | tee -a \"\${CLOUDIFY_LOG_FILE:-/dev/null}\"; exit \${PIPESTATUS[0]}"
 
         PKG_DEBUG "Payload to execute remotely on $host:"
         # Passwords are replaced by asterisks before printing

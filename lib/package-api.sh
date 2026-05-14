@@ -329,6 +329,20 @@ function pkg_depends() {
                     failed_packages+=("$pkg")
                     continue
                 fi
+
+                # Install package scripts in ~/.local/bin
+                for script in "$(dirname "$package_recipe_path")"/*.script; do
+                    [[ -e "$script" ]] || continue # As per bash normal behaviour, when a glob expansion doesn't match any file,
+                    # the glob pattern itself is processed. This protects against such a case.
+                    # Note that this can also be prevented by setting the 'nullglob' option
+                    script_basename=$(basename "$script")
+                    PKG_DEBUG copying "$script" to "$CLOUDIFY_LOCAL_BIN"/"${script_basename%.script}"
+                    if ! cp -paf "$script" "$CLOUDIFY_LOCAL_BIN"/"${script_basename%.script}"; then
+                        msg "${RED}Failed to install script: ${script_basename%.script}${RESET}"
+                        failed_packages+=("$pkg")
+                        break
+                    fi
+                done
             else
                 msg "${GREEN}Package $pkg has no recipe. Trying Native Package Manager.${RESET}"
                 if ! pkg_apt_install "${pkg}"; then
@@ -336,20 +350,6 @@ function pkg_depends() {
                     continue
                 fi
             fi
-
-            # Install package scripts in ~/.local/bin
-            for script in "$(dirname "$package_recipe_path")"/*.script; do
-                [[ -e "$script" ]] || continue # As per bash normal behaviour, when a glob expansion doesn't match any file,
-                # the glob pattern itself is processed. This protects against such a case.
-                # Note that this can also be prevented by setting the 'nullglob' option
-                script_basename=$(basename "$script")
-                PKG_DEBUG copying "$script" to "$CLOUDIFY_LOCAL_BIN"/"${script_basename%.script}"
-                if ! cp -paf "$script" "$CLOUDIFY_LOCAL_BIN"/"${script_basename%.script}"; then
-                    msg "${RED}Failed to install script: ${script_basename%.script}${RESET}"
-                    failed_packages+=("$pkg")
-                    break
-                fi
-            done
         else
             msg "${GREEN}No package $pkg found. Trying Native Package Manager.${RESET}"
             if ! pkg_apt_install "${pkg}"; then

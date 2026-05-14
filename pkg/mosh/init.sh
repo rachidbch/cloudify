@@ -4,24 +4,10 @@
 # Install mosh
 pkg_apt_install mosh
 
-# Disable verbose login
-# The login message messes w/ mosh protocole
+# Disable verbose login (the login message messes w/ mosh protocol)
 touch ~/.hushlogin
 
-# Steps are to be done only if mosh complains about locales
-
-# Edit default locale
-mkdir -p ~/trash/etc/default
-sudo tee /etc/default/locale &> /dev/null <<-'EOF'
-	LANGUAGE=en_US.UTF-8
-	LANG=en_US.UTF-8
-	LC_ALL=en_US.UTF-8
-EOF
-
-# Generate locales
-sudo locale-gen en_US.UTF-8
-#sudo dpkg-reconfigure locales   # Then type `ENTER` twice
-
-# sudo ufw allow mosh
-# Enable mosh in UFW
-
+# Configure and generate UTF-8 locale if not already present
+if ! locale -a 2>/dev/null | grep -qi 'en_US.utf'; then
+    sudo locale-gen en_US.UTF-8
+fi

@@ -60,7 +60,11 @@ function cloudify_remote_payload_template() {
     export CLOUDIFY_LOG_FILE="/tmp/cloudify/logs/$(date +%Y%m%d-%H%M%S).log"
     : > "$CLOUDIFY_LOG_FILE"
     cloudify init
-    exec >> "$CLOUDIFY_LOG_FILE" 2>&1
+    # TODO: The </dev/null closes stdin so shadow sudo's `cat -` gets EOF instead
+    # of blocking on the SSH pipe. Without this, `cat -` waits indefinitely for
+    # input that never comes, stalling the entire install after the first apt-get.
+    # Rollback: remove `</dev/null` if this causes issues with packages that read stdin.
+    exec >> "$CLOUDIFY_LOG_FILE" 2>&1 </dev/null
     :
 }
 

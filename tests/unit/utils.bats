@@ -115,12 +115,12 @@ teardown() {
 
 @test "cloudify_get_password sets password variable" {
     cloudify_get_password mypwd
-    [ "$mypwd" = "testpwd" ]
+    [ "$mypwd" = "dummy" ]
 }
 
 @test "cloudify_get_password sets user and host variables" {
     cloudify_get_password mypwd myuser myhost
-    [ "$mypwd" = "testpwd" ]
+    [ "$mypwd" = "dummy" ]
     [ -n "$myuser" ]
     [ -n "$myhost" ]
 }

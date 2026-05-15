@@ -6,10 +6,17 @@
 
 ```bash
 cloudify install hermes
-hermes setup
 ```
 
-The install uses `--skip-setup`. Run `hermes setup` interactively to configure your model provider and API key.
+Works out of the box — auto-configured with [KeylessAI](https://keylessai.thryx.workers.dev) (free, no account, no API key). Chat immediately:
+
+```bash
+hermes
+```
+
+## Switching Providers
+
+Run `hermes model` to switch to a paid provider (Nous Portal, OpenRouter, Anthropic, etc.). The KeylessAI default is overwritten — no conflict.
 
 ## Configuration
 

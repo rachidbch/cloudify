@@ -73,14 +73,14 @@ function sudo() {
     # Find out if the sudo command have been called within a pipe, with arguments or both
     # This if incantation can of course be simplified but I prefer to let it that way to make the different cases clear
     if [ -t 0 ]; then
-        # 'sudo' not called in a pipe
-        : # Do nothing
-        #lineargs="$lineargs"
+        : # Terminal — no piped input
     elif [[ -p /dev/stdin ]]; then
-        # 'sudo' called in a pipe.
+        # 'sudo' called in a pipe
         pipeargs="$(cat -)"
+    elif [[ /dev/stdin -ef /dev/null ]]; then
+        : # stdin is /dev/null (e.g. after exec </dev/null) — skip cat, pipeargs stays empty
     else
-        # 'sudo' called with a here doc
+        # Heredoc or redirected file
         pipeargs="$(cat -)"
     fi
 

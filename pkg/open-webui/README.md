@@ -9,7 +9,7 @@ Standalone [Open WebUI](https://github.com/open-webui/open-webui) via Docker wit
 cloudify install open-webui
 
 # Or override admin credentials:
-export WEBUI_ADMIN_EMAIL=admin@example.com
+export WEBUI_ADMIN_EMAIL=changeme@example.com
 export WEBUI_ADMIN_PASSWORD=mysecurepassword
 cloudify install open-webui
 ```
@@ -21,10 +21,18 @@ All configuration is via environment variables set before install. They are writ
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `CLOUDIFY_OPENWEBUI_PORT` | `3000` | Host port to bind |
+| `CLOUDIFY_OPENWEBUI_BIND` | `127.0.0.1` | Bind address (`0.0.0.0` for remote/container access) |
 | `WEBUI_ADMIN_EMAIL` | `changeme@example.com` | Admin email for headless setup |
 | `WEBUI_ADMIN_PASSWORD` | `changeme` | Admin password |
 | `OPENAI_API_BASE_URL` | (empty) | Backend URL (Ollama, OpenAI, etc.) |
 | `OPENAI_API_KEY` | (empty) | Backend API key |
+
+**Remote/container access:** The default bind is `127.0.0.1` (localhost only). For containers or remote hosts, set `CLOUDIFY_OPENWEBUI_BIND=0.0.0.0` before install:
+
+```bash
+export CLOUDIFY_OPENWEBUI_BIND=0.0.0.0
+cloudify install open-webui
+```
 
 To change configuration after install, edit `/opt/open-webui/docker-compose.yml` and restart:
 
@@ -52,7 +60,7 @@ Access the UI at `http://127.0.0.1:3000`. You can configure backends through the
 If Ollama is running on the host:
 
 ```bash
-export WEBUI_ADMIN_EMAIL=admin@example.com
+export WEBUI_ADMIN_EMAIL=changeme@example.com
 export WEBUI_ADMIN_PASSWORD=changeme
 export OPENAI_API_BASE_URL=http://host.docker.internal:11434/v1
 cloudify install open-webui

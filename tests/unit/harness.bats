@@ -46,7 +46,7 @@ teardown() {
         export CLOUDIFY_DIR=/tmp/test_cloudify_dir
         export CLOUDIFY_TMP=/tmp/test_cloudify_tmp
         export CLOUDIFY_LOCAL_BIN=/tmp/test_bin
-        export CLOUDIFY_HOSTPWD=testpwd
+        export CLOUDIFY_HOSTPWD=dummy
         export DEBUG=false
         mkdir -p /tmp/test_cloudify_dir/pkg /tmp/test_cloudify_dir/inventory /tmp/test_cloudify_tmp
         # Source cloudify but prevent main() from executing

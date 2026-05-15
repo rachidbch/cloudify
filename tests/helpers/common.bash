@@ -30,8 +30,8 @@ setup_test_env() {
     mkdir -p "$CLOUDIFY_LOCAL_BIN"
 
     export CLOUDIFY_LOCAL_USER=testuser
-    export CLOUDIFY_LOCAL_PWD=testpwd
-    export CLOUDIFY_HOSTPWD=testpwd
+    export CLOUDIFY_LOCAL_PWD=dummy
+    export CLOUDIFY_HOSTPWD=dummy
     export CLOUDIFY_RECIPE_FILENAME=init.sh
 
     export CLOUDIFY_CREDENTIALS_DIR="$CLOUDIFY_TMP/config"

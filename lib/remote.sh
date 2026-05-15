@@ -57,13 +57,15 @@ function cloudify_remote_payload_template() {
         bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL')"
     fi
     mkdir -p /tmp/cloudify/logs
-    export CLOUDIFY_LOG_FILE="/tmp/cloudify/logs/$(date +%Y%m%d-%H%M%S).log"
+    CLOUDIFY_LOG_FILE="/tmp/cloudify/logs/$(date +%Y%m%d-%H%M%S).log"
+    export CLOUDIFY_LOG_FILE
     : > "$CLOUDIFY_LOG_FILE"
     cloudify init
-    # TODO: The </dev/null closes stdin so shadow sudo's `cat -` gets EOF instead
-    # of blocking on the SSH pipe. Without this, `cat -` waits indefinitely for
-    # input that never comes, stalling the entire install after the first apt-get.
-    # Rollback: remove `</dev/null` if this causes issues with packages that read stdin.
+    # Close stdin: SSH leaves the remote shell's fd 0 connected to the local pipe.
+    # The shadow sudo wrapper reads piped input via `cat -` before injecting the password.
+    # Without </dev/null, that `cat -` blocks forever on the SSH pipe (nothing is sent from local).
+    # After exec, pipelines within package recipes still work — `|` creates its own fd
+    # independent of the process's inherited stdin.
     exec >> "$CLOUDIFY_LOG_FILE" 2>&1 </dev/null
     :
 }

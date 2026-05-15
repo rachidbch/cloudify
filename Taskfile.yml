@@ -32,6 +32,7 @@ tasks:
   setup-container:
     desc: Install test dependencies in container
     cmds:
+      - ivps exec {{.CONTAINER}} -- apt-get install -y -qq rsync
       - task: sync
       - bash {{.LOCAL_DIR}}/cloudify --on {{.HOST}} install bats-test
 
@@ -61,10 +62,29 @@ tasks:
       - bash tests/run-integration.sh
 
   lint:
-    desc: Run shellcheck in container
+    desc: Run shellcheck locally (installs shellcheck if missing)
     cmds:
-      - task: sync
-      - ivps exec {{.CONTAINER}} -- bash -c 'cd {{.REPO_DIR}} && shellcheck -x lib/*.sh lib/shadows/*.sh cloudify pkg/*/init.sh'
+      - |
+        if ! command -v shellcheck >/dev/null 2>&1; then
+          echo "shellcheck not found. Installing..."
+          OS_ID=$(. /etc/os-release 2>/dev/null && echo "$ID" || echo "unknown")
+          case "$OS_ID" in
+            ubuntu|debian)
+              sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+              ;;
+            fedora)
+              sudo dnf install -y shellcheck
+              ;;
+            arch|manjaro)
+              sudo pacman -S --noconfirm shellcheck
+              ;;
+            *)
+              echo "Unsupported distro '$OS_ID'. Install shellcheck manually: https://github.com/koalaman/shellcheck#installing"
+              exit 1
+              ;;
+          esac
+        fi
+      - shellcheck -x lib/*.sh lib/shadows/*.sh cloudify pkg/*/init.sh
 
   itest-base:
     desc: Create clean test snapshot

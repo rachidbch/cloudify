@@ -9,7 +9,8 @@ set -Eeuo pipefail
 #== SCRIPT USAGE
 function usage() {
     cat <<'EOF'
-    cloudify [action] [package]
+    cloudify [flags] [action] [package]
+    IMPORTANT: --on <host> must come BEFORE install/uninstall, not after.
     examples:
         cloudify help                                   print this usage help
         cloudify init                                   Full setup: PATH, tools, credentials (once per machine)
@@ -25,7 +26,6 @@ function usage() {
         cloudify --no-defaults --on <host> install <pkg>  minimal install on remote host
         cloudify remove| rem | r <pkg>                  uninstall package
         cloudify --on <host> uninstall <pkg>            uninstall package on remote host
-        Note: --on must come BEFORE install/uninstall, not after
         cloudify launch|run [remote:]<name> [image]     Launch container (default image: ubuntu/24.04/cloud)
         cloudify delete|del [remote:]<name>             Delete container
         cloudify hosts                                  list remote hosts
@@ -201,6 +201,7 @@ function _cloudify_execute_package_action() {
         fi
         if [[ -n "$defaults" ]]; then
             PKG_DEBUG "${YELLOW}Installing @default packages: ${defaults}${RESET}"
+            # shellcheck disable=SC2086
             cloudify_install_package $defaults
         fi
         # Then user-requested packages (backgrounded)

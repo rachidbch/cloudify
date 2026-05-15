@@ -1,19 +1,39 @@
 # Cloudify — Session History
 
-## 2026-05-14 — Add live remote logging to payload template
+## 2026-05-15 — Shadow system hardening, test infra fixes, hermes auto-config
 
-- Added `exec > >(tee -a ...)` after `cloudify init` — caused SSH hang (process substitution doesn't exit cleanly)
-- Tried piping `cloudify $*` through `tee` — broke shadow sudo (`cat -` blocked on stdin pipe)
-- Root cause: `CLOUDIFY_LOG_FILE` not set in parent shell (cloudify init exports to child, not parent)
-- Fix: pre-create log file in parent shell, then `exec 3>&1 1> >(tee -a "$CLOUDIFY_LOG_FILE" >&3) 2>&1`
-- Remote log file now gets 124 lines during install (verified), single file (idempotent init)
-- Live logging revealed mosh pkg stall: removed fragile `sudo tee` heredoc, made locale-gen idempotent
+- Added explicit `/dev/null` stdin detection in shadow sudo (`[[ /dev/stdin -ef /dev/null ]]`)
+  to skip `cat -` when stdin is /dev/null (after `exec </dev/null` in remote payload)
+- Clarified `exec </dev/null` comment in `lib/remote.sh`: explains why closing stdin is
+  needed and why pipelines within recipes still work
+- Standardized test passwords: `testpwd` → `dummy` across all test files
+- Standardized default admin emails: `admin@example.com` → `changeme@example.com` in READMEs
+- Fixed open-webui: `docker compose up --force-recreate` in systemd service so env var
+  changes take effect on restart (root cause 2 of env vars not applied)
+- Moved `task lint` to run locally with auto-install of shellcheck (no container sync needed)
+- Added rsync to `setup-container` task and `tests/run-integration.sh` snapshot provisioning
+- Added SSH host key bypass flags to `ensure_snapshot()` in `run-integration.sh`
+- Added prominent `--on` argument order note to usage text and CLAUDE.md
+- Hermes package auto-configures KeylessAI as default LLM provider (free, no account, no API key).
+  Only written if no provider already configured. Users run `hermes model` to switch to paid providers.
+- Documented `CLOUDIFY_OPENWEBUI_BIND` in open-webui README for remote/container access
+- All 222 unit tests pass, all 27 integration tests pass
+
+## 2026-05-14 — Live remote logging + hermes-openwebui production deploy
+
+- Added `exec >> file 2>&1 </dev/null` in payload template for live remote logging
+- `</dev/null` closes stdin so shadow sudo's `cat -` gets EOF instead of blocking on SSH pipe
+- Removed `tail -n +2` from local SSH pipe chain (was buffering all output until SSH closed)
+- Fixed hermes installer clobbering Python entry point: hermes install.sh wrote bash wrapper
+  to venv/bin/hermes via symlink, creating infinite exec loop. Restore correct Python entry
+  point (`hermes_cli.main:main`) after installer runs.
 - Added `--no-defaults` flag for minimal installs (basics + target only)
 - Trimmed `basics` meta-pkg: removed mosh and silversearcher-ag; promoted silversearcher-ag to @default
-- Normal installs unchanged (same packages via restructured @default tags)
 - Fixed `pkg_depends` unbound variable: moved .script glob inside recipe branch
-- All 221 unit tests pass, integration tests pass (bat, basics, mosh)
-- Merged to master, verified on hermes — mosh install succeeds with `--no-defaults`
+- Fixed mosh pkg stall: removed fragile `sudo tee` heredoc, made locale-gen idempotent
+- Passed `WEBUI_ADMIN_EMAIL`, `WEBUI_ADMIN_PASSWORD`, `CLOUDIFY_OPENWEBUI_BIND` through remote payload
+- Deployed hermes-openwebui on hermes prod: gateway healthy, open-webui on 0.0.0.0:3000,
+  accessible via Tailscale at 100.106.4.58:3000
 
 ## 2026-05-13 — Diagnosed hermes-openwebui connectivity failure
 

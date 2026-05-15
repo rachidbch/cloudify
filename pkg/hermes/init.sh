@@ -23,6 +23,18 @@ PYEOF
     chmod +x "$HERMES_VENV_BIN"
 fi
 
-echo ""
-echo "Next step: Prepare your model API keys and setup hermes by running:"
-echo "  cloudify shell hermes -i hermes setup"
+# --- Auto-configure KeylessAI as default LLM provider ---
+# Free, keyless, no-account OpenAI-compatible endpoint.
+# Only written if no provider is already configured (idempotent).
+HERMES_DIR="$HOME/.hermes"
+HERMES_CONFIG="$HERMES_DIR/config.yaml"
+mkdir -p "$HERMES_DIR"
+if [[ ! -f "$HERMES_CONFIG" ]] || ! grep -q "^provider:" "$HERMES_CONFIG"; then
+    cat > "$HERMES_CONFIG" << 'KEYLESSEOF'
+model: openai-fast
+provider: custom
+base_url: https://keylessai.thryx.workers.dev/v1
+KEYLESSEOF
+    msg "${GREEN}Hermes auto-configured with KeylessAI (free, no account needed).${RESET}"
+    msg "Run 'hermes model' anytime to switch to a paid provider."
+fi

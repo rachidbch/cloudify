@@ -69,7 +69,7 @@ Requires=docker.service
 [Service]
 Type=simple
 WorkingDirectory=${OWUI_DIR}
-ExecStart=/usr/bin/docker compose up
+ExecStart=/usr/bin/docker compose up --force-recreate
 ExecStop=/usr/bin/docker compose down
 Restart=always
 RestartSec=5

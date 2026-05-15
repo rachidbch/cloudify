@@ -6,6 +6,10 @@ When editing .md files (including CLAUDE.md, README.md, etc.), ALWAYS BE TOKEN E
 
                         --- TOKEN EFFICIENT = MIN TOKEN WITH MAX SIGNAL ---
 
+## CRITICAL: CLI Argument Order
+
+`--on <host>` is a **flag** that must come BEFORE the action verb: `cloudify --on host install pkg` (NOT `cloudify install pkg --on host`).
+
 ## CRITICAL: Append-only Project History
 
 - ALWAYS log you actions/outcomes in the append-only `HISTORY.md` at repo root.

@@ -77,22 +77,22 @@ teardown() {
 
 @test "cloudify_credentials_save creates credentials file" {
     export CLOUDIFY_REMOTE_USER=testuser
-    export CLOUDIFY_REMOTE_PWD=testpwd
+    export CLOUDIFY_REMOTE_PWD=dummy
     cloudify_credentials_save remote
     [ -f "$CLOUDIFY_CREDENTIALS_FILE" ]
 }
 
 @test "cloudify_credentials_save writes correct format" {
     export CLOUDIFY_REMOTE_USER=testuser
-    export CLOUDIFY_REMOTE_PWD=testpwd
+    export CLOUDIFY_REMOTE_PWD=dummy
     cloudify_credentials_save remote
     grep -q "^export CLOUDIFY_REMOTE_USER='testuser'" "$CLOUDIFY_CREDENTIALS_FILE"
-    grep -q "^export CLOUDIFY_REMOTE_PWD='testpwd'" "$CLOUDIFY_CREDENTIALS_FILE"
+    grep -q "^export CLOUDIFY_REMOTE_PWD='dummy'" "$CLOUDIFY_CREDENTIALS_FILE"
 }
 
 @test "cloudify_credentials_save sets chmod 600" {
     export CLOUDIFY_REMOTE_USER=testuser
-    export CLOUDIFY_REMOTE_PWD=testpwd
+    export CLOUDIFY_REMOTE_PWD=dummy
     cloudify_credentials_save remote
     local perms
     perms=$(stat -c '%a' "$CLOUDIFY_CREDENTIALS_FILE")

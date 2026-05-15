@@ -40,7 +40,7 @@ ensure_snapshot() {
         echo "Snapshot '$SNAPSHOT' found."
     else
         echo "Snapshot '$SNAPSHOT' not found. Creating..."
-        ssh "root@$TEST_HOST" 'DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq bats bats-assert bats-support bats-file'
+        ssh -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" "root@$TEST_HOST" 'DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq rsync bats bats-assert bats-support bats-file'
         incus snapshot create "$CONTAINER" "$SNAPSHOT" --no-expiry
         echo "Snapshot '$SNAPSHOT' created."
     fi

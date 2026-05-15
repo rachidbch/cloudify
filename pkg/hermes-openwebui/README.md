@@ -21,7 +21,7 @@ Connects [Open WebUI](https://github.com/open-webui/open-webui) to a [Hermes](ht
 hermes setup
 
 # Install Open WebUI
-export WEBUI_ADMIN_EMAIL=admin@example.com
+export WEBUI_ADMIN_EMAIL=changeme@example.com
 export WEBUI_ADMIN_PASSWORD=changeme
 cloudify install open-webui
 

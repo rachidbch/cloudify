@@ -2,6 +2,18 @@
 # hermes — Nous Research AI agent
 pkg_depends git
 
+# --- Install guard: skip if already installed unless forced ---
+if command -v hermes >/dev/null 2>&1 && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "Hermes already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
+# --- Clear persistent data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing hermes data..."
+    rm -rf "$HOME/.hermes"
+fi
+
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup
 
 # The installer writes a bash wrapper to /usr/local/lib/hermes-agent/venv/bin/hermes

@@ -28,6 +28,18 @@ OWUI_BIND="${CLOUDIFY_OPENWEBUI_BIND:-127.0.0.1}"
 OWUI_ADMIN_EMAIL="${WEBUI_ADMIN_EMAIL:-changeme@example.com}"
 OWUI_ADMIN_PASSWORD="${WEBUI_ADMIN_PASSWORD:-changeme}"
 
+# --- Install guard: skip if already installed unless forced ---
+if [[ -f "${OWUI_DIR}/docker-compose.yml" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "Open WebUI already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
+# --- Clear persistent data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing Open WebUI data..."
+    rm -rf "${OWUI_DIR}/data"
+fi
+
 # --- Dependencies ---
 pkg_depends docker jq
 pkg_apt_install curl

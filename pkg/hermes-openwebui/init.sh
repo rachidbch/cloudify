@@ -19,6 +19,12 @@
 
 HERMES_ENV="$HOME/.hermes/.env"
 
+# --- Install guard: skip if already wired unless forced ---
+if [[ -f "/opt/open-webui/connect.sh" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "Hermes-Open WebUI already wired. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
 # --- Dependencies ---
 pkg_depends hermes open-webui
 pkg_apt_install curl

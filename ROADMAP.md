@@ -75,3 +75,21 @@ The core vars (`CLOUDIFY_REMOTE_USER`, `CLOUDIFY_REMOTE_PWD`, `DEBUG`, etc.) wou
 - No silent failures — if a var is declared but not set locally, we can warn
 - The allow-list security boundary is preserved
 - Package authors can work independently without touching cloudify core
+
+## Docker compose `--detach` for open-webui systemd service
+
+### Problem
+
+The open-webui systemd service currently uses `docker compose up --force-recreate` (`Type=simple`). The `--force-recreate` flag tears down and rebuilds the container on every restart, even when `docker-compose.yml` hasn't changed. This is wasteful — it causes unnecessary downtime and pulls a fresh container on every `systemctl restart`.
+
+The original problem was that `docker compose up` (without flags) doesn't recreate a running container when its config changes (new env vars, port bindings). The `--force-recreate` band-aid forces recreation always, but the real fix is to let Docker handle config change detection natively.
+
+### Proposed fix
+
+Switch to `docker compose up --detach` in the systemd unit. In detached mode, Docker natively detects when the compose file changed (env vars, ports, volumes) and recreates the container automatically. When nothing changed, it's a no-op.
+
+The systemd unit would need `Type=forking` instead of `Type=simple`, since `--detach` causes the compose process to fork and exit while containers run in the background. This is a well-established pattern for Docker-based systemd services.
+
+**Risks:** systemd must correctly track the forked child PID. If Docker's fork behavior changes, systemd might consider the service "started" prematurely. This is low risk given Docker compose's maturity.
+
+**Alternative:** Keep `--force-recreate` with `Type=simple` — simpler, works today, minor cost on restart. Switch to `--detach` only if the restart cost becomes a real problem.

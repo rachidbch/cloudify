@@ -25,11 +25,20 @@ fi
 
 # --- Auto-configure KeylessAI as default LLM provider ---
 # Free, keyless, no-account OpenAI-compatible endpoint.
-# Only written if no provider is already configured (idempotent).
+# Only written if no custom provider is already configured (idempotent).
 HERMES_DIR="$HOME/.hermes"
 HERMES_CONFIG="$HERMES_DIR/config.yaml"
 mkdir -p "$HERMES_DIR"
-if [[ ! -f "$HERMES_CONFIG" ]] || ! grep -q "^provider:" "$HERMES_CONFIG"; then
+# The hermes installer writes a 1000+ line YAML with `provider: "auto"` (indented).
+# We overwrite it unless the user has already set a real provider or configured keylessai.
+# Check: skip if keylessai is already configured, or if any non-"auto" provider is set.
+if grep -q 'keylessai\.thryx' "$HERMES_CONFIG" 2>/dev/null; then
+    : # Already configured with keylessai — skip
+elif grep -q 'provider:' "$HERMES_CONFIG" 2>/dev/null \
+    && ! grep -q 'provider:.*"auto"' "$HERMES_CONFIG" 2>/dev/null; then
+    : # User has set a specific provider — skip
+else
+    # No real provider configured — write KeylessAI config
     cat > "$HERMES_CONFIG" << 'KEYLESSEOF'
 model: openai-fast
 provider: custom

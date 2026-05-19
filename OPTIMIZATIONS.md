@@ -99,7 +99,7 @@ hermes, open-webui, hermes-openwebui
 
 ### E1: Add "Install Guards" subsection to README.md "Writing a Package Recipe"
 
-- [ ] Add subsection defining the convention and code pattern for pkg authors
+- [x] Add subsection defining the convention and code pattern for pkg authors
 - **Rational:** Convention exists in OPTIMIZATIONS.md but pkg authors read README.md.
 - **Convention to document (self-contained):**
   - **Software** = binaries, venvs, docker images, apt packages. Overwritten on every forced install.

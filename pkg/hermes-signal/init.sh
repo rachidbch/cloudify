@@ -29,6 +29,18 @@ API_PORT="${CLOUDIFY_SIGNAL_PORT:-8080}"
 pkg_depends docker jq
 pkg_apt_install qrencode curl
 
+# --- Install guard ---
+if [[ -d "${GATEWAY_DIR}" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "hermes-signal already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
+# --- Clear data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing hermes-signal data..."
+    rm -rf "${GATEWAY_DIR}/data"
+fi
+
 # --- Create directories ---
 mkdir -p "${GATEWAY_DIR}/data"
 

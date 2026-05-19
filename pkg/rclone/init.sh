@@ -2,6 +2,19 @@
 # Rclone Installation
 
 pkg_depends jq
+
+# --- Install guard ---
+if command -v rclone >/dev/null 2>&1 && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "rclone already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
+# --- Clear data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing rclone data..."
+    rm -rf "$HOME/.config/rclone"
+fi
+
 pkg_install_release rclone "rclone/rclone"
 
 # Create a S3 Rclone remote in ~/.config/rclone/rclone.conf by evaluating ./rclone.conf and copying on the host

@@ -5,6 +5,18 @@ set -e
 # Version manager for java world
 # ====
 
+# --- Install guard ---
+if [[ -d "$HOME/.sdkman" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "sdkman already installed. Skipping (use --clear-data to reinstall)."
+    exit 0
+fi
+
+# --- Clear data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing sdkman data..."
+    rm -rf "$HOME/.sdkman"
+fi
+
 echo "installing sdk ..."
 
 # save bashrc

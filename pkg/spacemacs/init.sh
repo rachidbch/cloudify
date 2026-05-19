@@ -3,6 +3,18 @@
 
 # spacemacs install
 
+# --- Install guard ---
+if [[ -d "$HOME/.spacemacs.emacs.d" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "spacemacs already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
+# --- Clear data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing spacemacs data..."
+    rm -rf "$HOME/.spacemacs.emacs.d"
+fi
+
 if [[ -d "$HOME"/.dotfiles/spacemacs/.spacemacs.d ]]; then
   add-apt-repository ppa:kelleyk/emacs -y
   apt-get install -y emacs26-nox #non-X version

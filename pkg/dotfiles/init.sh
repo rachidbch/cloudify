@@ -4,7 +4,19 @@
 # To simplify for now we don't use XDG_CONGIG dir. Use it? 
 #[ -d ~/.config/dotfiles ] || git clone https://gitlab.com/mobilefirstcentury/dotfiles.git ${XDG_CONFIG_HOME:-~/.config}/dotfiles
 echo AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaa
-pkg_depends stow 
+pkg_depends stow
+
+# --- Install guard ---
+if [[ -d "$HOME/.dotfiles" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "dotfiles already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
+# --- Clear data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing dotfiles data..."
+    rm -rf "$HOME/.dotfiles"
+fi
 
 # Clone cloudfiles repo
 if [ -d "$HOME"/.dotfiles ]; then

@@ -5,6 +5,19 @@
 # =todo= Complete this installation from this [doc](https://www.digitalocean.com/community/tutorials/how-to-install-mariadb-on-ubuntu-20-04-fr)
 
 # =note= Mysql and Mariadb can't be installed alongside
+
+# --- Install guard ---
+if command -v mysql >/dev/null 2>&1 && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "mysql already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
+# --- Clear data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing mysql data..."
+    sudo rm -rf /var/lib/mysql
+fi
+
 if [ -z "$(command -v "mysql" 2>&1)"  ]  && [ -z "$(command -v "mariadb" 2>&1)"  ] ; then
 
   # download bat deb in ~/workstation/install/deb

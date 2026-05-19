@@ -4,13 +4,25 @@
 # Declare dependencies
 pkg_depends fasd
 
+# --- Install guard ---
+if [[ -d "$HOME/.fzf/bin" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "fzf already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
+# --- Clear data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing fzf data..."
+    rm -rf "$HOME/.fzf"
+fi
+
 # Installing w/ clone is more robust than using old apt package
 if [[ -d "$HOME"/.fzf ]]; then
-   git clone --depth 1 https://github.com/junegunn/fzf.git "$HOME"/.fzf
-   "$HOME"/.fzf/install --bin                # configuration files are already in dotfiles
-else
   (cd "$HOME"/.fzf && git pull)
+else
+  git clone --depth 1 https://github.com/junegunn/fzf.git "$HOME"/.fzf
 fi
+"$HOME"/.fzf/install --bin
 
 # Put fzf in the PATH 
 ln -sfn "$HOME"/.fzf/bin/fzf "$HOME"/.local/bin/fzf

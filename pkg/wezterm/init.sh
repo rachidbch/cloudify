@@ -9,8 +9,11 @@ WEZTERM_VERSION="20240203-110809-5046fc22"
 WEZTERM_DEB="wezterm-${WEZTERM_VERSION}.Ubuntu22.04.deb"
 WEZTERM_URL="https://github.com/wezterm/wezterm/releases/download/${WEZTERM_VERSION}/${WEZTERM_DEB}"
 
-# Skip if already installed
-command -v wezterm >/dev/null 2>&1 && exit 0
+# --- Install guard ---
+if command -v wezterm >/dev/null 2>&1 && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "wezterm already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
 
 curl -LO "${WEZTERM_URL}"
 pkg_apt_install "./${WEZTERM_DEB}"

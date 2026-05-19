@@ -4,6 +4,12 @@
 # Declare dependency packages
 pkg_depends fzf sqlite3 emacs26-nox
 
+# --- Install guard ---
+if [[ -L "$HOME/.emacs.d" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "leanmacs already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
 if [[ -d "$HOME"/.dotfiles/leanmacs/.leanmacs.d ]]; then
  if [[ -d ~/.emacs.d && ! -L ~/.emacs.d ]]; then
   echo "Warning: ~/.emacs.d directory found. Backing it up before symlinking to dotfiles"

@@ -3,6 +3,19 @@
 # Restic Installation 
 
 pkg_depends rclone
+
+# --- Install guard ---
+if command -v restic >/dev/null 2>&1 && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "restic already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
+# --- Clear data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing restic data..."
+    rm -rf "$HOME/.config/restic"
+fi
+
 pkg_install_release restic "restic/restic"
 
 # Copy Restic scripts

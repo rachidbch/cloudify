@@ -4,6 +4,18 @@
 ## # Bash-it complains if bash-completion is absent
 pkg_depends bash-completion
 
+# --- Install guard ---
+if [[ -d "$HOME/.bash_it" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "bash-it already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
+# --- Clear data if requested ---
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
+    log_info "Clearing bash-it data..."
+    rm -rf "$HOME/.bash_it"
+fi
+
 # Bash-it install complains if no ~/bin/ is found
 if [[ ! -e "$HOME"/bin ]]; then
   mkdir "$HOME"/bin

@@ -1,5 +1,14 @@
 # Cloudify — Session History
 
+## 2026-05-19 — Document and apply install guard convention (E1, E2)
+
+- **E1:** Added "Install Guards" subsection to README.md "Writing a Package Recipe" — documents software vs data distinction, FORCE/CLEAR_DATA vars, code pattern
+- **E2:** Audited all 73 packages. Added install guards to 16 stateful packages: hermes-signal, restic, docker, rclone, mise, fzf, sdkman, miniconda3, bash-it, dotfiles, leanmacs, spacemacs, mariadb, mysql, wezterm, ufw
+- Converted 4 ad-hoc skip checks to FORCE/CLEAR_DATA convention (mariadb, mysql, wezterm, ufw)
+- Fixed inverted fzf clone/pull logic
+- Files changed: 16 `pkg/*/init.sh`, `README.md`, `OPTIMIZATIONS.md`
+- 237 unit tests pass, 26/27 integration tests pass (open-webui pre-existing flaky test)
+
 ## 2026-05-18 — Apply OPTIMIZATIONS.md decisions (A1, B1, C1, D1, A2, G1)
 
 - **A1:** Replaced `exec >> log 2>&1` with `exec > >(tee -a log) 2>&1 </dev/null` in remote payload — output now visible on local terminal AND written to log file

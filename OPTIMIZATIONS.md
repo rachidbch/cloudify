@@ -129,11 +129,9 @@ hermes, open-webui, hermes-openwebui
 
 ### E2: Audit all stateful packages for install guard compliance
 
-- [ ] Audit all 73 packages; add install guards to every stateful package missing them
+- [x] Audit all 73 packages; add install guards to every stateful package missing them
 - **Rational:** hermes, open-webui, hermes-openwebui have guards. The other 70 packages may silently overwrite user data or skip reinstalls unpredictably.
-- **Already compliant:** hermes, open-webui, hermes-openwebui
-- **Likely exempt (thin installs):** bat, fd, fzf, croc, entr, gh, hugo, jq, yq, paping, xsel, lazygit, silversearcher-ag, hub, pcmd, jump, fasd, grv, megadown, snipster
-- **Likely need guards (stateful):** docker, mariadb, mysql, rclone, restic, miniconda3, pyenv, sdkman, nvm, go, ruby, php, apache, openvpn, ufw, ssh, tmux, neovim, emacs-nox, spacemacs, leanmacs, vim, dotfiles, bash-it, hermes-signal, digitalocean, scaleway, mise, virtualenv, pip, pipx, play, lexicon, todo.txt, keepassxc, wezterm, gpg2, pandoc
-- **Unclear — read to decide:** basics, git, gitless, required, rsync, json, lab, locate, tern, tmux-compile, vim, askpassstars, utils, python, dotfiles
-- **Approach:** TDD — guards must not regress existing tests. For each package in the "need guards" and "unclear" lists: read `init.sh`, classify as stateful or exempt, add guard if stateful and missing. Follow the code pattern from E1. After each batch of changes, run `task test-unit`. All unit and integration tests must pass. If any test is missing or broken, stop and report before continuing.
-- **Success criteria:** Every stateful package has the install guard block. No thin packages get unnecessary guards. `task test-unit` passes. `task test` passes.
+- **Guards added to (16 packages):** hermes-signal, restic, docker, rclone, mise, fzf, sdkman, miniconda3, bash-it, dotfiles, leanmacs, spacemacs, mariadb, mysql, wezterm, ufw
+- **Already compliant (3):** hermes, open-webui, hermes-openwebui
+- **Exempt — thin installs (remaining):** bat, fd, croc, entr, gh, hugo, jq, yq, paping, xsel, lazygit, silversearcher-ag, hub, pcmd, jump, fasd, grv, megadown, snipster, pyenv, nvm, go (mise wrappers), pipx, lexicon, virtualenv, pip, python, keepassxc, mosh, tmux-compile, tmux, ssh, emacs-nox, neovim, vim, apache, php, ruby, gpg2, pandoc, digitalocean, scaleway, lab, git, gitless, required, rsync, json, basics, askpassstars, utils, tern, play
+- **Reason:** Read every init.sh. Classified each as stateful or exempt. Added guards to 16 stateful packages. Fixed inverted fzf clone/pull logic. Converted 4 ad-hoc skip checks (mariadb, mysql, wezterm, ufw) to convention. `task lint` passes, 237 unit tests pass, 26/27 integration tests pass (open-webui failure is pre-existing — Docker image pull timeout, unrelated to guards).

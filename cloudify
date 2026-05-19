@@ -205,8 +205,12 @@ function _cloudify_execute_package_action() {
             cloudify_install_package $defaults
         fi
         # Then user-requested packages (backgrounded)
+        # Mark explicitly dispatched packages with CLOUDIFY_FORCE=true so recipes
+        # can distinguish explicit installs from dependency pulls via pkg_depends.
+        # --clear-data implies CLOUDIFY_FORCE.
         PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs[*]}${RESET}"
-        (cloudify_install_package "${pkgs[@]}") &
+        # shellcheck disable=SC2030
+        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; cloudify_install_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
         is_setup_in_progress=true
     elif [[ "$action" == "uninstall" ]]; then
@@ -237,6 +241,10 @@ function _cloudify_dispatch() {
             _cloudify_execute_package_action "$action" "${pkgs_array[@]}"
         else
             PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
+            # Mark explicitly dispatched packages with CLOUDIFY_FORCE=true
+            # shellcheck disable=SC2031
+            export CLOUDIFY_FORCE=true
+            # --clear-data implies CLOUDIFY_FORCE (already set above if --clear-data)
             cloudify_remote "$host" "$packages" && is_setup_in_progress=true
         fi
     done
@@ -287,6 +295,10 @@ function main() {
             ;;
         --no-defaults)
             export CLOUDIFY_NO_DEFAULTS=true
+            ;;
+        --clear-data)
+            export CLOUDIFY_CLEAR_DATA=true
+            export CLOUDIFY_FORCE=true
             ;;
         init)
             if [[ -f "$CLOUDIFY_INIT_COOKIE" ]]; then

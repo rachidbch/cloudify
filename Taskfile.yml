@@ -87,9 +87,11 @@ tasks:
       - shellcheck -x lib/*.sh lib/shadows/*.sh cloudify pkg/*/init.sh
 
   itest-base:
-    desc: Create clean test snapshot
+    desc: Create clean test snapshot (Ubuntu + bats + rsync, no codebase)
     cmds:
-      - task: setup-container
+      - ivps exec {{.CONTAINER}} -- apt-get install -y -qq rsync
+      - ivps exec {{.CONTAINER}} -- bash -c 'DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq bats bats-assert bats-support bats-file'
+      - ivps exec {{.CONTAINER}} -- rm -rf {{.REPO_DIR}}
       - ivps snapshot {{.CONTAINER}} itest-base
 
   itest-reset:

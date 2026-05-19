@@ -317,6 +317,9 @@ function pkg_depends() {
     local package_recipe_path
     local script_basename
     local -a failed_packages=()
+    # Track dispatch depth: depth=0 means explicitly dispatched (sees FORCE/CLEAR_DATA),
+    # depth>0 means pulled as dependency (FORCE/CLEAR_DATA unset).
+    : "${_CLOUDIFY_PKG_DEPTH:=0}"
     for pkg in "$@"; do
         # Does the package even exit?
         if cloudify_is_package "$pkg"; then
@@ -325,9 +328,20 @@ function pkg_depends() {
                 package_recipe_path=$(cloudify_package_recipe_path "$pkg")
                 PKG_DEBUG sourcing "$package_recipe_path"
                 # shellcheck source=/dev/null
-                if ! (source "$package_recipe_path"); then
-                    failed_packages+=("$pkg")
-                    continue
+                if (( _CLOUDIFY_PKG_DEPTH > 0 )); then
+                    # Dependency pull: unset FORCE/CLEAR_DATA so dep recipes skip
+                    # destructive overwrites. Subshell to avoid polluting caller's env.
+                    if ! (_CLOUDIFY_PKG_DEPTH=$((_CLOUDIFY_PKG_DEPTH + 1)) unset CLOUDIFY_FORCE; unset CLOUDIFY_CLEAR_DATA; source "$package_recipe_path"); then
+                        failed_packages+=("$pkg")
+                        continue
+                    fi
+                else
+                    # Explicit dispatch: FORCE/CLEAR_DATA are passed through intact.
+                    # Increment depth so this recipe's own pkg_depends calls become deps.
+                    if ! (_CLOUDIFY_PKG_DEPTH=$((_CLOUDIFY_PKG_DEPTH + 1)) source "$package_recipe_path"); then
+                        failed_packages+=("$pkg")
+                        continue
+                    fi
                 fi
 
                 # Install package scripts in ~/.local/bin

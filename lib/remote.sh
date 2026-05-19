@@ -51,22 +51,33 @@ function cloudify_remote_payload_template() {
     export WEBUI_ADMIN_EMAIL='$WEBUI_ADMIN_EMAIL'
     export WEBUI_ADMIN_PASSWORD='$WEBUI_ADMIN_PASSWORD'
 
+    export CLOUDIFY_CLEAR_DATA='$CLOUDIFY_CLEAR_DATA'
+    export CLOUDIFY_FORCE='$CLOUDIFY_FORCE'
+
     # shellcheck disable=SC1009,SC1054,SC1056,SC1072,SC1073,SC1083,SC2016,SC2086
     if '$CLOUDIFY_FORCE_UPDATE' || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -'$CLOUDIFY_UPDATE_DELAY' 2>/dev/null)" ]]; then
         command -v git >/dev/null 2>&1 || apt-get install -y -qq git
         bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL')"
     fi
     mkdir -p /tmp/cloudify/logs
-    CLOUDIFY_LOG_FILE="/tmp/cloudify/logs/$(date +%Y%m%d-%H%M%S).log"
+    # Use the local log filename if passed (matching pair), otherwise generate one
+    # shellcheck disable=SC2157
+    if [ -n '$CLOUDIFY_LOG_BASENAME' ]; then
+        CLOUDIFY_LOG_FILE="/tmp/cloudify/logs/$CLOUDIFY_LOG_BASENAME"
+    else
+        CLOUDIFY_LOG_FILE="/tmp/cloudify/logs/$(date +%Y%m%d-%H%M%S).log"
+    fi
     export CLOUDIFY_LOG_FILE
     : > "$CLOUDIFY_LOG_FILE"
+    ln -sf "$CLOUDIFY_LOG_FILE" /tmp/cloudify/logs/latest.log
     cloudify init
-    # Close stdin: SSH leaves the remote shell's fd 0 connected to the local pipe.
-    # The shadow sudo wrapper reads piped input via `cat -` before injecting the password.
-    # Without </dev/null, that `cat -` blocks forever on the SSH pipe (nothing is sent from local).
+    # Tee output to both log file and SSH channel (process substitution).
+    # This makes remote install output visible on local terminal in real-time AND
+    # persisted to the log file. The original hang was caused by `cat -` blocking on
+    # stdin, not by process substitution. Now that </dev/null is in place, this is safe.
     # After exec, pipelines within package recipes still work — `|` creates its own fd
     # independent of the process's inherited stdin.
-    exec >> "$CLOUDIFY_LOG_FILE" 2>&1 </dev/null
+    exec > >(tee -a "$CLOUDIFY_LOG_FILE") 2>&1 </dev/null
     :
 }
 
@@ -92,6 +103,10 @@ function cloudify_remote_sync() {
         return "$cloudify_remote_exit_code"
     else
 
+        # Pass local log filename basename so remote uses matching filename
+        export CLOUDIFY_LOG_BASENAME
+        CLOUDIFY_LOG_BASENAME="$(basename "${CLOUDIFY_LOG_FILE:-}")"
+
         # Read remote payload template
         local cloudify_remote_payload
         cloudify_remote_payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
@@ -99,7 +114,7 @@ function cloudify_remote_sync() {
         # Substitute template variables via envsubst (only listed variables are expanded)
         # shellcheck disable=SC2016
         cloudify_remote_payload=$(envsubst \
-            '$CLOUDIFY_DISABLE_COLORS $DEBUG $CLOUDIFY_LOG_LEVEL $CLOUDIFY_NO_DEFAULTS $CLOUDIFY_FORCE_UPDATE $CLOUDIFY_UPDATE_DELAY $CLOUDIFY_REMOTE_USER $CLOUDIFY_REMOTE_PWD $CLOUDIFY_GITHUBUSER $CLOUDIFY_GITHUBPWD $CLOUDIFY_GITLABUSER $CLOUDIFY_GITLABPWD $CLOUDIFY_RCLONE_REMOTE $CLOUDIFY_RCLONE_REMOTE_REGION $CLOUDIFY_RCLONE_REMOTE_ENDPOINT $CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID $CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY $RESTIC_PASSWORD $CLOUDIFY_BOOTSTRAP_URL $CLOUDIFY_SIGNAL_PORT $CLOUDIFY_OPENWEBUI_PORT $CLOUDIFY_OPENWEBUI_BIND $WEBUI_ADMIN_EMAIL $WEBUI_ADMIN_PASSWORD' \
+            '$CLOUDIFY_DISABLE_COLORS $DEBUG $CLOUDIFY_LOG_LEVEL $CLOUDIFY_NO_DEFAULTS $CLOUDIFY_CLEAR_DATA $CLOUDIFY_FORCE $CLOUDIFY_FORCE_UPDATE $CLOUDIFY_UPDATE_DELAY $CLOUDIFY_REMOTE_USER $CLOUDIFY_REMOTE_PWD $CLOUDIFY_GITHUBUSER $CLOUDIFY_GITHUBPWD $CLOUDIFY_GITLABUSER $CLOUDIFY_GITLABPWD $CLOUDIFY_RCLONE_REMOTE $CLOUDIFY_RCLONE_REMOTE_REGION $CLOUDIFY_RCLONE_REMOTE_ENDPOINT $CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID $CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY $RESTIC_PASSWORD $CLOUDIFY_BOOTSTRAP_URL $CLOUDIFY_SIGNAL_PORT $CLOUDIFY_OPENWEBUI_PORT $CLOUDIFY_OPENWEBUI_BIND $WEBUI_ADMIN_EMAIL $WEBUI_ADMIN_PASSWORD $CLOUDIFY_LOG_BASENAME' \
             <<< "$cloudify_remote_payload")
 
         # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running
@@ -123,8 +138,8 @@ function cloudify_remote_sync() {
         local cloudify_remote_exit_code=0
         ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" -o "ConnectTimeout=10" \
             "$CLOUDIFY_REMOTE_USER@$host" "$cloudify_remote_payload" 2>&1 \
-            | sed "s/^/$host: /" \
-            | sed "s/^${host}: \$//" \
+            | stdbuf -oL sed "s/^/$host: /" \
+            | stdbuf -oL sed "s/^${host}: \$//" \
             | tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}" >&2 \
             || cloudify_remote_exit_code=$?
         echo "$cloudify_remote_exit_code" > "$CLOUDIFY_TMP/${host}.exit"

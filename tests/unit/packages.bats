@@ -115,3 +115,61 @@ create_mock_pkg() {
     source lib/packages.sh
     [ "$(type -t cloudify_is_package)" = "function" ]
 }
+
+#-- C1: CLOUDIFY_FORCE is unset during pkg_depends --
+
+@test "pkg_depends does NOT set CLOUDIFY_FORCE when sourcing recipe" {
+    create_mock_pkg testpkg
+    # Recipe that checks CLOUDIFY_FORCE is NOT set
+    cat > "$CLOUDIFY_DIR/pkg/testpkg/init.sh" <<'RECIPE'
+#!/bin/bash
+if [[ -n "${CLOUDIFY_FORCE:-}" ]]; then
+    echo "FORCE_WAS_SET" >&2
+    exit 1
+fi
+echo "FORCE_NOT_SET"
+RECIPE
+
+    run pkg_depends testpkg
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"FORCE_NOT_SET"* ]]
+    [[ "$output" != *"FORCE_WAS_SET"* ]]
+}
+
+@test "pkg_depends preserves CLOUDIFY_FORCE for explicit dispatch (depth=0)" {
+    create_mock_pkg testpkg
+    cat > "$CLOUDIFY_DIR/pkg/testpkg/init.sh" <<'RECIPE'
+#!/bin/bash
+if [[ -n "${CLOUDIFY_FORCE:-}" ]]; then
+    echo "FORCE_WAS_SET"
+else
+    echo "FORCE_NOT_SET"
+fi
+RECIPE
+
+    export CLOUDIFY_FORCE=true
+    _CLOUDIFY_PKG_DEPTH=0
+
+    run pkg_depends testpkg
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"FORCE_WAS_SET"* ]]
+}
+
+@test "pkg_depends unsets CLOUDIFY_FORCE for dependency pull (depth>0)" {
+    create_mock_pkg testpkg
+    cat > "$CLOUDIFY_DIR/pkg/testpkg/init.sh" <<'RECIPE'
+#!/bin/bash
+if [[ -n "${CLOUDIFY_FORCE:-}" ]]; then
+    echo "FORCE_WAS_SET" >&2
+    exit 1
+fi
+echo "FORCE_NOT_SET"
+RECIPE
+
+    export CLOUDIFY_FORCE=true
+    _CLOUDIFY_PKG_DEPTH=1
+
+    run pkg_depends testpkg
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"FORCE_NOT_SET"* ]]
+}

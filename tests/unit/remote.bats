@@ -118,3 +118,60 @@ teardown() {
     payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
     [[ "$payload" == *"CLOUDIFY_LOG_LEVEL"* ]]
 }
+
+#-- A1: Remote tee to both log file and SSH channel --
+
+@test "payload template uses tee process substitution (not plain exec redirect)" {
+    local payload
+    payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+    # Should use tee -a with process substitution, not plain "exec >> log 2>&1"
+    [[ "$payload" == *"> >("* ]]
+    [[ "$payload" == *"tee -a"* ]]
+    [[ "$payload" != *"exec >>"* ]]
+}
+
+@test "payload template keeps stdin redirected from /dev/null" {
+    local payload
+    payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+    # Match "exec > >(tee ...) 2>&1 < /dev/null" — the /dev/null stdin redirect must be present
+    echo "$payload" | grep -q '/dev/null'
+}
+
+#-- B1: --clear-data flag passthrough --
+
+@test "payload template exports CLOUDIFY_CLEAR_DATA" {
+    local payload
+    payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+    [[ "$payload" == *"CLOUDIFY_CLEAR_DATA"* ]]
+}
+
+#-- C1: CLOUDIFY_FORCE passthrough --
+
+@test "payload template exports CLOUDIFY_FORCE" {
+    local payload
+    payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+    echo "$payload" | grep -q "export CLOUDIFY_FORCE="
+}
+
+#-- D1: Matching log filenames + latest symlink --
+
+@test "payload template uses CLOUDIFY_LOG_BASENAME for remote log filename" {
+    local payload
+    payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+    echo "$payload" | grep -q "CLOUDIFY_LOG_BASENAME"
+}
+
+@test "payload template creates latest.log symlink" {
+    local payload
+    payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
+    echo "$payload" | grep -q "latest.log"
+}
+
+#-- A2: Line-buffered sed pipeline --
+
+@test "cloudify_remote_sync uses stdbuf for line-buffered output on remote" {
+    # Check that the remote sync function source uses stdbuf -oL before sed
+    local func_source
+    func_source=$(declare -f cloudify_remote_sync)
+    echo "$func_source" | grep -q "stdbuf"
+}

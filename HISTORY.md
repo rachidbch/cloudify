@@ -1,5 +1,25 @@
 # Cloudify — Session History
 
+## 2026-05-18 — Apply OPTIMIZATIONS.md decisions (A1, B1, C1, D1, A2, G1)
+
+- **A1:** Replaced `exec >> log 2>&1` with `exec > >(tee -a log) 2>&1 </dev/null` in remote payload — output now visible on local terminal AND written to log file
+- **B1:** Added `--clear-data` CLI flag → exports `CLOUDIFY_CLEAR_DATA=true`, passed through remote payload. Implies `CLOUDIFY_FORCE=true`
+- **C1:** `CLOUDIFY_FORCE=true` set for explicitly dispatched packages; `pkg_depends()` unsets both `CLOUDIFY_FORCE` and `CLOUDIFY_CLEAR_DATA` before sourcing dependency recipes (subshell isolation)
+- **D1:** Remote log filename matches local via `CLOUDIFY_LOG_BASENAME`; `ln -sf` creates `/tmp/cloudify/logs/latest.log` symlink after each run
+- **A2:** Added `stdbuf -oL` before sed calls in SSH pipeline for line-buffered output
+- **G1:** Removed redundant hermes config fixture from integration test; hermes-openwebui test reads auto-generated API key
+- Files changed: `cloudify`, `lib/remote.sh`, `lib/package-api.sh`, `OPTIMIZATIONS.md`, `tests/unit/remote.bats`, `tests/unit/packages.bats`, `tests/integration/package-hermes-openwebui.bats`
+- All 230 unit tests pass
+
+## 2026-05-18 — Fix hermes gateway TEMPFAIL in integration tests
+
+- Root cause: hermes installer writes 1100-line `config.yaml` with `provider: "auto"` (indented under `model:`).
+  The auto-config check `grep -q "^provider:"` never matched the indented YAML, so KeylessAI was never configured.
+  Gateway started with no valid API key, tried OpenRouter for 7-14 minutes, then TEMPFAILed.
+- Fix: replaced the idempotency check to detect `provider:.*"auto"` pattern and overwrite with KeylessAI config
+- File: `pkg/hermes/init.sh`
+- All 12 hermes-openwebui integration tests pass
+
 ## 2026-05-15 — Shadow system hardening, test infra fixes, hermes auto-config
 
 - Added explicit `/dev/null` stdin detection in shadow sudo (`[[ /dev/stdin -ef /dev/null ]]`)

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tests/run-integration.sh — SSH-based integration test orchestrator
-# Runs each package integration test in a fresh snapshot via the real
-# production path: cloudify install <pkg> --on <host> (SSH + bootstrap gist).
+# Runs each package integration test in a fresh snapshot.
+# The snapshot is a clean Ubuntu with bats+rsync only (no cloudify code).
+# Code is pushed from local via ivps push before each test.
 set -euo pipefail
 
 CONTAINER="cloudai:cloudify"
@@ -10,6 +11,7 @@ TEST_HOST="cloudify"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RESULTS_DIR="$PROJECT_DIR/results"
+REPO_DIR="/root/cloudify"
 
 # Default glob: all package integration tests (NOT recipe-discovery.bats)
 DEFAULT_PATTERN="tests/integration/package-*.bats"
@@ -34,13 +36,17 @@ echo "=== SSH-Based Integration Test Runner ==="
 echo "Tests to run: ${#TEST_FILES[@]}"
 echo ""
 
-# Ensure the base snapshot exists
+# Ensure the base snapshot exists (clean Ubuntu + bats + rsync, no codebase)
 ensure_snapshot() {
     if incus snapshot list "$CONTAINER" --format csv 2>/dev/null | grep -q "$SNAPSHOT"; then
         echo "Snapshot '$SNAPSHOT' found."
     else
-        echo "Snapshot '$SNAPSHOT' not found. Creating..."
-        ssh -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" "root@$TEST_HOST" 'DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq rsync bats bats-assert bats-support bats-file'
+        echo "Snapshot '$SNAPSHOT' not found. Creating clean baseline..."
+        ssh -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" "root@$TEST_HOST" \
+            'DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq rsync bats bats-assert bats-support bats-file'
+        # Remove any stale codebase from the container before snapshotting
+        ssh -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" "root@$TEST_HOST" \
+            "rm -rf $REPO_DIR" 2>/dev/null || true
         incus snapshot create "$CONTAINER" "$SNAPSHOT" --no-expiry
         echo "Snapshot '$SNAPSHOT' created."
     fi
@@ -71,10 +77,14 @@ for test_file in "${TEST_FILES[@]}"; do
     echo "  Clearing stale SSH host key..."
     ssh-keygen -R "$TEST_HOST" > /dev/null 2>&1 || true
 
-    # 3. Ensure cloudify is on PATH (project dir contains the CLI router)
+    # 3. Push local codebase into the restored container
+    echo "  Pushing local codebase to container..."
+    (cd "$PROJECT_DIR" && task sync) > /dev/null 2>&1
+
+    # 4. Ensure cloudify is on PATH (project dir contains the CLI router)
     export PATH="$PROJECT_DIR:$PATH"
 
-    # 4. Set env vars for cloudify remote execution
+    # 5. Set env vars for cloudify remote execution
     export CLOUDIFY_DIR="$PROJECT_DIR"
     export CLOUDIFY_REMOTE_USER=root
     export CLOUDIFY_REMOTE_PWD=dummy
@@ -90,7 +100,7 @@ for test_file in "${TEST_FILES[@]}"; do
     export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY="${CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY:-dummy}"
     export RESTIC_PASSWORD="${RESTIC_PASSWORD:-dummy}"
 
-    # 5. Run bats on localhost (tests SSH into container via cloudify --on)
+    # 6. Run bats on localhost (tests SSH into container via cloudify --on)
     echo "  Running bats..."
     if bats "$test_file" > "$tap_file" 2>&1; then
         echo "  PASSED"

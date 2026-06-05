@@ -113,5 +113,7 @@
 - Depends on `file` (prerequisite per yazi docs)
 - Adds `alias y=yazi` to .bashrc
 - Verified working on Ubuntu 22.04 (local install)
+- Bug: glibc .deb requires 2.39+ — Ubuntu 22.04 has 2.35 → switched to musl .deb on older distros
+- Bug: arch conversion x86_64→amd64 broke URL — yazi uses x86_64/aarch64 in filenames → use uname -m as-is
 - Integration test written but not yet run (incus remote unreachable)
 - Files: `pkg/yazi/init.sh`, `tests/integration/package-yazi.bats`

@@ -19,7 +19,7 @@ if { [[ "$distro" == "ubuntu" ]] && cloudify_ver_cmp "$version" ">=" "24.04"; } 
     pkg_install_release yazi "sxyazi/yazi"
 else
     YAZI_VERSION=$(curl -s "https://api.github.com/repos/sxyazi/yazi/releases/latest" | grep -Po '"tag_name": *"\K[^"]*')
-    YAZI_ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+    YAZI_ARCH=$(uname -m)
     curl -Lo /tmp/yazi.deb "https://github.com/sxyazi/yazi/releases/download/${YAZI_VERSION}/yazi-${YAZI_ARCH}-unknown-linux-musl.deb"
     pkg_apt_install /tmp/yazi.deb
     rm -f /tmp/yazi.deb

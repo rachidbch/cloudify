@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh:*)",
+      "Bash(task itest-reset:*)",
+      "Bash(ssh-keygen:*)",
+      "Bash(task sync)",
+      "Bash(echo:*)",
+      "Bash(task test-integration:bat:*)",
+      "Bash(task test-unit:*)",
+      "Bash(kill:*)",
+      "mcp__exa__web_search_exa",
+      "Bash(task lint:*)",
+      "Bash(ivps exec:*)"
+    ]
+  }
+}

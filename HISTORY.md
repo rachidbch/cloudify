@@ -98,3 +98,20 @@
 - 13/13 tests passing, gateway confirmed running as systemd service with linger=yes
 - Documented Docker-to-host networking in pkg READMEs
 - Files: `pkg/hermes-openwebui/init.sh`, `pkg/open-webui/init.sh`, `tests/integration/package-hermes-openwebui.bats`, `pkg/hermes/README.md` (new), `pkg/hermes-openwebui/README.md`, `pkg/open-webui/README.md`
+
+## 2026-06-05: lazygit — distro-version aware install
+
+- Made lazygit recipe distro-version aware: uses `pkg_apt_install` on Debian 13+/Ubuntu 25.10+ where lazygit is in apt, falls back to GitHub release download for older distros
+- Added idempotency guard (`command -v lazygit`) and `pkg_depends curl` for the GitHub path
+- Kept existing `pkg_in_startuprc "alias lg=lazygit"`
+- 3/3 integration tests passing on Ubuntu 24.04 container (GitHub release path)
+- Files: `pkg/lazygit/init.sh`
+
+## 2026-06-05: yazi — new package (terminal file manager)
+
+- New package: `pkg/yazi/init.sh` — installs via `pkg_install_release` which picks the official `.deb` from GitHub releases
+- Depends on `file` (prerequisite per yazi docs)
+- Adds `alias y=yazi` to .bashrc
+- Verified working on Ubuntu 22.04 (local install)
+- Integration test written but not yet run (incus remote unreachable)
+- Files: `pkg/yazi/init.sh`, `tests/integration/package-yazi.bats`

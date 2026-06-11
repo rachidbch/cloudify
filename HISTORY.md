@@ -1,12 +1,24 @@
 # Cloudify — Session History
 
-## 2026-06-11 — hermes-openwebui: remove install guard, always re-apply on re-run
+## 2026-06-11 — Remove connect-remote.sh, delegate to open-webui init
 
-- Removed install guard that blocked re-runs when `connect-remote.sh` already existed.
-  Remote path now always updates `OPENAI_API_BASE_URL` / `OPENAI_API_KEY` in compose
-  from current env vars and restarts. Change credentials locally, re-run `cloudify --on`,
-  remote picks up new values.
-- Commit: dad00d4 — `pkg/hermes-openwebui/init.sh`
+- Deleted `pkg/hermes-openwebui/connect-remote.sh` (79 lines). Its sole purpose
+  (sed-update compose, restart, health wait) is now handled by `open-webui/init.sh`
+  which always regenerates compose from env vars.
+- `hermes-openwebui/init.sh` now exports `OPENAI_API_BASE_URL` + `OPENAI_API_KEY`
+  from `CLOUDIFY_HERMES_*` before calling `pkg_depends open-webui`. Compose gets
+  correct values directly — no sed, no separate restart.
+- Added non-fatal hermes API health check.
+- Updated integration test + README.
+- Commit: 065c67f
+
+## 2026-06-11 — Remove install guards from open-webui + hermes-openwebui
+
+- Both `pkg/open-webui/init.sh` and `pkg/hermes-openwebui/init.sh` now always
+  regenerate docker-compose.yml from current env vars on every run. Change
+  credentials in `~/.config/cloudify/credentials`, re-run `cloudify --on`,
+  compose picks up new values.
+- Commits: dad00d4 (hermes-openwebui), 0c28d27 (open-webui)
 
 ## 2026-06-11 — Fix open-webui crash, complete separate-containers v2 deployment
 

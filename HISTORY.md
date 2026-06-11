@@ -166,3 +166,14 @@
   3. `hermes-openwebui/init.sh` — remove same-machine assumptions, support remote hermes via MagicDNS
   4. New `hermes-openwebui/connect-remote.sh` — wire open-webui to hermes across Tailscale
   5. Tests for all of the above
+
+## 2026-06-11 — separate-containers v2: deployment in progress
+
+- **Merged PR #1**: hermes-dashboard (no relay, SSH tunnel), open-webui (MagicDNS dns), hermes-openwebui (remote via MagicDNS). 9 files changed, +362/-439.
+- **Merged** 388e79d: remote.sh now passes CLOUDIFY_HERMES_API_URL and CLOUDIFY_HERMES_API_KEY through remote payload
+- **hermes container** (cloudai:hermes): stopped open-webui Docker, removed relay.py, dashboard running standalone on 127.0.0.1:9119 (ssh -L tunnel), tailscale serve reconfigured to serve API at root `/` → 8642. Gateway + Slack still running.
+- **TS_AUTH_KEY** was expired (one-off key from April). User generated new reusable key with tag:incus. Required ACL rule `tag:incus → tag:incus:443` added.
+- **openwebui-hermes container** (cloudai:): created via `ivps launch`, Tailscale connected with tag:incus, MagicDNS resolving hermes hostname. SSH set up. Credentials configured.
+- **open-webui installed** via cloudify. Docker container starts but crashes with `ValueError: No embedding model is loaded`. Patched compose with `RAG_EMBEDDING_ENGINE=` to disable embeddings. Still not healthy — container keeps restarting.
+- **Roadblock**: open-webui won't stay up. Needs debugging — may need different RAG_EMBEDDING_ENGINE value or additional env vars.
+- **Untested**: hermes-openwebui package install (credentials passthrough fixed but open-webui must be healthy first), tailscale serve on openwebui-hermes, end-to-end TLS verification.

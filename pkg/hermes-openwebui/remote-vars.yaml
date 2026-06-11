@@ -1,0 +1,4 @@
+# Remote vars beamed to target host when installing hermes-openwebui.
+# Values are loaded from environment (via ~/.config/cloudify/credentials).
+CLOUDIFY_HERMES_API_URL: ""
+CLOUDIFY_HERMES_API_KEY: ""

@@ -1,0 +1,6 @@
+# Remote vars beamed to target host when installing open-webui.
+# Values are loaded from environment (via ~/.config/cloudify/credentials).
+CLOUDIFY_OPENWEBUI_PORT: "3000"
+CLOUDIFY_OPENWEBUI_BIND: "127.0.0.1"
+WEBUI_ADMIN_EMAIL: "changeme@example.com"
+WEBUI_ADMIN_PASSWORD: "changeme"

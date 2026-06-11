@@ -1,0 +1,3 @@
+# Remote vars beamed to target host when installing hermes-signal.
+# Values are loaded from environment (via ~/.config/cloudify/credentials).
+CLOUDIFY_SIGNAL_PORT: ""

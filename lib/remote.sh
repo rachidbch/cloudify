@@ -45,14 +45,8 @@ function cloudify_remote_payload_template() {
     export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY'
     export RESTIC_PASSWORD='$RESTIC_PASSWORD'
 
-    export CLOUDIFY_SIGNAL_PORT='$CLOUDIFY_SIGNAL_PORT'
-    export CLOUDIFY_OPENWEBUI_PORT='$CLOUDIFY_OPENWEBUI_PORT'
-    export CLOUDIFY_OPENWEBUI_BIND='$CLOUDIFY_OPENWEBUI_BIND'
-    export WEBUI_ADMIN_EMAIL='$WEBUI_ADMIN_EMAIL'
-    export WEBUI_ADMIN_PASSWORD='$WEBUI_ADMIN_PASSWORD'
-
-    export CLOUDIFY_HERMES_API_URL='$CLOUDIFY_HERMES_API_URL'
-    export CLOUDIFY_HERMES_API_KEY='$CLOUDIFY_HERMES_API_KEY'
+    # Package-specific vars are injected dynamically from pkg/<name>/remote-vars.yaml
+    _CLOUDIFY_PKG_EXPORTS_
 
     export CLOUDIFY_CLEAR_DATA='$CLOUDIFY_CLEAR_DATA'
     export CLOUDIFY_FORCE='$CLOUDIFY_FORCE'
@@ -84,6 +78,26 @@ function cloudify_remote_payload_template() {
     :
 }
 
+# Read remote vars from package yaml files for the given command args.
+# Usage: _cloudify_pkg_remote_vars install pkg1 pkg2
+# Outputs: var names, one per line
+function _cloudify_pkg_remote_vars() {
+    local args=("$@")
+    local in_install=false
+    for arg in "${args[@]}"; do
+        if [[ "$arg" == "install" ]]; then
+            in_install=true
+            continue
+        fi
+        if $in_install && [[ "$arg" != -* ]]; then
+            local yaml_file="$CLOUDIFY_DIR/pkg/$arg/remote-vars.yaml"
+            if [[ -f "$yaml_file" ]]; then
+                grep -E '^[A-Z_][A-Z0-9_]*:' "$yaml_file" | sed 's/:.*//'
+            fi
+        fi
+    done
+}
+
 # By default cloudify_remote executes remotely
 function cloudify_remote() {
     (cloudify_remote_sync "$@") &
@@ -110,14 +124,31 @@ function cloudify_remote_sync() {
         export CLOUDIFY_LOG_BASENAME
         CLOUDIFY_LOG_BASENAME="$(basename "${CLOUDIFY_LOG_FILE:-}")"
 
+        # --- Collect package remote vars from yaml files ---
+        local pkg_var_names
+        pkg_var_names=$(_cloudify_pkg_remote_vars "$@")
+        local pkg_envsubst=""
+        local pkg_exports=""
+        if [[ -n "$pkg_var_names" ]]; then
+            local var
+            while IFS= read -r var; do
+                [[ -n "$var" ]] || continue
+                pkg_envsubst="$pkg_envsubst \$$var"
+                pkg_exports="${pkg_exports}"$'\n'"    export $var='\$$var'"
+            done <<< "$pkg_var_names"
+        fi
+
         # Read remote payload template
         local cloudify_remote_payload
         cloudify_remote_payload=$(declare -f cloudify_remote_payload_template | tail -n +3 | head -n -1)
 
+        # Inject package exports placeholder
+        cloudify_remote_payload="${cloudify_remote_payload//_CLOUDIFY_PKG_EXPORTS_/$pkg_exports}"
+
         # Substitute template variables via envsubst (only listed variables are expanded)
         # shellcheck disable=SC2016
         cloudify_remote_payload=$(envsubst \
-            '$CLOUDIFY_DISABLE_COLORS $DEBUG $CLOUDIFY_LOG_LEVEL $CLOUDIFY_NO_DEFAULTS $CLOUDIFY_CLEAR_DATA $CLOUDIFY_FORCE $CLOUDIFY_FORCE_UPDATE $CLOUDIFY_UPDATE_DELAY $CLOUDIFY_REMOTE_USER $CLOUDIFY_REMOTE_PWD $CLOUDIFY_GITHUBUSER $CLOUDIFY_GITHUBPWD $CLOUDIFY_GITLABUSER $CLOUDIFY_GITLABPWD $CLOUDIFY_RCLONE_REMOTE $CLOUDIFY_RCLONE_REMOTE_REGION $CLOUDIFY_RCLONE_REMOTE_ENDPOINT $CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID $CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY $RESTIC_PASSWORD $CLOUDIFY_BOOTSTRAP_URL $CLOUDIFY_SIGNAL_PORT $CLOUDIFY_OPENWEBUI_PORT $CLOUDIFY_OPENWEBUI_BIND $WEBUI_ADMIN_EMAIL $WEBUI_ADMIN_PASSWORD $CLOUDIFY_LOG_BASENAME $CLOUDIFY_HERMES_API_URL $CLOUDIFY_HERMES_API_KEY' \
+            "\$CLOUDIFY_DISABLE_COLORS \$DEBUG \$CLOUDIFY_LOG_LEVEL \$CLOUDIFY_NO_DEFAULTS \$CLOUDIFY_CLEAR_DATA \$CLOUDIFY_FORCE \$CLOUDIFY_FORCE_UPDATE \$CLOUDIFY_UPDATE_DELAY \$CLOUDIFY_REMOTE_USER \$CLOUDIFY_REMOTE_PWD \$CLOUDIFY_GITHUBUSER \$CLOUDIFY_GITHUBPWD \$CLOUDIFY_GITLABUSER \$CLOUDIFY_GITLABPWD \$CLOUDIFY_RCLONE_REMOTE \$CLOUDIFY_RCLONE_REMOTE_REGION \$CLOUDIFY_RCLONE_REMOTE_ENDPOINT \$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID \$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY \$RESTIC_PASSWORD \$CLOUDIFY_BOOTSTRAP_URL \$CLOUDIFY_LOG_BASENAME${pkg_envsubst}" \
             <<< "$cloudify_remote_payload")
 
         # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running

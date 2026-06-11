@@ -101,7 +101,7 @@ systemctl enable --now open-webui
 
 # --- Wait for health endpoint ---
 log_info "Waiting for Open WebUI to become healthy..."
-max_attempts=30
+max_attempts=120
 attempt=0
 while (( attempt < max_attempts )); do
     if curl -sf "http://127.0.0.1:${OWUI_PORT}/health" >/dev/null 2>&1; then

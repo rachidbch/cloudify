@@ -1,5 +1,13 @@
 # Cloudify — Session History
 
+## 2026-06-11 — hermes-openwebui: remove install guard, always re-apply on re-run
+
+- Removed install guard that blocked re-runs when `connect-remote.sh` already existed.
+  Remote path now always updates `OPENAI_API_BASE_URL` / `OPENAI_API_KEY` in compose
+  from current env vars and restarts. Change credentials locally, re-run `cloudify --on`,
+  remote picks up new values.
+- Commit: dad00d4 — `pkg/hermes-openwebui/init.sh`
+
 ## 2026-06-11 — Fix open-webui crash, complete separate-containers v2 deployment
 
 - **Root cause:** Docker `dns: [100.100.100.100]` (Tailscale MagicDNS) can't resolve `huggingface.co`, so SentenceTransformer model download fails at boot. Empty `RAG_EMBEDDING_ENGINE=` still triggers default model loading.

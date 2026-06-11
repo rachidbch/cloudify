@@ -41,7 +41,12 @@ _REQUEST_SKIP = {
 
 
 async def proxy_http(request: web.Request) -> web.StreamResponse:
-    """Forward HTTP request to dashboard, rewriting Host header."""
+    """Forward HTTP request to dashboard, rewriting Host header.
+
+    Also rewrites root-absolute asset paths (/assets/...) to include the
+    path prefix (/dashboard/assets/...) so the dashboard works behind
+    tailscale serve --path /dashboard.
+    """
     method = request.method
     url = f"{UPSTREAM}{request.path_qs}"
 
@@ -58,14 +63,31 @@ async def proxy_http(request: web.Request) -> web.StreamResponse:
 
     async with ClientSession() as session:
         async with session.request(method, url, **kwargs) as upstream_resp:
+            content_type = upstream_resp.headers.get("Content-Type", "")
+            is_html = "text/html" in content_type
+
             response = web.StreamResponse(status=upstream_resp.status)
             for key, val in upstream_resp.headers.items():
                 if key.lower() not in _RESPONSE_SKIP:
                     response.headers[key] = val
-            await response.prepare(request)
-            async for chunk in upstream_resp.content.iter_chunked(8192):
-                await response.write(chunk)
-            await response.write_eof()
+
+            if is_html:
+                # Buffer HTML body and rewrite asset paths for path-based routing.
+                # The dashboard SPA uses absolute /assets/ references which break
+                # when tailscale serve strips a path prefix.
+                html_body = await upstream_resp.read()
+                html_body = html_body.replace(b'"/assets/', b'"/dashboard/assets/')
+                html_body = html_body.replace(b"'/assets/", b"'/dashboard/assets/")
+                response.headers["Content-Length"] = str(len(html_body))
+                await response.prepare(request)
+                await response.write(html_body)
+                await response.write_eof()
+            else:
+                await response.prepare(request)
+                async for chunk in upstream_resp.content.iter_chunked(8192):
+                    await response.write(chunk)
+                await response.write_eof()
+
             return response
 
 

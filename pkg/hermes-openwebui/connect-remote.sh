@@ -64,7 +64,7 @@ echo "[INFO] Waiting for Open WebUI to become healthy..."
 max_attempts=30
 attempt=0
 while (( attempt < max_attempts )); do
-    owui_port=$(grep -E ':[0-9]+:8080' "$OWUI_COMPOSE" | head -1 | grep -oE '[0-9]+(?=:8080)' || echo "3000")
+    owui_port=$(grep -oE '[0-9]+:8080' "$OWUI_COMPOSE" | head -1 | cut -d: -f1)
     [[ -z "$owui_port" ]] && owui_port="3000"
 
     if curl -sf "http://127.0.0.1:${owui_port}/health" >/dev/null 2>&1; then

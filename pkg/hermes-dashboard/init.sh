@@ -39,6 +39,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin"
 ExecStart=${HERMES_VENV}/bin/python3 ${RELAY_DST}
 Restart=on-failure
 RestartSec=10
@@ -49,6 +50,7 @@ SyslogIdentifier=hermes-dashboard
 # Hardening
 NoNewPrivileges=true
 PrivateTmp=true
+ReadWritePaths=/root/.hermes
 
 [Install]
 WantedBy=default.target

@@ -56,7 +56,7 @@ env_block=$(cat <<INNER
 INNER
 )
 if [[ -n "${OPENAI_API_BASE_URL:-}" ]]; then
-    env_block+="      - RAG_EMBEDDING_ENGINE=openai"$'\n'
+    printf -v env_block '%s      - RAG_EMBEDDING_ENGINE=openai\n' "$env_block"
 fi
 
 # --- Generate docker-compose.yml ---

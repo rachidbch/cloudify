@@ -126,4 +126,43 @@
 - Added PATH to systemd unit (node/npm at ~/.local/bin needed for web UI build)
 - Added dashboard readiness check in relay (waits up to 30s for first-launch web UI build)
 - Verified: systemd service active, relay HTTP 200, tailscale HTTPS 200
+- Roadblock: path-based routing (`--path /dashboard`) breaks SPA — JS bundles use absolute `/api/*`, `/fonts/*` paths
+- Root exposure works (`https://hermes.komodo-everest.ts.net/`) but collides with Open WebUI on same container
+- Solution: ivps needs `expose-private-hostname` command for hostname-based tailnet routing
+- See `/home/rbc/.pi/handoffs/2026-06-11-ivps-expose-private-hostname.md`
 - Files: `pkg/hermes-dashboard/init.sh`, `pkg/hermes-dashboard/relay.py`, `tests/integration/package-hermes-dashboard.bats`
+
+## 2026-06-11 — expose-private-hostname rejected; separate containers chosen
+
+- Investigated ivps `expose-private-hostname` for tailnet hostname routing via Caddy on gateway.
+  Found fatal TLS flaw: Tailscale CA doesn't issue subdomain certs (`dashboard.hermes.ts.net`).
+  Issue [#7081](https://github.com/tailscale/tailscale/issues/7081) still open.
+- Evaluated alternatives: Tailscale Services (requires tagged identity + admin console setup),
+  DNS-01 + Let's Encrypt (requires Caddy rebuild), separate containers.
+- **Decision: separate containers.** Hermes dashboard stays on hermes container at root
+  (`tailscale serve --bg 9119`). Open WebUI moves to its own container with its own
+  MagicDNS hostname. Each gets root HTTPS + auto-TLS with zero infra changes.
+- See `/home/rbc/.pi/handoffs/2026-06-11-cloudify-separate-containers.md`
+
+## 2026-06-11 — Architecture refined: SSH tunnel for dashboard, MagicDNS for API
+
+- Common-sense tested all assumptions from previous handoff via exa research.
+  Confirmed: subdomain certs dead (#7081), SPA path routing broken (#12413),
+  Tailscale Services require tags+approval, caddy-tailscale only issues certs
+  for local machine.
+- Key correction: hyphens in machine names (`openwebui-hermes`) are NOT subdomains.
+  Tailscale MagicDNS and CA treat hyphenated names as first-class machine identities.
+  `openwebui-hermes.komodo-everest.ts.net` gets a valid cert.
+- Rejected Caddy as central reverse proxy: one Caddy on cloudai can't serve
+  multiple MagicDNS hostnames because caddy-tailscale only gets certs for its
+  own machine's FQDN. Central Caddy only works with path-based routing → SPAs break.
+- **Final architecture:**
+  - `hermes` container: tailscale serve (:443 → agent :8642), dashboard loopback-only via SSH tunnel (`ssh -L 9119:127.0.0.1:9119 hermes`). No relay.py. No dashboard tailscale serve.
+  - `openwebui-hermes` container: tailscale serve (:443 → Docker :3000), Docker DNS 100.100.100.100 for MagicDNS, `OPENAI_API_BASE_URL=https://hermes.komodo-everest.ts.net/v1`
+  - No Caddy. No hardcoded Tailscale IPs. No path-based routing anywhere.
+- Cloudify changes:
+  1. `hermes-dashboard/init.sh` — simplify: direct dashboard (:9119 loopback), remove relay.py, post-install shows SSH tunnel command
+  2. `open-webui/init.sh` — add `dns: 100.100.100.100` to docker-compose, support remote hermes URL from credentials
+  3. `hermes-openwebui/init.sh` — remove same-machine assumptions, support remote hermes via MagicDNS
+  4. New `hermes-openwebui/connect-remote.sh` — wire open-webui to hermes across Tailscale
+  5. Tests for all of the above

@@ -1,92 +1,97 @@
 # hermes-openwebui
 
-Connects [Open WebUI](https://github.com/open-webui/open-webui) to a [Hermes](https://hermes-agent.nousresearch.com/) agent, providing a chat UI backed by Hermes.
+Connects [Open WebUI](https://github.com/open-webui/open-webui) to a [Hermes](https://hermes-agent.nousresearch.com/) agent across separate Incus containers via Tailscale MagicDNS.
 
-## What It Does
+## Architecture
 
-1. Enables the Hermes API server (sets `API_SERVER_ENABLED=true` in `~/.hermes/.env`)
-2. Generates an API key if one doesn't exist (`openssl rand -hex 32`)
-3. Configures Open WebUI to use Hermes as its OpenAI-compatible backend
-4. Restarts both services as needed
+```
+Container: openwebui-hermes          Container: hermes
+┌──────────────────────────┐         ┌──────────────────────┐
+│ Docker: open-webui       │         │ hermes agent         │
+│ dns: 100.100.100.100     │───────→│ :8642 (127.0.0.1)   │
+│ OPENAI_API_BASE_URL:     │ MagicDNS│ tailscale serve :443 │
+│  https://hermes...ts.net │         └──────────────────────┘
+└──────────────────────────┘
+```
+
+- **Docker DNS** = `100.100.100.100` (Tailscale MagicDNS) so containers resolve `hermes.komodo-everest.ts.net`
+- **Hermes agent** binds `127.0.0.1` only — only `tailscale serve` can reach it
+- **No Caddy, no hardcoded IPs, no UFW rules** — just MagicDNS + auto-TLS
 
 ## Prerequisites
 
-- **hermes** package installed and configured (`hermes setup` completed)
-- **open-webui** package installed
+1. Hermes agent running on a separate container with API server enabled and `tailscale serve`
+2. Open WebUI container created: `ivps launch openwebui-hermes`
+3. Credentials on the open-webui container:
+
+```bash
+ssh openwebui-hermes "mkdir -p ~/.config/cloudify"
+ssh openwebui-hermes "echo 'CLOUDIFY_HERMES_API_URL=https://hermes.komodo-everest.ts.net/v1' >> ~/.config/cloudify/credentials"
+ssh openwebui-hermes "echo 'CLOUDIFY_HERMES_API_KEY=sk-...' >> ~/.config/cloudify/credentials"
+ssh openwebui-hermes "chmod 600 ~/.config/cloudify/credentials"
+```
+
+Get the API key from the hermes container: `ssh hermes 'grep API_SERVER_KEY ~/.hermes/.env'`
 
 ## Install
 
 ```bash
-# Ensure Hermes is set up first
-hermes setup
+# 1. Install open-webui on the openwebui-hermes container
+cloudify --on openwebui-hermes install open-webui
 
-# Install Open WebUI
-export WEBUI_ADMIN_EMAIL=changeme@example.com
-export WEBUI_ADMIN_PASSWORD=changeme
-cloudify install open-webui
-
-# Connect them
-cloudify install hermes-openwebui
+# 2. Connect it to hermes (reads credentials automatically)
+cloudify --on openwebui-hermes install hermes-openwebui
 ```
 
-## How It Works
+## Configuration
 
-The install script reads `~/.hermes/.env` and updates `/opt/open-webui/docker-compose.yml` to set:
+Credentials are stored in `~/.config/cloudify/credentials` on the open-webui container:
 
-- `OPENAI_API_BASE_URL=http://host.docker.internal:<port>/v1` — points to the Hermes API server
-- `OPENAI_API_KEY=<generated-key>` — the API key for authentication
-
-### Docker-to-Host Networking
-
-Open WebUI runs inside Docker. Hermes runs on the host. The connection crosses a network boundary:
-
+```bash
+CLOUDIFY_HERMES_API_URL=https://hermes.komodo-everest.ts.net/v1
+CLOUDIFY_HERMES_API_KEY=sk-...
 ```
-Open WebUI (Docker) → host.docker.internal:8642 → Hermes (host process) → LLM API
-```
-
-Docker containers can't use `localhost` to reach the host — it means the container itself. `host.docker.internal` resolves to the host's Docker bridge IP (`172.17.0.1`), and is configured in the container via `extra_hosts`.
-
-Two settings make this work:
-
-1. **`API_SERVER_HOST=0.0.0.0`** — Hermes binds all interfaces (default is `127.0.0.1`, unreachable from Docker bridge)
-2. **UFW rule** — opens hermes port for Docker bridge subnet only (`172.16.0.0/12`)
-
-If UFW is active (Ubuntu cloud images ship it enabled with deny-all incoming), the install opens the hermes port for the Docker bridge range only. Hermes is not exposed to other networks.
 
 ## Reconnecting
 
-If you change the Hermes API server port or key, re-run the connection helper:
+If you change the Hermes API key or URL:
 
 ```bash
-/opt/open-webui/connect.sh
+/opt/open-webui/connect-remote.sh
 ```
 
 This is idempotent — safe to run multiple times.
 
+## Dashboard Access
+
+The Hermes dashboard runs on `127.0.0.1:9119` (loopback only) on the hermes container.
+Access it via SSH tunnel:
+
+```bash
+ssh -L 9119:127.0.0.1:9119 hermes
+# Then open http://localhost:9119
+```
+
 ## Troubleshooting
 
-**"Hermes API server not responding":**
+**"CLOUDIFY_HERMES_API_KEY is not set":**
+Ensure both credentials are in `~/.config/cloudify/credentials` on the open-webui container.
+
+**"Hermes API not reachable":**
+Verify the API server is running on the hermes container:
 ```bash
-hermes gateway start
+ssh hermes 'curl -sf http://127.0.0.1:8642/health'
 ```
 
-**"~/.hermes/.env not found":**
-```bash
-hermes setup
-```
-
-**Open WebUI can't reach Hermes:**
-Verify the API server is listening:
-```bash
-curl http://127.0.0.1:8642/health
-```
-
-Check the container can reach the host:
-```bash
-docker exec open-webui curl -sf http://host.docker.internal:8642/health
+**Docker can't resolve MagicDNS hostname:**
+Check the `dns` setting in `/opt/open-webui/docker-compose.yml`:
+```yaml
+dns:
+  - 100.100.100.100
 ```
 
 **View logs:**
 ```bash
 journalctl -u open-webui -f
+docker -H /var/run/docker.sock compose -f /opt/open-webui/docker-compose.yml logs
 ```

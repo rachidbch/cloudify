@@ -69,6 +69,8 @@ services:
       - ./data:/app/backend/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    dns:
+      - 100.100.100.100
 EOF
 
 # --- Install systemd service ---

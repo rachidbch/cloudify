@@ -1,31 +1,74 @@
 #!/usr/bin/env bash
-# hermes-openwebui — Connect Open WebUI to a Hermes agent
+# hermes-openwebui — Connect Open WebUI to a remote Hermes agent via MagicDNS
 #
-# Thin glue package that:
-#   1. Ensures Hermes API server is enabled and has an API key
-#   2. Copies connect.sh to /opt/open-webui/
-#   3. Runs connect.sh to wire the backend URL into Open WebUI
+# Architecture (separate containers):
+#   openwebui-hermes container: Docker runs Open WebUI
+#   hermes container:           Hermes agent + API server (127.0.0.1:8642)
+#   Connection: MagicDNS → https://hermes.komodo-everest.ts.net/v1
 #
 # Prerequisites:
-#   - hermes package installed and configured (hermes setup completed)
-#   - open-webui package installed
+#   - open-webui package installed on this container
+#   - Hermes agent running on a separate container with tailscale serve
+#   - Credentials in ~/.config/cloudify/credentials:
+#       CLOUDIFY_HERMES_API_URL=https://hermes.komodo-everest.ts.net/v1
+#       CLOUDIFY_HERMES_API_KEY=sk-...
 #
 # Config:
-#   ~/.hermes/.env must exist (created by 'hermes setup')
-#
-# Service management:
-#   systemctl status/restart open-webui
-#   Reconnect: /opt/open-webui/connect.sh
+#   ~/.config/cloudify/credentials — CLOUDIFY_HERMES_API_URL, CLOUDIFY_HERMES_API_KEY
 
-HERMES_ENV="$HOME/.hermes/.env"
+CONNECT_REMOTE_SRC="$(dirname "$(cloudify_package_recipe_path hermes-openwebui)")/connect-remote.sh"
+CONNECT_REMOTE_DST="/opt/open-webui/connect-remote.sh"
 
 # --- Install guard: skip if already wired unless forced ---
-if [[ -f "/opt/open-webui/connect.sh" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+if [[ -f "$CONNECT_REMOTE_DST" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
     log_info "Hermes-Open WebUI already wired. Skipping (use --clear-data to reinstall)."
     return 0
 fi
 
-# --- Dependencies ---
+# --- Remote case: CLOUDIFY_HERMES_API_URL from credentials ---
+if [[ -n "${CLOUDIFY_HERMES_API_URL:-}" ]]; then
+    # --- Dependencies (remote: only need open-webui, not hermes) ---
+    pkg_depends open-webui
+    pkg_apt_install curl
+
+    # --- Validate credentials ---
+    if [[ -z "${CLOUDIFY_HERMES_API_KEY:-}" ]]; then
+        die "CLOUDIFY_HERMES_API_URL is set but CLOUDIFY_HERMES_API_KEY is not.\n  Add it to ~/.config/cloudify/credentials:\n  CLOUDIFY_HERMES_API_KEY=sk-..."
+    fi
+
+    # --- Deploy and run connect-remote.sh ---
+    cp "$CONNECT_REMOTE_SRC" "$CONNECT_REMOTE_DST"
+    chmod +x "$CONNECT_REMOTE_DST"
+
+    log_info "Connecting Open WebUI to remote Hermes at ${CLOUDIFY_HERMES_API_URL}..."
+    CLOUDIFY_HERMES_API_URL="$CLOUDIFY_HERMES_API_URL" \
+    CLOUDIFY_HERMES_API_KEY="$CLOUDIFY_HERMES_API_KEY" \
+        bash "$CONNECT_REMOTE_DST"
+
+    # --- Post-install ---
+    msg ""
+    msg "${GREEN}Hermes-Open WebUI connection established (remote).${RESET}"
+    msg ""
+    msg "Backend: ${CLOUDIFY_HERMES_API_URL}"
+    msg ""
+    msg "Access Open WebUI at: https://openwebui-hermes.komodo-everest.ts.net"
+    msg "Dashboard:  ssh -L 9119:127.0.0.1:9119 hermes  →  http://localhost:9119"
+    msg ""
+    msg "Reconnect after config changes:"
+    msg "  /opt/open-webui/connect-remote.sh"
+    msg ""
+    msg "Service management:"
+    msg "  systemctl status open-webui"
+    msg "  systemctl restart open-webui"
+    msg ""
+    return 0
+fi
+
+# --- Local case (legacy): no CLOUDIFY_HERMES_API_URL set ---
+# Hermes and Docker are on the same container. Not the recommended
+# architecture, but still supported for backward compatibility.
+HERMES_ENV="$HOME/.hermes/.env"
+
 pkg_depends hermes open-webui
 pkg_apt_install curl
 
@@ -35,12 +78,10 @@ if [[ ! -f "$HERMES_ENV" ]]; then
 fi
 
 # --- Read current Hermes API server config ---
-# Use grep+cut to avoid sourcing the file (may contain side effects)
 get_hermes_var() {
     local key="$1"
     local val
     val=$(grep -E "^${key}=" "$HERMES_ENV" 2>/dev/null | cut -d'=' -f2-)
-    # Strip surrounding quotes if present
     val="${val#\"}" ; val="${val%\"}"
     val="${val#\'}" ; val="${val%\'}"
     echo "$val"
@@ -101,7 +142,6 @@ if [[ "$API_SERVER_HOST" != "0.0.0.0" ]]; then
 fi
 
 # --- Open firewall for Docker bridge to reach hermes ---
-# UFW default INPUT policy is DROP; containers reach host via 172.16.0.0/12.
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "active"; then
     if ! ufw status | grep -q "${API_SERVER_PORT}"; then
         log_info "Opening UFW port ${API_SERVER_PORT} for Docker bridge access"
@@ -113,11 +153,9 @@ fi
 if ! systemctl --user list-unit-files 2>/dev/null | grep -q "hermes-gateway"; then
     log_info "Installing Hermes gateway as systemd user service..."
     hermes gateway install 2>/dev/null
-    # Enable linger so the user service survives logout
     loginctl enable-linger "$USER" 2>/dev/null || true
 fi
 
-# Start the gateway if not running
 if ! systemctl --user is-active hermes-gateway >/dev/null 2>&1; then
     log_info "Starting Hermes gateway service..."
     systemctl --user start hermes-gateway 2>/dev/null || true
@@ -130,17 +168,17 @@ if [[ "$needs_restart" == "true" ]]; then
     sleep 3
 fi
 
-# --- Copy and run connect.sh ---
+# --- Copy and run connect.sh (local) ---
 CONNECT_SRC="$(dirname "$(cloudify_package_recipe_path hermes-openwebui)")/connect.sh"
 cp "$CONNECT_SRC" "/opt/open-webui/connect.sh"
 chmod +x "/opt/open-webui/connect.sh"
 
-log_info "Running connect.sh to wire Open WebUI to Hermes..."
+log_info "Running connect.sh to wire Open WebUI to local Hermes..."
 bash "/opt/open-webui/connect.sh"
 
-# --- Post-install instructions ---
+# --- Post-install ---
 msg ""
-msg "${GREEN}Hermes-Open WebUI connection established.${RESET}"
+msg "${GREEN}Hermes-Open WebUI connection established (local).${RESET}"
 msg ""
 msg "Access:  http://127.0.0.1:\$PORT (check your CLOUDIFY_OPENWEBUI_PORT setting)"
 msg "Backend: Hermes API server on port ${API_SERVER_PORT}"

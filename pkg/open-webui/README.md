@@ -27,6 +27,8 @@ All configuration is via environment variables set before install. They are writ
 | `OPENAI_API_BASE_URL` | (empty) | Backend URL (Ollama, OpenAI, etc.) |
 | `OPENAI_API_KEY` | (empty) | Backend API key |
 
+**MagicDNS:** Docker containers use `dns: 100.100.100.100` (Tailscale MagicDNS) so they can resolve `*.komodo-everest.ts.net` hostnames. This enables connecting to services on other Tailscale containers by their MagicDNS names.
+
 **Remote/container access:** The default bind is `127.0.0.1` (localhost only). For containers or remote hosts, set `CLOUDIFY_OPENWEBUI_BIND=0.0.0.0` before install:
 
 ```bash

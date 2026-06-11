@@ -46,6 +46,12 @@ fi
 # --- Update docker-compose.yml ---
 sed -i "s|OPENAI_API_BASE_URL=.*|OPENAI_API_BASE_URL=${CLOUDIFY_HERMES_API_URL}|" "$OWUI_COMPOSE"
 sed -i "s|OPENAI_API_KEY=.*|OPENAI_API_KEY=${CLOUDIFY_HERMES_API_KEY}|" "$OWUI_COMPOSE"
+# Ensure RAG embeddings use hermes API (required for separate-containers: no local GPU)
+if grep -q "RAG_EMBEDDING_ENGINE=" "$OWUI_COMPOSE"; then
+    sed -i 's|RAG_EMBEDDING_ENGINE=.*|RAG_EMBEDDING_ENGINE=openai|' "$OWUI_COMPOSE"
+else
+    sed -i '/ENABLE_WEBSOCKET_SUPPORT=/a\      - RAG_EMBEDDING_ENGINE=openai' "$OWUI_COMPOSE"
+fi
 
 echo "[INFO] Updated $OWUI_COMPOSE with backend URL: ${CLOUDIFY_HERMES_API_URL}"
 

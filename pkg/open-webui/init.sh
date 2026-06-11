@@ -47,7 +47,26 @@ pkg_apt_install curl
 # --- Create directories ---
 mkdir -p "${OWUI_DIR}/data"
 
+# --- Build environment block for docker-compose ---
+# Conditionally add RAG_EMBEDDING_ENGINE=openai if an OpenAI backend is configured
+local env_block
+env_block=$(cat <<INNER
+      - WEBUI_ADMIN_EMAIL=${OWUI_ADMIN_EMAIL}
+      - WEBUI_ADMIN_PASSWORD=${OWUI_ADMIN_PASSWORD}
+      - ENABLE_SIGNUP=False
+      - BYPASS_MODEL_ACCESS_CONTROL=True
+      - ENABLE_OLLAMA_API=False
+      - ENABLE_WEBSOCKET_SUPPORT=true
+      - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+INNER
+)
+if [[ -n "${OPENAI_API_BASE_URL:-}" ]]; then
+    env_block+="      - RAG_EMBEDDING_ENGINE=openai"$'\n'
+fi
+
 # --- Generate docker-compose.yml ---
+# NOTE: no dns: section — let Docker use host DNS (100.100.100.100 breaks public DNS)
 cat > "${OWUI_DIR}/docker-compose.yml" <<EOF
 services:
   open-webui:
@@ -57,20 +76,10 @@ services:
     ports:
       - "${OWUI_BIND}:${OWUI_PORT}:8080"
     environment:
-      - WEBUI_ADMIN_EMAIL=${OWUI_ADMIN_EMAIL}
-      - WEBUI_ADMIN_PASSWORD=${OWUI_ADMIN_PASSWORD}
-      - ENABLE_SIGNUP=False
-      - BYPASS_MODEL_ACCESS_CONTROL=True
-      - ENABLE_OLLAMA_API=False
-      - ENABLE_WEBSOCKET_SUPPORT=true
-      - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-    volumes:
+${env_block}    volumes:
       - ./data:/app/backend/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    dns:
-      - 100.100.100.100
 EOF
 
 # --- Install systemd service ---

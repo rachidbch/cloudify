@@ -23,7 +23,7 @@ import signal
 import subprocess
 import sys
 
-from aiohttp import ClientSession, WSMsgType, web
+from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 
 DASHBOARD_PORT = 9119
 RELAY_PORT = 9120
@@ -132,8 +132,19 @@ def main():
         loop.add_signal_handler(sig, cleanup)
 
     async def run():
-        # Brief wait for dashboard to start
-        await asyncio.sleep(1)
+        # Wait for dashboard to be ready (may need to build web UI on first launch)
+        for i in range(30):
+            try:
+                async with ClientSession() as session:
+                    async with session.get(
+                        f"{UPSTREAM}/", timeout=ClientTimeout(total=2),
+                    ):
+                        break
+            except Exception:
+                await asyncio.sleep(1)
+        else:
+            print("relay: dashboard at :9119 did not become ready", file=sys.stderr)
+            sys.exit(1)
 
         app = web.Application()
         app.router.add_route("*", "/{path:.*}", handler)

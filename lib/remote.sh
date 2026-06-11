@@ -46,7 +46,7 @@ function cloudify_remote_payload_template() {
     export RESTIC_PASSWORD='$RESTIC_PASSWORD'
 
     # Package-specific vars are injected dynamically from pkg/<name>/remote-vars.yaml
-    _CLOUDIFY_PKG_EXPORTS_
+    : _CLOUDIFY_PKG_EXPORTS_
 
     export CLOUDIFY_CLEAR_DATA='$CLOUDIFY_CLEAR_DATA'
     export CLOUDIFY_FORCE='$CLOUDIFY_FORCE'

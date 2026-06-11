@@ -126,4 +126,8 @@
 - Added PATH to systemd unit (node/npm at ~/.local/bin needed for web UI build)
 - Added dashboard readiness check in relay (waits up to 30s for first-launch web UI build)
 - Verified: systemd service active, relay HTTP 200, tailscale HTTPS 200
+- Roadblock: path-based routing (`--path /dashboard`) breaks SPA — JS bundles use absolute `/api/*`, `/fonts/*` paths
+- Root exposure works (`https://hermes.komodo-everest.ts.net/`) but collides with Open WebUI on same container
+- Solution: ivps needs `expose-private-hostname` command for hostname-based tailnet routing
+- See `/home/rbc/.pi/handoffs/2026-06-11-ivps-expose-private-hostname.md`
 - Files: `pkg/hermes-dashboard/init.sh`, `pkg/hermes-dashboard/relay.py`, `tests/integration/package-hermes-dashboard.bats`

@@ -26,11 +26,6 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
     [ "$status" -eq 0 ]
 }
 
-@test "connect-remote.sh installed on $TEST_HOST" {
-    run $TEST_SSH "root@$TEST_HOST" 'test -x /opt/open-webui/connect-remote.sh'
-    [ "$status" -eq 0 ]
-}
-
 @test "docker-compose.yml has MagicDNS backend URL on $TEST_HOST" {
     run $TEST_SSH "root@$TEST_HOST" 'grep -q "OPENAI_API_BASE_URL=https://hermes.komodo-everest.ts.net/v1" /opt/open-webui/docker-compose.yml'
     [ "$status" -eq 0 ]
@@ -41,8 +36,8 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
     [ "$status" -eq 0 ]
 }
 
-@test "docker-compose.yml has MagicDNS dns setting on $TEST_HOST" {
-    run $TEST_SSH "root@$TEST_HOST" 'grep -q "100.100.100.100" /opt/open-webui/docker-compose.yml'
+@test "docker-compose.yml has RAG_EMBEDDING_ENGINE=openai on $TEST_HOST" {
+    run $TEST_SSH "root@$TEST_HOST" 'grep -q "RAG_EMBEDDING_ENGINE=openai" /opt/open-webui/docker-compose.yml'
     [ "$status" -eq 0 ]
 }
 

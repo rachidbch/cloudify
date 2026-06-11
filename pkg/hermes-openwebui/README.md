@@ -36,31 +36,28 @@ Get the API key from the hermes container: `ssh hermes 'grep API_SERVER_KEY ~/.h
 ## Install
 
 ```bash
-# 1. Install open-webui on the openwebui-hermes container
-cloudify --on openwebui-hermes install open-webui
-
-# 2. Connect it to hermes (reads credentials automatically)
+# Set credentials once in ~/.config/cloudify/credentials, then:
 cloudify --on openwebui-hermes install hermes-openwebui
 ```
 
+This installs open-webui (Docker) and wires it to Hermes in one step.
+Credentials flow from your local `~/.config/cloudify/credentials`
+through the remote payload into the compose file automatically.
+
 ## Configuration
 
-Credentials are stored in `~/.config/cloudify/credentials` on the open-webui container:
+Credentials are stored locally in `~/.config/cloudify/credentials` and
+passed through to the remote container automatically:
 
 ```bash
 CLOUDIFY_HERMES_API_URL=https://hermes.komodo-everest.ts.net/v1
 CLOUDIFY_HERMES_API_KEY=sk-...
 ```
 
-## Reconnecting
+Get the API key from the hermes container: `ssh hermes 'grep API_SERVER_KEY ~/.hermes/.env'`
 
-If you change the Hermes API key or URL:
-
-```bash
-/opt/open-webui/connect-remote.sh
-```
-
-This is idempotent — safe to run multiple times.
+To change credentials, edit the file and re-run `cloudify --on <host> install hermes-openwebui`.
+The compose file is regenerated with the new values and open-webui restarts automatically.
 
 ## Dashboard Access
 

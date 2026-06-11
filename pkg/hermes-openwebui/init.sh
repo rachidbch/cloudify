@@ -7,37 +7,34 @@
 #   Connection: MagicDNS → https://hermes.komodo-everest.ts.net/v1
 #
 # Prerequisites:
-#   - open-webui package installed on this container
 #   - Hermes agent running on a separate container with tailscale serve
-#   - Credentials in ~/.config/cloudify/credentials:
+#   - Credentials in ~/.config/cloudify/credentials (local machine):
 #       CLOUDIFY_HERMES_API_URL=https://hermes.komodo-everest.ts.net/v1
 #       CLOUDIFY_HERMES_API_KEY=sk-...
+#   - These are passed through the --on remote payload automatically
 #
-# Config:
-#   ~/.config/cloudify/credentials — CLOUDIFY_HERMES_API_URL, CLOUDIFY_HERMES_API_KEY
-
-CONNECT_REMOTE_SRC="$(dirname "$(cloudify_package_recipe_path hermes-openwebui)")/connect-remote.sh"
-CONNECT_REMOTE_DST="/opt/open-webui/connect-remote.sh"
+# Idempotent: re-running always regenerates docker-compose.yml from
+# current env vars and restarts open-webui.
 
 # --- Remote case: CLOUDIFY_HERMES_API_URL from credentials ---
 if [[ -n "${CLOUDIFY_HERMES_API_URL:-}" ]]; then
-    # --- Dependencies (remote: only need open-webui, not hermes) ---
-    pkg_depends open-webui
-    pkg_apt_install curl
-
     # --- Validate credentials ---
     if [[ -z "${CLOUDIFY_HERMES_API_KEY:-}" ]]; then
         die "CLOUDIFY_HERMES_API_URL is set but CLOUDIFY_HERMES_API_KEY is not.\n  Add it to ~/.config/cloudify/credentials:\n  CLOUDIFY_HERMES_API_KEY=sk-..."
     fi
 
-    # --- Deploy and run connect-remote.sh ---
-    cp "$CONNECT_REMOTE_SRC" "$CONNECT_REMOTE_DST"
-    chmod +x "$CONNECT_REMOTE_DST"
+    # --- Export OPENAI_* so open-webui/init.sh picks them up ---
+    # open-webui regenerates compose from env vars, restarts, waits for health
+    export OPENAI_API_BASE_URL="$CLOUDIFY_HERMES_API_URL"
+    export OPENAI_API_KEY="$CLOUDIFY_HERMES_API_KEY"
+    pkg_depends open-webui
+    pkg_apt_install curl
 
-    log_info "Connecting Open WebUI to remote Hermes at ${CLOUDIFY_HERMES_API_URL}..."
-    CLOUDIFY_HERMES_API_URL="$CLOUDIFY_HERMES_API_URL" \
-    CLOUDIFY_HERMES_API_KEY="$CLOUDIFY_HERMES_API_KEY" \
-        bash "$CONNECT_REMOTE_DST"
+    # --- Health check hermes API (non-fatal warning) ---
+    log_info "Checking Hermes API at ${CLOUDIFY_HERMES_API_URL}/health..."
+    if ! curl -sf --max-time 10 "${CLOUDIFY_HERMES_API_URL}/health" >/dev/null 2>&1; then
+        log_warn "Hermes API not reachable at ${CLOUDIFY_HERMES_API_URL}/health"
+    fi
 
     # --- Post-install ---
     msg ""
@@ -48,8 +45,8 @@ if [[ -n "${CLOUDIFY_HERMES_API_URL:-}" ]]; then
     msg "Access Open WebUI at: https://openwebui-hermes.komodo-everest.ts.net"
     msg "Dashboard:  ssh -L 9119:127.0.0.1:9119 hermes  →  http://localhost:9119"
     msg ""
-    msg "Reconnect after config changes:"
-    msg "  /opt/open-webui/connect-remote.sh"
+    msg "To change Hermes credentials, edit ~/.config/cloudify/credentials"
+    msg "then re-run: cloudify --on <host> install hermes-openwebui"
     msg ""
     msg "Service management:"
     msg "  systemctl status open-webui"

@@ -1,5 +1,12 @@
 # Cloudify — Session History
 
+## 2026-06-11 — Fix open-webui crash, complete separate-containers v2 deployment
+
+- **Root cause:** Docker `dns: [100.100.100.100]` (Tailscale MagicDNS) can't resolve `huggingface.co`, so SentenceTransformer model download fails at boot. Empty `RAG_EMBEDDING_ENGINE=` still triggers default model loading.
+- **Fix:** Removed `dns:` section from open-webui recipe (let Docker use host DNS via systemd-resolved stub). Added conditional `RAG_EMBEDDING_ENGINE=openai` when `OPENAI_API_BASE_URL` is set. Updated `connect-remote.sh` to ensure RAG_EMBEDDING_ENGINE is set.
+- **Deployed:** open-webui on openwebui-hermes container is healthy (Up, healthy). tailscale serve exposes `https://openwebui-hermes.komodo-everest.ts.net`. API connectivity open-webui → hermes verified.
+- **Commit:** ee028af — `pkg/open-webui/init.sh`, `pkg/hermes-openwebui/connect-remote.sh`
+
 ## 2026-05-19 — Document and apply install guard convention (E1, E2)
 
 - **E1:** Added "Install Guards" subsection to README.md "Writing a Package Recipe" — documents software vs data distinction, FORCE/CLEAR_DATA vars, code pattern

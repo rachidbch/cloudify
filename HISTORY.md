@@ -1,5 +1,29 @@
 # Cloudify — Session History
 
+## 2026-06-12 — Refactor remote var forwarding to per-package yaml files
+
+- Removed hardcoded package-specific `export` lines and `envsubst` entries from `lib/remote.sh`.
+  Replaced with per-package `pkg/<name>/remote-vars.yaml` files (key-value, var names extracted via grep).
+- Core infrastructure vars (CLOUDIFY_REMOTE_USER, DEBUG, etc.) stay hardcoded in remote.sh.
+- `_cloudify_pkg_remote_vars()` scans yaml files for requested packages, generates template
+  exports and envsubst list dynamically.
+- Fixed `declare -f` stripping comment-based placeholder → used `: _CLOUDIFY_PKG_EXPORTS_` no-op.
+- `pkg/hermes-openwebui/remote-vars.yaml`: CLOUDIFY_HERMES_API_URL, CLOUDIFY_HERMES_API_KEY
+- `pkg/open-webui/remote-vars.yaml`: CLOUDIFY_OPENWEBUI_PORT, CLOUDIFY_OPENWEBUI_BIND, WEBUI_ADMIN_EMAIL, WEBUI_ADMIN_PASSWORD
+- `pkg/hermes-signal/remote-vars.yaml`: CLOUDIFY_SIGNAL_PORT
+- Commit: 35c8ddd
+
+## 2026-06-11 — open-webui compose fixes and test stabilization
+
+- Fixed missing trailing newline after heredoc in `pkg/open-webui/init.sh`:
+  `env_block=$(cat <<INNER ...)` strips trailing newline → `${env_block}` in compose
+  template ran into YAML `volumes:` key → broken compose. Fix: `env_block+=$'\n'`.
+- Removed redundant `\n` in printf RAG line (now handled by trailing newline above).
+- Extended health check timeout from 30→120 attempts (240s) for first-launch HuggingFace
+  sentence-transformers model download.
+- Commits: 0b70463, 83029b3
+- Integration test `package-open-webui` now passes consistently (6/6).
+
 ## 2026-06-11 — RAG_EMBEDDING_ENGINE newline bug (known issue)
 
 - `pkg/open-webui/init.sh` line 58: `$()` strips trailing newline from heredoc,

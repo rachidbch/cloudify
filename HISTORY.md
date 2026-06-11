@@ -1,5 +1,12 @@
 # Cloudify — Session History
 
+## 2026-06-11 — RAG_EMBEDDING_ENGINE newline bug (known issue)
+
+- `pkg/open-webui/init.sh` line 58: `$()` strips trailing newline from heredoc,
+  so `printf '%s      - RAG...\n'` appends RAG line to same line as OPENAI_API_KEY.
+  Fix: prepend `\n` in printf format or use a different append approach.
+- Not yet deployed to container.
+
 ## 2026-06-11 — Remove connect-remote.sh, delegate to open-webui init
 
 - Deleted `pkg/hermes-openwebui/connect-remote.sh` (79 lines). Its sole purpose

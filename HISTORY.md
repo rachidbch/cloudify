@@ -117,3 +117,13 @@
 - Bug: arch conversion x86_64→amd64 broke URL — yazi uses x86_64/aarch64 in filenames → use uname -m as-is
 - Integration test written but not yet run (incus remote unreachable)
 - Files: `pkg/yazi/init.sh`, `tests/integration/package-yazi.bats`
+
+## 2026-06-11: hermes-dashboard — persistent web dashboard via systemd + tailscale serve
+
+- New package: `pkg/hermes-dashboard/` — runs hermes dashboard as a systemd user service
+- Includes `relay.py` — aiohttp reverse proxy that rewrites Host header for tailscale serve compatibility (workaround for missing --allowed-hosts, hermes-agent#34390)
+- Exposed via `ivps expose-direct cloudai:hermes 9120 --path /dashboard` → https://hermes.komodo-everest.ts.net/dashboard
+- Added PATH to systemd unit (node/npm at ~/.local/bin needed for web UI build)
+- Added dashboard readiness check in relay (waits up to 30s for first-launch web UI build)
+- Verified: systemd service active, relay HTTP 200, tailscale HTTPS 200
+- Files: `pkg/hermes-dashboard/init.sh`, `pkg/hermes-dashboard/relay.py`, `tests/integration/package-hermes-dashboard.bats`

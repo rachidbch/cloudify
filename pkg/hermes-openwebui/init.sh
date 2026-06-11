@@ -19,12 +19,6 @@
 CONNECT_REMOTE_SRC="$(dirname "$(cloudify_package_recipe_path hermes-openwebui)")/connect-remote.sh"
 CONNECT_REMOTE_DST="/opt/open-webui/connect-remote.sh"
 
-# --- Install guard: skip if already wired unless forced ---
-if [[ -f "$CONNECT_REMOTE_DST" ]] && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
-    log_info "Hermes-Open WebUI already wired. Skipping (use --clear-data to reinstall)."
-    return 0
-fi
-
 # --- Remote case: CLOUDIFY_HERMES_API_URL from credentials ---
 if [[ -n "${CLOUDIFY_HERMES_API_URL:-}" ]]; then
     # --- Dependencies (remote: only need open-webui, not hermes) ---

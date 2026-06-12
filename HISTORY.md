@@ -1,5 +1,16 @@
 # Cloudify — Session History
 
+## 2026-06-12 — Fix word-splitting bug in _cloudify_pkg_remote_vars
+
+- Root cause: `_cloudify_dispatch` passes `$packages` as a single string
+  `"--install pkg1 pkg2"` to `cloudify_remote`. The function used quoted `"$@"`
+  which preserved this as one argument, so the `--install` flag was never
+  detected and no package vars were collected.
+- Fix: `local args=($@)` (unquoted) triggers word-splitting, correctly
+  separating `--install` from package names.
+- hermes-openwebui integration test now passes 6/6 with env var exports
+  (no file writes to ~/.config/cloudify/credentials).
+
 ## 2026-06-12 — Per-package user config via ~/.config/cloudify/pkgs/<pkg>.yaml
 
 - New `lib/pkg-config.sh` module: `_cloudify_load_yaml_vars()` parses flat key:value YAML

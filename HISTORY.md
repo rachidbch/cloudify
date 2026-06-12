@@ -1,5 +1,14 @@
 # Cloudify — Session History
 
+## 2026-06-12 — hermes-dashboard verified + yazi/ivps investigation
+
+- Yazi integration test: written 2026-06-05 but never run (incus unreachable). Now passes 3/3.
+- hermes-openwebui timeout claim: stale. Test was simplified (065c67f, dad00d4), no longer needs tailscale at runtime. Passes 6/6.
+- hermes-dashboard: reinstalled on cloudai:hermes. Stale Jun-11 process held port 9119,
+  old relay.py unit replaced. Dashboard serves HTTP 200 on loopback :9119.
+- ivps tunnel: TS_DOMAIN split fixed (64d3f67), ((count++)) bug fixed (e51e1b3).
+  `ivps tunnel start cloudai:hermes 9119:9119` works end-to-end.
+
 ## 2026-06-12 — Update CLAUDE.md Architecture section
 
 - Updated package count: 65+ → 75+

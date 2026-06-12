@@ -79,7 +79,7 @@ function cloudify_remote_payload_template() {
 }
 
 # Load package-specific config and collect remote var names for the given command args.
-# Usage: _cloudify_pkg_remote_vars install pkg1 pkg2
+# Usage: _cloudify_pkg_remote_vars install pkg1 pkg2  (or --install pkg1 pkg2)
 # Side effect: loads values from ~/.config/cloudify/pkgs/<pkg>.yaml into environment.
 # Outputs: var names, one per line (deduplicated)
 function _cloudify_pkg_remote_vars() {
@@ -98,7 +98,7 @@ function _cloudify_pkg_remote_vars() {
     fi
 
     for arg in "${args[@]}"; do
-        if [[ "$arg" == "install" ]]; then
+        if [[ "$arg" == "install" || "$arg" == "--install" ]]; then
             in_install=true
             continue
         fi

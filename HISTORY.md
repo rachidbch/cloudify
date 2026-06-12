@@ -1,5 +1,12 @@
 # Cloudify — Session History
 
+## 2026-06-12 — Update CLAUDE.md Architecture section
+
+- Updated package count: 65+ → 75+
+- Added repo-side `pkg/<name>/remote-vars.yaml` interface distinction
+  (repo yaml = interface, user yaml = values)
+- No other sections touched
+
 ## 2026-06-12 — Fix word-splitting bug in _cloudify_pkg_remote_vars
 
 - Root cause: `_cloudify_dispatch` passes `$packages` as a single string

@@ -103,51 +103,66 @@ Run `cloudify packages` for the full list with tags.
 
 ### Credentials
 
-Credentials are stored in `~/.config/cloudify/credentials` (XDG-compliant, `chmod 600`). They are loaded automatically at startup — no need to source any file after reboot.
+System credentials are stored in `~/.config/cloudify/credentials` (XDG-compliant, `chmod 600`).
 
-Set all credentials interactively:
-
-```bash
-cloudify credentials
-```
-
-Set only a specific section:
+Set interactively:
 
 ```bash
-cloudify credentials remote    # CLOUDIFY_REMOTE_USER, CLOUDIFY_REMOTE_PWD
-cloudify credentials github    # CLOUDIFY_GITHUBUSER, CLOUDIFY_GITHUBPWD
-cloudify credentials gitlab    # CLOUDIFY_GITLABUSER, CLOUDIFY_GITLABPWD
+cloudify credentials          # all sections
+cloudify credentials remote   # CLOUDIFY_REMOTE_USER, CLOUDIFY_REMOTE_PWD
+cloudify credentials github   # CLOUDIFY_GITHUBUSER, CLOUDIFY_GITHUBPWD
+cloudify credentials gitlab   # CLOUDIFY_GITLABUSER, CLOUDIFY_GITLABPWD
+cloudify credentials --check  # status check
 ```
 
-Check which sections are configured:
-
-```bash
-cloudify credentials --check
-```
-
-Or export them directly (overrides file values):
+Or export directly (overrides file):
 
 ```bash
 export CLOUDIFY_REMOTE_USER=root
 export CLOUDIFY_REMOTE_PWD=serverpassword
-export CLOUDIFY_GITHUBUSER=mygithub
-export CLOUDIFY_GITHUBPWD=myghptoken
 ```
 
-To skip credential loading in automated contexts:
+Skip loading in automated contexts:
 
 ```bash
 export CLOUDIFY_SKIPCREDENTIALS=true
 ```
 
+### Package Configuration
+
+Package-specific vars live in `~/.config/cloudify/pkgs/<pkg>.yaml` (flat key:value, `chmod 600`).
+These are forwarded to the remote host when installing the package via `--on`.
+
+Example `~/.config/cloudify/pkgs/open-webui.yaml`:
+
+```yaml
+WEBUI_ADMIN_EMAIL: "admin@example.com"
+WEBUI_ADMIN_PASSWORD: "secret"
+```
+
+Example `~/.config/cloudify/pkgs/hermes-openwebui.yaml`:
+
+```yaml
+CLOUDIFY_HERMES_API_URL: "https://hermes.example.ts.net/v1"
+CLOUDIFY_HERMES_API_KEY: "sk-..."
+```
+
+Which vars each package needs is declared in the repo's `pkg/<name>/remote-vars.yaml`.
+The user yaml provides values — missing files are silently ignored (vars stay empty).
+
+**Always-forward vars:** `~/.config/cloudify/remote-vars.yaml`
+Vars listed here are forwarded on every `--on` call regardless of which packages are installed.
+
+Vars already set in the environment take precedence over all config files.
+
 ### Environment Variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `CLOUDIFY_TMP` | `/tmp/cloudify` | Temp directory for logs, exit code files, and backups. Log files persist here after exit. |
+| `CLOUDIFY_TMP` | `/tmp/cloudify` | Temp directory for logs, exit code files, and backups. |
 | `CLOUDIFY_DIR` | `~/cloudify` | Path to the cloudify repository (used to find `pkg/` and `inventory/`). |
-| `CLOUDIFY_CREDENTIALS_DIR` | `~/.config/cloudify` | Directory for the credentials file (XDG-compliant). |
-| `CLOUDIFY_CREDENTIALS_FILE` | `~/.config/cloudify/credentials` | File where credentials are persisted (`chmod 600`). Loaded at startup. |
+| `CLOUDIFY_CREDENTIALS_DIR` | `~/.config/cloudify` | XDG config directory for credentials + pkg config. |
+| `CLOUDIFY_CREDENTIALS_FILE` | `~/.config/cloudify/credentials` | System credentials file (`chmod 600`). |
 | `CLOUDIFY_SKIPCREDENTIALS` | `false` | Skip credential loading in automated contexts. |
 | `CLOUDIFY_DISABLE_COLORS` | `false` | Disable colored output. |
 | `CLOUDIFY_FORCE_UPDATE` | `false` | Force git pull on remote hosts regardless of update delay. |
@@ -215,16 +230,18 @@ Taskfile.yml          Task runner definitions (task setup-container, task test, 
 lib/
   colors.sh           Terminal color setup
   containers.sh       Container operations via ivps (launch, delete, IP lookup)
-  credentials.sh      Credential management: save, load, migrate, section-based prompting
+  credentials.sh      System credential management: save, load, section-based prompting
+  pkg-config.sh       Package config loader: flat YAML parsing from pkgs/<pkg>.yaml
   hosts.sh            Host inventory (list, filter by tags)
   os.sh               OS detection (distro, version, arch)
   package-api.sh      Public pkg_* plugin API used by package recipes
   packages.sh         Package discovery, recipe resolution, install/uninstall
-  remote.sh           Remote execution via SSH with payload template
+  remote.sh           Remote execution via SSH with payload template + var forwarding
   shadow.sh           Shadow command loader (sources lib/shadows/*.sh)
   utils.sh            Utilities: msg, die, backup/restore, git URL parsing
 pkg/
   <pkg>/init.sh       Package recipe (install script)
+  <pkg>/remote-vars.yaml  Remote var declarations (forwarded via --on)
   <pkg>/@<tag>        Tag files for filtering
 inventory/
   <host>/@<tag>       Host tag files for grouping
@@ -265,8 +282,9 @@ Each package lives in `pkg/<name>/`. The only required file is `init.sh`.
 
 ```
 pkg/hermes/
-├── init.sh        # Required — the install recipe
-└── @default       # Optional — tag file (empty file)
+├── init.sh           # Required — the install recipe
+├── remote-vars.yaml  # Optional — vars forwarded to remote on --on install
+└── @default          # Optional — tag file (empty file)
 ```
 
 Tag files are empty files used for filtering. `@default` means the package is installed by `cloudify install default`. Create custom tags with `@<tag>` (e.g., `@web`, `@dev`).
@@ -377,7 +395,7 @@ into CLOUDIFY_HOSTPWD             -S reads password from stdin
 on remote host                    herestring supplies password
 ```
 
-Credentials are loaded from `~/.config/cloudify/credentials` at startup. Environment variables override file values. For remote execution, `lib/remote.sh` uses `envsubst` with an explicit allow-list to inject `CLOUDIFY_REMOTE_PWD` as `CLOUDIFY_HOSTPWD` in the SSH payload. Passwords are redacted to `***********` in debug output.
+System credentials are loaded from `~/.config/cloudify/credentials` at startup. Package config is loaded from `~/.config/cloudify/pkgs/<pkg>.yaml` by `lib/pkg-config.sh` on demand. Environment variables always take precedence. For remote execution, `lib/remote.sh` uses `envsubst` with an explicit allow-list to inject creds and package vars into the SSH payload. Passwords are redacted to `***********` in debug output.
 
 #### Shadow `sudo`
 

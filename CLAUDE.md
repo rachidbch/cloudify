@@ -20,7 +20,7 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 - **Module pattern**: each `lib/*.sh` has a guard `_CLOUDIFY_X_LOADED`. Sourced by the router, not by each other.
 - **Plugin API**: `pkg_*` functions in `lib/package-api.sh`. Signatures are stable — used by 65+ packages.
 - **Shadow commands**: `lib/shadows/*.sh` override `sudo`, `apt-get`, `add-apt-repository`, `git` with wrappers for password injection, idempotency, auth. Recipes call bare commands — shadows handle the rest.
-- **Credential management**: `~/.config/cloudify/credentials` (XDG, chmod 600). Generic loader — packages write arbitrary `export VAR='value'` lines.
+- **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Package config in `pkgs/<pkg>.yaml`. Always-forward vars in `remote-vars.yaml`. Loaded by `lib/credentials.sh` + `lib/pkg-config.sh`.
 - **Remote payload**: `declare -f` extracts template body as literal text, `envsubst` with explicit allow-list substitutes only listed vars. Single-quoted `$VAR` references resolve on the remote side.
 - **Install guards**: stateful packages use `CLOUDIFY_FORCE`/`CLOUDIFY_CLEAR_DATA` convention. See "Install Guards" in README.md.
 - **Runtime manager**: mise (preferred). Legacy gvm/nvm/pyenv replaced.

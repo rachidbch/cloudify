@@ -82,8 +82,11 @@ function cloudify_remote_payload_template() {
 # Usage: _cloudify_pkg_remote_vars install pkg1 pkg2  (or --install pkg1 pkg2)
 # Side effect: loads values from ~/.config/cloudify/pkgs/<pkg>.yaml into environment.
 # Outputs: var names, one per line (deduplicated)
+#
+# Note: uses unquoted $@ to handle the case where the main parser passes
+# "--install pkg1 pkg2" as a single string (word-splitting separates them).
 function _cloudify_pkg_remote_vars() {
-    local args=("$@")
+    local args=($@)
     local config_dir="${CLOUDIFY_CREDENTIALS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/cloudify}"
     local -a var_names=()
     local in_install=false

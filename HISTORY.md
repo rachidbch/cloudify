@@ -1,5 +1,22 @@
 # Cloudify — Session History
 
+## 2026-06-12 — Per-package user config via ~/.config/cloudify/pkgs/<pkg>.yaml
+
+- New `lib/pkg-config.sh` module: `_cloudify_load_yaml_vars()` parses flat key:value YAML
+  and exports vars into the environment. Overrides existing env vars (package config
+  is authoritative).
+- Architecture:
+  - `~/.config/cloudify/credentials` — system auth only (remote, github, gitlab)
+  - `~/.config/cloudify/remote-vars.yaml` — vars ALWAYS forwarded on every `--on` call
+  - `~/.config/cloudify/pkgs/<pkg>.yaml` — vars forwarded only when installing `<pkg>`
+- `_cloudify_pkg_remote_vars()` in `lib/remote.sh` now loads config from user yaml files
+  before collecting var names from repo `pkg/<name>/remote-vars.yaml`. Also includes
+  always-forward vars from `~/.config/cloudify/remote-vars.yaml`.
+- Repo yaml files define the interface (which vars are required). User yaml files
+  provide the values. No backward compat with pkg vars in credentials file.
+- Updated bats test: exports fake `CLOUDIFY_HERMES_API_URL`/`CLOUDIFY_HERMES_API_KEY`
+  directly in test file (no file writes).
+
 ## 2026-06-12 — Refactor remote var forwarding to per-package yaml files
 
 - Removed hardcoded package-specific `export` lines and `envsubst` entries from `lib/remote.sh`.

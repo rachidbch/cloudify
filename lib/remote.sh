@@ -78,24 +78,46 @@ function cloudify_remote_payload_template() {
     :
 }
 
-# Read remote vars from package yaml files for the given command args.
+# Load package-specific config and collect remote var names for the given command args.
 # Usage: _cloudify_pkg_remote_vars install pkg1 pkg2
-# Outputs: var names, one per line
+# Side effect: loads values from ~/.config/cloudify/pkgs/<pkg>.yaml into environment.
+# Outputs: var names, one per line (deduplicated)
 function _cloudify_pkg_remote_vars() {
     local args=("$@")
+    local config_dir="${CLOUDIFY_CREDENTIALS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/cloudify}"
+    local -a var_names=()
     local in_install=false
+
+    # Always-forward vars (loaded + collected from ~/.config/cloudify/remote-vars.yaml)
+    local always_file="$config_dir/remote-vars.yaml"
+    _cloudify_load_yaml_vars "$always_file"
+    if [[ -f "$always_file" ]]; then
+        while IFS= read -r v; do
+            [[ -n "$v" ]] && var_names+=("$v")
+        done < <(grep -E '^[A-Z_][A-Z0-9_]*:' "$always_file" | sed 's/:.*//')
+    fi
+
     for arg in "${args[@]}"; do
         if [[ "$arg" == "install" ]]; then
             in_install=true
             continue
         fi
         if $in_install && [[ "$arg" != -* ]]; then
-            local yaml_file="$CLOUDIFY_DIR/pkg/$arg/remote-vars.yaml"
-            if [[ -f "$yaml_file" ]]; then
-                grep -E '^[A-Z_][A-Z0-9_]*:' "$yaml_file" | sed 's/:.*//'
+            # Load user config for this package (~/.config/cloudify/pkgs/<pkg>.yaml)
+            _cloudify_load_yaml_vars "$config_dir/pkgs/${arg}.yaml"
+
+            # Collect required var names from repo yaml (pkg/<name>/remote-vars.yaml)
+            local repo_yaml="$CLOUDIFY_DIR/pkg/$arg/remote-vars.yaml"
+            if [[ -f "$repo_yaml" ]]; then
+                while IFS= read -r v; do
+                    [[ -n "$v" ]] && var_names+=("$v")
+                done < <(grep -E '^[A-Z_][A-Z0-9_]*:' "$repo_yaml" | sed 's/:.*//')
             fi
         fi
     done
+
+    # Deduplicate and output
+    printf '%s\n' "${var_names[@]}" | sort -u | sed '/^$/d'
 }
 
 # By default cloudify_remote executes remotely

@@ -76,6 +76,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/colors.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/os.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/package-api.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/credentials.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/pkg-config.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/shadow.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/containers.sh"
 # shellcheck disable=SC1094

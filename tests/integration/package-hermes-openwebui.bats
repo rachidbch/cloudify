@@ -5,12 +5,19 @@
 #   open-webui (Docker) → MagicDNS → hermes (tailscale serve)
 #
 # Prerequisites on test container:
-#   - ~/.config/cloudify/credentials with CLOUDIFY_HERMES_API_URL and CLOUDIFY_HERMES_API_KEY
 #   - open-webui package installed
 #   - Tailscale connected (for MagicDNS resolution from Docker)
+#
+# Credentials are set via environment (no file writes). For e2e tests,
+# use ~/.config/cloudify/pkgs/hermes-openwebui.yaml instead.
 
 TEST_HOST="cloudify"
 TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+
+# Fake credentials so init.sh takes the remote branch instead of
+# falling through to the local (full Hermes install) path.
+export CLOUDIFY_HERMES_API_URL=https://hermes.komodo-everest.ts.net/v1
+export CLOUDIFY_HERMES_API_KEY=sk-test-fake
 
 # --- Install open-webui (prerequisite) ---
 

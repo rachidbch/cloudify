@@ -1,5 +1,20 @@
 # Cloudify — Session History
 
+## 2026-06-12 — Tailscale Services experiment (programmatic service creation)
+
+- Goal: use Tailscale Services (`<service>.<tailnet>.ts.net`) to serve multiple
+  services on a single container, replacing separate containers + SSH tunnels.
+- Created service `svc:test` via Tailscale API from cloudify container:
+  `PUT /api/v2/tailnet/{tailnet}/vip-services/svc:test`
+- **Critical discovery**: API calls to api.tailscale.com must come from inside
+  the tailnet — local machine can't reach it. Future ivps service management
+  must route API calls through a tailnet node.
+- Configured host with `tailscale serve --service=svc:test --https=443 localhost:8080`
+- Service awaits admin approval at https://login.tailscale.com/admin/services
+- Stored `TS_API_KEY` in `~/.config/ivps/config.env` alongside `TS_AUTH_KEY`
+- Long-term: this pathway (service create → configure host → approve) should be
+  an ivps feature, not cloudify. ivps owns Tailscale integration.
+
 ## 2026-06-12 — hermes-dashboard verified + yazi/ivps investigation
 
 - Yazi integration test: written 2026-06-05 but never run (incus unreachable). Now passes 3/3.

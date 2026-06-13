@@ -143,7 +143,7 @@ fi
 # --- Install and start Hermes gateway systemd service ---
 if ! systemctl --user list-unit-files 2>/dev/null | grep -q "hermes-gateway"; then
     log_info "Installing Hermes gateway as systemd user service..."
-    echo | hermes gateway install 2>/dev/null
+    yes | hermes gateway install 2>/dev/null
     loginctl enable-linger "$USER" 2>/dev/null || true
 fi
 

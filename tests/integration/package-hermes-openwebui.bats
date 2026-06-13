@@ -19,14 +19,7 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 export CLOUDIFY_HERMES_API_URL=https://hermes.komodo-everest.ts.net/v1
 export CLOUDIFY_HERMES_API_KEY=sk-test-fake
 
-# --- Install open-webui (prerequisite) ---
-
-@test "open-webui installed on $TEST_HOST" {
-    run cloudify --on "$TEST_HOST" install open-webui
-    [ "$status" -eq 0 ]
-}
-
-# --- Install hermes-openwebui (remote mode) and verify wiring ---
+# --- Install hermes-openwebui (pulls open-webui as dependency) ---
 
 @test "cloudify --on $TEST_HOST install hermes-openwebui succeeds" {
     run cloudify --on "$TEST_HOST" install hermes-openwebui

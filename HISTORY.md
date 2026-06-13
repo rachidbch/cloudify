@@ -1,6 +1,11 @@
 # Cloudify — Session History
 
-## 2026-06-13 — Hermes Unified Services: recreation + hermes-openwebui fix
+## 2026-06-13 — Recursive dependency var forwarding + guards + hermes-model
+
+- **Fix A**: Rewrote `_cloudify_pkg_remote_vars()` in `lib/remote.sh` with recursive dependency walk, first-write-wins priority, and cycle guard. Now correctly forwards vars from transitive dependencies (e.g. `hermes-openwebui` → `open-webui` → `WEBUI_ADMIN_EMAIL`). Priority: `remote-vars.yaml` > rightmost-pkg > ... > leftmost-pkg > deps > deps-of-deps.
+- **Fix B**: Restored install guards in `pkg/open-webui/init.sh` and `pkg/hermes-openwebui/init.sh`. Skips regeneration when compose file exists and FORCE/CLEAR_DATA are unset.
+- **Fix C**: Created `pkg/hermes-model/init.sh` — configures LLM provider/model for Hermes via `~/.config/cloudify/pkgs/hermes-model.yaml`. Smart guard skips if provider+model already match. Supports deepseek, openrouter, novita, google, custom providers.
+- Fixed pre-existing lint: removed `local` from top-level `env_block` in `open-webui/init.sh`.
 
 - Previous `hermes-svc` container was gone. Recreated from handoff recipe.
 - Discovered `hermes gateway install` has **two** interactive prompts (start now? + auto-start on boot?), no `--yes` flag.

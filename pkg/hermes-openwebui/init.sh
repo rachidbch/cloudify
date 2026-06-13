@@ -16,6 +16,13 @@
 # Idempotent: re-running always regenerates docker-compose.yml from
 # current env vars and restarts open-webui.
 
+# --- Install guard ---
+if [[ -f /opt/open-webui/docker-compose.yml ]] && \
+   [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "Hermes-Open WebUI already wired. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
 # --- Remote case: CLOUDIFY_HERMES_API_URL from credentials ---
 if [[ -n "${CLOUDIFY_HERMES_API_URL:-}" ]]; then
     # --- Validate credentials ---

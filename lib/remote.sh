@@ -78,49 +78,97 @@ function cloudify_remote_payload_template() {
     :
 }
 
-# Load package-specific config and collect remote var names for the given command args.
+# Collect remote var names for the given command args with recursive dependency walk.
 # Usage: _cloudify_pkg_remote_vars install pkg1 pkg2  (or --install pkg1 pkg2)
-# Side effect: loads values from ~/.config/cloudify/pkgs/<pkg>.yaml into environment.
-# Outputs: var names, one per line (deduplicated)
 #
-# Note: uses unquoted $@ to handle the case where the main parser passes
-# "--install pkg1 pkg2" as a single string (word-splitting separates them).
+# Algorithm:
+#   1. Always-forward vars (remote-vars.yaml) loaded first — highest priority
+#   2. Named packages processed right-to-left (last CLI arg wins)
+#   3. For each package, recursive walk of pkg_depends lines; parent before deps
+#   4. First-write-wins via temp file: once a var is claimed, descendants can't override
+#   5. Cycle guard via local associative array
+#
+# Priority: remote-vars.yaml > rightmost-pkg > ... > leftmost-pkg > deps > deps-of-deps
+#
+# Side effect: exports config values into environment (first-write-wins).
+# Outputs: var names, one per line (deduplicated)
 function _cloudify_pkg_remote_vars() {
+    # shellcheck disable=SC2206  # intentional word-splitting of $@ for "--install pkg1 pkg2"
     local args=($@)
     local config_dir="${CLOUDIFY_CREDENTIALS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/cloudify}"
-    local -a var_names=()
     local in_install=false
 
-    # Always-forward vars (loaded + collected from ~/.config/cloudify/remote-vars.yaml)
+    TMPFILE=$(mktemp /tmp/cloudify-pkg-vars-XXXXXX)
+    trap 'rm -f "$TMPFILE"' RETURN
+
+    # -- Helper: export vars from a yaml file, first-write-wins via temp file --
+    _try_claim() {
+        local yaml="$1"
+        [[ -f "$yaml" ]] || return 0
+        while IFS= read -r line; do
+            [[ "$line" =~ ^[A-Z_][A-Z0-9_]*: ]] || continue
+            local key="${line%%:*}"
+            grep -qx "$key" "$TMPFILE" 2>/dev/null && continue  # already claimed
+            echo "$key" >> "$TMPFILE"
+            local value="${line#*:}"
+            value="${value## }"; value="${value%% }"
+            value="${value#\"}"; value="${value%\"}"
+            value="${value#\'}"; value="${value%\'}"
+            export "$key"="$value"
+        done < "$yaml"
+    }
+
+    # -- Always-forward vars (highest priority) --
     local always_file="$config_dir/remote-vars.yaml"
     _cloudify_load_yaml_vars "$always_file"
     if [[ -f "$always_file" ]]; then
-        while IFS= read -r v; do
-            [[ -n "$v" ]] && var_names+=("$v")
-        done < <(grep -E '^[A-Z_][A-Z0-9_]*:' "$always_file" | sed 's/:.*//')
+        while IFS= read -r line; do
+            [[ "$line" =~ ^[A-Z_][A-Z0-9_]*: ]] || continue
+            echo "${line%%:*}" >> "$TMPFILE"
+        done < "$always_file"
     fi
 
+    # -- Detect install command --
     for arg in "${args[@]}"; do
-        if [[ "$arg" == "install" || "$arg" == "--install" ]]; then
-            in_install=true
-            continue
-        fi
-        if $in_install && [[ "$arg" != -* ]]; then
-            # Load user config for this package (~/.config/cloudify/pkgs/<pkg>.yaml)
-            _cloudify_load_yaml_vars "$config_dir/pkgs/${arg}.yaml"
-
-            # Collect var names from user config for envsubst allow-list
-            local pkg_config="$config_dir/pkgs/${arg}.yaml"
-            if [[ -f "$pkg_config" ]]; then
-                while IFS= read -r v; do
-                    [[ -n "$v" ]] && var_names+=("$v")
-                done < <(grep -E '^[A-Z_][A-Z0-9_]*:' "$pkg_config" | sed 's/:.*//')
-            fi
-        fi
+        [[ "$arg" == "install" || "$arg" == "--install" ]] && { in_install=true; break; }
     done
 
-    # Deduplicate and output
-    printf '%s\n' "${var_names[@]}" | sort -u | sed '/^$/d'
+    if $in_install; then
+        # Collect named packages (args after "install" that aren't flags)
+        local -a pkgs=()
+        local saw_install=false
+        for arg in "${args[@]}"; do
+            if [[ "$arg" == "install" || "$arg" == "--install" ]]; then
+                saw_install=true; continue
+            fi
+            $saw_install && [[ "$arg" != -* ]] && pkgs+=("$arg")
+        done
+
+        # -- Recursive walk with cycle guard --
+        declare -A _visited_pkgs
+        _recurse_pkg_vars() {
+            local pkg="$1"
+            [[ -n "${_visited_pkgs[$pkg]:-}" ]] && return 0
+            _visited_pkgs[$pkg]=1
+
+            _try_claim "$config_dir/pkgs/${pkg}.yaml"    # parent first
+
+            local recipe deps
+            recipe=$(cloudify_package_recipe_path "$pkg" 2>/dev/null) || return 0
+            deps=$(grep '^[[:space:]]*pkg_depends ' "$recipe" 2>/dev/null \
+                | sed 's/.*pkg_depends //' | tr ' ' '\n')
+            for dep in $deps; do
+                [[ -n "$dep" ]] && _recurse_pkg_vars "$dep"
+            done
+        }
+
+        # Right-to-left: last CLI arg = highest priority
+        for ((i = ${#pkgs[@]} - 1; i >= 0; i--)); do
+            _recurse_pkg_vars "${pkgs[i]}"
+        done
+    fi
+
+    sort -u "$TMPFILE" 2>/dev/null
 }
 
 # By default cloudify_remote executes remotely

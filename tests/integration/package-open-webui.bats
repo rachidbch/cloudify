@@ -29,7 +29,7 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 }
 
 @test "docker container is running on $TEST_HOST" {
-    run $TEST_SSH "root@$TEST_HOST" 'docker ps --filter name=open-webui --format {{.Status}}'
+    run $TEST_SSH "root@$TEST_HOST" 'docker ps --filter name=open-webui --format {{.Status}}' 2>/dev/null
     [ "$status" -eq 0 ]
     [[ "$output" == *"Up"* ]]
 }

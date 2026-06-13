@@ -21,21 +21,19 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
     # Dashboard may take a moment to start (first launch builds web UI ~27s)
     local attempt=0
     while (( attempt < 45 )); do
-        if $TEST_SSH "root@$TEST_HOST" 'curl -sf http://127.0.0.1:9119/' >/dev/null 2>&1; then
+        if $TEST_SSH "root@$TEST_HOST" 'curl -sf http://127.0.0.1:9119/' 2>/dev/null >/dev/null; then
             break
         fi
         sleep 2
         attempt=$((attempt + 1))
     done
-    run $TEST_SSH "root@$TEST_HOST" 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9119/'
-    echo "# DEBUG status=[$status] output=[$output]" >&3
+    run $TEST_SSH "root@$TEST_HOST" 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9119/' 2>/dev/null
     [ "$status" -eq 0 ]
     [ "$output" = "200" ]
 }
 
 @test "hermes-dashboard no relay.py left on $TEST_HOST" {
-    run $TEST_SSH "root@$TEST_HOST" 'test -f /usr/local/lib/hermes-agent/relay.py && echo "EXISTS" || echo "ABSENT"'
-    echo "# DEBUG relay: status=[$status] output=[$output]" >&3
+    run $TEST_SSH "root@$TEST_HOST" 'test -f /usr/local/lib/hermes-agent/relay.py && echo "EXISTS" || echo "ABSENT"' 2>/dev/null
     [ "$status" -eq 0 ]
     [ "$output" = "ABSENT" ]
 }

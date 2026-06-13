@@ -53,6 +53,7 @@ task lint              # Push + shellcheck
 
 - When I encounter a bug in a tool I use, I can use manual/hacky means to diagnose the problem but NEVER to silently workaround the problem: I alert my human and we devise cooperatively a mitigation
 - I Don't waste time by setting timeouts mechanically, I try to make reasonable estimation of the time a task will take and assign 3 times as timeout. I don't want repeatedly and artificially make a command fail because I was too conservative when setting timeouts
+- Usage priority: cloudify > ivps > incus. I only reach out to incus with the explicit consent of my human
 
 ## Working Plan
 

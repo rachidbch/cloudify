@@ -1,5 +1,16 @@
 # Cloudify — Session History
 
+## 2026-06-13 — Hermes Unified Services: recreation + hermes-openwebui fix
+
+- Previous `hermes-svc` container was gone. Recreated from handoff recipe.
+- Discovered `hermes gateway install` has **two** interactive prompts (start now? + auto-start on boot?), no `--yes` flag.
+- `pkg/hermes-openwebui/init.sh` local case fixed: `echo |` → `yes |` to answer both prompts.
+- Install re-ran successfully: hermes-gateway (8642), hermes-dashboard (9119, `--host 0.0.0.0 --insecure`), open-webui (3000) all as systemd services.
+- 3 Tailscale Services re-exposed: `svc:hermes-api`, `svc:hermes-dash`, `svc:hermes-owui`.
+- ACL grants: `tag:incus → svc:hermes-api`, `autogroup:member → svc:hermes-dash,svc:hermes-owui`. Pushed via API with ETag.
+- Services await admin approval at https://login.tailscale.com/admin/services.
+- CLAUDE.md: added usage priority rule (cloudify > ivps > incus).
+
 ## 2026-06-13 — Remove repo-side remote-vars.yaml (single source of truth)
 
 - `_cloudify_pkg_remote_vars()` now reads var names from `~/.config/cloudify/pkgs/<pkg>.yaml` instead of `pkg/<name>/remote-vars.yaml`.

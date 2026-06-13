@@ -6,6 +6,10 @@
 - **Fix B**: Restored install guards in `pkg/open-webui/init.sh` and `pkg/hermes-openwebui/init.sh`. Skips regeneration when compose file exists and FORCE/CLEAR_DATA are unset.
 - **Fix C**: Created `pkg/hermes-model/init.sh` — configures LLM provider/model for Hermes via `~/.config/cloudify/pkgs/hermes-model.yaml`. Smart guard skips if provider+model already match. Supports deepseek, openrouter, novita, google, custom providers.
 - Fixed pre-existing lint: removed `local` from top-level `env_block` in `open-webui/init.sh`.
+- Fixed hermes-openwebui integration test: combined install into one command (guard was skipping the wire-up when open-webui was pre-installed).
+- Fixed hermes-dashboard integration test: increased HTTP wait timeout (27s web UI build), added `-q` to all TEST_SSH definitions to suppress "Permanently added" stderr pollution in bats `run` output.
+- Added constitution rule: never skip a test failure by dismissing it as pre-existing.
+- All 237 unit + 29 integration tests passing.
 
 - Previous `hermes-svc` container was gone. Recreated from handoff recipe.
 - Discovered `hermes gateway install` has **two** interactive prompts (start now? + auto-start on boot?), no `--yes` flag.

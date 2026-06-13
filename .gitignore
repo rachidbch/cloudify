@@ -3,7 +3,10 @@
 *.swo
 *~
 
-# Scratchapd
+# Temp / working files
+tmp/
+
+# Scratchpad
 scratchpad/
 
 # Logs

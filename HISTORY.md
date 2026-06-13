@@ -1,5 +1,23 @@
 # Cloudify — Session History
 
+## 2026-06-13 — Remove repo-side remote-vars.yaml (single source of truth)
+
+- `_cloudify_pkg_remote_vars()` now reads var names from `~/.config/cloudify/pkgs/<pkg>.yaml` instead of `pkg/<name>/remote-vars.yaml`.
+- Deleted `pkg/open-webui/remote-vars.yaml`, `pkg/hermes-openwebui/remote-vars.yaml`, `pkg/hermes-signal/remote-vars.yaml`.
+- `hermes-openwebui/init.sh`: local case restructured — `export OPENAI_*` before `pkg_depends open-webui`, eliminated `connect.sh`.
+- READMEs updated: Configuration tables reference `~/.config/cloudify/pkgs/<pkg>.yaml`.
+- AGENTS.md: added turn closure rule (docs updated + git clean).
+- Unit tests: 231/231 passing.
+
+## 2026-06-13 — Hermes Unified Services: 3 services, 1 container, svc: grants
+
+- Container `cloudai:hermes-svc` created via ivps. Hermes + dashboard + openwebui installed via cloudify.
+- 3 Tailscale Services exposed: `svc:hermes-api` (8642), `svc:hermes-dash` (9119), `svc:hermes-owui` (3000).
+- ACL grants use `svc:<name>` destinations: `tag:incus → svc:hermes-api`, `autogroup:member → svc:hermes-dash,svc:hermes-owui`.
+- Dashboard requires `--host 0.0.0.0 --insecure` to accept proxy Host header from Tailscale Service.
+- 5 ivps bugs found + fixed (ordering, URL, addrs, curl body drop, serve reset nuke).
+- Pattern proven: `ivps expose-service` + precise `svc:` grants for per-service access control.
+
 ## 2026-06-12 — Tailscale Services experiment (programmatic service creation)
 
 - Goal: use Tailscale Services (`<service>.<tailnet>.ts.net`) to serve multiple

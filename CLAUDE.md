@@ -45,6 +45,8 @@ task lint              # Push + shellcheck
 
 **PRs:** `git push -u origin <branch>` then `gh pr create`.
 
+**Turn closure:** each turn ends with docs updated + `git status --short` clean (no unstaged changes from the task).
+
 **Recipe conventions:** see "Writing a Package Recipe" in README.md.
 
 ## CONSTITUTION

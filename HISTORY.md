@@ -9,6 +9,7 @@
 - 3 Tailscale Services re-exposed: `svc:hermes-api`, `svc:hermes-dash`, `svc:hermes-owui`.
 - ACL grants: `tag:incus → svc:hermes-api`, `autogroup:member → svc:hermes-dash,svc:hermes-owui`. Pushed via API with ETag.
 - Services await admin approval at https://login.tailscale.com/admin/services.
+- Created `~/.agents/skills/cloudify-hermes/SKILL.md` — reusable deployment skill covering all steps, edge cases (gateway foreground process, two-prompt install, ETag conflicts, dashboard Host header), idempotency, and troubleshooting.
 - CLAUDE.md: added usage priority rule (cloudify > ivps > incus).
 
 ## 2026-06-13 — Remove repo-side remote-vars.yaml (single source of truth)

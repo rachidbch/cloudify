@@ -18,9 +18,9 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 }
 
 @test "hermes-dashboard serves HTTP 200 on loopback :9119 on $TEST_HOST" {
-    # Dashboard may take a moment to start (first launch builds web UI)
+    # Dashboard may take a moment to start (first launch builds web UI ~27s)
     local attempt=0
-    while (( attempt < 30 )); do
+    while (( attempt < 45 )); do
         if $TEST_SSH "root@$TEST_HOST" 'curl -sf http://127.0.0.1:9119/' >/dev/null 2>&1; then
             break
         fi

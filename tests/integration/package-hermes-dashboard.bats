@@ -28,12 +28,14 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
         attempt=$((attempt + 1))
     done
     run $TEST_SSH "root@$TEST_HOST" 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9119/'
+    echo "# DEBUG status=[$status] output=[$output]" >&3
     [ "$status" -eq 0 ]
     [ "$output" = "200" ]
 }
 
 @test "hermes-dashboard no relay.py left on $TEST_HOST" {
     run $TEST_SSH "root@$TEST_HOST" 'test -f /usr/local/lib/hermes-agent/relay.py && echo "EXISTS" || echo "ABSENT"'
+    echo "# DEBUG relay: status=[$status] output=[$output]" >&3
     [ "$status" -eq 0 ]
     [ "$output" = "ABSENT" ]
 }

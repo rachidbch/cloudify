@@ -20,7 +20,7 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 - **Module pattern**: each `lib/*.sh` has a guard `_CLOUDIFY_X_LOADED`. Sourced by the router, not by each other.
 - **Plugin API**: `pkg_*` functions in `lib/package-api.sh`. Signatures are stable — used by 75+ packages.
 - **Shadow commands**: `lib/shadows/*.sh` override `sudo`, `apt-get`, `add-apt-repository`, `git` with wrappers for password injection, idempotency, auth. Recipes call bare commands — shadows handle the rest.
-- **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Per-package vars: repo `pkg/<name>/remote-vars.yaml` declares the interface (which vars needed), user `pkgs/<pkg>.yaml` provides values. Always-forward vars in `remote-vars.yaml`. Loaded by `lib/credentials.sh` + `lib/pkg-config.sh`.
+- **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Per-package vars: user `pkgs/<pkg>.yaml` provides both names and values (single source of truth). Always-forward vars in `~/.config/cloudify/remote-vars.yaml`. Loaded by `lib/credentials.sh` + `lib/pkg-config.sh`.
 - **Remote payload**: `declare -f` extracts template body as literal text, `envsubst` with explicit allow-list substitutes only listed vars. Single-quoted `$VAR` references resolve on the remote side.
 - **Install guards**: stateful packages use `CLOUDIFY_FORCE`/`CLOUDIFY_CLEAR_DATA` convention. See "Install Guards" in README.md.
 - **Runtime manager**: mise (preferred). Legacy gvm/nvm/pyenv replaced.
@@ -46,6 +46,11 @@ task lint              # Push + shellcheck
 **PRs:** `git push -u origin <branch>` then `gh pr create`.
 
 **Recipe conventions:** see "Writing a Package Recipe" in README.md.
+
+## CONSTITUTION
+
+- When I encounter a bug in a tool I use, I can use manual/hacky means to diagnose the problem but NEVER to silently workaround the problem: I alert my human and we devise cooperatively a mitigation
+- I Don't waste time by setting timeouts mechanically, I try to make reasonable estimation of the time a task will take and assign 3 times as timeout. I don't want repeatedly and artificially make a command fail because I was too conservative when setting timeouts
 
 ## Working Plan
 

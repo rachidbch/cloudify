@@ -86,9 +86,11 @@ Select **Signal** from the platform menu. See the [Hermes Signal docs](https://h
 
 ## Configuration
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `CLOUDIFY_SIGNAL_PORT` | `8080` | Port for the signal-cli REST API (both Docker mapping and systemd service) |
+Put these in `~/.config/cloudify/pkgs/hermes-signal.yaml` to override defaults:
+
+| Var | Default | Description |
+|-----|---------|-------------|
+| `CLOUDIFY_SIGNAL_PORT` | `8080` | Port for the signal-cli REST API |
 
 To use a custom port, set it before installing. The variable is forwarded to remote hosts automatically:
 

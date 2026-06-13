@@ -60,7 +60,7 @@ fi
 # architecture, but still supported for backward compatibility.
 HERMES_ENV="$HOME/.hermes/.env"
 
-pkg_depends hermes open-webui
+pkg_depends hermes
 pkg_apt_install curl
 
 # --- Validate Hermes setup ---
@@ -159,13 +159,16 @@ if [[ "$needs_restart" == "true" ]]; then
     sleep 3
 fi
 
-# --- Copy and run connect.sh (local) ---
-CONNECT_SRC="$(dirname "$(cloudify_package_recipe_path hermes-openwebui)")/connect.sh"
-cp "$CONNECT_SRC" "/opt/open-webui/connect.sh"
-chmod +x "/opt/open-webui/connect.sh"
+# --- Export OPENAI_* so open-webui gets correct values first time ---
+export OPENAI_API_BASE_URL="http://host.docker.internal:${API_SERVER_PORT}/v1"
+export OPENAI_API_KEY="$API_SERVER_KEY"
+pkg_depends open-webui
 
-log_info "Running connect.sh to wire Open WebUI to local Hermes..."
-bash "/opt/open-webui/connect.sh"
+# --- Health check API server (non-fatal warning) ---
+log_info "Checking Hermes API at http://127.0.0.1:${API_SERVER_PORT}/health..."
+if ! curl -sf --max-time 10 "http://127.0.0.1:${API_SERVER_PORT}/health" >/dev/null 2>&1; then
+    log_warn "Hermes API not reachable at http://127.0.0.1:${API_SERVER_PORT}/health"
+fi
 
 # --- Post-install ---
 msg ""
@@ -173,9 +176,6 @@ msg "${GREEN}Hermes-Open WebUI connection established (local).${RESET}"
 msg ""
 msg "Access:  http://127.0.0.1:\$PORT (check your CLOUDIFY_OPENWEBUI_PORT setting)"
 msg "Backend: Hermes API server on port ${API_SERVER_PORT}"
-msg ""
-msg "Reconnect after config changes:"
-msg "  /opt/open-webui/connect.sh"
 msg ""
 msg "Service management:"
 msg "  systemctl --user status hermes-gateway"

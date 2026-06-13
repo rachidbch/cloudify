@@ -147,8 +147,8 @@ CLOUDIFY_HERMES_API_URL: "https://hermes.example.ts.net/v1"
 CLOUDIFY_HERMES_API_KEY: "sk-..."
 ```
 
-Which vars each package needs is declared in the repo's `pkg/<name>/remote-vars.yaml`.
-The user yaml provides values — missing files are silently ignored (vars stay empty).
+The user yaml is the single source of truth — both var names and values.
+Missing files are silently ignored (vars stay empty).
 
 **Always-forward vars:** `~/.config/cloudify/remote-vars.yaml`
 Vars listed here are forwarded on every `--on` call regardless of which packages are installed.
@@ -241,7 +241,6 @@ lib/
   utils.sh            Utilities: msg, die, backup/restore, git URL parsing
 pkg/
   <pkg>/init.sh       Package recipe (install script)
-  <pkg>/remote-vars.yaml  Remote var declarations (forwarded via --on)
   <pkg>/@<tag>        Tag files for filtering
 inventory/
   <host>/@<tag>       Host tag files for grouping
@@ -283,7 +282,6 @@ Each package lives in `pkg/<name>/`. The only required file is `init.sh`.
 ```
 pkg/hermes/
 ├── init.sh           # Required — the install recipe
-├── remote-vars.yaml  # Optional — vars forwarded to remote on --on install
 └── @default          # Optional — tag file (empty file)
 ```
 

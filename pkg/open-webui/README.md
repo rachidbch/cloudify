@@ -16,10 +16,11 @@ cloudify install open-webui
 
 ## Configuration
 
-All configuration is via environment variables set before install. They are written into `/opt/open-webui/docker-compose.yml`.
+Put these in `~/.config/cloudify/pkgs/open-webui.yaml` to override defaults.
+They are written into `/opt/open-webui/docker-compose.yml`.
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
+| Var | Default | Description |
+|-----|---------|-------------|
 | `CLOUDIFY_OPENWEBUI_PORT` | `3000` | Host port to bind |
 | `CLOUDIFY_OPENWEBUI_BIND` | `127.0.0.1` | Bind address (`0.0.0.0` for remote/container access) |
 | `WEBUI_ADMIN_EMAIL` | `changeme@example.com` | Admin email for headless setup |

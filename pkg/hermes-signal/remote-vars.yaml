@@ -1,3 +1,0 @@
-# Remote vars forwarded to target host when installing hermes-signal.
-# Values are loaded from ~/.config/cloudify/pkgs/hermes-signal.yaml
-CLOUDIFY_SIGNAL_PORT: ""

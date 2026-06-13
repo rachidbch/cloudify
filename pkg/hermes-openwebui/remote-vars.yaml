@@ -1,4 +1,0 @@
-# Remote vars forwarded to target host when installing hermes-openwebui.
-# Values are loaded from ~/.config/cloudify/pkgs/hermes-openwebui.yaml
-CLOUDIFY_HERMES_API_URL: ""
-CLOUDIFY_HERMES_API_KEY: ""

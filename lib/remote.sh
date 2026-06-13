@@ -45,7 +45,7 @@ function cloudify_remote_payload_template() {
     export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY'
     export RESTIC_PASSWORD='$RESTIC_PASSWORD'
 
-    # Package-specific vars are injected dynamically from pkg/<name>/remote-vars.yaml
+    # Package-specific vars are injected dynamically from ~/.config/cloudify/pkgs/<pkg>.yaml
     : _CLOUDIFY_PKG_EXPORTS_
 
     export CLOUDIFY_CLEAR_DATA='$CLOUDIFY_CLEAR_DATA'
@@ -109,12 +109,12 @@ function _cloudify_pkg_remote_vars() {
             # Load user config for this package (~/.config/cloudify/pkgs/<pkg>.yaml)
             _cloudify_load_yaml_vars "$config_dir/pkgs/${arg}.yaml"
 
-            # Collect required var names from repo yaml (pkg/<name>/remote-vars.yaml)
-            local repo_yaml="$CLOUDIFY_DIR/pkg/$arg/remote-vars.yaml"
-            if [[ -f "$repo_yaml" ]]; then
+            # Collect var names from user config for envsubst allow-list
+            local pkg_config="$config_dir/pkgs/${arg}.yaml"
+            if [[ -f "$pkg_config" ]]; then
                 while IFS= read -r v; do
                     [[ -n "$v" ]] && var_names+=("$v")
-                done < <(grep -E '^[A-Z_][A-Z0-9_]*:' "$repo_yaml" | sed 's/:.*//')
+                done < <(grep -E '^[A-Z_][A-Z0-9_]*:' "$pkg_config" | sed 's/:.*//')
             fi
         fi
     done

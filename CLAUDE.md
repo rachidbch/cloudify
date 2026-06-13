@@ -45,7 +45,7 @@ task lint              # Push + shellcheck
 
 **PRs:** `git push -u origin <branch>` then `gh pr create`.
 
-**Turn closure:** each turn ends with docs updated + `git status --short` clean (no unstaged changes from the task).
+**Turn closure:** each turn ends with ALL docs updated (README.md, HISTORY.md, pkg READMEs, AGENTS.md) + `git status --short` clean. Missing a HISTORY entry is a bug.
 
 **Recipe conventions:** see "Writing a Package Recipe" in README.md.
 

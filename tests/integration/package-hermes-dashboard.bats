@@ -5,7 +5,7 @@
 # Access via SSH tunnel: ssh -L 9119:127.0.0.1:9119 <host>
 
 TEST_HOST="cloudify"
-TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+TEST_SSH="ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
 @test "cloudify --on $TEST_HOST install hermes-dashboard succeeds" {
     run cloudify --on "$TEST_HOST" install hermes-dashboard
@@ -27,13 +27,13 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
         sleep 2
         attempt=$((attempt + 1))
     done
-    run $TEST_SSH "root@$TEST_HOST" 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9119/' 2>/dev/null
+    run $TEST_SSH "root@$TEST_HOST" 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9119/'
     [ "$status" -eq 0 ]
     [ "$output" = "200" ]
 }
 
 @test "hermes-dashboard no relay.py left on $TEST_HOST" {
-    run $TEST_SSH "root@$TEST_HOST" 'test -f /usr/local/lib/hermes-agent/relay.py && echo "EXISTS" || echo "ABSENT"' 2>/dev/null
+    run $TEST_SSH "root@$TEST_HOST" 'test -f /usr/local/lib/hermes-agent/relay.py && echo "EXISTS" || echo "ABSENT"'
     [ "$status" -eq 0 ]
     [ "$output" = "ABSENT" ]
 }

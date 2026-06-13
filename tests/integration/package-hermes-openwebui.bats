@@ -12,7 +12,7 @@
 # use ~/.config/cloudify/pkgs/hermes-openwebui.yaml instead.
 
 TEST_HOST="cloudify"
-TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+TEST_SSH="ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
 # Fake credentials so init.sh takes the remote branch instead of
 # falling through to the local (full Hermes install) path.

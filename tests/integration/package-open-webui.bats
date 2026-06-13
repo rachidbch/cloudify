@@ -2,7 +2,7 @@
 # Integration test: install open-webui package via SSH
 
 TEST_HOST="cloudify"
-TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+TEST_SSH="ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
 @test "cloudify --on $TEST_HOST install open-webui succeeds" {
     run cloudify --on "$TEST_HOST" install open-webui
@@ -29,7 +29,7 @@ TEST_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 }
 
 @test "docker container is running on $TEST_HOST" {
-    run $TEST_SSH "root@$TEST_HOST" 'docker ps --filter name=open-webui --format {{.Status}}' 2>/dev/null
+    run $TEST_SSH "root@$TEST_HOST" 'docker ps --filter name=open-webui --format {{.Status}}'
     [ "$status" -eq 0 ]
     [[ "$output" == *"Up"* ]]
 }

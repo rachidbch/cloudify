@@ -76,6 +76,18 @@ The core vars (`CLOUDIFY_REMOTE_USER`, `CLOUDIFY_REMOTE_PWD`, `DEBUG`, etc.) wou
 - The allow-list security boundary is preserved
 - Package authors can work independently without touching cloudify core
 
+## Streamline hermes package: own its gateway setup + verification
+
+Currently `hermes` installs CLI + `hermes-gateway` daemon, but the API server
+(port 8642, `/health`) is configured by `hermes-openwebui`. This splits
+responsibility: `hermes` can't verify its own work, and `hermes-openwebui` does
+setup that belongs to `hermes`.
+
+**Proposed fix:** Move API server configuration into `hermes` recipe.
+`hermes-openwebui` only wires the Open WebUI connection (OPENAI_API_BASE_URL,
+OPENAI_API_KEY) — it doesn't touch hermes internals. Then `hermes` gets a
+`pkg_verify` that checks `http://127.0.0.1:8642/health`.
+
 ## Docker compose `--detach` for open-webui systemd service
 
 ### Problem

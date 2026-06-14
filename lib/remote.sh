@@ -198,8 +198,12 @@ function cloudify_remote_sync() {
         CLOUDIFY_LOG_BASENAME="$(basename "${CLOUDIFY_LOG_FILE:-}")"
 
         # --- Collect package remote vars from yaml files ---
+        # Run in parent shell (not $()) so export calls survive for envsubst below.
         local pkg_var_names
-        pkg_var_names=$(_cloudify_pkg_remote_vars "$@")
+        local _pkg_vars_list="${CLOUDIFY_TMP}/pkg-vars-list-$$"
+        _cloudify_pkg_remote_vars "$@" > "$_pkg_vars_list"
+        pkg_var_names=$(cat "$_pkg_vars_list")
+        rm -f "$_pkg_vars_list"
         local pkg_envsubst=""
         local pkg_exports=""
         if [[ -n "$pkg_var_names" ]]; then

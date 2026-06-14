@@ -1,5 +1,28 @@
 # Cloudify — Session History
 
+## 2026-06-14 — Fix subshell var forwarding + Hermes rebuild
+
+- **Bug**: `_cloudify_pkg_remote_vars()` runs in command substitution `$()`, so its `export` side effects are lost. `envsubst` then substitutes empty strings for all pkg yaml vars. Symptoms: `WEBUI_ADMIN_*` defaults used instead of configured values, `CLOUDIFY_HERMES_API_URL` empty causing hermes-openwebui local-case fallback.
+- **Fix**: Call `_cloudify_pkg_remote_vars` directly in parent shell, redirect stdout to temp file for name capture (identical API). Exports now survive for `envsubst`.
+- Lint clean. All 237 unit tests pass. 9/29 integration pass (remainder time out — hermes install inherent slowness).
+
+## 2026-06-14 — Hermes Unified Services Rebuild
+
+Recreated `cloudai:hermes-svc` from scratch following the unified-services handoff recipe:
+- Nuked `cloudai:hermes-svc` + cleaned up stale Tailscale device (caused hostname collision on relaunch)
+- Launched fresh container, installed hermes + hermes-dashboard + hermes-openwebui
+- Applied dashboard bind fix: `--host 0.0.0.0 --insecure --port 9119` (Host header rejection)
+- Exposed 3 Tailscale Services: `svc:hermes-api` (:8642), `svc:hermes-dash` (:9119), `svc:hermes-owui` (:3000)
+- ACL grants already correct from prior session (no changes needed)
+- All services approved and verified: API 200, Dashboard 200, OpenWebUI 200
+
+Final state:
+| Service | URL | Port | Grant |
+|---------|-----|------|-------|
+| hermes-api | https://hermes-api.komodo-everest.ts.net/ | 8642 | tag:incus |
+| hermes-dash | https://hermes-dash.komodo-everest.ts.net/ | 9119 | autogroup:member |
+| hermes-owui | https://hermes-owui.komodo-everest.ts.net/ | 3000 | autogroup:member |
+
 ## 2026-06-13 — Recursive dependency var forwarding + guards + hermes-model
 
 - **Fix A**: Rewrote `_cloudify_pkg_remote_vars()` in `lib/remote.sh` with recursive dependency walk, first-write-wins priority, and cycle guard. Now correctly forwards vars from transitive dependencies (e.g. `hermes-openwebui` → `open-webui` → `WEBUI_ADMIN_EMAIL`). Priority: `remote-vars.yaml` > rightmost-pkg > ... > leftmost-pkg > deps > deps-of-deps.

@@ -2,13 +2,23 @@
 # hermes-dashboard — persistent web dashboard for Hermes Agent
 # doc: https://hermes-agent.nousresearch.com/docs/user-guide/features/web-dashboard
 #
-# Runs the Hermes dashboard directly on 127.0.0.1:9119 via systemd.
-# Access via SSH tunnel: ssh -L 9119:127.0.0.1:9119 <host>
-# No relay.py. No tailscale serve. No Caddy.
+# Runs the Hermes dashboard via systemd. Two modes:
+#   Private (default): 127.0.0.1 — SSH tunnel access
+#   Public:            0.0.0.0 --insecure — Tailscale Services / reverse proxy
+#
+# Config (~/.config/cloudify/pkgs/hermes-dashboard.yaml):
+#   HERMES_DASHBOARD_PUBLIC: "true"  → bind 0.0.0.0 --insecure
 #
 # Architecture:
 #   hermes dashboard --no-open --host 127.0.0.1 --port 9119
 #   User connects via SSH tunnel (port forwarding)
+
+DASHBOARD_BIND="127.0.0.1"
+DASHBOARD_EXTRA=""
+if [[ "${HERMES_DASHBOARD_PUBLIC:-}" == "true" ]]; then
+    DASHBOARD_BIND="0.0.0.0"
+    DASHBOARD_EXTRA="--insecure"
+fi
 
 HERMES_DASHBOARD_SERVICE="$HOME/.config/systemd/user/hermes-dashboard.service"
 
@@ -33,7 +43,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin"
-ExecStart=/usr/local/bin/hermes dashboard --no-open --host 127.0.0.1 --port 9119
+ExecStart=/usr/local/bin/hermes dashboard --no-open --host ${DASHBOARD_BIND} ${DASHBOARD_EXTRA} --port 9119
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

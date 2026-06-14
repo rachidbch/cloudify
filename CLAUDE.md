@@ -43,6 +43,7 @@ task lint              # Push + shellcheck
 
 **Debugging:** Read `/tmp/cloudify/logs/<timestamp>.log`. Fix one issue, push, re-test.
 
+**Issues:** filed on GitHub (`github.com/rachidbch/cloudify`), not as local markdown.
 **PRs:** `git push -u origin <branch>` then `gh pr create`.
 
 **Turn closure:** each turn ends with ALL docs updated (README.md, HISTORY.md, pkg READMEs, AGENTS.md) + `git status --short` clean. Missing a HISTORY entry is a bug.

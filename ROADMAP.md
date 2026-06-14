@@ -105,3 +105,11 @@ The systemd unit would need `Type=forking` instead of `Type=simple`, since `--de
 **Risks:** systemd must correctly track the forked child PID. If Docker's fork behavior changes, systemd might consider the service "started" prematurely. This is low risk given Docker compose's maturity.
 
 **Alternative:** Keep `--force-recreate` with `Type=simple` — simpler, works today, minor cost on restart. Switch to `--detach` only if the restart cost becomes a real problem.
+
+## Review abort-on-first-failure policy in `pkg_depends`
+
+`pkg_depends` (lib/package-api.sh) continues through package failures — it collects failed package names in `failed_packages[]` and proceeds to the next package. This matches the error-aggregation design principle but means one broken package doesn't stop the rest of an install.
+
+With verification now in the same loop, a failing `pkg_verify` appends to `failed_packages` and the loop continues to the next package. This is consistent but worth reviewing: for some workflows (tight dependency chains), aborting on first failure might give clearer feedback than collecting all failures.
+
+**Proposed action:** Evaluate whether an `--abort-on-failure` flag (or a per-invocation policy) is warranted. Default stays continue-on-failure (current behavior) unless a clear need emerges.

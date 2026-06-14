@@ -1,5 +1,16 @@
 # Cloudify — Session History
 
+## 2026-06-14 — `pkg_verify` hook: script-friendly verification (Issue #2)
+
+- **Feature**: `cloudify install` now blocks until each installed package is verified (or fails clearly). No more manual `ssh`/`curl` after install returns.
+- **Design** (see `tmp/plans/pkg-verify-hook.md`): optional `pkg/<name>/verify.sh` defining `pkg_verify()`, sourced in a clean subshell by `_cloudify_run_verify` (retry loop, `${PKG_VERIFY_TIMEOUT:-30}s`). Deep-verify runs after every package incl. deps.
+- **Why a separate `verify.sh` (not inline)**: both install+verify and verify-only paths source it in an identical clean-subshell environment (exported env + on-disk config only). Kills the sed-extraction fragility and environment-asymmetry that an inline `pkg_verify()` would have caused.
+- **CLI**: `--verify` (verify-only), `--no-verify` (skip), `cloudify verify <pkg>` subcommand. Per-host failure reporting in parallel multi-host installs. **Exit code now non-zero if any host fails** (previously always 0 — pre-existing bug fixed as the plan requires "fails clearly").
+- **Authoring contract (constraints a/b)**: parent overriding a dep via env var → declare in parent `pkgs/<pkg>.yaml`; parent hardcoding a dep rewire → parent's `verify.sh` owns that check (dep must not assert on it).
+- **Behavior change**: existing non-fatal `log_warn` health checks in `hermes-openwebui/init.sh` moved to `verify.sh` — they are now **fatal/blocking** by design.
+- **Files**: `lib/package-api.sh` (`_cloudify_run_verify`, `cloudify_package_verify_path`, deep-verify call in `pkg_depends`); `cloudify` (flags, `verify` subcommand, per-host reporting); `lib/remote.sh` (forward `CLOUDIFY_NO_VERIFY` + `PKG_VERIFY_TIMEOUT`, verify-only dispatch, host tracking); new `pkg/hermes/verify.sh`, `pkg/hermes-dashboard/verify.sh`, `pkg/hermes-openwebui/verify.sh`.
+- **Tests**: 13 new unit tests (`_cloudify_run_verify` success/timeout/no-hook/retry/yaml-load + router flag/verify-subcommand). Lint clean incl. `pkg/*/verify.sh`. hermes-dashboard integration passes 4/4 with verify-on-by-default (real `pkg_verify` on a ~27s slow-starting service, `PKG_VERIFY_TIMEOUT=90`). hermes-openwebui integration 5/5 (`--no-verify` for fake-cred test env). open-webui now healthy (2026-06-11 roadblock resolved).
+
 ## 2026-06-14 — Fix subshell var forwarding + Hermes rebuild
 
 - **Bug**: `_cloudify_pkg_remote_vars()` runs in command substitution `$()`, so its `export` side effects are lost. `envsubst` then substitutes empty strings for all pkg yaml vars. Symptoms: `WEBUI_ADMIN_*` defaults used instead of configured values, `CLOUDIFY_HERMES_API_URL` empty causing hermes-openwebui local-case fallback.

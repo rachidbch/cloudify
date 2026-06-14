@@ -312,6 +312,61 @@ function pkg_install_release() {
     fi
 }
 
+# Resolve the verify.sh path for a package (sibling of its recipe).
+# Returns 0 + echoes path if verify.sh exists, returns 1 otherwise.
+# Usage: verify_path=$(cloudify_package_verify_path "$pkg") || return 0
+function cloudify_package_verify_path() {
+    local pkg="$1"
+    local recipe_path
+    recipe_path=$(cloudify_package_recipe_path "$pkg" 2>/dev/null) || return 1
+    local verify_path
+    verify_path="$(dirname "$recipe_path")/verify.sh"
+    [[ -f "$verify_path" ]] && echo "$verify_path" && return 0
+    return 1
+}
+
+# Run a package's verification hook with a retry loop.
+# - No verify.sh → return 0 (optional hook, additive).
+# - Loads pkgs/<pkg>.yaml on localhost so verify.sh reads config vars (M3).
+# - Sources verify.sh in a clean subshell per attempt (identical env on both
+#   install+verify and verify-only paths). errexit-safe via if-check (F1).
+# - Timeout: ${PKG_VERIFY_TIMEOUT:-30} seconds. Sleeps 2s between attempts.
+# Returns 0 on success, 1 on timeout.
+function _cloudify_run_verify() {
+    local pkg="$1"
+    local verify_path
+
+    verify_path=$(cloudify_package_verify_path "$pkg") || return 0
+
+    # Load localhost pkg yaml so verify.sh reads config vars (remote already
+    # has them forwarded via _cloudify_pkg_remote_vars). First-write-wins so
+    # parent overrides (constraint a) are respected.
+    local config_dir="${CLOUDIFY_CREDENTIALS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/cloudify}"
+    _cloudify_load_yaml_vars "$config_dir/pkgs/${pkg}.yaml"
+
+    local timeout="${PKG_VERIFY_TIMEOUT:-30}"
+    local elapsed=0 attempt=0 last_err=""
+
+    log_info "Verifying ${pkg} (timeout ${timeout}s)..."
+
+    while (( elapsed < timeout )); do
+        attempt=$((attempt + 1))
+        # Source verify.sh + call pkg_verify in a subshell: clean env, no leak
+        # of recipe-local vars. The `if` suspends errexit for the tested command.
+        # shellcheck source=/dev/null
+        if last_err=$( { source "$verify_path" && pkg_verify; } 2>&1 ); then
+            log_info "Verified ${pkg} (attempt ${attempt}, ${elapsed}s elapsed)."
+            return 0
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    log_error "Verification FAILED for ${pkg} (timeout after ${timeout}s)."
+    [[ -n "$last_err" ]] && msg "${RED}  last output: ${last_err}${RESET}"
+    return 1
+}
+
 # Adds a package dependeny
 function pkg_depends() {
     local package_recipe_path
@@ -369,6 +424,14 @@ function pkg_depends() {
             if ! pkg_apt_install "${pkg}"; then
                 failed_packages+=("$pkg")
             fi
+        fi
+        # === Verification (deep verify) ===
+        # Runs after every package (recipe or native apt). _cloudify_run_verify
+        # is a no-op when no verify.sh exists. Gated by CLOUDIFY_NO_VERIFY.
+        # Continue-on-failure: a verify failure records the package and proceeds,
+        # consistent with how install failures are handled above.
+        if [[ "${CLOUDIFY_NO_VERIFY:-}" != "true" ]]; then
+            _cloudify_run_verify "$pkg" || { failed_packages+=("$pkg"); continue; }
         fi
     done
     if [[ ${#failed_packages[@]} -gt 0 ]]; then

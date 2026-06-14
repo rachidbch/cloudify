@@ -84,7 +84,7 @@ tasks:
               ;;
           esac
         fi
-      - shellcheck -x lib/*.sh lib/shadows/*.sh cloudify pkg/*/init.sh
+      - shellcheck -x lib/*.sh lib/shadows/*.sh cloudify pkg/*/init.sh pkg/*/verify.sh
 
   itest-base:
     desc: Create clean test snapshot (Ubuntu + bats + rsync, no codebase)

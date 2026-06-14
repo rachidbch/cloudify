@@ -8,7 +8,10 @@ TEST_HOST="cloudify"
 TEST_SSH="ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
 @test "cloudify --on $TEST_HOST install hermes-dashboard succeeds" {
-    run cloudify --on "$TEST_HOST" install hermes-dashboard
+    # Dashboard first-launch builds the web UI (~27s). Verify-on-by-default
+    # blocks until :9119 serves, so allow ample time (PKG_VERIFY_TIMEOUT is
+    # forwarded to the remote via the global payload).
+    PKG_VERIFY_TIMEOUT=90 run cloudify --on "$TEST_HOST" install hermes-dashboard
     [ "$status" -eq 0 ]
 }
 

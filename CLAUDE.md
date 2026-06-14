@@ -23,6 +23,7 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 - **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Per-package vars: user `pkgs/<pkg>.yaml` provides both names and values (single source of truth). Always-forward vars in `~/.config/cloudify/remote-vars.yaml`. Loaded by `lib/credentials.sh` + `lib/pkg-config.sh`.
 - **Remote payload**: `declare -f` extracts template body as literal text, `envsubst` with explicit allow-list substitutes only listed vars. Single-quoted `$VAR` references resolve on the remote side.
 - **Install guards**: stateful packages use `CLOUDIFY_FORCE`/`CLOUDIFY_CLEAR_DATA` convention. See "Install Guards" in README.md.
+- **Verification**: optional `pkg/<name>/verify.sh` defines `pkg_verify()`, sourced in a clean subshell by `_cloudify_run_verify` after every package (deep verify, incl. deps). `--no-verify` skips, `--verify`/`cloudify verify` is verify-only. See "Verification" in README.md.
 - **Runtime manager**: mise (preferred). Legacy gvm/nvm/pyenv replaced.
 - **Container OS**: Ubuntu 24.04
 

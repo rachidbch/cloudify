@@ -41,3 +41,11 @@ hermes gateway
 
 - **hermes-openwebui** — connect to Open WebUI as a chat frontend
 - **hermes-signal** — connect to Signal messenger
+
+## Verification
+
+`verify.sh` checks `command -v hermes`. The base `hermes` package does **not**
+verify the API gateway — that check is owned by whichever package wires the API
+connection (`hermes-openwebui`), per the deep-verify authoring contract. See
+ROADMAP ("Streamline hermes package") for moving gateway setup + verification
+into `hermes` itself.

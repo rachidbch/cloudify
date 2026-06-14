@@ -99,3 +99,16 @@ dns:
 journalctl -u open-webui -f
 docker -H /var/run/docker.sock compose -f /opt/open-webui/docker-compose.yml logs
 ```
+
+## Verification
+
+`verify.sh` is **branch-aware** (no hardcoded endpoints):
+
+- Open WebUI health: `curl http://127.0.0.1:${CLOUDIFY_OPENWEBUI_PORT:-3000}/health`.
+- Hermes API health:
+  - **Remote mode** (`CLOUDIFY_HERMES_API_URL` set): `curl ${CLOUDIFY_HERMES_API_URL%/}/health`.
+  - **Local mode** (unset): reads `API_SERVER_PORT` from `~/.hermes/.env`.
+
+This package **owns** the Hermes API connection check (deep-verify contract b):
+it wires Open WebUI to the API, so it verifies that wiring. The base `hermes`
+package has no `verify.sh` for the gateway.

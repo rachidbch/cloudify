@@ -218,3 +218,63 @@ STUB
 
     grep -q "root@testhost" "$STUB_DIR/ssh_calls.log"
 }
+
+# ---------------------------------------------------------------
+# Verify flags and verify subcommand
+# ---------------------------------------------------------------
+
+@test "--no-verify flag is accepted (not rejected as unknown option)" {
+    # With no package after install, cloudify errors on empty package section,
+    # NOT on unknown flag — proving --no-verify was parsed.
+    run bash -c "cd /root/cloudify && \
+        CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true \
+        CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-router-test CLOUDIFY_TMP=/tmp/cf-router-test-tmp \
+        DEBUG=false bash cloudify --no-verify install 2>&1"
+    [[ "$output" != *"Unknown option"* ]]
+}
+
+@test "--verify flag is accepted (not rejected as unknown option)" {
+    run bash -c "cd /root/cloudify && \
+        CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true \
+        CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-router-test CLOUDIFY_TMP=/tmp/cf-router-test-tmp \
+        DEBUG=false bash cloudify --verify install 2>&1"
+    [[ "$output" != *"Unknown option"* ]]
+}
+
+@test "verify subcommand runs verify.sh and exits 0 on success" {
+    # Create a package with a passing verify.sh in the test CLOUDIFY_DIR
+    mkdir -p /tmp/cf-router-test/pkg/vpkg
+    echo '# recipe' > /tmp/cf-router-test/pkg/vpkg/init.sh
+    cat > /tmp/cf-router-test/pkg/vpkg/verify.sh <<'EOF'
+pkg_verify() { return 0; }
+EOF
+
+    run bash -c "cd /root/cloudify && \
+        CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true \
+        CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-router-test CLOUDIFY_TMP=/tmp/cf-router-test-tmp \
+        DEBUG=false bash cloudify verify vpkg 2>&1"
+    [ "$status" -eq 0 ]
+}
+
+@test "verify subcommand exits non-zero when verification fails" {
+    mkdir -p /tmp/cf-router-test/pkg/failvpkg
+    echo '# recipe' > /tmp/cf-router-test/pkg/failvpkg/init.sh
+    cat > /tmp/cf-router-test/pkg/failvpkg/verify.sh <<'EOF'
+pkg_verify() { return 1; }
+EOF
+
+    PKG_VERIFY_TIMEOUT=1 run bash -c "cd /root/cloudify && \
+        CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true \
+        CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-router-test CLOUDIFY_TMP=/tmp/cf-router-test-tmp \
+        DEBUG=false PKG_VERIFY_TIMEOUT=1 bash cloudify verify failvpkg 2>&1"
+    [ "$status" -ne 0 ]
+}
+
+@test "verify subcommand errors with usage when no package given" {
+    run bash -c "cd /root/cloudify && \
+        CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true \
+        CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-router-test CLOUDIFY_TMP=/tmp/cf-router-test-tmp \
+        DEBUG=false bash cloudify verify 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Missing package"* ]]
+}

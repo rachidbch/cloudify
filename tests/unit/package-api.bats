@@ -9,6 +9,7 @@ setup() {
     source lib/os.sh
     source lib/packages.sh
     source lib/shadow.sh
+    source lib/pkg-config.sh
     source lib/package-api.sh
 }
 
@@ -423,4 +424,127 @@ MOCK
     run pkg_depends scriptpkg
     [ "$status" -eq 1 ]
     [[ "$output" == *"scriptpkg"* ]]
+}
+
+#-- _cloudify_run_verify tests --
+
+# Helper: stub package discovery so verify.sh resolution works on the test pkg dir.
+_stub_pkg_path() {
+    cloudify_is_package() { [[ "$1" == "$1" ]]; }
+    cloudify_package_recipe_path() { echo "$CLOUDIFY_DIR/pkg/$1/init.sh"; }
+}
+
+@test "_cloudify_run_verify returns 0 when package has no verify.sh" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/noverify"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/noverify/init.sh"
+    _stub_pkg_path
+
+    run _cloudify_run_verify noverify
+    [ "$status" -eq 0 ]
+}
+
+@test "_cloudify_run_verify returns 0 when verify.sh passes" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/goodpkg"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/goodpkg/init.sh"
+    cat > "$CLOUDIFY_DIR/pkg/goodpkg/verify.sh" <<'EOF'
+pkg_verify() { return 0; }
+EOF
+    _stub_pkg_path
+
+    run _cloudify_run_verify goodpkg
+    [ "$status" -eq 0 ]
+}
+
+@test "_cloudify_run_verify returns 1 on timeout when verify.sh always fails" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/badpkg"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/badpkg/init.sh"
+    cat > "$CLOUDIFY_DIR/pkg/badpkg/verify.sh" <<'EOF'
+pkg_verify() { return 1; }
+EOF
+    _stub_pkg_path
+
+    export PKG_VERIFY_TIMEOUT=1
+    run _cloudify_run_verify badpkg
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"badpkg"* ]]
+}
+
+@test "_cloudify_run_verify retries then succeeds" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/slowpkg"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/slowpkg/init.sh"
+    # verify.sh succeeds once the on-disk counter reaches 2.
+    cat > "$CLOUDIFY_DIR/pkg/slowpkg/verify.sh" <<'EOF'
+pkg_verify() {
+    local sf="${PKG_VERIFY_STATE:?}"
+    local n
+    n=$(cat "$sf" 2>/dev/null || echo 0)
+    n=$((n + 1))
+    echo "$n" > "$sf"
+    [[ $n -ge 2 ]] || return 1
+}
+EOF
+    _stub_pkg_path
+
+    export PKG_VERIFY_STATE="$CLOUDIFY_TMP/slowpkg_state"
+    echo "0" > "$PKG_VERIFY_STATE"
+    export PKG_VERIFY_TIMEOUT=10
+
+    run _cloudify_run_verify slowpkg
+    [ "$status" -eq 0 ]
+    # State file should show at least 2 attempts
+    local attempts
+    attempts=$(cat "$PKG_VERIFY_STATE")
+    (( attempts >= 2 ))
+}
+
+@test "_cloudify_run_verify loads pkgs/<pkg>.yaml vars (localhost)" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/cfgpkg"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/cfgpkg/init.sh"
+    # verify.sh reads a var that should come from the pkg yaml
+    cat > "$CLOUDIFY_DIR/pkg/cfgpkg/verify.sh" <<'EOF'
+pkg_verify() {
+    [[ "${TEST_VERIFY_VAR:-}" == "from-yaml" ]] || return 1
+}
+EOF
+    _stub_pkg_path
+
+    # Write the pkg yaml
+    mkdir -p "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
+    cat > "$CLOUDIFY_CREDENTIALS_DIR/pkgs/cfgpkg.yaml" <<'EOF'
+TEST_VERIFY_VAR: from-yaml
+EOF
+    # Ensure the var is not already in the env
+    unset TEST_VERIFY_VAR
+
+    run _cloudify_run_verify cfgpkg
+    [ "$status" -eq 0 ]
+}
+
+@test "cloudify_package_verify_path returns path when verify.sh exists" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/withver"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/withver/init.sh"
+    echo 'pkg_verify() { :; }' > "$CLOUDIFY_DIR/pkg/withver/verify.sh"
+    _stub_pkg_path
+
+    run cloudify_package_verify_path withver
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"verify.sh" ]]
+}
+
+@test "cloudify_package_verify_path fails when no verify.sh" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/nover2"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/nover2/init.sh"
+    _stub_pkg_path
+
+    run cloudify_package_verify_path nover2
+    [ "$status" -eq 1 ]
+}
+
+@test "_cloudify_run_verify is a no-op for a package with no recipe" {
+    # Native apt package: no recipe path → no-op
+    cloudify_is_package() { return 1; }
+    cloudify_package_recipe_path() { return 1; }
+
+    run _cloudify_run_verify nativepkg
+    [ "$status" -eq 0 ]
 }

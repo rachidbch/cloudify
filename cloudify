@@ -22,6 +22,9 @@ function usage() {
         cloudify add | a <pkg>                          install package on local machine
         cloudify add | a  default                       install default packages on local machine
         cloudify --on <host> install <pkg>              install package on remote host
+        cloudify --no-verify --on <host> install <pkg>  install on remote host, skip verification
+        cloudify --verify --on <host> install <pkg>     verify only (no install) on remote host
+        cloudify verify <pkg>                           verify package (local)
         cloudify --no-defaults install <pkg>            install only basics + <pkg> (skip @default)
         cloudify --no-defaults --on <host> install <pkg>  minimal install on remote host
         cloudify remove| rem | r <pkg>                  uninstall package
@@ -213,11 +216,13 @@ function _cloudify_execute_package_action() {
         # shellcheck disable=SC2030
         (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; cloudify_install_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
+        _CLOUDIFY_BG_HOSTS[$!]="localhost"
         is_setup_in_progress=true
     elif [[ "$action" == "uninstall" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs[*]}${RESET}"
         (cloudify_uninstall_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
+        _CLOUDIFY_BG_HOSTS[$!]="localhost"
         is_setup_in_progress=true
     else
         die "Unexpected package action: $action"
@@ -233,7 +238,31 @@ function _cloudify_dispatch() {
     [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
     [[ "$hosts" != "localhost" ]] && _cloudify_require_remote_creds
 
+    # Verify-only mode (--verify): dispatch verify instead of install.
+    # The packages string looks like "--install pkg1 pkg2"; strip the marker.
+    if [[ "${CLOUDIFY_VERIFY_ONLY:-}" == "true" ]]; then
+        [[ "$action" == "uninstall" ]] && die "Cloudify usage error: --verify is only valid with install."
+        local verify_pkgs="${packages#--install}"
+        verify_pkgs="${verify_pkgs# }"
+        [[ -z "$verify_pkgs" ]] && die "Cloudify usage error: No packages to verify."
+        for host in $hosts; do
+            rm -f "$CLOUDIFY_TMP/${host}.exit"
+            if [[ "$hosts" == "localhost" ]]; then
+                cloudify_init_paths
+                ( _rc=0; for _vpkg in $verify_pkgs; do _cloudify_run_verify "$_vpkg" || _rc=1; done; exit "$_rc" ) &
+                _CLOUDIFY_BG_PIDS+=($!)
+                _CLOUDIFY_BG_HOSTS[$!]="$host"
+                is_setup_in_progress=true
+            else
+                PKG_DEBUG_LN "${GREEN}cloudify_remote $host verify $verify_pkgs${RESET}"
+                cloudify_remote "$host" "verify $verify_pkgs" && is_setup_in_progress=true
+            fi
+        done
+        return 0
+    fi
+
     for host in $hosts; do
+        rm -f "$CLOUDIFY_TMP/${host}.exit"
         if [[ "$hosts" == "localhost" ]]; then
             local pkgs_str="${packages/--$action/}"
             pkgs_str="${pkgs_str# }"
@@ -275,6 +304,7 @@ function main() {
     local is_parsing_packages=false
     local is_setup_in_progress=false
     local -a _CLOUDIFY_BG_PIDS=()
+    local -A _CLOUDIFY_BG_HOSTS=()
 
     # No arguments given, show usage
     [[ "$#" == 0 ]] && usage && exit 0
@@ -415,6 +445,24 @@ function main() {
             shift && cloudify_info "$@"
             break
             ;;
+        verify)
+            shift
+            [[ -z "${1:-}" ]] && die "Missing package for 'cloudify verify'"
+            cloudify_init_paths
+            local verify_had_failures=false
+            local _vpkg
+            for _vpkg in "$@"; do
+                _cloudify_run_verify "$_vpkg" || verify_had_failures=true
+            done
+            $verify_had_failures && die "Verification failed for one or more packages." 1
+            break
+            ;;
+        --no-verify)
+            export CLOUDIFY_NO_VERIFY=true
+            ;;
+        --verify)
+            export CLOUDIFY_VERIFY_ONLY=true
+            ;;
         hostnames | hsn)
             PKG_DEBUG "In cloudify, Running: " cloudify_hostnames "$@"
             shift && cloudify_hostnames "$@"
@@ -500,14 +548,24 @@ function main() {
         msg "${GREEN}Setup of machines in progress...${RESET}"
 
         local had_failures=false
+        local failed_count=0 total_count=0
+        local _bg_pid _bg_host _bg_rc
         for _bg_pid in "${_CLOUDIFY_BG_PIDS[@]}"; do
-            if ! wait "$_bg_pid"; then
+            total_count=$((total_count + 1))
+            _bg_host="${_CLOUDIFY_BG_HOSTS[$_bg_pid]:-unknown}"
+            wait "$_bg_pid" && _bg_rc=0 || _bg_rc=$?
+            if [[ "$_bg_rc" -eq 0 ]]; then
+                msg "  ${GREEN}${_bg_host}: OK${RESET}"
+            else
+                msg "  ${RED}${_bg_host}: FAILED (exit ${_bg_rc})${RESET}"
                 had_failures=true
+                failed_count=$((failed_count + 1))
             fi
         done
 
         if $had_failures; then
-            msg "${RED}Setup completed with errors. Log: ${CLOUDIFY_LOG_FILE:-}${RESET}"
+            msg "${RED}${failed_count}/${total_count} hosts failed. Log: ${CLOUDIFY_LOG_FILE:-}${RESET}"
+            exit 1
         else
             msg "${GREEN}Setup Done.${RESET}"
         fi

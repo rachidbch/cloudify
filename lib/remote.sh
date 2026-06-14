@@ -50,6 +50,8 @@ function cloudify_remote_payload_template() {
 
     export CLOUDIFY_CLEAR_DATA='$CLOUDIFY_CLEAR_DATA'
     export CLOUDIFY_FORCE='$CLOUDIFY_FORCE'
+    export CLOUDIFY_NO_VERIFY='$CLOUDIFY_NO_VERIFY'
+    export PKG_VERIFY_TIMEOUT='$PKG_VERIFY_TIMEOUT'
 
     # shellcheck disable=SC1009,SC1054,SC1056,SC1072,SC1073,SC1083,SC2016,SC2086
     if '$CLOUDIFY_FORCE_UPDATE' || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -'$CLOUDIFY_UPDATE_DELAY' 2>/dev/null)" ]]; then
@@ -175,6 +177,7 @@ function _cloudify_pkg_remote_vars() {
 function cloudify_remote() {
     (cloudify_remote_sync "$@") &
     _CLOUDIFY_BG_PIDS+=($!)
+    _CLOUDIFY_BG_HOSTS[$!]="$1"
 }
 
 # For some sub-commands (eg. $ cloudify exec ...), we need synchronous exection
@@ -225,7 +228,7 @@ function cloudify_remote_sync() {
         # Substitute template variables via envsubst (only listed variables are expanded)
         # shellcheck disable=SC2016
         cloudify_remote_payload=$(envsubst \
-            "\$CLOUDIFY_DISABLE_COLORS \$DEBUG \$CLOUDIFY_LOG_LEVEL \$CLOUDIFY_NO_DEFAULTS \$CLOUDIFY_CLEAR_DATA \$CLOUDIFY_FORCE \$CLOUDIFY_FORCE_UPDATE \$CLOUDIFY_UPDATE_DELAY \$CLOUDIFY_REMOTE_USER \$CLOUDIFY_REMOTE_PWD \$CLOUDIFY_GITHUBUSER \$CLOUDIFY_GITHUBPWD \$CLOUDIFY_GITLABUSER \$CLOUDIFY_GITLABPWD \$CLOUDIFY_RCLONE_REMOTE \$CLOUDIFY_RCLONE_REMOTE_REGION \$CLOUDIFY_RCLONE_REMOTE_ENDPOINT \$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID \$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY \$RESTIC_PASSWORD \$CLOUDIFY_BOOTSTRAP_URL \$CLOUDIFY_LOG_BASENAME${pkg_envsubst}" \
+            "\$CLOUDIFY_DISABLE_COLORS \$DEBUG \$CLOUDIFY_LOG_LEVEL \$CLOUDIFY_NO_DEFAULTS \$CLOUDIFY_CLEAR_DATA \$CLOUDIFY_FORCE \$CLOUDIFY_NO_VERIFY \$PKG_VERIFY_TIMEOUT \$CLOUDIFY_FORCE_UPDATE \$CLOUDIFY_UPDATE_DELAY \$CLOUDIFY_REMOTE_USER \$CLOUDIFY_REMOTE_PWD \$CLOUDIFY_GITHUBUSER \$CLOUDIFY_GITHUBPWD \$CLOUDIFY_GITLABUSER \$CLOUDIFY_GITLABPWD \$CLOUDIFY_RCLONE_REMOTE \$CLOUDIFY_RCLONE_REMOTE_REGION \$CLOUDIFY_RCLONE_REMOTE_ENDPOINT \$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID \$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY \$RESTIC_PASSWORD \$CLOUDIFY_BOOTSTRAP_URL \$CLOUDIFY_LOG_BASENAME${pkg_envsubst}" \
             <<< "$cloudify_remote_payload")
 
         # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running

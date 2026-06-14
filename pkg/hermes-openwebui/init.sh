@@ -37,12 +37,6 @@ if [[ -n "${CLOUDIFY_HERMES_API_URL:-}" ]]; then
     pkg_depends open-webui
     pkg_apt_install curl
 
-    # --- Health check hermes API (non-fatal warning) ---
-    log_info "Checking Hermes API at ${CLOUDIFY_HERMES_API_URL}/health..."
-    if ! curl -sf --max-time 10 "${CLOUDIFY_HERMES_API_URL}/health" >/dev/null 2>&1; then
-        log_warn "Hermes API not reachable at ${CLOUDIFY_HERMES_API_URL}/health"
-    fi
-
     # --- Post-install ---
     msg ""
     msg "${GREEN}Hermes-Open WebUI connection established (remote).${RESET}"
@@ -170,12 +164,6 @@ fi
 export OPENAI_API_BASE_URL="http://host.docker.internal:${API_SERVER_PORT}/v1"
 export OPENAI_API_KEY="$API_SERVER_KEY"
 pkg_depends open-webui
-
-# --- Health check API server (non-fatal warning) ---
-log_info "Checking Hermes API at http://127.0.0.1:${API_SERVER_PORT}/health..."
-if ! curl -sf --max-time 10 "http://127.0.0.1:${API_SERVER_PORT}/health" >/dev/null 2>&1; then
-    log_warn "Hermes API not reachable at http://127.0.0.1:${API_SERVER_PORT}/health"
-fi
 
 # --- Post-install ---
 msg ""

@@ -22,7 +22,11 @@ export CLOUDIFY_HERMES_API_KEY=sk-test-fake
 # --- Install hermes-openwebui (pulls open-webui as dependency) ---
 
 @test "cloudify --on $TEST_HOST install hermes-openwebui succeeds" {
-    run cloudify --on "$TEST_HOST" install hermes-openwebui
+    # Fake credentials cannot reach a real hermes API, so the hermes-openwebui
+    # pkg_verify (remote mode curls the hermes health endpoint) would fail.
+    # --no-verify skips verification; the wiring is asserted by the tests below
+    # (docker-compose URL/key) and open-webui health is checked separately.
+    run cloudify --no-verify --on "$TEST_HOST" install hermes-openwebui
     [ "$status" -eq 0 ]
 }
 

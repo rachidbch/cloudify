@@ -58,7 +58,12 @@ Put these in `~/.config/cloudify/pkgs/hermes-openwebui.yaml` to override default
 
 Get the API key from the hermes container: `ssh hermes 'grep API_SERVER_KEY ~/.hermes/.env'`
 
-To change credentials, edit the yaml and re-run `cloudify --on <host> install hermes-openwebui`.
+To change credentials, edit the yaml and re-run with `--force` (bypasses install guard):
+
+```bash
+cloudify --on <host> --force install hermes-openwebui
+```
+
 The compose file is regenerated with the new values and open-webui restarts automatically.
 
 ## Dashboard Access

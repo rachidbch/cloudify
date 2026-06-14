@@ -37,7 +37,13 @@ export CLOUDIFY_OPENWEBUI_BIND=0.0.0.0
 cloudify install open-webui
 ```
 
-To change configuration after install, edit `/opt/open-webui/docker-compose.yml` and restart:
+To change configuration after install, re-run with `--force` (bypasses install guard):
+
+```bash
+cloudify --on <host> --force install open-webui
+```
+
+Or edit `/opt/open-webui/docker-compose.yml` directly and restart:
 
 ```bash
 systemctl restart open-webui

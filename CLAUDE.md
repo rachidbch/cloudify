@@ -1,10 +1,14 @@
 # Cloudify
 
+## Constitution (project-specific; global rules in ~/AGENTS.md)
+- **Timeouts.** Estimate task time, set 3×. Never fail a command by being too conservative.
+- **Tool priority.** cloudify > ivps > incus; incus only with explicit consent.
+- **Verify stuck before killing.** A slow mutating op isn't a hang - confirm no progress (D-state, zero I/O) first. Mid-op kills leave dirty state that breaks the next run.
+- **Docs before code, logs before hypotheses.** Read README/AGENTS + logs before diagnosing; never assert an unconfirmed root cause.
+
 ## Conventions
 
-- **Token efficient** — min tokens, max signal. Especially in .md files.
 - **`--on <host>`** comes BEFORE the action verb: `cloudify --on host install pkg`
-- **HISTORY.md** — append-only log of all actions/outcomes. Never edit or delete entries.
 
 ## Project
 
@@ -23,6 +27,7 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 - **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Per-package vars: user `pkgs/<pkg>.yaml` provides both names and values (single source of truth). Always-forward vars in `~/.config/cloudify/remote-vars.yaml`. Loaded by `lib/credentials.sh` + `lib/pkg-config.sh`.
 - **Remote payload**: `declare -f` extracts template body as literal text, `envsubst` with explicit allow-list substitutes only listed vars. Single-quoted `$VAR` references resolve on the remote side.
 - **Install guards**: stateful packages use `CLOUDIFY_FORCE`/`CLOUDIFY_CLEAR_DATA` convention. See "Install Guards" in README.md.
+- **Verification**: optional `pkg/<name>/verify.sh` defines `pkg_verify()`, sourced in a clean subshell by `_cloudify_run_verify` after every package (deep verify, incl. deps). `--no-verify` skips, `--verify`/`cloudify verify` is verify-only. See "Verification" in README.md.
 - **Runtime manager**: mise (preferred). Legacy gvm/nvm/pyenv replaced.
 - **Container OS**: Ubuntu 24.04
 
@@ -52,12 +57,6 @@ task lint              # Push + shellcheck
 
 **Recipe conventions:** see "Writing a Package Recipe" in README.md.
 
-## CONSTITUTION
-
-- When I encounter a bug in a tool I use, I can use manual/hacky means to diagnose the problem but NEVER to silently workaround the problem: I alert my human and we devise cooperatively a mitigation
-- I Don't waste time by setting timeouts mechanically, I try to make reasonable estimation of the time a task will take and assign 3 times as timeout. I don't want repeatedly and artificially make a command fail because I was too conservative when setting timeouts
-- Usage priority: cloudify > ivps > incus. I only reach out to incus with the explicit consent of my human
-- I never skip a test failure by dismissing it as "pre-existing": I always strive to leave a clean state (all tests green)
 
 ## Working Plan
 

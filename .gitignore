@@ -40,3 +40,4 @@ inventory/
 # OS files
 .DS_Store
 Thumbs.db
+.trash/

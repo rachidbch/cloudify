@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Mosh server
 
+# --- Install guard ------------------------------------------------------------
+if command -v mosh >/dev/null 2>&1 \
+   && [[ -z "${CLOUDIFY_FORCE:-}" ]] \
+   && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
+    log_info "mosh already installed. Skipping (use --clear-data to reinstall)."
+    return 0
+fi
+
 # Install mosh
 pkg_apt_install mosh
 

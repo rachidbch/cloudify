@@ -15,6 +15,7 @@ teardown() {
 
 @test "all credential functions are defined after sourcing" {
     [ "$(type -t cloudify_ask_host_credentials)" = "function" ]
+    [ "$(type -t cloudify_ask_local_credentials)" = "function" ]
     [ "$(type -t cloudify_ask_github_credentials)" = "function" ]
     [ "$(type -t cloudify_ask_gitlab_credentials)" = "function" ]
     [ "$(type -t cloudify_credentials_ensure_dir)" = "function" ]
@@ -148,6 +149,7 @@ teardown() {
 @test "cloudify_credentials_check reports OK when all set" {
     export CLOUDIFY_REMOTE_USER=u
     export CLOUDIFY_REMOTE_PWD=p
+    export CLOUDIFY_LOCAL_PWD=p
     export CLOUDIFY_GITHUBUSER=u
     export CLOUDIFY_GITHUBPWD=p
     export CLOUDIFY_GITLABUSER=u
@@ -156,6 +158,7 @@ teardown() {
     run cloudify_credentials_check
     [ "$status" -eq 0 ]
     [[ "$output" == *"remote:  OK"* ]]
+    [[ "$output" == *"local:   OK"* ]]
     [[ "$output" == *"github:  OK"* ]]
     [[ "$output" == *"gitlab:  OK"* ]]
 }
@@ -198,4 +201,16 @@ teardown() {
     grep -q "CLOUDIFY_REMOTE_USER" "$CLOUDIFY_CREDENTIALS_FILE"
     # GitHub should NOT be in the file
     ! grep -q "CLOUDIFY_GITHUBUSER" "$CLOUDIFY_CREDENTIALS_FILE"
+}
+
+@test "cloudify_credentials_save saves only the local section" {
+    export CLOUDIFY_LOCAL_PWD=lpwd
+    export CLOUDIFY_REMOTE_USER=ruser
+    export CLOUDIFY_REMOTE_PWD=rpwd
+
+    cloudify_credentials_save local
+
+    grep -q "CLOUDIFY_LOCAL_PWD" "$CLOUDIFY_CREDENTIALS_FILE"
+    # Remote should NOT be in the file — local section is password-only
+    ! grep -q "CLOUDIFY_REMOTE_USER" "$CLOUDIFY_CREDENTIALS_FILE"
 }

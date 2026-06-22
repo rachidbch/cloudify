@@ -42,6 +42,15 @@ function cloudify_ask_gitlab_credentials() {
     _cloudify_ask_credentials "Gitlab" "CLOUDIFY_GITLABUSER" "CLOUDIFY_GITLABPWD"
 }
 
+# Ask local (sudo) password — the local user is always the OS user (whoami),
+# so only the password is needed (no separate user var). Maps to CLOUDIFY_HOSTPWD
+# on the local install path (see cloudify main).
+function cloudify_ask_local_credentials() {
+    echo
+    cloudify_prompt2pass "CLOUDIFY_LOCAL_PWD" && export CLOUDIFY_LOCAL_PWD
+    echo
+}
+
 #== CREDENTIAL MANAGEMENT FUNCTIONS ==
 
 # Ensure credentials directory exists with correct permissions
@@ -51,7 +60,7 @@ function cloudify_credentials_ensure_dir() {
 }
 
 # Save specified section's credentials to the credentials file
-# Sections: remote, github, gitlab, or empty for all
+# Sections: remote, local, github, gitlab, or empty for all
 function cloudify_credentials_save() {
     local section="${1:-}"
     local cred_file="${CLOUDIFY_CREDENTIALS_FILE:-"${XDG_CONFIG_HOME:-$HOME/.config}/cloudify/credentials"}"
@@ -64,6 +73,9 @@ function cloudify_credentials_save() {
         remote)
             vars=(CLOUDIFY_REMOTE_USER CLOUDIFY_REMOTE_PWD)
             ;;
+        local)
+            vars=(CLOUDIFY_LOCAL_PWD)
+            ;;
         github)
             vars=(CLOUDIFY_GITHUBUSER CLOUDIFY_GITHUBPWD)
             ;;
@@ -72,7 +84,7 @@ function cloudify_credentials_save() {
             ;;
         "")
             # All sections
-            vars=(CLOUDIFY_REMOTE_USER CLOUDIFY_REMOTE_PWD CLOUDIFY_GITHUBUSER CLOUDIFY_GITHUBPWD CLOUDIFY_GITLABUSER CLOUDIFY_GITLABPWD)
+            vars=(CLOUDIFY_REMOTE_USER CLOUDIFY_REMOTE_PWD CLOUDIFY_LOCAL_PWD CLOUDIFY_GITHUBUSER CLOUDIFY_GITHUBPWD CLOUDIFY_GITLABUSER CLOUDIFY_GITLABPWD)
             ;;
         *)
             die "Unknown credentials section: $section"
@@ -131,6 +143,14 @@ function cloudify_credentials_check() {
         all_ok=false
     fi
 
+    # Local (sudo password for local installs)
+    if [[ -n "${CLOUDIFY_LOCAL_PWD:-}" ]]; then
+        msg "${GREEN}local:   OK${RESET}"
+    else
+        msg "${YELLOW}local:   INCOMPLETE (CLOUDIFY_LOCAL_PWD)${RESET}"
+        all_ok=false
+    fi
+
     # GitHub
     if [[ -n "${CLOUDIFY_GITHUBUSER:-}" && -n "${CLOUDIFY_GITHUBPWD:-}" ]]; then
         msg "${GREEN}github:  OK${RESET}"
@@ -159,6 +179,11 @@ function cloudify_credentials_setup() {
             cloudify_ask_host_credentials
             cloudify_credentials_save remote
             msg "${GREEN}Remote credentials saved.${RESET}"
+            ;;
+        local)
+            cloudify_ask_local_credentials
+            cloudify_credentials_save local
+            msg "${GREEN}Local credentials saved.${RESET}"
             ;;
         github)
             cloudify_ask_github_credentials

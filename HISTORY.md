@@ -1,5 +1,12 @@
 # Cloudify — Session History
 
+## 2026-06-20 — Fix local-install password failure: local credential section (#1)
+
+- **Root cause**: On the local install path, `CLOUDIFY_HOSTPWD` was mapped only from `CLOUDIFY_LOCAL_PWD` (`cloudify` main), and **nothing ever set `CLOUDIFY_LOCAL_PWD`** — the credentials framework only knew remote/github/gitlab. So the first sudo-needing `@default` died with `Password not set for user rbc`.
+- **Fix**: Added a `local` section to `lib/credentials.sh` — `cloudify_ask_local_credentials`, `local` cases in `cloudify_credentials_save`/`_check`/`_setup` (password-only — the local user is always `whoami`), included in the all-sections save. Router (`cloudify`): `credentials local` subcommand + usage line. `main()`'s existing `${CLOUDIFY_LOCAL_PWD:-}` → `CLOUDIFY_HOSTPWD` mapping now resolves.
+- **Tests**: `tests/unit/credentials.bats` — new "saves only the local section" test; `cloudify_ask_local_credentials` in the defined-functions test; `CLOUDIFY_LOCAL_PWD` set + asserted in the "all OK" check.
+- Lint clean (`shellcheck -x` on `lib/credentials.sh`, `cloudify`).
+
 ## 2026-06-20 — apt-get shadow: no sudo on no-op installs (cache pre-pass)
 
 - **Problem**: `lib/shadows/apt-get.sh` ran `_cloudify_apt_cache_stale && sudo apt-get update` **before** the per-package `dpkg -l` idempotency check, so a stale cache (>60min) demanded a password even when every requested package was already installed.

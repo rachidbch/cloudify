@@ -35,10 +35,23 @@ function apt-get() {
     case "${1:-}" in
     install)
         shift
-        # Auto-update if cache stale
-        _cloudify_apt_cache_stale && sudo apt-get -qq update
+        local pkg pkgname need_install=false
+        # Pre-pass: refresh the apt cache only when something is genuinely
+        # missing. Without this, a stale cache (>60min) forces `sudo apt-get
+        # update` even when every requested package is already installed —
+        # demanding a password (and root) for a no-op install.
+        for pkg in "$@"; do
+            [[ "$pkg" == "-y" || "$pkg" == "--yes" || "$pkg" == -* ]] && continue
+            pkgname=$(_cloudify_deb_to_pkgname "$pkg")
+            if ! _cloudify_pkg_installed "$pkgname"; then
+                need_install=true
+                break
+            fi
+        done
+        if [[ "$need_install" == true ]] && _cloudify_apt_cache_stale; then
+            sudo apt-get -qq update
+        fi
         # Install each package with idempotency check
-        local pkg pkgname
         for pkg in "$@"; do
             [[ "$pkg" == "-y" || "$pkg" == "--yes" || "$pkg" == -* ]] && continue
             pkgname=$(_cloudify_deb_to_pkgname "$pkg")

@@ -1,11 +1,16 @@
 # Cloudify — Session History
 
+## 2026-06-20 — apt-get shadow: no sudo on no-op installs (cache pre-pass)
+
+- **Problem**: `lib/shadows/apt-get.sh` ran `_cloudify_apt_cache_stale && sudo apt-get update` **before** the per-package `dpkg -l` idempotency check, so a stale cache (>60min) demanded a password even when every requested package was already installed.
+- **Fix**: Pre-pass refreshes the apt cache only when ≥1 package is genuinely missing (`_cloudify_pkg_installed`). Strict improvement — when something IS missing, behavior is identical to before; when all installed, no sudo at all. Independent of the local-credential fix (the password is still needed for genuinely-missing packages).
+- Lint clean (`shellcheck -x` on `lib/shadows/apt-get.sh`).
+
 ## 2026-06-20 — Clean failure when a @default aborts the requested install (#4)
 
 - **Problem**: `cloudify install <pkg>` installs the `@default` set **synchronously** before the user's package. The native-manager path (`pkg_apt_install`, when a package has no recipe) in `pkg_depends` was NOT wrapped in a subshell, so a `die` (e.g. sudo shadow `Password not set for user rbc`) called `exit` and killed the whole process — `failed_packages` never recorded it, no `Failed packages:` summary printed, and the user's explicitly-requested package was never attempted. The user saw a bare error + exit 1 with no indication that (a) it was a `@default` that failed and (b) their package was skipped. (The recipe path was already isolated in a subshell; only the native path leaked.)
 - **Fix**: `lib/package-api.sh` — wrap both native-path `pkg_apt_install` calls in subshells (`if ! ( pkg_apt_install "${pkg}" )`), matching the recipe path, so `die`'s `exit` is contained, the failure is recorded, the loop continues, and the summary prints. `cloudify` — check the synchronous `cloudify_install_package $defaults` return: on failure, print a clear message naming the failure and stating the requested package was NOT attempted, with the remediation (`--no-defaults`), then exit 1.
 - **Test**: `tests/unit/package-api.bats` — new "isolates native-path failures (die/exit) in subshell" regression test (mocks `pkg_apt_install` to `exit 1`, asserts the package is recorded in `Failed packages:` and subsequent packages are still attempted).
-
 ## 2026-06-14 — `pkg_verify` hook: script-friendly verification (Issue #2)
 
 - **Feature**: `cloudify install` now blocks until each installed package is verified (or fails clearly). No more manual `ssh`/`curl` after install returns.

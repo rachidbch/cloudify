@@ -1,5 +1,16 @@
 # Cloudify — Session History
 
+## 2026-06-22 — separate-containers DNS: conditional dual-dns + peer-visibility root cause (fix/openwebui-conditional-dns)
+
+- **Trigger**: ROADBLOCK.md flagged separate-containers (open-webui <-> hermes via MagicDNS) as non-functional, unverified. Zero-trust recheck requested.
+- **Live testing** on `cloudai:hermes` + `cloudai:openwebui-hermes` (raw UDP DNS + docker dual-NS containers):
+  1. quad100 (`100.100.100.100`) resolves `*.ts.net` but **SERVFAILs public domains** in this tailnet (no global nameservers configured). ee028af's stated root cause was correct.
+  2. glibc + musk **fail over on SERVFAIL** -> `dns: [100.100.100.100, 1.1.1.1]` serves both MagicDNS and public from one resolver block. Verified green against visible peer `hermes-svc` + `huggingface.co`.
+  3. The **actual end-to-end blocker** is NOT DNS: `cloudai:hermes` (tag:incus) is invisible to `cloudai:openwebui-hermes` (tag:incus) - NXDOMAIN, absent peer list, ping fails. MagicDNS only resolves *visible* peers. `hermes-svc` (tag:incus, 8d, has `~/.hermes/.env`, serves API) IS visible.
+- **Fix (pkg layer)**: `pkg/open-webui/init.sh` now emits a conditional `dns:` block when `OPENAI_API_BASE_URL` is a `*.ts.net` URL (separate-containers topology); no directive otherwise (in-container topology inherits host DNS, `host.docker.internal` is a static entry). New `CLOUDIFY_OPENWEBUI_FALLBACK_DNS` (default `1.1.1.1`). Heavy commenting on the non-obvious bits (why dual NS, why quad100 SERVFAILs, visibility prerequisite).
+- **Docs**: `pkg/open-webui/README.md` + `pkg/hermes-openwebui/README.md` corrected (was stale: single `dns: 100.100.100.100`, which re-breaks huggingface); ROADBLOCK.md reframed with verified layered truth.
+- **Escalated (human decision, NOT code)**: backend node = `hermes` (needs ACL fix) vs `hermes-svc` (already visible + serving). Stale/partial ACL suspected - `hermes-svc` visible but `hermes` not, both tag:incus.
+
 ## 2026-06-20 — Fix local-install password failure: local credential section (#1)
 
 - **Root cause**: On the local install path, `CLOUDIFY_HOSTPWD` was mapped only from `CLOUDIFY_LOCAL_PWD` (`cloudify` main), and **nothing ever set `CLOUDIFY_LOCAL_PWD`** — the credentials framework only knew remote/github/gitlab. So the first sudo-needing `@default` died with `Password not set for user rbc`.

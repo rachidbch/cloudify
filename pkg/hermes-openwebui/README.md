@@ -5,16 +5,18 @@ Connects [Open WebUI](https://github.com/open-webui/open-webui) to a [Hermes](ht
 ## Architecture
 
 ```
-Container: openwebui-hermes          Container: hermes
+Container: openwebui-hermes          Container: hermes (or hermes-svc)
 ┌──────────────────────────┐         ┌──────────────────────┐
 │ Docker: open-webui       │         │ hermes agent         │
-│ dns: 100.100.100.100     │───────→│ :8642 (127.0.0.1)   │
-│ OPENAI_API_BASE_URL:     │ MagicDNS│ tailscale serve :443 │
-│  https://hermes...ts.net │         └──────────────────────┘
+│ dns: 100.100.100.100     │ MagicDNS│ :8642 (127.0.0.1)   │
+│      + <public fallback> │───────→│ tailscale serve :443 │
+│ OPENAI_API_BASE_URL:     │         └──────────────────────┘
+│  https://<node>...ts.net │
 └──────────────────────────┘
 ```
 
-- **Docker DNS** = `100.100.100.100` (Tailscale MagicDNS) so containers resolve `hermes.komodo-everest.ts.net`
+- **Docker DNS** = dual `100.100.100.100` (Tailscale MagicDNS, resolves `*.ts.net`) + a public fallback (default `1.1.1.1`). quad100 SERVFAILs public domains in this tailnet, so the fallback is required; glibc/musl fail over on SERVFAIL. See `pkg/open-webui/README.md` for the full rationale.
+- **Backend node must be a visible tailnet peer**: MagicDNS only resolves peers the ACL lets this node see. If `getent hosts <node>.ts.net` returns NXDOMAIN from the host, fix the Tailscale ACL, not the compose file.
 - **Hermes agent** binds `127.0.0.1` only — only `tailscale serve` can reach it
 - **No Caddy, no hardcoded IPs, no UFW rules** — just MagicDNS + auto-TLS
 
@@ -88,10 +90,15 @@ ssh hermes 'curl -sf http://127.0.0.1:8642/health'
 ```
 
 **Docker can't resolve MagicDNS hostname:**
-Check the `dns` setting in `/opt/open-webui/docker-compose.yml`:
+First confirm the backend node is a *visible* tailnet peer from this host (MagicDNS only resolves visible peers; ACLs gate visibility):
+```bash
+getent hosts hermes.komodo-everest.ts.net   # NXDOMAIN = ACL/visibility problem, NOT dns
+```
+If it resolves on the host but not in the container, check the `dns` block in `/opt/open-webui/docker-compose.yml` (auto-emitted when `OPENAI_API_BASE_URL` is a `*.ts.net` URL):
 ```yaml
 dns:
   - 100.100.100.100
+  - 1.1.1.1
 ```
 
 **View logs:**

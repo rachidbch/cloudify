@@ -2,12 +2,27 @@
 
 Issues discovered during e2e testing that need to be resolved in a future session.
 
-## Separate-containers topology: DNS resolution (UNVERIFIED - recheck before acting)
+## Separate-containers topology: DNS resolution (VERIFIED 2026-06-22 - see live findings)
 
-### Symptom
-`cloudify install` in separate-containers mode (open-webui on one host, hermes API on another, via Tailscale MagicDNS) is believed non-functional at the network layer.
+### Status
+Two-layer problem, now separated by live testing on `cloudai:openwebui-hermes` + `cloudai:hermes`:
+- **DNS layer (cloudify pkg)**: FIXED on `fix/openwebui-conditional-dns`. Conditional dual `dns:` block emitted when `OPENAI_API_BASE_URL` is a `*.ts.net` URL.
+- **Peer-visibility layer (Tailscale ACL)**: BLOCKING, out of cloudify scope. Needs human decision (see below).
 
-### Stored reasoning (ZERO TRUST - recheck every claim)
+### Live findings (zero-trust verified, not read from code)
+1. quad100 serves MagicDNS only in this tailnet: `dig @100.100.100.100 hermes...ts.net` -> NOERROR, but `google.com`/`huggingface.co` -> **SERVFAIL** (no tailnet global nameservers configured). ee028af's root cause was correct.
+2. glibc + musl fail over on SERVFAIL, so `dns: [100.100.100.100, 1.1.1.1]` serves BOTH MagicDNS and public from one block. Verified green in a container on `openwebui-hermes` against visible peer `hermes-svc` + `huggingface.co`.
+3. Stateful filtering already OFF on both nodes (`NoStatefulFiltering: true`); not a factor here.
+4. **The actual blocker for end-to-end Case B**: `cloudai:hermes` (tag:incus) is **invisible** to `cloudai:openwebui-hermes` (tag:incus) - absent from its peer list, `getent hosts hermes...ts.net` -> NXDOMAIN, `tailscale ping` fails. MagicDNS only resolves *visible* peers; no `dns:` directive can fix an invisible peer.
+5. `cloudai:hermes-svc` (tag:incus, 8d old, has `~/.hermes/.env`, serves API on :443) IS visible to openwebui-hermes.
+
+### Human decision needed (consequential - admin/topology)
+Either:
+- **(a)** Point the hermes-openwebui backend at `hermes-svc.komodo-everest.ts.net` (already visible + serving), OR
+- **(b)** Add a Tailscale ACL rule making `hermes` visible to `openwebui-hermes` (both are `tag:incus`; unclear why `hermes-svc` is visible but `hermes` is not - likely a stale/partial ACL).
+Neither is a cloudify code change.
+
+### Original stored reasoning (kept for the audit trail; RECALIBRATED above)
 The tension: open-webui Docker container needs BOTH public DNS (huggingface.co for model download, google.com generally) AND MagicDNS (hermes.ts.net for the API). One container, seemingly one resolver.
 
 Hypothesized resolution (from Tailscale issues #14467, #12108, #18600):
@@ -17,11 +32,7 @@ Hypothesized resolution (from Tailscale issues #14467, #12108, #18600):
 4. Cloudify's `dns: [100.100.100.100]` directive (removed in commit ee028af) was the CAUSE of breakage (overwrote the host merge inside the container), not a correct separate-containers setup.
 5. `RAG_EMBEDDING_ENGINE=openai` (set when OPENAI_API_BASE_URL is) routes embeddings through the API, eliminating the huggingface.co download (the public-DNS need that ee028af's commit message names).
 
-### Recheck before acting
-- Verify each claim against current Tailscale docs + the cited issues (still open? still accurate in 2026?).
-- Verify open-webui has NO other public-DNS dependency (telemetry, update checks, OAuth, lazy fetches).
-- Verify by DOING a separate-containers install, not just reading code.
-- Confirm conclusion: dns directive stays removed; separate-containers needs host-level Tailscale setup (MagicDNS on, systemd-resolved scoping, stateful filtering off) -> ivps/host-provisioning concern, not a cloudify pkg concern.
+Recalibration after live testing: claims 1-3 verified accurate; claim 4 HALF-TRUE (the directive WAS overwriting, but removing it broke MagicDNS - the correct value is dual nameservers); claim 5 verified for the named dependency. The stored CONCLUSION ("dns stays removed; it's an ivps/host concern") was **wrong on DNS** (dual dns is a required pkg layer) but **right in spirit** that a host-layer issue (peer visibility, not filtering) is the real blocker.
 
 ### Sources (re-read, don't trust the summary)
 - tailscale/tailscale#14467

@@ -27,8 +27,14 @@ They are written into `/opt/open-webui/docker-compose.yml`.
 | `WEBUI_ADMIN_PASSWORD` | `changeme` | Admin password |
 | `OPENAI_API_BASE_URL` | (empty) | Backend URL (Ollama, OpenAI, etc.) |
 | `OPENAI_API_KEY` | (empty) | Backend API key |
+| `CLOUDIFY_OPENWEBUI_FALLBACK_DNS` | `1.1.1.1` | Public DNS fallback in MagicDNS mode |
 
-**MagicDNS:** Docker containers use `dns: 100.100.100.100` (Tailscale MagicDNS) so they can resolve `*.komodo-everest.ts.net` hostnames. This enables connecting to services on other Tailscale containers by their MagicDNS names.
+**DNS (topology-dependent):** the `dns:` block in `docker-compose.yml` is emitted conditionally:
+
+- **Backend unset or `host.docker.internal`/IP** (in-container topology): no `dns:` directive; the container inherits the host resolver. `host.docker.internal` is a static host-gateway entry, not a DNS lookup.
+- **Backend is a `*.ts.net` URL** (separate-containers topology via Tailscale MagicDNS): emits dual nameservers `100.100.100.100` (quad100, resolves `*.ts.net`) + `CLOUDIFY_OPENWEBUI_FALLBACK_DNS` (resolves public domains). In this tailnet quad100 SERVFAILs public queries, so the public fallback is required; glibc/musl fail over on SERVFAIL, letting one resolver block serve both.
+
+**Prerequisite for MagicDNS mode:** the container's tailnet node must *see* the backend node in the tailnet. MagicDNS only resolves visible peers; an ACL-blocked peer returns NXDOMAIN regardless of the `dns:` config. Fix node visibility in the Tailscale admin console (ACL), not here.
 
 **Remote/container access:** The default bind is `127.0.0.1` (localhost only). For containers or remote hosts, set `CLOUDIFY_OPENWEBUI_BIND=0.0.0.0` before install:
 

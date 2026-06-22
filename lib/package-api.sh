@@ -414,14 +414,18 @@ function pkg_depends() {
                 done
             else
                 msg "${GREEN}Package $pkg has no recipe. Trying Native Package Manager.${RESET}"
-                if ! pkg_apt_install "${pkg}"; then
+                # Subshell so a `die` (exit) from inside the sudo/apt-get shadow
+                # (e.g. 'Password not set') is contained, recorded, and the loop
+                # continues — matching the recipe path above.
+                if ! ( pkg_apt_install "${pkg}" ); then
                     failed_packages+=("$pkg")
                     continue
                 fi
             fi
         else
             msg "${GREEN}No package $pkg found. Trying Native Package Manager.${RESET}"
-            if ! pkg_apt_install "${pkg}"; then
+            # Subshell — same die-containment rationale as the recipe-missing path.
+            if ! ( pkg_apt_install "${pkg}" ); then
                 failed_packages+=("$pkg")
             fi
         fi

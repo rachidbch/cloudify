@@ -401,6 +401,34 @@ MOCK
     grep -q "goodpkg" "$install_log"
 }
 
+@test "pkg_depends isolates native-path failures (die/exit) in subshell" {
+    # Regression: the native-manager path (pkg_apt_install, no recipe) was NOT
+    # wrapped in a subshell, so a `die` (exit) from inside the sudo/apt-get
+    # shadow (e.g. 'Password not set') killed the whole process —
+    # failed_packages never recorded it, no 'Failed packages:' summary printed,
+    # and subsequent packages were never attempted. Fix: wrap in a subshell like
+    # the recipe path, so die's exit is contained.
+    cloudify_is_package() { return 1; }   # force the native (no-package) path
+    local install_log="$CLOUDIFY_TMP/install_log"
+    pkg_apt_install() {
+        echo "$1" >> "$install_log"
+        if [[ "$1" == "diepkg" ]]; then
+            # Simulate die() -> exit (as the sudo shadow does on missing password)
+            exit 1
+        fi
+        return 0
+    }
+
+    run pkg_depends diepkg goodpkg
+    [ "$status" -eq 1 ]
+    # diepkg was recorded in the summary (without the subshell fix, the process
+    # exited before reaching the summary)
+    [[ "$output" == *"Failed packages"* ]]
+    [[ "$output" == *"diepkg"* ]]
+    # goodpkg was still attempted despite diepkg's exit
+    grep -q "goodpkg" "$install_log"
+}
+
 @test "pkg_depends collects error when .script copy fails" {
     # Create a mock cloudify package with a succeeding recipe and a .script file
     mkdir -p "$CLOUDIFY_DIR/pkg/scriptpkg"

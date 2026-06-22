@@ -206,7 +206,14 @@ function _cloudify_execute_package_action() {
         if [[ -n "$defaults" ]]; then
             PKG_DEBUG "${YELLOW}Installing @default packages: ${defaults}${RESET}"
             # shellcheck disable=SC2086
-            cloudify_install_package $defaults
+            # @default install is synchronous and a prerequisite env check
+            # (e.g. sudo password). If it fails, the user-requested package is
+            # NOT attempted — fail fast with a clear message + remediation.
+            if ! cloudify_install_package $defaults; then
+                msg "${RED}@default package(s) failed to install — your requested package(s) were NOT attempted.${RESET}"
+                msg "${RED}Fix the failure above, or re-run with --no-defaults to install only basics + your package(s).${RESET}"
+                exit 1
+            fi
         fi
         # Then user-requested packages (backgrounded)
         # Mark explicitly dispatched packages with CLOUDIFY_FORCE=true so recipes

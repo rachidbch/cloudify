@@ -21,9 +21,6 @@ MCP_DIR="/opt/youtube-mcp"
 MCP_PORT="${YOUTUBE_MCP_PORT:-8443}"
 MCP_SERVICE="/etc/systemd/system/youtube-mcp.service"
 
-# Ensure mise + shims are on PATH (mise provides node@lts >=20 required by youtube-transcript-plus)
-export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
-
 # --- Install guard ---
 if [[ -f "$MCP_SERVICE" ]] && systemctl is-active youtube-mcp >/dev/null 2>&1 \
    && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
@@ -32,7 +29,13 @@ if [[ -f "$MCP_SERVICE" ]] && systemctl is-active youtube-mcp >/dev/null 2>&1 \
 fi
 
 # --- Dependencies ---
-pkg_depends mise node git
+pkg_depends mise git
+
+# --- Ensure Node >=20 via mise ---
+# pkg_depends node would skip if apt node exists (FORCE/CLEAR_DATA unset for deps).
+# Install directly so mise manages the runtime regardless of existing apt node.
+export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+mise use -g node@lts
 
 # --- Clone/pull source ---
 if [[ -d "$MCP_DIR/.git" ]]; then
@@ -77,11 +80,10 @@ After=network.target
 
 [Service]
 Type=simple
-Environment=PATH=/root/.local/bin:/root/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PORT=${MCP_PORT}
 Environment=API_TOKEN=${TOKEN}
 WorkingDirectory=${MCP_DIR}
-ExecStart=node dist/index.js --http
+ExecStart=/root/.local/share/mise/shims/node dist/index.js --http
 Restart=always
 RestartSec=5
 

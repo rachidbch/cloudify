@@ -8,7 +8,7 @@ Cloudify installs development tools and system packages on Ubuntu/Debian machine
 
 **Key features:**
 
-- **64 package recipes** — apt packages, GitHub releases, custom scripts
+- **80 package recipes** — apt packages, GitHub releases, custom scripts
 - **Remote execution** — install on any host reachable via SSH
 - **Tag-based filtering** — group hosts and packages with `@tag` files
 - **Host inventory** — define your fleet in `inventory/<host>/`
@@ -95,7 +95,7 @@ Remote execution flow: cloudify SSHes into the target host, runs the bootstrap g
 | Languages | python, go, ruby, php, mise, nvm, pyenv, miniconda3, sdkman |
 | Databases | mysql, mariadb |
 | Cloud & Infra | docker, digitalocean, scaleway, rclone, restic, hugo |
-| Misc | croc, paping (tcping), yq, json, mosh, keepassxc, dotfiles, grv, snipster |
+| Misc | croc, paping (tcping), yq, json, mosh, keepassxc, dotfiles, grv, snipster, youtube-mcp |
 
 Run `cloudify packages` for the full list with tags.
 

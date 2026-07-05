@@ -1,5 +1,16 @@
 # Cloudify — Session History
 
+## 2026-07-05 — youtube-mcp package: MCP server for YouTube data
+
+- **New package**: `pkg/youtube-mcp/` — Streamable HTTP MCP server serving YouTube video info, comments, transcripts, search, and transcript languages. No YouTube API key needed (uses youtubei.js + youtube-transcript-plus).
+- **Source**: `github.com/rachidbch/youtube-mcp` (fork of granitebps/youtube-mcp with session-registration fix + trust proxy).
+- **Architecture**: Node.js via mise (>=20 required), systemd service on port 8443, bearer token auth. Token auto-generated on first install, displayed via SSH output for user to save to `pkgs/youtube-mcp.yaml`.
+- **Key recipe decisions**:
+  - `pkg_depends mise` but node installed directly via `mise use -g node@lts` (avoids `pkg_depends node` guard skip when apt node already present at depth>0).
+  - Absolute path to mise shim in systemd ExecStart — `Environment=PATH` doesn't work for ExecStart resolution in LXC containers.
+  - `#linux` platform tag (systemd-dependent).
+- **Deployed**: `cloudai:youtube-mcp-2`, exposed via Tailscale Funnel at `https://youtube-mcp-2.komodo-everest.ts.net`.
+
 ## 2026-06-22 — separate-containers DNS: conditional dual-dns + peer-visibility root cause (fix/openwebui-conditional-dns)
 
 - **Trigger**: ROADBLOCK.md flagged separate-containers (open-webui <-> hermes via MagicDNS) as non-functional, unverified. Zero-trust recheck requested.

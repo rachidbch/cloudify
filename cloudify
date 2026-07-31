@@ -250,7 +250,7 @@ function _cloudify_dispatch() {
     local hosts="$2"
     local packages="$3"
 
-    [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
+    [[ "$packages" == *--install || "$packages" == *--configure ]] && die "Cloudify usage error: Empty package section."
     [[ "$hosts" != "localhost" ]] && _cloudify_require_remote_creds
 
     # Verify-only mode (--verify): dispatch verify instead of install.

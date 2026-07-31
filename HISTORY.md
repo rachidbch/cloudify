@@ -1,5 +1,28 @@
 # Cloudify — Session History
 
+## 2026-07-31 — cloudify-hermes SKILL.md: drop stale launch-wait retry loop (separable follow-up)
+
+- Removed the post-`ivps launch` wait-for-SSH retry loop from `~/.agents/skills/cloudify-hermes/SKILL.md` — ivps blocks until SSH-ready since 2026-06-14 (ivps issues #1/#2). Kept the "SSH fails after launch" troubleshooting section (failure diagnosis, not a redundant wait). The second separable item (ACL jq-on-huJSON bug) was already fixed during the spike (ADR-010).
+
+
+## 2026-07-31 — C2: install/run split — install.sh + configure.sh, `cloudify configure` (issue #6, ADR-008)
+
+- **Implemented** optional split: `pkg/<name>/install.sh` (idempotent bits + install guard) + `configure.sh` (run phase, no guard). Split pkgs: `cloudify install` runs install.sh THEN configure.sh; new `cloudify configure <pkg>` runs configure.sh only (cheap secret rotation, no re-download); non-split pkgs error clearly; `init.sh`-only pkgs install exactly as before (regression-tested). Verify-hook (ADR-004) runs after both.
+- **Recipe resolution generalized** (`cloudify_package_recipe_path`): install.sh preferred when present, init.sh legacy fallback; optional filename arg resolves configure.sh (`cloudify_package_configure_path`). `_cloudify_source_pkg_phases` sources both phases in one subshell; `pkg_depends` uses it for deps too.
+- **`_cloudify_pkg_remote_vars`** now collects package vars for configure dispatches too (k3s token rotation forwards `K3S_TOKEN` via `.remote-vars`, C1).
+- **Red spec**: `tests/unit/install-run-split.bats` (7) + E2E `tests/integration/package-install-run-split.bats` (7, incl. init-only byte-identical regression + verify-after-configure failure path). Fixtures `pkg/fixture-split/` (install+configure+verify+.remote-vars) and `pkg/fixture-legacy/`.
+- **PR #10 opened** (feat/install-run-split, stacked on feat/remote-vars). task test-unit 260/260 + lint green.
+
+
+## 2026-07-31 — C1: pkg .remote-vars — names in repo, values from caller env (issue #5, ADR-007)
+
+- **Implemented** `pkg/<name>/.remote-vars`: declares var NAMES in the repo; values come from the caller's env at install time (`_try_claim_env` in lib/remote.sh). Env wins over disk for the same name; global `remote-vars.yaml` + per-pkg yaml stay as back-compat reads; declared-but-unset names warn and are not forwarded.
+- **Parallel-safe by construction** (no shared file): red spec `tests/unit/remote-vars.bats` (7 tests incl. parallel no-shared-file regression) + E2E `tests/integration/package-remote-vars.bats` (two containers, concurrent installs of the same fixture pkg, each host received its own token).
+- **Pre-existing bug fixed**: `trap ... RETURN` in `_cloudify_pkg_remote_vars` fired on nested function returns under functrace (`set -T`, which bats uses) — deleted the temp var list mid-walk, breaking every claim. Guarded by FUNCNAME. Production never hit it (no functrace); tests would have.
+- **Test infra**: gettext-base (envsubst) added to `setup-container` + `itest-base` tasks; itest-base snapshot recreated.
+- **PR #13 opened** (feat/remote-vars). `task test-unit` + lint green; `task test` green modulo pre-existing master failures (package-hunk: npm -g bin not on ssh PATH under mise node; package-hermes-dashboard/-openwebui: hermes pkg_depends install fails in test container) — all reproduced on master worktree.
+
+
 ## 2026-07-31 — k3s multi-cluster design + ADR.md created (plan: k3s-multi-cluster)
 
 - **Design session**: k3s multi-cluster provisioning on the cloudify/ivps private cloud. Full design + grounding in `scratchpad/ivps-cloudify-evolutions-proposal.md`; plan in `tmp/plans/k3s-multi-cluster.md` (PLAN.md repointed from completed pkg-verify-hook plan).
@@ -12,7 +35,15 @@
 - **Constitution correction**: retracted an earlier proposal that `ivps launch` should block until SSH-ready — already shipped 2026-06-14 (ivps issues #1/#2, `IVPS_WAIT=1`). Lesson reinforced: never propose a delta without a disproof attempt; skill summaries are entry points, not evidence.
 - **Stale artifact found**: `cloudify-hermes` SKILL.md contains a launch-wait retry loop written 2026-06-13, one day before ivps launch became blocking. Defect via staleness, not a missed purpose (verified by mtime vs ivps git log). Separable follow-up: drop the loop from the skill.
 - **Roadmap**: applied stashed `cloudify packages` one-liner-description proposal to ROADMAP. Added k3s HA + Tailscale CNI entries.
-- **Open gate**: live spike (2 throwaway nodes) to validate mesh-grant + MTU on the real tailnet before building recipes.
+- **Spike run (same day): GREEN — gate passed.** 2 throwaway incus nodes as `tag:k3s-spike`, k3s v1.33.3+k3s1 server+agent; both nodes Ready, cross-node pod ping + 8MB TCP OK. ACL restored to pristine (incl. comments), nodes deleted, authkey revoked. Findings recorded as **ADR-010**: mesh (ADR-009) validated; ACL `tag create` is ATOMIC (one POST: tagOwners + ssh.dst + grants) — a grant resolves against tagOwners alone, no node needed (corrected post-spike: the earlier "3-phase" claim was a misdiagnosis; the spike 400 was the port-wildcard grants syntax, not tag existence); `grants` dst is host-only with ports in `ip` (NOT `tag:X:*`, the legacy `acls` form); operator-reach grant src is `autogroup:member` not `tag:workstation`; k3s recipe MUST set `--flannel-iface=tailscale0` (else flannel VTEP uses the incus bridge IP → 100% pod loss) and `--kubelet-arg=feature-gates=KubeletInUserNamespace=true` (else kubelet crashes on /dev/kmsg in unprivileged incus); MTU 1230 optional not required (default 1450 transfers 8MB TCP in 3s — PMTUD absorbs the mismatch); ACL `If-Match` opt-in but enforced (omit=unconditional; garbage=412); etag via GET `-D` not HEAD.
+- **hermes skill bug fixed**: `cloudify-hermes` SKILL.md ACL block ran `jq` on huJSON (comments break `jq` parse) → now GETs with `Accept: application/json`. Latent — broke on any ACL containing comments.
+
+## 2026-07-31 — k3s plan brought to project standard (issues filed, task-list restructure)
+
+- The design plan was phased-narrative, not a trackable task plan; it hoarded issues as local markdown and carried no TDD/container-SDLC content for the code phases — three violations of project AGENTS.md ("issues on GitHub, not local markdown"; plans reference issues; TDD-in-container).
+- **Issues filed (7):** ivps #9 (`tag create/delete/list`), #10 (`launch --tag`), #11 (`node-as-dir` + `node path`); cloudify #5 (`.remote-vars`), #6 (install/run split), #7 (state-registry write), #8 (k3s recipes).
+- **Plan restructured** (`tmp/plans/k3s-multi-cluster.md`): each phase is now checkable tasks (`- [ ]`) keyed to issue numbers; each code task carries a red bats spec + `task test` gate (Testing Trophy); `## Issues to file` (local text) replaced with `## Issues` (GitHub links); a `## Working discipline` section makes the TDD/container/push-before-tests/per-phase-gate rules explicit and inherited by every task.
+- **Dependencies made explicit:** C3 [#7] blocks on F3 [#11]; C2 [#6] blocks Phase 3 [#8]; F1/F2 + C1/C2 parallelizable.
 
 ## 2026-07-05 — youtube-mcp package: MCP server for YouTube data
 

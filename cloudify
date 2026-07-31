@@ -22,6 +22,8 @@ function usage() {
         cloudify add | a <pkg>                          install package on local machine
         cloudify add | a  default                       install default packages on local machine
         cloudify --on <host> install <pkg>              install package on remote host
+        cloudify --on <host> configure <pkg>            configure-only on remote host (split pkgs)
+        cloudify configure <pkg>                        configure-only, local (split pkgs: rewrite unit, restart, resolve secrets)
         cloudify --no-verify --on <host> install <pkg>  install on remote host, skip verification
         cloudify --verify --on <host> install <pkg>     verify only (no install) on remote host
         cloudify verify <pkg>                           verify package (local)
@@ -182,7 +184,7 @@ function _cloudify_is_reserved() {
 function _cloudify_is_action() {
     local word="${1:-}"
     case "$word" in
-        --install | install | inst | i | --uninstall | uninstall | u) return 0 ;;
+        --install | install | inst | i | --uninstall | uninstall | u | --configure | configure) return 0 ;;
     esac
     return 1
 }
@@ -225,6 +227,12 @@ function _cloudify_execute_package_action() {
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         is_setup_in_progress=true
+    elif [[ "$action" == "configure" ]]; then
+        PKG_DEBUG "${YELLOW}cloudify_configure_package ${pkgs[*]}${RESET}"
+        (cloudify_configure_package "${pkgs[@]}") &
+        _CLOUDIFY_BG_PIDS+=($!)
+        _CLOUDIFY_BG_HOSTS[$!]="localhost"
+        is_setup_in_progress=true
     elif [[ "$action" == "uninstall" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs[*]}${RESET}"
         (cloudify_uninstall_package "${pkgs[@]}") &
@@ -242,13 +250,13 @@ function _cloudify_dispatch() {
     local hosts="$2"
     local packages="$3"
 
-    [[ "$packages" == *--install ]] && die "Cloudify usage error: Empty package section."
+    [[ "$packages" == *--install || "$packages" == *--configure ]] && die "Cloudify usage error: Empty package section."
     [[ "$hosts" != "localhost" ]] && _cloudify_require_remote_creds
 
     # Verify-only mode (--verify): dispatch verify instead of install.
     # The packages string looks like "--install pkg1 pkg2"; strip the marker.
     if [[ "${CLOUDIFY_VERIFY_ONLY:-}" == "true" ]]; then
-        [[ "$action" == "uninstall" ]] && die "Cloudify usage error: --verify is only valid with install."
+        [[ "$action" != "install" ]] && die "Cloudify usage error: --verify is only valid with install."
         local verify_pkgs="${packages#--install}"
         verify_pkgs="${verify_pkgs# }"
         [[ -z "$verify_pkgs" ]] && die "Cloudify usage error: No packages to verify."
@@ -278,9 +286,11 @@ function _cloudify_dispatch() {
             _cloudify_execute_package_action "$action" "${pkgs_array[@]}"
         else
             PKG_DEBUG_LN "${GREEN}cloudify_remote $host $packages${RESET}"
-            # Mark explicitly dispatched packages with CLOUDIFY_FORCE=true
+            # Mark explicitly dispatched installs with CLOUDIFY_FORCE=true so
+            # recipes can distinguish explicit installs from dependency pulls.
+            # configure is run-phase only — no FORCE semantics.
             # shellcheck disable=SC2031
-            export CLOUDIFY_FORCE=true
+            [[ "$action" == "install" ]] && export CLOUDIFY_FORCE=true
             # --clear-data implies CLOUDIFY_FORCE (already set above if --clear-data)
             cloudify_remote "$host" "$packages" && is_setup_in_progress=true
         fi
@@ -507,7 +517,7 @@ function main() {
             done
             [[ -z "${2:-}" ]] && die "No packages found for hosts: $hosts"
             ;;
-        --install | install | inst | i | --uninstall | uninstall | u)
+        --install | install | inst | i | --uninstall | uninstall | u | --configure | configure)
             [[ $is_parsing_hosts == "started" ]] && die "Cloudify usage error: unexpected action '$1'"
             [[ -z "$hosts" ]] && hosts="localhost"
             is_parsing_packages="started"
@@ -519,6 +529,9 @@ function main() {
                 ;;
             --uninstall | uninstall | u)
                 action='uninstall'
+                ;;
+            --configure | configure)
+                action='configure'
                 ;;
             esac
 

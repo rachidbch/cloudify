@@ -15,6 +15,13 @@
 - **Spike run (same day): GREEN — gate passed.** 2 throwaway incus nodes as `tag:k3s-spike`, k3s v1.33.3+k3s1 server+agent; both nodes Ready, cross-node pod ping + 8MB TCP OK. ACL restored to pristine (incl. comments), nodes deleted, authkey revoked. Findings recorded as **ADR-010**: mesh (ADR-009) validated; ACL tag lifecycle is 3-phase (declare tagOwners → register a tagged node → add ssh.dst + grants); `grants` dst is host-only with ports in `ip` (NOT `tag:X:*`, the legacy `acls` form); operator-reach grant src is `autogroup:member` not `tag:workstation`; k3s recipe MUST set `--flannel-iface=tailscale0` (else flannel VTEP uses the incus bridge IP → 100% pod loss) and `--kubelet-arg=feature-gates=KubeletInUserNamespace=true` (else kubelet crashes on /dev/kmsg in unprivileged incus); MTU 1230 optional not required (default 1450 transfers 8MB TCP in 3s — PMTUD absorbs the mismatch); ACL `If-Match` opt-in but enforced (omit=unconditional; garbage=412); etag via GET `-D` not HEAD.
 - **hermes skill bug fixed**: `cloudify-hermes` SKILL.md ACL block ran `jq` on huJSON (comments break `jq` parse) → now GETs with `Accept: application/json`. Latent — broke on any ACL containing comments.
 
+## 2026-07-31 — k3s plan brought to project standard (issues filed, task-list restructure)
+
+- The design plan was phased-narrative, not a trackable task plan; it hoarded issues as local markdown and carried no TDD/container-SDLC content for the code phases — three violations of project AGENTS.md ("issues on GitHub, not local markdown"; plans reference issues; TDD-in-container).
+- **Issues filed (7):** ivps #9 (`tag create/delete/list`), #10 (`launch --tag`), #11 (`node-as-dir` + `node path`); cloudify #5 (`.remote-vars`), #6 (install/run split), #7 (state-registry write), #8 (k3s recipes).
+- **Plan restructured** (`tmp/plans/k3s-multi-cluster.md`): each phase is now checkable tasks (`- [ ]`) keyed to issue numbers; each code task carries a red bats spec + `task test` gate (Testing Trophy); `## Issues to file` (local text) replaced with `## Issues` (GitHub links); a `## Working discipline` section makes the TDD/container/push-before-tests/per-phase-gate rules explicit and inherited by every task.
+- **Dependencies made explicit:** C3 [#7] blocks on F3 [#11]; C2 [#6] blocks Phase 3 [#8]; F1/F2 + C1/C2 parallelizable.
+
 ## 2026-07-05 — youtube-mcp package: MCP server for YouTube data
 
 - **New package**: `pkg/youtube-mcp/` — Streamable HTTP MCP server serving YouTube video info, comments, transcripts, search, and transcript languages. No YouTube API key needed (uses youtubei.js + youtube-transcript-plus).

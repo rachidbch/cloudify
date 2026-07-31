@@ -115,6 +115,11 @@ function cloudify_package_has_recipe() {
 # Print path of package recipe
 # Usage:
 #   cloudify_package_recipe_path package                Get the path of the recipe of package 'package'
+#   cloudify_package_recipe_path package configure.sh   Resolve a specific filename (e.g. the split configure.sh)
+#
+# Resolves with OS/distro/version specificity. For the default filename,
+# install.sh is preferred when present (split pkg, ADR-008), init.sh is the
+# legacy fallback.
 function cloudify_package_recipe_path() {
     local os
     local distro
@@ -123,27 +128,85 @@ function cloudify_package_recipe_path() {
     distro=$(cloudify_osdetect --distro)
     version=$(cloudify_osdetect --version)
     local pkg="$1"
+    local explicit_filename="${2:-}"
 
     [[ -z $1 ]] && die "Missing argument: package name"
 
+    # Filenames to try: explicit (e.g. configure.sh), or install.sh preferred
+    # for split pkgs with init.sh as legacy fallback (ADR-008 back-compat).
+    local -a filenames=()
+    if [[ -n "$explicit_filename" ]]; then
+        filenames=("$explicit_filename")
+    elif [[ -f "$CLOUDIFY_DIR/pkg/$pkg/install.sh" ]]; then
+        filenames=(install.sh init.sh)
+    else
+        filenames=(init.sh)
+    fi
+
     # Return recipe file (gives higher priority to recipes with higher specificity)
     local recipe
-    recipe="$CLOUDIFY_DIR/pkg/${pkg}/${version}.${distro}.${os}.${CLOUDIFY_RECIPE_FILENAME}"
-    [[ -n $version ]] && [[ -n $distro ]] && [[ -n $os ]] &&
-        [[ -f "$recipe" ]] && echo "$recipe" && return 0
+    local filename
+    for filename in "${filenames[@]}"; do
+        recipe="$CLOUDIFY_DIR/pkg/${pkg}/${version}.${distro}.${os}.${filename}"
+        [[ -n $version ]] && [[ -n $distro ]] && [[ -n $os ]] &&
+            [[ -f "$recipe" ]] && echo "$recipe" && return 0
 
-    recipe="$CLOUDIFY_DIR/pkg/${pkg}/${distro}.${os}.${CLOUDIFY_RECIPE_FILENAME}"
-    [[ -n $distro ]] && [[ -n $os ]] &&
-        [[ -f "$recipe" ]] && echo "$recipe" && return 0
+        recipe="$CLOUDIFY_DIR/pkg/${pkg}/${distro}.${os}.${filename}"
+        [[ -n $distro ]] && [[ -n $os ]] &&
+            [[ -f "$recipe" ]] && echo "$recipe" && return 0
 
-    recipe="$CLOUDIFY_DIR/pkg/${pkg}/${os}.${CLOUDIFY_RECIPE_FILENAME}"
-    [[ -n $os ]] &&
-        [[ -f "$recipe" ]] && echo "$recipe" && return 0
+        recipe="$CLOUDIFY_DIR/pkg/${pkg}/${os}.${filename}"
+        [[ -n $os ]] &&
+            [[ -f "$recipe" ]] && echo "$recipe" && return 0
 
-    recipe="$CLOUDIFY_DIR/pkg/${pkg}/${CLOUDIFY_RECIPE_FILENAME}"
-    [[ -f "$recipe" ]] && echo "$recipe" && return 0
+        recipe="$CLOUDIFY_DIR/pkg/${pkg}/${filename}"
+        [[ -f "$recipe" ]] && echo "$recipe" && return 0
+    done
 
     return 1 # No path found
+}
+
+# Resolve the configure.sh path of a split package (run phase, ADR-008).
+# Returns 1 when the package has no configure.sh (no split).
+# Usage: configure_path=$(cloudify_package_configure_path "$pkg") || die ...
+function cloudify_package_configure_path() {
+    cloudify_package_recipe_path "$1" configure.sh
+}
+
+# Configure (run-phase only) one or more packages — for split pkgs (ADR-008).
+# Runs configure.sh (rewrite unit, restart, resolve secrets) with no install
+# guard. Errors clearly for non-split packages. Verify-hook runs after.
+# Usage: cloudify_configure_package pkg [pkg...]
+function cloudify_configure_package() {
+    local pkg
+    local configure_path
+    local -a failed_packages=()
+    for pkg in "$@"; do
+        if [[ "$pkg" == @* || "$pkg" == \#* ]]; then
+            msg "${RED}Error: Illegal tag. Cloudify_configure_package does not accept tags as arguments. Ignoring \"$pkg\".${RESET}"
+            continue
+        fi
+        msg "${GREEN}Configuring ${pkg%%*( )} cloudify package${RESET}"
+        if configure_path=$(cloudify_package_configure_path "$pkg"); then
+            # Run-phase only: no install guard, no FORCE/CLEAR_DATA semantics.
+            # shellcheck source=/dev/null
+            if ! ( _CLOUDIFY_PKG_DEPTH=1 source "$configure_path" ); then
+                failed_packages+=("$pkg")
+                continue
+            fi
+        else
+            die "Package $pkg has no configure.sh — it is not a split package (no install/run separation). Nothing to configure; use install."
+        fi
+        # Verification hook (ADR-004) runs after configure too.
+        if [[ "${CLOUDIFY_NO_VERIFY:-}" != "true" ]]; then
+            _cloudify_run_verify "$pkg" || { failed_packages+=("$pkg"); continue; }
+        fi
+    done
+    if [[ ${#failed_packages[@]} -gt 0 ]]; then
+        msg "${RED}Failed packages: ${failed_packages[*]}${RESET}"
+        return 1
+    fi
+    ${SKIPDONEMESSAGE:-false} || cloudify_print_done
 }
 
 # Print package recipe (ie the content of package's recipe file)

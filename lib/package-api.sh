@@ -367,6 +367,23 @@ function _cloudify_run_verify() {
     return 1
 }
 
+# Source a package's install phases: install.sh then configure.sh for split
+# pkgs (ADR-008), init.sh alone for legacy pkgs. Runs inside the caller's
+# subshell so install-phase vars are visible to the configure phase.
+# Usage: _cloudify_source_pkg_phases <pkg> <recipe_path>
+function _cloudify_source_pkg_phases() {
+    local pkg="$1"
+    local recipe_path="$2"
+    # shellcheck source=/dev/null
+    source "$recipe_path" || return 1
+    local configure_path
+    if configure_path=$(cloudify_package_configure_path "$pkg"); then
+        # shellcheck source=/dev/null
+        source "$configure_path" || return 1
+    fi
+    return 0
+}
+
 # Adds a package dependeny
 function pkg_depends() {
     local package_recipe_path
@@ -386,14 +403,14 @@ function pkg_depends() {
                 if (( _CLOUDIFY_PKG_DEPTH > 0 )); then
                     # Dependency pull: unset FORCE/CLEAR_DATA so dep recipes skip
                     # destructive overwrites. Subshell to avoid polluting caller's env.
-                    if ! (_CLOUDIFY_PKG_DEPTH=$((_CLOUDIFY_PKG_DEPTH + 1)) unset CLOUDIFY_FORCE; unset CLOUDIFY_CLEAR_DATA; source "$package_recipe_path"); then
+                    if ! (_CLOUDIFY_PKG_DEPTH=$((_CLOUDIFY_PKG_DEPTH + 1)) unset CLOUDIFY_FORCE; unset CLOUDIFY_CLEAR_DATA; _cloudify_source_pkg_phases "$pkg" "$package_recipe_path"); then
                         failed_packages+=("$pkg")
                         continue
                     fi
                 else
                     # Explicit dispatch: FORCE/CLEAR_DATA are passed through intact.
                     # Increment depth so this recipe's own pkg_depends calls become deps.
-                    if ! (_CLOUDIFY_PKG_DEPTH=$((_CLOUDIFY_PKG_DEPTH + 1)) source "$package_recipe_path"); then
+                    if ! (_CLOUDIFY_PKG_DEPTH=$((_CLOUDIFY_PKG_DEPTH + 1)) _cloudify_source_pkg_phases "$pkg" "$package_recipe_path"); then
                         failed_packages+=("$pkg")
                         continue
                     fi

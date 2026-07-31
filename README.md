@@ -38,8 +38,10 @@ cloudify [action] [package]
 
 Actions:
   install | i <pkg>           Install a package locally
+  configure <pkg>             Configure-only, local (split pkgs: run phase, no re-download)
   uninstall | u <pkg>         Uninstall a package locally
   --on <host> install <pkg>   Install a package on a remote host
+  --on <host> configure <pkg> Configure-only on a remote host
 
 Commands:
   help                        Print usage help
@@ -281,10 +283,22 @@ Each package lives in `pkg/<name>/`. The only required file is `init.sh`.
 
 ```
 pkg/hermes/
-├── init.sh           # Required — the install recipe
+├── init.sh           # Required — the install recipe (or install.sh for split pkgs)
+├── install.sh        # Split pkg: idempotent bits + install guard (ADR-008)
+├── configure.sh      # Split pkg: run phase — rewrite unit, restart, resolve secrets (no guard)
 ├── verify.sh         # Optional — verification hook (see "Verification" below)
+├── .remote-vars      # Optional — var NAMES forwarded from caller env (see below)
 └── @default          # Optional — tag file (empty file)
 ```
+
+**install/run split (ADR-008):** packages with a real run phase (systemd unit,
+secrets, cluster membership) may split into `install.sh` (idempotent bits +
+install guard) and `configure.sh` (no guard — rewrite unit, restart, resolve
+secrets). For split pkgs, `cloudify install <pkg>` runs install.sh THEN
+configure.sh; `cloudify configure <pkg>` runs configure.sh only — cheap secret
+rotation without re-downloading the binary. Verify-hook runs after both.
+`cloudify configure` on a non-split pkg errors clearly. `init.sh` stays fully
+supported (no split → runs as today).
 
 Tag files are empty files used for filtering. `@default` means the package is installed by `cloudify install default`. Create custom tags with `@<tag>` (e.g., `@web`, `@dev`).
 

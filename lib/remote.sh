@@ -156,9 +156,9 @@ function _cloudify_pkg_remote_vars() {
         done < "$always_file"
     fi
 
-    # -- Detect install command --
+    # -- Detect install/configure command (both dispatch package vars) --
     for arg in "${args[@]}"; do
-        [[ "$arg" == "install" || "$arg" == "--install" ]] && { in_install=true; break; }
+        [[ "$arg" == "install" || "$arg" == "--install" || "$arg" == "configure" || "$arg" == "--configure" ]] && { in_install=true; break; }
     done
 
     if $in_install; then
@@ -166,7 +166,7 @@ function _cloudify_pkg_remote_vars() {
         local -a pkgs=()
         local saw_install=false
         for arg in "${args[@]}"; do
-            if [[ "$arg" == "install" || "$arg" == "--install" ]]; then
+            if [[ "$arg" == "install" || "$arg" == "--install" || "$arg" == "configure" || "$arg" == "--configure" ]]; then
                 saw_install=true; continue
             fi
             $saw_install && [[ "$arg" != -* ]] && pkgs+=("$arg")

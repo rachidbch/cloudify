@@ -1,5 +1,15 @@
 # Cloudify Roadmap
 
+## Package discovery: one-liner descriptions in `cloudify packages`
+
+`cloudify packages` lists package names only — no descriptions. To discover what a package does, users must read `pkg/<name>/init.sh` individually. Each init.sh already has a header comment (e.g. `# bat is better cat`).
+
+**Proposed:** `cloudify packages` reads each init.sh header comment and displays a one-liner description column. Format options:
+- `cloudify packages` — name + description (compact table)
+- `cloudify packages show <pkg>` — full recipe (already exists)
+
+Implementation: extract lines 2–3 from each init.sh (the `# description` pattern), strip `#` prefix. Non-invasive — no new files or convention changes needed.
+
 ## Error aggregation in `cloudify_install_package`
 
 `cloudify_install_package()` in `lib/packages.sh` calls `pkg_depends "$pkg"` in a loop, one package at a time. With `set -e` active, the first failure aborts the entire function — remaining packages are never attempted, and no error report is printed.

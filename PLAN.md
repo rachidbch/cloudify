@@ -1,1 +1,1 @@
-tmp/plans/pkg-verify-hook.md
+tmp/plans/k3s-multi-cluster.md

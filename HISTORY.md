@@ -1,5 +1,19 @@
 # Cloudify — Session History
 
+## 2026-07-31 — k3s multi-cluster design + ADR.md created (plan: k3s-multi-cluster)
+
+- **Design session**: k3s multi-cluster provisioning on the cloudify/ivps private cloud. Full design + grounding in `scratchpad/ivps-cloudify-evolutions-proposal.md`; plan in `tmp/plans/k3s-multi-cluster.md` (PLAN.md repointed from completed pkg-verify-hook plan).
+- **Decisions recorded as ADR-006 through ADR-009** (new `ADR.md` — backfilled ADR-001..005 from prior HISTORY since the project lacked an ADR file; constitution-required).
+  - ADR-006: node-keyed state registry under ivps (`nodes/<node>/pkgs/<pkg>/deployments/<id>/`); cloudify writes opaque state, ivps owns node lifecycle. Supersedes ADR-002 storage location.
+  - ADR-007: `pkg/<name>/.remote-vars` (names in repo, values from caller env) — parallel-safe forwarding. Names-vs-values split holds from ADR-002.
+  - ADR-008: install/run separation (`install.sh` + `configure.sh`, init.sh back-compat, new `cloudify configure` verb). k3s is first split pkg.
+  - ADR-009: per-cluster tailnet tags (`tag:k3s-<cluster>`) for network isolation. ivps deltas: `tag create/delete/list`, `launch --tag`.
+- **MVP CNI**: flannel VXLAN, MTU 1230 (overlay-in-overlay: tailscale 1280 - VXLAN 50; grounded via exa: tailscale#8219/#16820, flannel#1011). Tailscale CNI (drop VXLAN) + HA control plane tracked in ROADMAP as follow-ons.
+- **Constitution correction**: retracted an earlier proposal that `ivps launch` should block until SSH-ready — already shipped 2026-06-14 (ivps issues #1/#2, `IVPS_WAIT=1`). Lesson reinforced: never propose a delta without a disproof attempt; skill summaries are entry points, not evidence.
+- **Stale artifact found**: `cloudify-hermes` SKILL.md contains a launch-wait retry loop written 2026-06-13, one day before ivps launch became blocking. Defect via staleness, not a missed purpose (verified by mtime vs ivps git log). Separable follow-up: drop the loop from the skill.
+- **Roadmap**: applied stashed `cloudify packages` one-liner-description proposal to ROADMAP. Added k3s HA + Tailscale CNI entries.
+- **Open gate**: live spike (2 throwaway nodes) to validate mesh-grant + MTU on the real tailnet before building recipes.
+
 ## 2026-07-05 — youtube-mcp package: MCP server for YouTube data
 
 - **New package**: `pkg/youtube-mcp/` — Streamable HTTP MCP server serving YouTube video info, comments, transcripts, search, and transcript languages. No YouTube API key needed (uses youtubei.js + youtube-transcript-plus).

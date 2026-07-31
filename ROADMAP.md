@@ -113,3 +113,47 @@ The systemd unit would need `Type=forking` instead of `Type=simple`, since `--de
 With verification now in the same loop, a failing `pkg_verify` appends to `failed_packages` and the loop continues to the next package. This is consistent but worth reviewing: for some workflows (tight dependency chains), aborting on first failure might give clearer feedback than collecting all failures.
 
 **Proposed action:** Evaluate whether an `--abort-on-failure` flag (or a per-invocation policy) is warranted. Default stays continue-on-failure (current behavior) unless a clear need emerges.
+
+## k3s multi-cluster provisioning
+
+Spin up isolated k3s clusters on the incus private cloud via a few lines of
+ivps + cloudify. Design and required ivps/cloudify deltas are in
+`scratchpad/ivps-cloudify-evolutions-proposal.md`. The keystone is per-cluster
+tailnet tags (`tag:k3s-<cluster>`) with a scoped ACL grant, since multi-node k3s
+requires a node mesh (UDP 8472, TCP 10250/6443) that our default ACL does not
+permit between containers.
+
+MVP scope: 1 server + N agents, flannel VXLAN with MTU corrected to 1230 for
+the VXLAN-inside-WireGuard overlay, three recipes (`k3s-server`, `k3s-agent`,
+`k3s-cli`). No cloudify core change required for MVP - the existing
+`pkgs/<pkg>.yaml` env-forwarding covers `K3S_TOKEN`/`K3S_URL`. ivps needs
+`tag create/delete`, `launch --tag`, and launch-waits-for-SSH.
+
+**Status:** proposal. Gated on a live spike (two throwaway nodes) confirming
+the mesh-grant and the 1230 MTU figure on the real tailnet.
+
+## k3s HA control plane (embedded etcd)
+
+Follow-on to k3s multi-cluster provisioning. Promote a cluster from 1 server to
+3 servers running embedded etcd (Raft quorum, odd node count only). Same
+recipes; server-1 boots with `--cluster-init`, servers 2-3 join with
+`--server https://k3s-<cluster>-1:6443 --token`. The flags
+`--cluster-cidr`/`--service-cidr`/`--flannel-backend`/`--disable=...` must be
+byte-identical across servers or the join fails.
+
+Not a one-way door: a running single-server cluster converts to HA by
+restarting the server with `--cluster-init` then joining more servers. So this
+is additive over the MVP and does not constrain the MVP design.
+
+## k3s with Tailscale CNI (drop VXLAN)
+
+Endgame CNI for k3s over the tailnet. Replace flannel VXLAN with the Tailscale
+Kubernetes operator's CNI so each pod gets a native tailscale 100.x IP. Removes
+the VXLAN-over-WireGuard double encapsulation (and the 1230 MTU workaround
+entirely), makes pods first-class tailnet citizens reachable directly from the
+operator, and eliminates UDP 8472 from the node-mesh requirement.
+
+Cost: an extra component (the operator) and every pod consuming a tailnet IP.
+This is the "make it native" path, not day-1. The node mesh grant
+(`tag:k3s-<cluster> -> tag:k3s-<cluster>:*`) is still required for the control
+plane (6443/10250) even with the Tailscale CNI.

@@ -1,5 +1,10 @@
 # Cloudify — Session History
 
+## 2026-07-31 — cloudify-hermes SKILL.md: drop stale launch-wait retry loop (separable follow-up)
+
+- Removed the post-`ivps launch` wait-for-SSH retry loop from `~/.agents/skills/cloudify-hermes/SKILL.md` — ivps blocks until SSH-ready since 2026-06-14 (ivps issues #1/#2). Kept the "SSH fails after launch" troubleshooting section (failure diagnosis, not a redundant wait). The second separable item (ACL jq-on-huJSON bug) was already fixed during the spike (ADR-010).
+
+
 ## 2026-07-31 — C2: install/run split — install.sh + configure.sh, `cloudify configure` (issue #6, ADR-008)
 
 - **Implemented** optional split: `pkg/<name>/install.sh` (idempotent bits + install guard) + `configure.sh` (run phase, no guard). Split pkgs: `cloudify install` runs install.sh THEN configure.sh; new `cloudify configure <pkg>` runs configure.sh only (cheap secret rotation, no re-download); non-split pkgs error clearly; `init.sh`-only pkgs install exactly as before (regression-tested). Verify-hook (ADR-004) runs after both.

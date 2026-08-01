@@ -78,7 +78,14 @@ teardown_file() {
 
 @test "push branch code (cloudify + k3s recipes) into each node" {
     for n in $NODES; do
-        echo "── pushing branch code to $n"
+        echo "── waiting for MagicDNS: $n"
+        local ok=false
+        for _ in $(seq 1 18); do
+            if getent hosts "$n" >/dev/null 2>&1; then ok=true; break; fi
+            sleep 5
+        done
+        $ok || { echo "  $n never resolved via MagicDNS"; return 1; }
+        echo "── pushing branch code to $n ($(getent hosts "$n" | awk '{print $1}'))"
         $TEST_SSH "root@$n" "mkdir -p /root/cloudify" || return 1
         tar czf - lib pkg cloudify Taskfile.yml \
             | $TEST_SSH "root@$n" "tar xzf - -C /root/cloudify" || return 1

@@ -41,3 +41,7 @@ inventory/
 .DS_Store
 Thumbs.db
 .trash/
+
+# Python bytecode cache (from local syntax checks of py recipes)
+__pycache__/
+*.pyc

@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # piface — web UI for pi (terminal coding agent). See README.md.
-# Installs @mariozechner/pi-coding-agent (badlogic/pi-mono) as the `pi` it drives,
-# which is distinct from the host's pi. Runs as a systemd user service on 0.0.0.0:7832.
 
 PIFACE_PORT="${PIFACE_PORT:-7832}"
 PIFACE_HOST="${PIFACE_HOST:-0.0.0.0}"
@@ -39,18 +37,14 @@ if ! command -v pi >/dev/null 2>&1; then
     log_info "Installing pi agent (@mariozechner/pi-coding-agent)..."
     npm install -g @mariozechner/pi-coding-agent
 fi
-# mise shims aren't on PATH for non-interactive shells (Debian .bashrc early-returns,
-# so `mise activate` never runs for `ssh -t host pi`). Symlink the shim onto the
-# base PATH so `pi` resolves everywhere — interactive, non-interactive, systemd.
+# Expose pi on the base PATH (mise shim isn't on PATH for non-interactive shells). See README "Gotchas".
 ln -sf "$HOME/.local/share/mise/shims/pi" /usr/local/bin/pi
 
-# piface (PyPI wheel bundles the built frontend — no node/pnpm build needed).
-# --force so re-runs (FORCE/CLEAR_DATA) refresh the tool env to latest.
+# --force so re-runs (FORCE/CLEAR_DATA) refresh to latest.
 log_info "Installing piface (uv tool, Python 3.12)..."
 uv tool install --python 3.12 --force piface
 
-# API-key helper — non-interactive alternative to pi's `/login` (which needs a
-# TTY: `ssh -t root@<host> pi`). /login is preferred; this covers scripts/CI.
+# Non-interactive key setup for scripts/CI (/login preferred interactively). See README.
 install -m 0755 "$(dirname "${BASH_SOURCE[0]}")/piface-set-key" "/usr/local/bin/piface-set-key"
 
 # --- systemd user service ----------------------------------------------------
@@ -84,17 +78,7 @@ systemctl --user restart piface
 
 # --- Post-install ------------------------------------------------------------
 msg ""
-msg "${GREEN}piface installed and running.${RESET}"
-msg ""
-msg "Loopback: http://127.0.0.1:${PIFACE_PORT}"
-msg "Logs:     journalctl --user -u piface -f"
-msg "Restart:  systemctl --user restart piface"
-msg "Upgrade:  uv tool upgrade piface && systemctl --user restart piface"
-msg ""
-msg "${YELLOW}Set a provider key (do before first use):${RESET}"
-msg "  ssh -t root@$(hostname) pi   →   /login      (interactive; OAuth + API keys)"
-msg "  ssh root@$(hostname) piface-set-key --list   (non-interactive: scripts/CI)"
-msg ""
-msg "${YELLOW}Expose on Tailscale:${RESET} see pkg/piface/README.md. Quickest:"
-msg "  ssh root@$(hostname) 'tailscale serve --bg --https 443 http://localhost:${PIFACE_PORT}'"
+msg "${GREEN}piface running on http://127.0.0.1:${PIFACE_PORT}${RESET}"
+msg "Logs:   journalctl --user -u piface -f"
+msg "Next:   ssh -t root@$(hostname) pi → /login  (provider key; rest in pkg/piface/README.md)"
 msg ""

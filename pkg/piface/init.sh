@@ -1,36 +1,7 @@
 #!/usr/bin/env bash
-# piface — web-based remote interface for pi (the terminal coding agent)
-# https://github.com/jbn/piface
-#
-# Wraps one or more `pi --mode rpc` subprocesses behind a FastAPI + WebSocket
-# backend and a Svelte frontend, usable from any browser over Tailscale/VPN.
-# The `pi` it drives is @mariozechner/pi-coding-agent (badlogic/pi-mono), NOT the
-# host's pi — installed here via npm.
-#
-# Stack:
-#   Node (mise)     → npm install -g @mariozechner/pi-coding-agent  (provides `pi`)
-#   uv (standalone) → uv tool install --python 3.12 piface         (PyPI wheel bundles the built
-#                                                                    frontend — no node/pnpm build needed)
-#   ffmpeg (apt)    → audio conversion for the transcribe endpoint
-#
-# Runs as a systemd USER service bound to 0.0.0.0:7832. The public bind is safe:
-# access is gated at the tailnet (Tailscale Service + ACL grant), not at the host.
-#
-# Config (~/.config/cloudify/pkgs/piface.yaml):
-#   PIFACE_PORT: "7832"      — server port
-#   PIFACE_HOST: "0.0.0.0"   — bind address
-#
-# Post-install:
-#   UI:        https://piface.<tailnet>.ts.net  (after ivps expose-service + admin approval)
-#   Loopback:  http://127.0.0.1:7832
-#   Logs:      journalctl --user -u piface -f
-#   Restart:   systemctl --user restart piface
-#   Upgrade:   uv tool upgrade piface && systemctl --user restart piface
-#
-# Note: provider/model API keys for pi are set at runtime via the piface UI or
-# pi's own config (~/.pi) — not part of this recipe. Speech/TTS extras are not
-# installed (they pull torch + need a GPU); add later with the [speech]/[tts]
-# extras on a GPU host if wanted.
+# piface — web UI for pi (terminal coding agent). See README.md.
+# Installs @mariozechner/pi-coding-agent (badlogic/pi-mono) as the `pi` it drives,
+# which is distinct from the host's pi. Runs as a systemd user service on 0.0.0.0:7832.
 
 PIFACE_PORT="${PIFACE_PORT:-7832}"
 PIFACE_HOST="${PIFACE_HOST:-0.0.0.0}"
@@ -120,9 +91,10 @@ msg "Logs:     journalctl --user -u piface -f"
 msg "Restart:  systemctl --user restart piface"
 msg "Upgrade:  uv tool upgrade piface && systemctl --user restart piface"
 msg ""
-msg "${YELLOW}Expose on Tailscale:${RESET}"
-msg "  ivps expose-service cloudai:piface piface ${PIFACE_PORT} --tags tag:incus"
-msg "  then approve svc:piface at https://login.tailscale.com/admin/services"
+msg "${YELLOW}Set a provider key (do before first use):${RESET}"
+msg "  ssh -t root@$(hostname) pi   →   /login      (interactive; OAuth + API keys)"
+msg "  ssh root@$(hostname) piface-set-key --list   (non-interactive: scripts/CI)"
 msg ""
-msg "${YELLOW}Configure pi providers:${RESET} set API keys via the piface UI or pi's config (~/.pi)."
+msg "${YELLOW}Expose on Tailscale:${RESET} see pkg/piface/README.md. Quickest:"
+msg "  ssh root@$(hostname) 'tailscale serve --bg --https 443 http://localhost:${PIFACE_PORT}'"
 msg ""

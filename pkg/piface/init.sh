@@ -68,6 +68,10 @@ if ! command -v pi >/dev/null 2>&1; then
     log_info "Installing pi agent (@mariozechner/pi-coding-agent)..."
     npm install -g @mariozechner/pi-coding-agent
 fi
+# mise shims aren't on PATH for non-interactive shells (Debian .bashrc early-returns,
+# so `mise activate` never runs for `ssh -t host pi`). Symlink the shim onto the
+# base PATH so `pi` resolves everywhere — interactive, non-interactive, systemd.
+ln -sf "$HOME/.local/share/mise/shims/pi" /usr/local/bin/pi
 
 # piface (PyPI wheel bundles the built frontend — no node/pnpm build needed).
 # --force so re-runs (FORCE/CLEAR_DATA) refresh the tool env to latest.

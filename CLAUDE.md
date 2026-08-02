@@ -55,7 +55,7 @@ task lint              # Push + shellcheck
 
 **Turn closure:** each turn ends with ALL docs updated (README.md, HISTORY.md, pkg READMEs, AGENTS.md) + `git status --short` clean. Missing a HISTORY entry is a bug.
 
-**Recipe conventions:** see "Writing a Package Recipe" in README.md.
+**Recipe conventions:** see "Directory structure" and "Recipe conventions" in README.md. Packages with non-obvious config/exposure/gotchas ship a `README.md` (and `docs/` if needed) — update it alongside the recipe.
 
 
 ## Working Plan

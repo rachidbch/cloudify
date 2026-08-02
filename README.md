@@ -283,10 +283,14 @@ Each package lives in `pkg/<name>/`. The only required file is `init.sh`.
 pkg/hermes/
 ├── init.sh           # Required — the install recipe
 ├── verify.sh         # Optional — verification hook (see "Verification" below)
+├── README.md         # Optional — user-facing docs (what it is, config vars, exposure, gotchas)
+├── docs/             # Optional — extended docs for packages needing more than a single README
 └── @default          # Optional — tag file (empty file)
 ```
 
 Tag files are empty files used for filtering. `@default` means the package is installed by `cloudify install default`. Create custom tags with `@<tag>` (e.g., `@web`, `@dev`).
+
+Packages with non-obvious config, exposure, or gotchas ship a `README.md` (and, if needed, a `docs/` subdir) — see `pkg/hermes/README.md` for the house style. Keep `init.sh`'s header comment lean and point at the README rather than duplicating it.
 
 #### Recipe conventions
 

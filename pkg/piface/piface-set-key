@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""piface-set-key — store a provider API key in pi's auth.json (used by piface).
+"""piface-set-key — non-interactive provider API-key setup for pi/piface.
 
-pi (the agent piface drives) resolves credentials in this order:
-  1. ~/.pi/agent/auth.json  (this tool writes here)
-  2. provider env var (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...)
-  3. none
+Prefer `/login` inside `ssh -t root@<host> pi` (OAuth for ChatGPT/Claude/Copilot
+plus API keys, and supports shell-command keys like `!op read ...`). This helper
+exists for the case /login can't cover: scripts, CI, provisioning with no TTY.
 
-piface's own UI only picks WHICH provider/model to run — it never stores keys.
-So on a server, populate auth.json with this helper. No restart needed: pi
-re-reads auth.json when it spawns/resumes each session.
+It writes pi's ~/.pi/agent/auth.json directly (merge + chmod 600). pi resolves
+credentials as auth.json key → provider env var (ANTHROPIC_API_KEY, ...) → none.
+No restart needed — pi re-reads auth.json on each session spawn/resume.
 
 Usage:
   piface-set-key <provider> <api-key>

@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""piface-set-key — store a provider API key in pi's auth.json (used by piface).
+
+pi (the agent piface drives) resolves credentials in this order:
+  1. ~/.pi/agent/auth.json  (this tool writes here)
+  2. provider env var (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...)
+  3. none
+
+piface's own UI only picks WHICH provider/model to run — it never stores keys.
+So on a server, populate auth.json with this helper. No restart needed: pi
+re-reads auth.json when it spawns/resumes each session.
+
+Usage:
+  piface-set-key <provider> <api-key>
+  piface-set-key <provider> <api-key> --env K=V [--env K=V ...]
+  piface-set-key --list
+  piface-set-key --remove <provider>
+
+<provider> must be a known pi provider id (see --list): anthropic, openai,
+openai-codex, google, deepseek, groq, openrouter, xai, mistral, together, ...
+
+The --env form is for providers that need extra non-secret ids alongside the
+key (e.g. cloudflare: --env CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_GATEWAY_ID=...).
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+AUTH_PATH = Path(os.environ.get("PI_CODING_AGENT_DIR", str(Path.home() / ".pi" / "agent"))) / "auth.json"
+
+# Subset of pi provider ids that use plain api-key auth (from pi-ai providers).
+PROVIDERS = {
+    "anthropic", "openai", "openai-codex", "google", "google-vertex",
+    "azure-openai-responses", "deepseek", "groq", "cerebras", "xai",
+    "fireworks", "openrouter", "mistral", "together", "nvidia",
+    "vercel-ai-gateway", "cloudflare-workers-ai", "cloudflare-ai-gateway",
+    "github-copilot", "moonshotai", "kimi-coding", "minimax", "zai",
+    "opencode", "opencode-go", "huggingface",
+}
+
+
+def die(msg: str, code: int = 2) -> None:
+    print(f"piface-set-key: {msg}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def load() -> dict:
+    if not AUTH_PATH.exists():
+        return {}
+    try:
+        return json.loads(AUTH_PATH.read_text() or "{}")
+    except json.JSONDecodeError as e:
+        die(f"could not parse {AUTH_PATH}: {e}")
+
+
+def save(data: dict) -> None:
+    AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
+    AUTH_PATH.write_text(json.dumps(data, indent=2) + "\n")
+    os.chmod(AUTH_PATH, 0o600)
+
+
+def main(argv: list[str]) -> int:
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+    if argv[0] == "--list":
+        for p in sorted(PROVIDERS):
+            mark = " ✓" if AUTH_PATH.exists() and load().get(p) else ""
+            print(f"  {p}{mark}")
+        return 0
+    if argv[0] == "--remove":
+        if len(argv) != 2:
+            die("--remove needs exactly one provider")
+        data = load()
+        if argv[1] in data:
+            del data[argv[1]]
+            save(data)
+            print(f"removed {argv[1]} from {AUTH_PATH}")
+        else:
+            print(f"{argv[1]} not present in {AUTH_PATH}")
+        return 0
+
+    # set: <provider> <key> [--env K=V ...]  (each --env may carry one or more K=V)
+    positional: list[str] = []
+    env: dict[str, str] = {}
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--env":
+            i += 1
+            while i < len(argv) and argv[i] != "--env":
+                if "=" not in argv[i]:
+                    die(f"--env needs K=V, got: {argv[i]}")
+                k, v = argv[i].split("=", 1)
+                env[k] = v
+                i += 1
+            continue
+        positional.append(argv[i])
+        i += 1
+    if len(positional) != 2:
+        die("usage: piface-set-key <provider> <api-key> [--env K=V ...]")
+    provider, key = positional
+    if provider not in PROVIDERS:
+        die(f"unknown provider '{provider}'. Run with --list for known ids.")
+    if not key:
+        die("empty api key")
+
+    data = load()
+    cred: dict = {"type": "api_key", "key": key}
+    if env:
+        cred["env"] = env
+    data[provider] = cred
+    save(data)
+    redacted = key[:6] + "…" + key[-3:] if len(key) > 10 else "***"
+    print(f"stored {provider} key ({redacted}) in {AUTH_PATH}")
+    print("no restart needed — start a new piface session to use it.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

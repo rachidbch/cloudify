@@ -74,6 +74,10 @@ fi
 log_info "Installing piface (uv tool, Python 3.12)..."
 uv tool install --python 3.12 --force piface
 
+# API-key helper: piface's UI only picks provider/model, never stores keys.
+# Drop a one-liner that writes pi's auth.json safely (merge + chmod 600).
+install -m 0755 "$(dirname "${BASH_SOURCE[0]}")/piface-set-key" "/usr/local/bin/piface-set-key"
+
 # --- systemd user service ----------------------------------------------------
 mkdir -p "$HOME/.config/systemd/user"
 cat > "$PIFACE_SERVICE" << UNITEOF

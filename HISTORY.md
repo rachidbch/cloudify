@@ -458,3 +458,15 @@ Final state:
 - **open-webui installed** via cloudify. Docker container starts but crashes with `ValueError: No embedding model is loaded`. Patched compose with `RAG_EMBEDDING_ENGINE=` to disable embeddings. Still not healthy — container keeps restarting.
 - **Roadblock**: open-webui won't stay up. Needs debugging — may need different RAG_EMBEDDING_ENGINE value or additional env vars.
 - **Untested**: hermes-openwebui package install (credentials passthrough fixed but open-webui must be healthy first), tailscale serve on openwebui-hermes, end-to-end TLS verification.
+
+## 2026-08-06 — pending decisions/actions ledger (so nothing is forgotten)
+
+- Finish the k3s e2e and prove it works (recipes + e2e spec on feat/k3s-recipes; blocked on the ivps F1 operator-grant fix).
+- ivps F1 operator-grant fix (operator is tag:workstation, not autogroup:member; all 15 tailnet devices tagged) — prompt handed to main agent for the ivps coding agent; its merge unblocks the e2e + the launch SSH-ready wait.
+- Recipe-dance story: skill now, roadmap a `cloudify recipe` subcommand (exact shape undecided).
+- Standing rule: all future cloudify changes stay additive + default-off; pkg-shape backward compat is regression-tested (init.sh-only pkgs byte-identical).
+- Cluster tags use `cluster-<name>`, not `k3s-<name>`.
+- Build out ADR-011: deployment-wide store + `cloudify vars set/delete/list` + `CLOUDIFY_DEPLOYMENT` context (unblocked) ; per-node slices (blocked on ivps PR #14); `cloudify deployment list/delete`.
+- Debug payload masking must cover TOKEN/KEY (K3S_TOKEN currently unmasked); `vars set --stdin/--file` for secrets.
+- Merge queue: cloudify #9/#10, ivps #12/#13/#14 (all open). C3 issue #7 acceptance to be updated to ADR-011 shape.
+- ADR-010 operator-reach wording correction when the ivps fix lands. Secrets security model study (Secrets V2) tracked. `clone deployment` optional follow-on.

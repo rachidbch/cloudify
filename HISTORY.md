@@ -461,6 +461,7 @@ Final state:
 
 ## 2026-08-06 — pending decisions/actions ledger (so nothing is forgotten)
 
+- **⛔ GOVERNANCE GATE (persisted in CLAUDE.md, top of file)**: cloudify's env-var forwarding (`lib/remote.sh`) and shadow functions (`lib/shadows/*.sh`) are extremely brittle bash magic. No code change to cloudify without: (1) a subagent whose unique mission is to describe that bash magic, (2) an implementation plan arguing why it can't break the mechanisms, (3) explicit human consent.
 - Finish the k3s e2e and prove it works (recipes + e2e spec on feat/k3s-recipes; blocked on the ivps F1 operator-grant fix).
 - ivps F1 operator-grant fix (operator is tag:workstation, not autogroup:member; all 15 tailnet devices tagged) — prompt handed to main agent for the ivps coding agent; its merge unblocks the e2e + the launch SSH-ready wait.
 - Recipe-dance story: skill now, roadmap a `cloudify recipe` subcommand (exact shape undecided).

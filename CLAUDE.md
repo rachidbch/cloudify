@@ -1,5 +1,29 @@
 # Cloudify
 
+## ⛔ CRITICAL GATE — no code change to cloudify without consent
+
+cloudify depends on two **extremely brittle** bash mechanisms:
+1. **Env-var forwarding** (`lib/remote.sh`): `declare -f` payload extraction, the
+   envsubst allow-list, single-quoted `$VAR` remoting, first-write-wins var
+   claiming. Big black hairy bash magic.
+2. **Shadow functions** (`lib/shadows/*.sh`): `sudo`, `apt-get`,
+   `add-apt-repository`, `git` overrides for password injection / idempotency /
+   auth. Every one of the 75+ recipes depends on them.
+
+**No code change to cloudify (lib/, router, shadows, or recipe runtime behavior)
+may proceed without:**
+1. **Description first** — spawn a subagent whose unique mission is to describe
+   the complex bash magic cloudify depends on (how forwarding + shadows actually
+   work end to end, and the invariants they rely on). Written artifact before any
+   edit.
+2. **Plan + non-breakage argument** — an implementation plan stating explicitly
+   why the change cannot break those mechanisms (invariants preserved, what was
+   traced, what was tested).
+3. **Explicit human consent** — a clear go from Rachid before touching code.
+
+Skipping this gate risks silent breakage of every package install — the costliest
+failure mode in this repo.
+
 ## Constitution (project-specific; global rules in ~/AGENTS.md)
 - **Timeouts.** Estimate task time, set 3×. Never fail a command by being too conservative.
 - **Tool priority.** cloudify > ivps > incus; incus only with explicit consent.

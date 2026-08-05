@@ -1,5 +1,11 @@
 # Cloudify — Session History
 
+## 2026-08-06 — ADR-011: deployments = applications (cloudify-owned), deployment-first state shape
+
+- **Decision recorded** (ADR-011): a deployment is a first-class cloud-global entity — an application across nodes; a k3s cluster is a deployment. Supersedes ADR-006's packages-first sub-shape: per-node slices become `nodes/<node>/deployments/<id>/pkgs/<pkg>/config.yaml`; deployment-wide state lives at `~/.config/cloudify/deployments/<id>/` (fixed-path convention, ivps stays opaque). Ownership: cloudify owns applications, ivps owns resources. Context is a per-shell `CLOUDIFY_DEPLOYMENT` env var (no open/close, no shared context file — parallel-safe). `cloudify vars set/delete/list` + `cloudify deployment list/delete`; precedence caller-env > per-(node,pkg) > deployment-wide; secrets-as-config for MVP; debug masking extended to TOKEN/KEY.
+- **Spike-proven ivps F1 gap (reported for ivps fix)**: `ivps tag create` grants use `autogroup:member`, but every tailnet device is tagged (15/15), so the operator (tag:workstation) gets no access to new tags — nodes unreachable (no netmap/DNS/SSH) until a `src:[tag:workstation]` grant is added manually. Verified live: adding the grant restores connectivity instantly. Also corrects ADR-010's operator-reach wording. Blocked the k3s multi-cluster e2e.
+
+
 ## 2026-07-31 — cloudify-hermes SKILL.md: drop stale launch-wait retry loop (separable follow-up)
 
 - Removed the post-`ivps launch` wait-for-SSH retry loop from `~/.agents/skills/cloudify-hermes/SKILL.md` — ivps blocks until SSH-ready since 2026-06-14 (ivps issues #1/#2). Kept the "SSH fails after launch" troubleshooting section (failure diagnosis, not a redundant wait). The second separable item (ACL jq-on-huJSON bug) was already fixed during the spike (ADR-010).

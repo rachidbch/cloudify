@@ -471,3 +471,10 @@ Final state:
 - Debug payload masking must cover TOKEN/KEY (K3S_TOKEN currently unmasked); `vars set --stdin/--file` for secrets.
 - Merge queue: cloudify #9/#10, ivps #12/#13/#14 (all open). C3 issue #7 acceptance to be updated to ADR-011 shape.
 - ADR-010 operator-reach wording correction when the ivps fix lands. Secrets security model study (Secrets V2) tracked. `clone deployment` optional follow-on.
+
+## 2026-08-06 — ivps boundary decisions (from PR/UX review)
+
+- **Separation (human decision):** `ivps tag create/delete` = identity only (tagOwners + join key). Network linking moves to the new `ivps acl grant/revoke`; the cluster recipe does the linking with an explicit operator set (tag:workstation, tag:mobile) — never hardcoded autogroup:member. This dissolves the F1 operator-grant bug by design; the e2e now waits on `ivps acl` existing, and the cloudify recipes get a small update to call it.
+- **Lock (human decision):** ivps must hold an exclusive lock around every ACL write + 412-retry must re-derive from a fresh fetch (spec's no-locking assumption rejected).
+- **F3 (human decision):** `feat/node-path` merges (per-instance state surface for deployment slices). Note: after merge, the stranded nested `nodes/cloudai/` is the correct layout — re-adopt and cull the flat orphan instead of the spec's original direction.
+- Prompt handed to the main agent for the ivps coding agent (merge order #12→#13→#14 with the separation change; implement `ivps acl`; concurrency + operator-reachability acceptance).

@@ -48,7 +48,7 @@ else
 fi
 
 # --- Build ---
-cd "$MCP_DIR"
+cd "$MCP_DIR" || die "Failed to cd into $MCP_DIR"
 log_info "Installing npm dependencies..."
 npm install
 log_info "Building TypeScript..."

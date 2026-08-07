@@ -1,5 +1,14 @@
 # Cloudify — Session History
 
+## 2026-07-31 — C1: pkg .remote-vars — names in repo, values from caller env (issue #5, ADR-007)
+
+- **Implemented** `pkg/<name>/.remote-vars`: declares var NAMES in the repo; values come from the caller's env at install time (`_try_claim_env` in lib/remote.sh). Env wins over disk for the same name; global `remote-vars.yaml` + per-pkg yaml stay as back-compat reads; declared-but-unset names warn and are not forwarded.
+- **Parallel-safe by construction** (no shared file): red spec `tests/unit/remote-vars.bats` (7 tests incl. parallel no-shared-file regression) + E2E `tests/integration/package-remote-vars.bats` (two containers, concurrent installs of the same fixture pkg, each host received its own token).
+- **Pre-existing bug fixed**: `trap ... RETURN` in `_cloudify_pkg_remote_vars` fired on nested function returns under functrace (`set -T`, which bats uses) — deleted the temp var list mid-walk, breaking every claim. Guarded by FUNCNAME. Production never hit it (no functrace); tests would have.
+- **Test infra**: gettext-base (envsubst) added to `setup-container` + `itest-base` tasks; itest-base snapshot recreated.
+- **PR #13 opened** (feat/remote-vars). `task test-unit` + lint green; `task test` green modulo pre-existing master failures (package-hunk: npm -g bin not on ssh PATH under mise node; package-hermes-dashboard/-openwebui: hermes pkg_depends install fails in test container) — all reproduced on master worktree.
+
+
 ## 2026-07-31 — k3s multi-cluster design + ADR.md created (plan: k3s-multi-cluster)
 
 - **Design session**: k3s multi-cluster provisioning on the cloudify/ivps private cloud. Full design + grounding in `scratchpad/ivps-cloudify-evolutions-proposal.md`; plan in `tmp/plans/k3s-multi-cluster.md` (PLAN.md repointed from completed pkg-verify-hook plan).

@@ -1,15 +1,16 @@
 #!/usr/bin/env bats
 # LIVE e2e — k3s multi-cluster UX validation (Phase 3, plan k3s-multi-cluster).
 # Two mutually-isolated k3s clusters (prod ∥ dev) on throwaway tailnet-tagged
-# nodes, using the branch-stacked ivps (F1 tag + F2 launch --tag) and cloudify
-# (C1 .remote-vars + C2 install/run split + these k3s recipes).
+# nodes. ivps (tag create + acl grant + launch --tag) manages identity/policy;
+# cloudify (C1 .remote-vars + C2 install/run split + these k3s recipes)
+# installs and configures k3s.
 #
 # MUTATES the live tailnet ACL — throwaway tags only (k3s-prod, k3s-dev),
-# snapshot taken in setup_file, teardown_file deletes nodes + tags and diffs
-# the ACL back to the snapshot.
+# snapshot taken in setup_file, teardown_file deletes nodes -> revokes grants
+# -> deletes tags and diffs the ACL back to the snapshot.
 #
 # Requirements (documented, not auto-checked beyond creds):
-#   IVPS_BIN  — path to the stacked ivps branch binary (F1+F2+F3). Default ~/tmp/k3s-e2e/ivps-stack
+#   IVPS_BIN  — path to the ivps binary (main, with tag + acl support). Default ~/tmp/k3s-e2e/ivps-stack
 #   cloudify  — the local branch CLI (run from the repo dir, PATH must include it)
 #   TS_SERVICE_API_KEY + TS_DOMAIN in ~/.config/ivps/config.env (ACL-write scope)
 #
@@ -44,8 +45,10 @@ setup_file() {
 }
 
 teardown_file() {
-    echo "── teardown: nodes, tags, ACL diff ──"
+    echo "── teardown: nodes, grants, tags, ACL diff ──"
     for n in $NODES; do "$IVPS_BIN" delete "$REMOTE:$n" >/dev/null 2>&1 || echo "  ($n already gone)"; done
+    "$IVPS_BIN" acl revoke "tag:$TAG_PROD" >/dev/null 2>&1 || true
+    "$IVPS_BIN" acl revoke "tag:$TAG_DEV" >/dev/null 2>&1 || true
     "$IVPS_BIN" tag delete "$TAG_PROD" >/dev/null 2>&1 || true
     "$IVPS_BIN" tag delete "$TAG_DEV" >/dev/null 2>&1 || true
     curl -sS -H "Authorization: Bearer $TS_KEY" -H "Accept: application/json" \
@@ -57,11 +60,23 @@ teardown_file() {
     fi
 }
 
-@test "F1+F2: tag create + launch 4 tagged nodes" {
+@test "tag + acl: create tags, grant mesh + operator, launch 4 nodes" {
+    # Identity: create tags (tagOwners + authkey; no grants)
     run "$IVPS_BIN" tag create "$TAG_PROD"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     run "$IVPS_BIN" tag create "$TAG_DEV"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    # Policy: mesh grant (nodes can talk to each other on k3s ports)
+    run "$IVPS_BIN" acl grant "tag:$TAG_PROD" --src "tag:$TAG_PROD" --port 6443,8472
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    run "$IVPS_BIN" acl grant "tag:$TAG_DEV" --src "tag:$TAG_DEV" --port 6443,8472
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    # Policy: operator grant + ssh.dst (workstation + mobile can reach nodes)
+    run "$IVPS_BIN" acl grant "tag:$TAG_PROD" --src "tag:workstation,tag:mobile" --ssh
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    run "$IVPS_BIN" acl grant "tag:$TAG_DEV" --src "tag:workstation,tag:mobile" --ssh
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    # Launch nodes into their tags
     for n in $NODES; do
         case "$n" in
             k3s-prod-*) launch_tag="$TAG_PROD" ;;

@@ -478,3 +478,10 @@ Final state:
 - **Lock (human decision):** ivps must hold an exclusive lock around every ACL write + 412-retry must re-derive from a fresh fetch (spec's no-locking assumption rejected).
 - **F3 (human decision):** `feat/node-path` merges (per-instance state surface for deployment slices). Note: after merge, the stranded nested `nodes/cloudai/` is the correct layout — re-adopt and cull the flat orphan instead of the spec's original direction.
 - Prompt handed to the main agent for the ivps coding agent (merge order #12→#13→#14 with the separation change; implement `ivps acl`; concurrency + operator-reachability acceptance).
+
+## 2026-08-07 — ivps Phase 1 complete; k3s e2e unblocked
+
+- **ivps Phase 1 done** (main: aa11968): all 4 PRs merged — F1 tag create/delete/list (#12, 1449402), F2 launch --tag (#13, a4f48d9), F3 node-as-dir + node path (#14, f2ce76c), ACL surface grant/revoke/rollback/show (#15, 874f9ac). ACL writes locked (exclusive flock), snapshotted (keep 10), 412-retry re-derives from fresh fetch. Live e2e green. Separation (identity/policy) per 2026-08-06 boundary decisions.
+- **k3s e2e updated for ivps acl** (feat/k3s-recipes): First test now calls `ivps acl grant` for mesh (tag:self --port 6443,8472) + operator (tag:workstation,mobile --ssh) after `ivps tag create` and before `ivps launch --tag`. Teardown order fixed: delete nodes → acl revoke → tag delete. PLAN.md updated — Phase 1 ticked complete.
+- **Merge queue:** cloudify #9/#10 still open. ivps #12-#15 merged to main.
+- **Next:** C3 deployments (ADR-011) — needs CRITICAL GATE: subagent description of bash magic → implementation plan → human consent. Also: stack feat/k3s-recipes onto master (C1+C2 PRs first, then rebase k3s branch).

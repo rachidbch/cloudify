@@ -3,18 +3,17 @@
 # Per-cluster kubeconfig: K3S_SERVER (server's tailscale DNS name) + K3S_CONTEXT
 # (context name, e.g. k3s-prod). Install once per cluster, or re-run.
 
-# --- kubectl (skip if present) — user dir, no sudo needed ---
 if ! command -v kubectl >/dev/null 2>&1; then
     KUBECTL_VERSION="$(curl -sfL https://cdn.dl.k8s.io/release/stable.txt || echo v1.33.0)"
-    curl -sfL -o "${CLOUDIFY_LOCAL_BIN}/kubectl" \
+    curl -sfL -o "${HOME}/.local/bin/kubectl" \
         "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
         || die "kubectl download failed"
-    chmod +x "${CLOUDIFY_LOCAL_BIN}/kubectl"
+    chmod +x "${HOME}/.local/bin/kubectl"
 fi
 
-# --- helm (skip if present) — user dir via HELM_INSTALL_DIR ---
+# --- helm (skip if present) ---
 if ! command -v helm >/dev/null 2>&1; then
-    HELM_INSTALL_DIR="$CLOUDIFY_LOCAL_BIN" curl -sfL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash \
+    HELM_INSTALL_DIR="${HOME}/.local/bin" curl -sfL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash \
         || die "helm install failed"
 fi
 

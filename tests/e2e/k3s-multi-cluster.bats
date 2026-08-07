@@ -104,6 +104,10 @@ teardown_file() {
         $TEST_SSH "root@$n" "mkdir -p /root/cloudify" || return 1
         tar czf - lib pkg cloudify Taskfile.yml \
             | $TEST_SSH "root@$n" "tar xzf - -C /root/cloudify" || return 1
+        # Symlink cloudify into PATH (normally done by the bootstrap gist)
+        $TEST_SSH "root@$n" "ln -sf /root/cloudify/cloudify /usr/local/bin/cloudify" || return 1
+        # Install jq (needed by k3s-agent test for tailscale status parsing)
+        $TEST_SSH "root@$n" "apt-get update -qq && apt-get install -y -qq jq" || return 1
         $TEST_SSH "root@$n" "touch /root/cloudify/.#last_update" || return 1
     done
 }

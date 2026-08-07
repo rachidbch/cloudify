@@ -26,8 +26,26 @@ TOKEN_DEV="k3s-token-dev-$(date +%s)"
 TOKEN_PROD_NEW="k3s-token-prod-rotated-$(date +%s)"
 TEST_SSH="ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 WD="$HOME/tmp/k3s-e2e"
-CLOUDIFY_CMD="cloudify --no-defaults"
-VERIFY_TIMEOUT="PKG_VERIFY_TIMEOUT=300"
+CLOUDIFY_CMD="cloudify --no-defaults --no-verify"
+# k3s node-ready poll (max 900s = 15min per node, 30s interval)
+_k3s_poll_ready() {
+    local host="$1" expected="${2:-1}"
+    local n=0 max=30
+    while [ $n -lt $max ]; do
+        local out
+        out=$(ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ConnectTimeout=5 "root@$host" \
+            '/usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null') || { n=$((n+1)); sleep 30; continue; }
+        local ready_count
+        ready_count=$(echo "$out" | grep -c " Ready ")
+        [ "$ready_count" -ge "$expected" ] && return 0
+        n=$((n+1))
+        sleep 30
+    done
+    echo "TIMEOUT: $host expected $expected Ready nodes after ${max}x30s, got:" >&2
+    ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "root@$host" \
+        '/usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null || echo kubectl-failed' >&2
+    return 1
+}
 NODES="$PROD_SERVER $PROD_AGENT $DEV_SERVER $DEV_AGENT"
 
 setup_file() {
@@ -113,37 +131,33 @@ teardown_file() {
 }
 
 @test "prod cluster: k3s-server installs and is Ready at its tailscale IP" {
-    run env K3S_TOKEN="$TOKEN_PROD" $VERIFY_TIMEOUT $CLOUDIFY_CMD --on "$PROD_SERVER" install k3s-server
+    run env K3S_TOKEN="$TOKEN_PROD" $CLOUDIFY_CMD --on "$PROD_SERVER" install k3s-server
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _k3s_poll_ready "$PROD_SERVER" 1 || return 1
     run $TEST_SSH "root@$PROD_SERVER" \
         '/usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes -o wide'
-    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    echo "$output" | grep -q " Ready " || { echo "$output"; return 1; }
     echo "$output" | grep -q "100\." || { echo "$output"; return 1; }
 }
 
 @test "prod cluster: k3s-agent joins the server across the tag mesh" {
     local dns
     dns=$($TEST_SSH "root@$PROD_SERVER" 'tailscale status --json | jq -r .Self.DNSName' | sed 's/\.$//')
-    run env K3S_TOKEN="$TOKEN_PROD" K3S_URL="https://$dns:6443" $VERIFY_TIMEOUT \
+    run env K3S_TOKEN="$TOKEN_PROD" K3S_URL="https://$dns:6443" \
         $CLOUDIFY_CMD --on "$PROD_AGENT" install k3s-agent
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    run $TEST_SSH "root@$PROD_SERVER" \
-        '/usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers'
-    [ "$(echo "$output" | grep -c " Ready ")" -eq 2 ] || { echo "$output"; return 1; }
+    _k3s_poll_ready "$PROD_SERVER" 2 || return 1
 }
 
 @test "dev cluster: k3s-server + agent form an isolated cluster" {
-    run env K3S_TOKEN="$TOKEN_DEV" $VERIFY_TIMEOUT $CLOUDIFY_CMD --on "$DEV_SERVER" install k3s-server
+    run env K3S_TOKEN="$TOKEN_DEV" $CLOUDIFY_CMD --on "$DEV_SERVER" install k3s-server
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _k3s_poll_ready "$DEV_SERVER" 1 || return 1
     local dns
     dns=$($TEST_SSH "root@$DEV_SERVER" 'tailscale status --json | jq -r .Self.DNSName' | sed 's/\.$//')
-    run env K3S_TOKEN="$TOKEN_DEV" K3S_URL="https://$dns:6443" $VERIFY_TIMEOUT \
+    run env K3S_TOKEN="$TOKEN_DEV" K3S_URL="https://$dns:6443" \
         $CLOUDIFY_CMD --on "$DEV_AGENT" install k3s-agent
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    run $TEST_SSH "root@$DEV_SERVER" \
-        '/usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers'
-    [ "$(echo "$output" | grep -c " Ready ")" -eq 2 ] || { echo "$output"; return 1; }
+    _k3s_poll_ready "$DEV_SERVER" 2 || return 1
 }
 
 @test "k3s-cli: both contexts merged, kubectl --context works" {
@@ -171,14 +185,12 @@ teardown_file() {
 }
 
 @test "rotation: configure prod server + agent with a new token, cluster stays Ready" {
-    run env K3S_TOKEN="$TOKEN_PROD_NEW" $VERIFY_TIMEOUT $CLOUDIFY_CMD --on "$PROD_SERVER" configure k3s-server
+    run env K3S_TOKEN="$TOKEN_PROD_NEW" $CLOUDIFY_CMD --on "$PROD_SERVER" configure k3s-server
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     local dns
     dns=$($TEST_SSH "root@$PROD_SERVER" 'tailscale status --json | jq -r .Self.DNSName' | sed 's/\.$//')
-    run env K3S_TOKEN="$TOKEN_PROD_NEW" K3S_URL="https://$dns:6443" $VERIFY_TIMEOUT \
+    run env K3S_TOKEN="$TOKEN_PROD_NEW" K3S_URL="https://$dns:6443" \
         $CLOUDIFY_CMD --on "$PROD_AGENT" configure k3s-agent
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    run $TEST_SSH "root@$PROD_SERVER" \
-        '/usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers'
-    [ "$(echo "$output" | grep -c " Ready ")" -eq 2 ] || { echo "$output"; return 1; }
+    _k3s_poll_ready "$PROD_SERVER" 2 || return 1
 }

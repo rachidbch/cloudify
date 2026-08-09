@@ -21,9 +21,7 @@ REMOTE="cloudai"
 PROD_SERVER="k3s-prod-1"; PROD_AGENT="k3s-prod-2"
 DEV_SERVER="k3s-dev-1";  DEV_AGENT="k3s-dev-2"
 TAG_PROD="k3s-prod"; TAG_DEV="k3s-dev"
-TOKEN_PROD=""
-TOKEN_DEV=""
-TOKEN_PROD_NEW=""
+TOKEN_FILE="$WD/tokens.env"
 TEST_SSH="ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 WD="$HOME/tmp/k3s-e2e"
 CLOUDIFY_CMD="cloudify --no-defaults --no-verify"
@@ -50,11 +48,13 @@ NODES="$PROD_SERVER $PROD_AGENT $DEV_SERVER $DEV_AGENT"
 
 setup_file() {
     export PATH="$HOME/.local/bin:$PATH"
-    # Generate tokens ONCE (file-scope $(date +%s) differs across bats test forks).
-    # Must export so @test blocks (which run in subshells) see them.
-    export TOKEN_PROD="k3s-token-prod-$(date +%s)"
-    export TOKEN_DEV="k3s-token-dev-$(date +%s)"
-    export TOKEN_PROD_NEW="k3s-token-prod-rotated-$(date +%s)"
+    # Generate tokens ONCE — write to file because bats runs @test in subshells
+    # where setup_file() exports don't propagate.
+    echo "TOKEN_PROD=k3s-token-prod-$(date +%s)" > "$WD/tokens.env"
+    echo "TOKEN_DEV=k3s-token-dev-$(date +%s)" >> "$WD/tokens.env"
+    echo "TOKEN_PROD_NEW=k3s-token-prod-rotated-$(date +%s)" >> "$WD/tokens.env"
+    # Source now so file-scope reads below work (and for @test, setup() sources again)
+    source "$WD/tokens.env"
     local cfg="$HOME/.config/ivps/config.env"
     TS_KEY=$(awk -F= '/^TS_SERVICE_API_KEY=/{sub(/^TS_SERVICE_API_KEY=/,""); gsub(/"/,""); print}' "$cfg" 2>/dev/null)
     TS_DOMAIN=$(awk -F= '/^TS_DOMAIN=/{sub(/^TS_DOMAIN=/,""); gsub(/"/,""); print}' "$cfg" 2>/dev/null)
@@ -77,6 +77,11 @@ setup_file() {
     jq -e . "$WD/acl-pre.json" >/dev/null
 }
 
+# bats runs @test in subshells — source tokens file before each test
+setup() {
+    source "$WD/tokens.env" 2>/dev/null || true
+}
+
 teardown_file() {
     echo "── teardown: nodes, grants, tags, ACL diff ──"
     for n in $NODES; do "$IVPS_BIN" delete "$REMOTE:$n" >/dev/null 2>&1 || echo "  ($n already gone)"; done
@@ -95,35 +100,29 @@ teardown_file() {
 
 @test "tag + acl: create tags, grant mesh + operator, launch 4 nodes" {
     # Identity: create tags (tagOwners + authkey; no grants)
-    run "$IVPS_BIN" tag create "$TAG_PROD"
-    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    run "$IVPS_BIN" tag create "$TAG_DEV"
-    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    "$IVPS_BIN" tag create "$TAG_PROD" || { echo "tag create prod failed"; return 1; }
+    "$IVPS_BIN" tag create "$TAG_DEV" || { echo "tag create dev failed"; return 1; }
     # Policy: mesh grant (nodes can talk to each other on k3s ports)
-    run "$IVPS_BIN" acl grant "tag:$TAG_PROD" --src "tag:$TAG_PROD" --port 6443,8472
-    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    run "$IVPS_BIN" acl grant "tag:$TAG_DEV" --src "tag:$TAG_DEV" --port 6443,8472
-    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    "$IVPS_BIN" acl grant "tag:$TAG_PROD" --src "tag:$TAG_PROD" --port 6443,8472 || { echo "mesh grant prod failed"; return 1; }
+    "$IVPS_BIN" acl grant "tag:$TAG_DEV" --src "tag:$TAG_DEV" --port 6443,8472 || { echo "mesh grant dev failed"; return 1; }
     # Policy: operator grant + ssh.dst (workstation + mobile can reach nodes)
-    run "$IVPS_BIN" acl grant "tag:$TAG_PROD" --src "tag:workstation,tag:mobile" --ssh
-    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    run "$IVPS_BIN" acl grant "tag:$TAG_DEV" --src "tag:workstation,tag:mobile" --ssh
-    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    # Launch nodes sequentially (not parallel) — parallel launch with --tag can
-    # race tailscale device registration, causing intermittent SSH failures on
-    # nodes 2-4 despite ivps launch blocking until SSH-ready.
+    "$IVPS_BIN" acl grant "tag:$TAG_PROD" --src "tag:workstation,tag:mobile" --ssh || { echo "op grant prod failed"; return 1; }
+    "$IVPS_BIN" acl grant "tag:$TAG_DEV" --src "tag:workstation,tag:mobile" --ssh || { echo "op grant dev failed"; return 1; }
+    # Launch nodes sequentially (not parallel — races tailscale device registration)
     for n in $NODES; do
         case "$n" in
             k3s-prod-*) launch_tag="$TAG_PROD" ;;
             k3s-dev-*)  launch_tag="$TAG_DEV" ;;
         esac
-        run "$IVPS_BIN" launch "$REMOTE:$n" --tag "$launch_tag"
-        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        echo "── launching $n into $launch_tag"
+        "$IVPS_BIN" launch "$REMOTE:$n" --tag "$launch_tag" || { echo "launch $n failed"; return 1; }
+        echo "  $n launched"
     done
-    for n in $NODES; do
-        run "$IVPS_BIN" list
-        echo "$output" | grep -q "$n" || { echo "  $n not listed"; return 1; }
-    done
+    # Verify all listed
+    "$IVPS_BIN" list | grep -q "$PROD_SERVER" || { echo "$PROD_SERVER not listed"; return 1; }
+    "$IVPS_BIN" list | grep -q "$PROD_AGENT" || { echo "$PROD_AGENT not listed"; return 1; }
+    "$IVPS_BIN" list | grep -q "$DEV_SERVER" || { echo "$DEV_SERVER not listed"; return 1; }
+    "$IVPS_BIN" list | grep -q "$DEV_AGENT" || { echo "$DEV_AGENT not listed"; return 1; }
 }
 
 @test "push branch code (cloudify + k3s recipes) into each node" {

@@ -50,11 +50,22 @@ NODES="$PROD_SERVER $PROD_AGENT $DEV_SERVER $DEV_AGENT"
 
 setup_file() {
     export PATH="$HOME/.local/bin:$PATH"
-    # Generate tokens ONCE (file-scope $(date +%s) differs across bats test forks)
-    TOKEN_PROD="k3s-token-prod-$(date +%s)"
-    TOKEN_DEV="k3s-token-dev-$(date +%s)"
-    TOKEN_PROD_NEW="k3s-token-prod-rotated-$(date +%s)"
+    # Generate tokens ONCE (file-scope $(date +%s) differs across bats test forks).
+    # Must export so @test blocks (which run in subshells) see them.
+    export TOKEN_PROD="k3s-token-prod-$(date +%s)"
+    export TOKEN_DEV="k3s-token-dev-$(date +%s)"
+    export TOKEN_PROD_NEW="k3s-token-prod-rotated-$(date +%s)"
     local cfg="$HOME/.config/ivps/config.env"
+    TS_KEY=$(awk -F= '/^TS_SERVICE_API_KEY=/{sub(/^TS_SERVICE_API_KEY=/,""); gsub(/"/,""); print}' "$cfg" 2>/dev/null)
+    TS_DOMAIN=$(awk -F= '/^TS_DOMAIN=/{sub(/^TS_DOMAIN=/,""); gsub(/"/,""); print}' "$cfg" 2>/dev/null)
+    [ -n "$TS_KEY" ] && [ -n "$TS_DOMAIN" ] || { echo "FAIL: TS creds missing in $cfg"; return 1; }
+    export TS_KEY TS_DOMAIN
+    # Clean stale k3s-* tailscale devices from prior interrupted runs
+    local stale_ids
+    stale_ids=$(curl -sS -H "Authorization: Bearer $TS_KEY" "https://api.tailscale.com/api/v2/tailnet/${TS_DOMAIN}/devices" | jq -r '.devices[] | select(.hostname | startswith("k3s-")) | .id' 2>/dev/null)
+    for id in $stale_ids; do
+        curl -sS -X DELETE -H "Authorization: Bearer $TS_KEY" "https://api.tailscale.com/api/v2/device/$id" -o /dev/null 2>/dev/null || true
+    done
     TS_KEY=$(awk -F= '/^TS_SERVICE_API_KEY=/{sub(/^TS_SERVICE_API_KEY=/,""); gsub(/"/,""); print}' "$cfg" 2>/dev/null)
     TS_DOMAIN=$(awk -F= '/^TS_DOMAIN=/{sub(/^TS_DOMAIN=/,""); gsub(/"/,""); print}' "$cfg" 2>/dev/null)
     [ -n "$TS_KEY" ] && [ -n "$TS_DOMAIN" ] || { echo "FAIL: TS creds missing in $cfg"; return 1; }
@@ -98,16 +109,17 @@ teardown_file() {
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     run "$IVPS_BIN" acl grant "tag:$TAG_DEV" --src "tag:workstation,tag:mobile" --ssh
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    # Launch nodes into their tags
+    # Launch nodes sequentially (not parallel) — parallel launch with --tag can
+    # race tailscale device registration, causing intermittent SSH failures on
+    # nodes 2-4 despite ivps launch blocking until SSH-ready.
     for n in $NODES; do
         case "$n" in
             k3s-prod-*) launch_tag="$TAG_PROD" ;;
             k3s-dev-*)  launch_tag="$TAG_DEV" ;;
         esac
-        "$IVPS_BIN" launch "$REMOTE:$n" --tag "$launch_tag" >/dev/null 2>&1 &
+        run "$IVPS_BIN" launch "$REMOTE:$n" --tag "$launch_tag"
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     done
-    wait
-    sleep 5  # tailscale device registration lag after parallel launch
     for n in $NODES; do
         run "$IVPS_BIN" list
         echo "$output" | grep -q "$n" || { echo "  $n not listed"; return 1; }

@@ -21,9 +21,9 @@ REMOTE="cloudai"
 PROD_SERVER="k3s-prod-1"; PROD_AGENT="k3s-prod-2"
 DEV_SERVER="k3s-dev-1";  DEV_AGENT="k3s-dev-2"
 TAG_PROD="k3s-prod"; TAG_DEV="k3s-dev"
-TOKEN_PROD="k3s-token-prod-$(date +%s)"
-TOKEN_DEV="k3s-token-dev-$(date +%s)"
-TOKEN_PROD_NEW="k3s-token-prod-rotated-$(date +%s)"
+TOKEN_PROD=""
+TOKEN_DEV=""
+TOKEN_PROD_NEW=""
 TEST_SSH="ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 WD="$HOME/tmp/k3s-e2e"
 CLOUDIFY_CMD="cloudify --no-defaults --no-verify"
@@ -50,6 +50,10 @@ NODES="$PROD_SERVER $PROD_AGENT $DEV_SERVER $DEV_AGENT"
 
 setup_file() {
     export PATH="$HOME/.local/bin:$PATH"
+    # Generate tokens ONCE (file-scope $(date +%s) differs across bats test forks)
+    TOKEN_PROD="k3s-token-prod-$(date +%s)"
+    TOKEN_DEV="k3s-token-dev-$(date +%s)"
+    TOKEN_PROD_NEW="k3s-token-prod-rotated-$(date +%s)"
     local cfg="$HOME/.config/ivps/config.env"
     TS_KEY=$(awk -F= '/^TS_SERVICE_API_KEY=/{sub(/^TS_SERVICE_API_KEY=/,""); gsub(/"/,""); print}' "$cfg" 2>/dev/null)
     TS_DOMAIN=$(awk -F= '/^TS_DOMAIN=/{sub(/^TS_DOMAIN=/,""); gsub(/"/,""); print}' "$cfg" 2>/dev/null)
@@ -103,6 +107,7 @@ teardown_file() {
         "$IVPS_BIN" launch "$REMOTE:$n" --tag "$launch_tag" >/dev/null 2>&1 &
     done
     wait
+    sleep 5  # tailscale device registration lag after parallel launch
     for n in $NODES; do
         run "$IVPS_BIN" list
         echo "$output" | grep -q "$n" || { echo "  $n not listed"; return 1; }

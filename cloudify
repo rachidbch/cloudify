@@ -27,6 +27,16 @@ function usage() {
         cloudify --no-verify --on <host> install <pkg>  install on remote host, skip verification
         cloudify --verify --on <host> install <pkg>     verify only (no install) on remote host
         cloudify verify <pkg>                           verify package (local)
+        cloudify vars set <key> <value>                set var in CLOUDIFY_DEPLOYMENT
+        cloudify vars set <key> --stdin                set var from stdin (secrets)
+        cloudify vars set <key> --file <path>          set var from file
+        cloudify vars delete|del <key>                 delete var
+        cloudify vars show <key>                       show var value
+        cloudify vars list|ls [--json]                 list all vars
+        cloudify deployment create|new <id>            create a deployment
+        cloudify deployment delete|del <id>            delete a deployment
+        cloudify deployment list|ls                    list deployments
+        cloudify deployment use <id>                   print export command
         cloudify --no-defaults install <pkg>            install only basics + <pkg> (skip @default)
         cloudify --no-defaults --on <host> install <pkg>  minimal install on remote host
         cloudify remove| rem | r <pkg>                  uninstall package
@@ -87,6 +97,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/containers.sh"
 # shellcheck disable=SC1094
 source "$CLOUDIFY_SCRIPT_DIR/lib/remote.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/packages.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/deployments.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/hosts.sh"
 
 #== INITIALIZATION
@@ -168,7 +179,7 @@ function _cloudify_is_reserved() {
     local word="${1:-}"
     local context="${2:-global}"
     case "$word" in
-        --help | help | -h | --list | list | l | --credentials | credentials | c | --test | test | t)
+        --help | help | -h | --list | list | l | --credentials | credentials | c | --test | test | t | vars | deployment | deploy | dep)
             return 0
             ;;
     esac
@@ -472,6 +483,79 @@ function main() {
                 _cloudify_run_verify "$_vpkg" || verify_had_failures=true
             done
             $verify_had_failures && die "Verification failed for one or more packages." 1
+            break
+            ;;
+        vars)
+            shift
+            case "${1:-}" in
+                set)
+                    local var_key="${2:-}"
+                    [[ -n "$var_key" ]] && shift 2 || die "Usage: cloudify vars set <key> <value> [--stdin|--file <path>]"
+                    case "${1:-}" in
+                        --stdin)
+                            local var_val; var_val=$(cat)
+                            cloudify_vars_set "$var_key" "$var_val"
+                            ;;
+                        --file)
+                            local var_path="${2:-}"
+                            [[ -n "$var_path" && -f "$var_path" ]] || die "File not found: ${var_path:-}"
+                            local var_val; var_val=$(<"$var_path")
+                            cloudify_vars_set "$var_key" "$var_val"
+                            shift
+                            ;;
+                        *)
+                            local var_val="${1:-}"
+                            [[ -n "$var_val" ]] || die "Usage: cloudify vars set <key> <value>"
+                            shift
+                            cloudify_vars_set "$var_key" "$var_val"
+                            ;;
+                    esac
+                    ;;
+                delete | del)
+                    shift
+                    [[ -n "${1:-}" ]] || die "Usage: cloudify vars delete <key>"
+                    cloudify_vars_delete "$1"
+                    ;;
+                show)
+                    shift
+                    [[ -n "${1:-}" ]] || die "Usage: cloudify vars show <key>"
+                    cloudify_vars_show "$1"
+                    ;;
+                list | ls)
+                    shift
+                    cloudify_vars_list "$@"
+                    ;;
+                *)
+                    die "Usage: cloudify vars <set|delete|show|list> [args]"
+                    ;;
+            esac
+            break
+            ;;
+        deployment | deploy | dep)
+            shift
+            case "${1:-}" in
+                create | new)
+                    shift
+                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment create <id>"
+                    cloudify_deployment_create "$1"
+                    ;;
+                delete | del | rm)
+                    shift
+                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment delete <id>"
+                    cloudify_deployment_delete "$1"
+                    ;;
+                list | ls)
+                    cloudify_deployment_list
+                    ;;
+                use)
+                    shift
+                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment use <id>"
+                    cloudify_deployment_use "$1"
+                    ;;
+                *)
+                    die "Usage: cloudify deployment <create|delete|list|use> [args]"
+                    ;;
+            esac
             break
             ;;
         --no-verify)

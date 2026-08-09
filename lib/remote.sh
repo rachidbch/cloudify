@@ -195,6 +195,20 @@ function _cloudify_pkg_remote_vars() {
         for ((i = ${#pkgs[@]} - 1; i >= 0; i--)); do
             _recurse_pkg_vars "${pkgs[i]}"
         done
+
+        # -- Deployment-wide vars (lowest priority; ADR-011) --
+        if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]]; then
+            local dep_var_names dep_var
+            dep_var_names=$(_cloudify_deployment_read_vars "$CLOUDIFY_DEPLOYMENT")
+            if [[ -n "$dep_var_names" ]]; then
+                while IFS= read -r dep_var; do
+                    [[ -n "$dep_var" ]] || continue
+                    # Only claim if not already claimed (per-pkg wins)
+                    grep -qx "$dep_var" "$TMPFILE" 2>/dev/null && continue
+                    echo "$dep_var" >> "$TMPFILE"
+                done <<< "$dep_var_names"
+            fi
+        fi
     fi
 
     sort -u "$TMPFILE" 2>/dev/null
@@ -268,6 +282,9 @@ function cloudify_remote_sync() {
         cloudify_remote_payload_secure="${cloudify_remote_payload//PWD=\'*\'/PWD=\'***********\'}"
         cloudify_remote_payload_secure="${cloudify_remote_payload_secure//PASSWORD*=\'*\'/PASSWORD=\'***********\'}"
         cloudify_remote_payload_secure="${cloudify_remote_payload_secure//SECRET*=\'*\'/SECRET=\'***********\'}"
+        # ADR-011: extend masking to TOKEN and KEY (K3S_TOKEN, TS_API_KEY, etc.)
+        cloudify_remote_payload_secure="${cloudify_remote_payload_secure//TOKEN*=\'*\'/TOKEN=\'***********\'}"
+        cloudify_remote_payload_secure="${cloudify_remote_payload_secure//KEY*=\'*\'/KEY=\'***********\'}"
 
         $DEBUG && msg "$cloudify_remote_payload_secure"
 

@@ -198,12 +198,15 @@ teardown() {
 K3S_TOKEN: secret-123
 K3S_URL: https://server:6443
 EOF
-    run _cloudify_deployment_read_vars testdep
-    [ "$status" -eq 0 ]
+    # Capture stdout (var names) — can't use `run` because exports must survive
+    local names
+    names=$(_cloudify_deployment_read_vars testdep)
     # Returns var names
-    echo "$output" | grep -qx "K3S_TOKEN"
-    echo "$output" | grep -qx "K3S_URL"
-    # Exported values
+    echo "$names" | grep -qx "K3S_TOKEN"
+    echo "$names" | grep -qx "K3S_URL"
+    # Exported values (function is called WITHOUT run, so exports survive)
+    # Re-call directly to export
+    _cloudify_deployment_read_vars testdep >/dev/null
     [ "${K3S_TOKEN:-}" = "secret-123" ]
     [ "${K3S_URL:-}" = "https://server:6443" ]
 }

@@ -31,16 +31,12 @@ if [[ -n "${K3S_TOKEN:-}" ]]; then
     echo "token: ${K3S_TOKEN}" >> /etc/rancher/k3s/config.yaml
 fi
 
-# --- Token rotation: the effective join token lives in the datastore (config
-# token only applies at bootstrap). Rotate it here so configure is the real
-# rotation path (ADR-008). ---
-if [[ -n "${K3S_TOKEN:-}" && -f /var/lib/rancher/k3s/server/token ]]; then
-    stored_token=$(cat /var/lib/rancher/k3s/server/token 2>/dev/null || true)
-    if [[ "$stored_token" != "$K3S_TOKEN" ]]; then
-        echo -n "$K3S_TOKEN" > /var/lib/rancher/k3s/server/token
-        log_info "Cluster join token rotated."
-    fi
-fi
+# NOTE: do NOT overwrite /var/lib/rancher/k3s/server/token here. k3s encrypts
+# its etcd bootstrap data with a key derived from that token; changing it on a
+# running cluster fatally fails on restart ("encrypted with different token").
+# Rotation requires re-bootstrap — see ROADMAP "cloudify configure re-run
+# validation". The config.yaml token only applies at first bootstrap; on an
+# existing datastore a changed config token is safely ignored.
 
 # --- systemd unit ---
 cat > /etc/systemd/system/k3s.service <<'UNIT'

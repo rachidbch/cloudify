@@ -142,6 +142,21 @@ the VXLAN-inside-WireGuard overlay, three recipes (`k3s-server`, `k3s-agent`,
 **Status:** proposal. Gated on a live spike (two throwaway nodes) confirming
 the mesh-grant and the 1230 MTU figure on the real tailnet.
 
+## cloudify configure re-run validation (token rotation deferred)
+
+Prove `cloudify configure` (run-phase only, no re-download) on a simple split
+package first, not on k3s. Rationale: the chosen vehicle (k3s join-token
+rotation) is structurally impossible on a running single-server cluster — k3s
+encrypts its etcd bootstrap data with a key derived from the token, so
+changing the token breaks decryption (fatal "encrypted with different token").
+Known k3s limitation; rotation requires cluster re-bootstrap.
+
+Validating the configure run-phase on a simpler package (e.g. a fixture pkg
+with a mutable config value) exercises the same cloudify machinery without
+the k3s constraint. Track separately:
+- configure re-run on a simple split pkg: value change + service stays up.
+- k3s join-token rotation: only if/when a re-bootstrap story is designed.
+
 ## k3s HA control plane (embedded etcd)
 
 Follow-on to k3s multi-cluster provisioning. Promote a cluster from 1 server to

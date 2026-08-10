@@ -14,7 +14,7 @@ if command -v yazi &>/dev/null; then
     return 0
 fi
 
-pkg_depends file
+pkg_depends file unzip
 
 YAZI_VERSION=$(curl -s "https://api.github.com/repos/sxyazi/yazi/releases/latest" | grep -Po '"tag_name": *"\K[^"]*')
 YAZI_ARCH=$(uname -m)
@@ -31,6 +31,8 @@ YAZI_URL="https://github.com/sxyazi/yazi/releases/download/${YAZI_VERSION}/yazi-
 mkdir -p /tmp/yazi
 curl -fsSL "$YAZI_URL" -o /tmp/yazi/yazi.zip
 unzip -oq /tmp/yazi/yazi.zip -d /tmp/yazi
+# Fail fast: unzip can be absent (silently succeeding recipe = exit-0 lie).
+[[ -x "/tmp/yazi/yazi-${YAZI_TARGET}/yazi" ]] || die "yazi: extraction failed — yazi-${YAZI_TARGET}/yazi missing after unzip"
 
 PKG_DEBUG "Installing yazi + ya to /usr/local/bin/"
 sudo install -Dm755 "/tmp/yazi/yazi-${YAZI_TARGET}/yazi" /usr/local/bin/yazi

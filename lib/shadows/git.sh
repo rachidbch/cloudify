@@ -22,7 +22,9 @@ function cloudify_git_authenticate() {
         export GIT_TOKEN="${CLOUDIFY_GITLABPWD:-}"
         ;;
     github.com)
-        export GIT_TOKEN="${CLOUDIFY_GITHUBPWD:-}"
+        # GitHub killed password auth in 2021 — prefer the read-only PAT,
+        # fall back to the legacy password slot.
+        export GIT_TOKEN="${CLOUDIFY_GITHUB_READONLY_TOKEN:-${CLOUDIFY_GITHUBPWD:-}}"
         ;;
     *) die "Git Host $git_domain is not supported'" 1 ;;
     esac
@@ -76,11 +78,14 @@ function git() {
         # Any argument that isn't clone or an option, is deemed to be the url to clone
         local arg
         for arg in "$@"; do
-            [[ "${arg-}" != "clone" && "${arg-}" != "-*" ]] && {
+            [[ "${arg-}" != "clone" && "${arg-}" != -* ]] && {
                 if [[ -z "${git_remote_url}" ]] && cloudify_is_git_url "${arg-}"; then
                     git_remote_url="${arg-}"
                 else
-                    [[ -z "${git_remote_url}" ]] && { PKG_DEBUG "Unable to git clone: Not a valid git url" && return 1; }
+                    # URL not found yet and this isn't a URL — skip (could be
+                    # an option value, e.g. `--depth 1`; git parses real option
+                    # semantics). Previously errored, breaking such clones.
+                    [[ -z "${git_remote_url}" ]] && continue
                     git_repo_path="${arg-}"
                     # No validity test here as anything can be a path on linux
                     # But we can only clone into an existing folder

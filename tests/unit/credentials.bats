@@ -152,6 +152,7 @@ teardown() {
     export CLOUDIFY_LOCAL_PWD=p
     export CLOUDIFY_GITHUBUSER=u
     export CLOUDIFY_GITHUBPWD=p
+    export CLOUDIFY_GITHUB_READONLY_TOKEN=t
     export CLOUDIFY_GITLABUSER=u
     export CLOUDIFY_GITLABPWD=p
 
@@ -161,6 +162,22 @@ teardown() {
     [[ "$output" == *"local:   OK"* ]]
     [[ "$output" == *"github:  OK"* ]]
     [[ "$output" == *"gitlab:  OK"* ]]
+}
+
+@test "cloudify_credentials_check github OK with token alone" {
+    unset CLOUDIFY_GITHUBUSER CLOUDIFY_GITHUBPWD
+    export CLOUDIFY_GITHUB_READONLY_TOKEN=t
+
+    run cloudify_credentials_check
+    [[ "$output" == *"github:  OK"* ]]
+}
+
+@test "cloudify_credentials_check github INCOMPLETE without token or user+pwd" {
+    unset CLOUDIFY_GITHUBUSER CLOUDIFY_GITHUBPWD CLOUDIFY_GITHUB_READONLY_TOKEN
+
+    run cloudify_credentials_check
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"github:  INCOMPLETE"* ]]
 }
 
 @test "cloudify_credentials_check reports INCOMPLETE when missing" {
@@ -180,6 +197,7 @@ teardown() {
     export CLOUDIFY_REMOTE_PWD=rpwd
     export CLOUDIFY_GITHUBUSER=ghuser
     export CLOUDIFY_GITHUBPWD=ghpwd
+    export CLOUDIFY_GITHUB_READONLY_TOKEN=ghtoken
     export CLOUDIFY_GITLABUSER=gluser
     export CLOUDIFY_GITLABPWD=glpwd
 
@@ -187,7 +205,20 @@ teardown() {
 
     grep -q "CLOUDIFY_REMOTE_USER" "$CLOUDIFY_CREDENTIALS_FILE"
     grep -q "CLOUDIFY_GITHUBUSER" "$CLOUDIFY_CREDENTIALS_FILE"
+    grep -q "CLOUDIFY_GITHUB_READONLY_TOKEN" "$CLOUDIFY_CREDENTIALS_FILE"
     grep -q "CLOUDIFY_GITLABUSER" "$CLOUDIFY_CREDENTIALS_FILE"
+}
+
+@test "cloudify_credentials_save saves github section incl. token" {
+    export CLOUDIFY_GITHUBUSER=ghuser
+    export CLOUDIFY_GITHUBPWD=ghpwd
+    export CLOUDIFY_GITHUB_READONLY_TOKEN=ghtoken
+
+    cloudify_credentials_save github
+
+    grep -q "CLOUDIFY_GITHUB_READONLY_TOKEN" "$CLOUDIFY_CREDENTIALS_FILE"
+    # remote should NOT be in the file
+    ! grep -q "CLOUDIFY_REMOTE_USER" "$CLOUDIFY_CREDENTIALS_FILE"
 }
 
 @test "cloudify_credentials_save saves only specified section" {

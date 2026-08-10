@@ -91,6 +91,13 @@ for test_file in "${TEST_FILES[@]}"; do
     export CLOUDIFY_SKIPCREDENTIALS=true
     export CLOUDIFY_GITHUBUSER="${CLOUDIFY_GITHUBUSER:-dummy}"
     export CLOUDIFY_GITHUBPWD="${CLOUDIFY_GITHUBPWD:-dummy}"
+    # Real read-only PAT when present locally (affine test clones a private
+    # repo — dummy creds can't authenticate). Falls back to dummy.
+    if [[ -z "${CLOUDIFY_GITHUB_READONLY_TOKEN:-}" && -f "$HOME/.config/cloudify/credentials" ]]; then
+        _ro_token=$(awk -F= '/^[[:space:]]*export[[:space:]]+CLOUDIFY_GITHUB_READONLY_TOKEN=/{print $2; exit}' "$HOME/.config/cloudify/credentials")
+        export CLOUDIFY_GITHUB_READONLY_TOKEN="$_ro_token"
+    fi
+    export CLOUDIFY_GITHUB_READONLY_TOKEN="${CLOUDIFY_GITHUB_READONLY_TOKEN:-dummy}"
     export CLOUDIFY_GITLABUSER="${CLOUDIFY_GITLABUSER:-dummy}"
     export CLOUDIFY_GITLABPWD="${CLOUDIFY_GITLABPWD:-dummy}"
     export CLOUDIFY_RCLONE_REMOTE="${CLOUDIFY_RCLONE_REMOTE:-dummy}"

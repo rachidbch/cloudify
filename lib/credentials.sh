@@ -35,6 +35,8 @@ function cloudify_ask_host_credentials() {
 # Ask Github credentials
 function cloudify_ask_github_credentials() {
     _cloudify_ask_credentials "Github" "CLOUDIFY_GITHUBUSER" "CLOUDIFY_GITHUBPWD"
+    # Read-only PAT (canonical for clones; GitHub rejects passwords since 2021)
+    cloudify_prompt2pass "CLOUDIFY_GITHUB_READONLY_TOKEN" && export CLOUDIFY_GITHUB_READONLY_TOKEN
 }
 
 # Ask for Gitlab credentials
@@ -77,14 +79,14 @@ function cloudify_credentials_save() {
             vars=(CLOUDIFY_LOCAL_PWD)
             ;;
         github)
-            vars=(CLOUDIFY_GITHUBUSER CLOUDIFY_GITHUBPWD)
+            vars=(CLOUDIFY_GITHUBUSER CLOUDIFY_GITHUBPWD CLOUDIFY_GITHUB_READONLY_TOKEN)
             ;;
         gitlab)
             vars=(CLOUDIFY_GITLABUSER CLOUDIFY_GITLABPWD)
             ;;
         "")
             # All sections
-            vars=(CLOUDIFY_REMOTE_USER CLOUDIFY_REMOTE_PWD CLOUDIFY_LOCAL_PWD CLOUDIFY_GITHUBUSER CLOUDIFY_GITHUBPWD CLOUDIFY_GITLABUSER CLOUDIFY_GITLABPWD)
+            vars=(CLOUDIFY_REMOTE_USER CLOUDIFY_REMOTE_PWD CLOUDIFY_LOCAL_PWD CLOUDIFY_GITHUBUSER CLOUDIFY_GITHUBPWD CLOUDIFY_GITHUB_READONLY_TOKEN CLOUDIFY_GITLABUSER CLOUDIFY_GITLABPWD)
             ;;
         *)
             die "Unknown credentials section: $section"
@@ -151,11 +153,12 @@ function cloudify_credentials_check() {
         all_ok=false
     fi
 
-    # GitHub
-    if [[ -n "${CLOUDIFY_GITHUBUSER:-}" && -n "${CLOUDIFY_GITHUBPWD:-}" ]]; then
+    # GitHub — the read-only token alone is enough (the askpass path only
+    # needs GIT_TOKEN); user+password remains the legacy fallback.
+    if [[ -n "${CLOUDIFY_GITHUB_READONLY_TOKEN:-}" || ( -n "${CLOUDIFY_GITHUBUSER:-}" && -n "${CLOUDIFY_GITHUBPWD:-}" ) ]]; then
         msg "${GREEN}github:  OK${RESET}"
     else
-        msg "${YELLOW}github:  INCOMPLETE (CLOUDIFY_GITHUBUSER, CLOUDIFY_GITHUBPWD)${RESET}"
+        msg "${YELLOW}github:  INCOMPLETE (CLOUDIFY_GITHUB_READONLY_TOKEN, or CLOUDIFY_GITHUBUSER+CLOUDIFY_GITHUBPWD)${RESET}"
         all_ok=false
     fi
 

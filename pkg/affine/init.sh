@@ -41,7 +41,10 @@ fi
 if [[ ! -d "$AFFINE_DIR/.git" ]]; then
     mkdir -p "$(dirname "$AFFINE_DIR")"
     log_info "Cloning rachidbch/affine (private, cloudify github creds)..."
-    git clone --depth 1 https://github.com/rachidbch/affine.git "$AFFINE_DIR"
+    # NOTE: the cloudify git shadow compares options with a LITERAL "-*"
+    # (quoted, not a glob), so any git option is treated as a URL candidate
+    # and the clone is rejected. No options: plain "clone URL PATH" only.
+    git clone https://github.com/rachidbch/affine.git "$AFFINE_DIR"
 else
     log_info "affine source present; pulling latest main..."
     git -C "$AFFINE_DIR" pull --ff-only origin main

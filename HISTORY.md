@@ -515,3 +515,15 @@ Final state:
 - **Merge 3**: feat/k3s-recipes → master (d38ba17). HISTORY conflict (master's piface entries vs branch's 08-06..08-10 ledger) resolved chronologically, both kept. Sanity: 289/289 (k3s structural tests now in suite), lint clean.
 - **Full chain on master now**: pkg .remote-vars + install/run split + k3s-server/agent/cli recipes + live multi-cluster e2e spec (e2e itself is a live-tailnet test, run manually — last full manual validation 2026-08-09, 7/7 steps green).
 - **Open threads**: feat/deployments (deployment-wide store + cloudify vars, 23 unit tests green) parked on master base; not part of this merge. Feature branches feat/remote-vars, feat/install-run-split, feat/k3s-recipes can be deleted.
+
+## 2026-08-10 — pkg/affine (staged-deployment track)
+
+- **New package**: `pkg/affine` — deploys the clean-room Linear MCP server
+  (rachidbch/affine, private repo, cloned via the git shadow's GitHub creds).
+  Node LTS via mise, `npm ci`, systemd user service on :8787.
+- **Master-token bootstrapping**: first boot mints the master identity
+  (role 'master', ADR-019 model); the recipe prints the token so the operator
+  mints the first admin (`create_user role=admin`) and stores the master
+  offline. `--clear-data` re-mints (old token dies).
+- **Verify**: service active + unauthenticated POST /mcp answers 401.
+- Integration test: tests/integration/package-affine.bats.

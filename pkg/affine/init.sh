@@ -23,8 +23,7 @@ if [[ -f "$AFFINE_SERVICE" ]] && systemctl --user is-active affine-mcp >/dev/nul
     return 0
 fi
 
-# --- Dependencies ---
-PKG_DEBUG "REMOTE githubuser set: ${CLOUDIFY_GITHUBUSER:+YES} pwd-len: ${#CLOUDIFY_GITHUBPWD}"---------------------------------------------------------
+# --- Dependencies ------------------------------------------------------------
 # git → clone the private repo (the git shadow injects cloudify's GitHub
 # credentials). mise → node LTS (Ubuntu's stock node is 18; the server needs
 # >= 20.11 for import.meta.dirname, so always use mise, mirroring piface).

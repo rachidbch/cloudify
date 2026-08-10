@@ -182,3 +182,13 @@ Cost: an extra component (the operator) and every pod consuming a tailnet IP.
 This is the "make it native" path, not day-1. The node mesh grant
 (`tag:k3s-<cluster> -> tag:k3s-<cluster>:*`) is still required for the control
 plane (6443/10250) even with the Tailscale CNI.
+
+## Recipe fail-fast on mid-step errors
+
+A recipe can exit 0 despite a failed middle step: recipes run in the
+pkg_depends dep subshell where errexit is suspended, so a failing command
+(unzip missing, install "cannot stat") doesn't stop execution — the last
+line succeeds and cloudify reports SUCCESS (an exit-0 lie). Proven on
+package-yazi (2026-08-10). Tracked: issue #14. Low-risk subset (explicit
+`die` on critical steps) applied per-recipe as needed; systemic change
+deferred pending an audit of recipes that deliberately tolerate failures.

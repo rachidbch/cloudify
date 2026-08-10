@@ -1,5 +1,11 @@
 # Cloudify — Session History
 
+## 2026-08-06 — ADR-011: deployments = applications (cloudify-owned), deployment-first state shape
+
+- **Decision recorded** (ADR-011): a deployment is a first-class cloud-global entity — an application across nodes; a k3s cluster is a deployment. Supersedes ADR-006's packages-first sub-shape: per-node slices become `nodes/<node>/deployments/<id>/pkgs/<pkg>/config.yaml`; deployment-wide state lives at `~/.config/cloudify/deployments/<id>/` (fixed-path convention, ivps stays opaque). Ownership: cloudify owns applications, ivps owns resources. Context is a per-shell `CLOUDIFY_DEPLOYMENT` env var (no open/close, no shared context file — parallel-safe). `cloudify vars set/delete/list` + `cloudify deployment list/delete`; precedence caller-env > per-(node,pkg) > deployment-wide; secrets-as-config for MVP; debug masking extended to TOKEN/KEY.
+- **Spike-proven ivps F1 gap (reported for ivps fix)**: `ivps tag create` grants use `autogroup:member`, but every tailnet device is tagged (15/15), so the operator (tag:workstation) gets no access to new tags — nodes unreachable (no netmap/DNS/SSH) until a `src:[tag:workstation]` grant is added manually. Verified live: adding the grant restores connectivity instantly. Also corrects ADR-010's operator-reach wording. Blocked the k3s multi-cluster e2e.
+
+
 ## 2026-07-31 — cloudify-hermes SKILL.md: drop stale launch-wait retry loop (separable follow-up)
 
 - Removed the post-`ivps launch` wait-for-SSH retry loop from `~/.agents/skills/cloudify-hermes/SKILL.md` — ivps blocks until SSH-ready since 2026-06-14 (ivps issues #1/#2). Kept the "SSH fails after launch" troubleshooting section (failure diagnosis, not a redundant wait). The second separable item (ACL jq-on-huJSON bug) was already fixed during the spike (ADR-010).
@@ -452,6 +458,52 @@ Final state:
 - **open-webui installed** via cloudify. Docker container starts but crashes with `ValueError: No embedding model is loaded`. Patched compose with `RAG_EMBEDDING_ENGINE=` to disable embeddings. Still not healthy — container keeps restarting.
 - **Roadblock**: open-webui won't stay up. Needs debugging — may need different RAG_EMBEDDING_ENGINE value or additional env vars.
 - **Untested**: hermes-openwebui package install (credentials passthrough fixed but open-webui must be healthy first), tailscale serve on openwebui-hermes, end-to-end TLS verification.
-
 - **pkg/piface added** (commit f822518, master). Recipe installs piface (web UI for the pi coding agent) as a systemd user service on 0.0.0.0:7832. Stack: node(mise)+pi(npm `@mariozechner/pi-coding-agent`), uv(standalone)+piface(PyPI wheel bundles built frontend, no node/pnpm build), ffmpeg(apt). Deployed on `cloudai:piface` container.
 - **Exposure decision**: used `tailscale serve --bg --https 443` on the container (→ `https://piface.komodo-everest.ts.net`) instead of a VIP Service. Reason: the container is itself a tailnet node named `piface`, so `svc:piface` collides with the node name (Tailscale 400 "name exists but is not a service"); the node's own name gives the nicest URL with zero admin-approval step and tailnet-only HTTPS (secure context for browser mic). VIP Services remain the pattern for multi-component/production stacks (cf. hermes).
+
+## 2026-08-06 — pending decisions/actions ledger (so nothing is forgotten)
+
+- **⛔ GOVERNANCE GATE (persisted in CLAUDE.md, top of file)**: cloudify's env-var forwarding (`lib/remote.sh`) and shadow functions (`lib/shadows/*.sh`) are extremely brittle bash magic. No code change to cloudify without: (1) a subagent whose unique mission is to describe that bash magic, (2) an implementation plan arguing why it can't break the mechanisms, (3) explicit human consent.
+- Finish the k3s e2e and prove it works (recipes + e2e spec on feat/k3s-recipes; blocked on the ivps F1 operator-grant fix).
+- ivps F1 operator-grant fix (operator is tag:workstation, not autogroup:member; all 15 tailnet devices tagged) — prompt handed to main agent for the ivps coding agent; its merge unblocks the e2e + the launch SSH-ready wait.
+- Recipe-dance story: skill now, roadmap a `cloudify recipe` subcommand (exact shape undecided).
+- Standing rule: all future cloudify changes stay additive + default-off; pkg-shape backward compat is regression-tested (init.sh-only pkgs byte-identical).
+- Cluster tags use `cluster-<name>`, not `k3s-<name>`.
+- Build out ADR-011: deployment-wide store + `cloudify vars set/delete/list` + `CLOUDIFY_DEPLOYMENT` context (unblocked) ; per-node slices (blocked on ivps PR #14); `cloudify deployment list/delete`.
+- Debug payload masking must cover TOKEN/KEY (K3S_TOKEN currently unmasked); `vars set --stdin/--file` for secrets.
+- Merge queue: cloudify #9/#10, ivps #12/#13/#14 (all open). C3 issue #7 acceptance to be updated to ADR-011 shape.
+- ADR-010 operator-reach wording correction when the ivps fix lands. Secrets security model study (Secrets V2) tracked. `clone deployment` optional follow-on.
+
+## 2026-08-06 — ivps boundary decisions (from PR/UX review)
+
+- **Separation (human decision):** `ivps tag create/delete` = identity only (tagOwners + join key). Network linking moves to the new `ivps acl grant/revoke`; the cluster recipe does the linking with an explicit operator set (tag:workstation, tag:mobile) — never hardcoded autogroup:member. This dissolves the F1 operator-grant bug by design; the e2e now waits on `ivps acl` existing, and the cloudify recipes get a small update to call it.
+- **Lock (human decision):** ivps must hold an exclusive lock around every ACL write + 412-retry must re-derive from a fresh fetch (spec's no-locking assumption rejected).
+- **F3 (human decision):** `feat/node-path` merges (per-instance state surface for deployment slices). Note: after merge, the stranded nested `nodes/cloudai/` is the correct layout — re-adopt and cull the flat orphan instead of the spec's original direction.
+- Prompt handed to the main agent for the ivps coding agent (merge order #12→#13→#14 with the separation change; implement `ivps acl`; concurrency + operator-reachability acceptance).
+
+## 2026-08-07 — ivps Phase 1 complete; k3s e2e unblocked
+
+- **ivps Phase 1 done** (main: aa11968): all 4 PRs merged — F1 tag create/delete/list (#12, 1449402), F2 launch --tag (#13, a4f48d9), F3 node-as-dir + node path (#14, f2ce76c), ACL surface grant/revoke/rollback/show (#15, 874f9ac). ACL writes locked (exclusive flock), snapshotted (keep 10), 412-retry re-derives from fresh fetch. Live e2e green. Separation (identity/policy) per 2026-08-06 boundary decisions.
+- **k3s e2e updated for ivps acl** (feat/k3s-recipes): First test now calls `ivps acl grant` for mesh (tag:self --port 6443,8472) + operator (tag:workstation,mobile --ssh) after `ivps tag create` and before `ivps launch --tag`. Teardown order fixed: delete nodes → acl revoke → tag delete. PLAN.md updated — Phase 1 ticked complete.
+- **Merge queue:** cloudify #9/#10 still open. ivps #12-#15 merged to main.
+- **Next:** C3 deployments (ADR-011) — needs CRITICAL GATE: subagent description of bash magic → implementation plan → human consent. Also: stack feat/k3s-recipes onto master (C1+C2 PRs first, then rebase k3s branch).
+
+## 2026-08-09 — k3s e2e manually validated green (7/7 steps); rotation deferred
+
+- **Manual validation of every e2e step** (user-directed: one test at a time, not batch): tag+acl grant → launch (SSH-ready) → WSL SSH + MagicDNS → code push → k3s-server install + Ready at tailscale IP → k3s-agent joins → k3s-cli (kubectl context + helm) → isolation (prod↔dev 6443 blocked). All green.
+- **Fixes made en route:**
+  - k3s-cli helm: get-helm-3 ALWAYS copies via runAsRoot (sudo) when not root — HELM_INSTALL_DIR alone doesn't avoid it. Fix: `USE_SUDO=false` + process substitution (env var on a pipeline only reaches the first command). Verified helm v3.21.3 → ~/.local/bin, no sudo.
+  - e2e install assertions: SSH pipe can drop mid-install on WSL2 (remote work continues detached, cluster still comes up — cloudify reports FAILED as a false negative). Install steps now WARN on non-zero exit; the readiness poll is the real gate.
+  - e2e launch: sequential (parallel raced tailscale device registration, intermittent SSH timeouts on nodes 2-4); tokens written to `$WD/tokens.env` in setup_file + sourced in setup (bats @test runs in subshells, setup_file exports lost); setup_file deletes ALL stale k3s-* tailscale devices from interrupted runs (DNS collision → `-1`/`-2` suffixes broke MagicDNS); verify via `incus list` (ivps list doesn't show tagged nodes).
+- **Token rotation DEFERRED (user decision, ROADMAP'd)**: rotating a running single-server k3s join token is a k3s limitation — the token IS the etcd bootstrap encryption key; changing it fatal-fails on restart ("encrypted with different token"). Test 8 dropped from e2e; the broken token-overwrite block removed from k3s-server/configure.sh (it killed any cluster whose K3S_TOKEN differed on re-configure). Validate `cloudify configure` run-phase on a simpler split pkg later. See ROADMAP "cloudify configure re-run validation".
+- **Open questions:** run the full bats e2e once as final green, or merge on the strength of manual validation? feat/k3s-recipes is ready either way (C1+C2+k3s recipes+e2e, pushed).
+- **State:** feat/k3s-recipes (this branch) holds C1+C2+k3s recipes+e2e+docs; no PR yet. Deployments work (deployment-wide store + cloudify vars) sits on feat/deployments (based on master, 23 unit tests green, unpushed review). ivps main aa11968 (F1+F2+F3+ACL merged).
+
+## 2026-08-10 — k3s validated by real helm deploy (ntfy); k3s-cli merge bug fixed
+
+- **Full-stack cluster proof via a real helm chart**: re-spun the prod cluster (same 7 manual steps), deployed **ntfy** (official chart, oci://codeberg.org/wrenix/helm-charts/ntfy), exposed via `tailscale serve` on the node → **https://k3s-prod-1.komodo-everest.ts.net/** with a real Let's Encrypt cert.
+- **Verified end-to-end**: pod scheduled+Running, NodePort service routing, web UI served, API publish → read-back round-trip, and **sqlite persistence through pod kill+reschedule** (cache.db on a local-path PVC).
+- **Chart gotchas learned**: ntfy chart cache value path is `ntfy.cache.file` (not `cache.file`); PVC mounts at `/data` (not the commented /var/www/html); k3s ships local-path StorageClass so PVCs provision out of the box.
+- **k3s-cli kubeconfig merge bug found + fixed (cd503c9)**: k3s writes cluster/user/context all as "default"; recipe renamed only the context, so merging a 2nd cluster left both contexts pointing at one "default" entry (multi-cluster silently broken) and re-deploys kept stale CAs (kubectl: unknown authority). Now uniformly renames context/cluster/user to $K3S_CONTEXT, merges KCFILE-first. Verified live.
+- **Chosen chart rationale**: ntfy = lightest (Go, ~30MB), official chart, REST API + web UI, sqlite, zero external deps (round-trip with self-created data; Miniflux rejected — needs external RSS feeds to verify).
+- **State:** feat/k3s-recipes ready to merge (recipes + hardened e2e + all fixes).

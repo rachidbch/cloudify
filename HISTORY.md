@@ -1,5 +1,13 @@
 # Cloudify — Session History
 
+## 2026-08-10 — deployments branch rebased on master + §5.1 fix (CRITICAL GATE completed)
+
+- **Gate artifacts produced** (in ~/tmp/cloudify-deployments-gate/): `bash-magic.md` (subagent 1 — the bash magic end-to-end: forwarding, shadows, router, 16 invariants, composition points) and `rebase-analysis.md` (subagent 2 — grounded rebase analysis in a scratch worktree: rebase clean, 16-invariant verdicts, §5.1 confirmed).
+- **§5.1 CONFIRMED + FIXED**: deployment-wide vars died in a $() subshell — names reached the envsubst allow-list but values never exported, payload carried `export K3S_TOKEN=''`. Fix: run the deployment read in the parent shell, capture names via temp-file redirect, snapshot/restore already-claimed env values (first-write-wins preserved). Verified by real payload probe: plain → `K3S_TOKEN='real-value'`; overlap → `'pkg-value'` (per-pkg wins); full unit suite 289/289 incl. deployments.bats 23/23.
+- **Two subagent claims CORRECTED by empirical probe**: the "pre-existing deps-grep abort" and the §5.3 post-fix fail-fast are NOT live — the router calls `cloudify_remote ... && is_setup_in_progress=true` (cloudify:283-284), an `&&` list, which disables errexit for the whole dispatch including the backgrounded subshell. Real installs of dep-less recipe pkgs (pandoc, bat) succeed on master. The abort only fires in bare-call contexts (tests/probes). Addendum appended to rebase-analysis.md.
+- **feat/deployments rebased onto master** (consent-gated): clean replay of the 2 feature commits + fix commit (e0f68b4). Branch pushed.
+- **State:** deployments = deployment-wide store + `cloudify vars set/delete/show/list` (+ --stdin/--file) + `CLOUDIFY_DEPLOYMENT` context + TOKEN/KEY debug masking. Next: user-gated merge to master, then the k3s e2e-with-deployments validation (live run: token from the store, not the env).
+
 ## 2026-08-06 — ADR-011: deployments = applications (cloudify-owned), deployment-first state shape
 
 - **Decision recorded** (ADR-011): a deployment is a first-class cloud-global entity — an application across nodes; a k3s cluster is a deployment. Supersedes ADR-006's packages-first sub-shape: per-node slices become `nodes/<node>/deployments/<id>/pkgs/<pkg>/config.yaml`; deployment-wide state lives at `~/.config/cloudify/deployments/<id>/` (fixed-path convention, ivps stays opaque). Ownership: cloudify owns applications, ivps owns resources. Context is a per-shell `CLOUDIFY_DEPLOYMENT` env var (no open/close, no shared context file — parallel-safe). `cloudify vars set/delete/list` + `cloudify deployment list/delete`; precedence caller-env > per-(node,pkg) > deployment-wide; secrets-as-config for MVP; debug masking extended to TOKEN/KEY.

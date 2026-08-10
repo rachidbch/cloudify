@@ -45,3 +45,4 @@ Thumbs.db
 # Python bytecode cache (from local syntax checks of py recipes)
 __pycache__/
 *.pyc
+.pi-loop-log.jsonl

@@ -496,3 +496,12 @@ Final state:
 - **Token rotation DEFERRED (user decision, ROADMAP'd)**: rotating a running single-server k3s join token is a k3s limitation — the token IS the etcd bootstrap encryption key; changing it fatal-fails on restart ("encrypted with different token"). Test 8 dropped from e2e; the broken token-overwrite block removed from k3s-server/configure.sh (it killed any cluster whose K3S_TOKEN differed on re-configure). Validate `cloudify configure` run-phase on a simpler split pkg later. See ROADMAP "cloudify configure re-run validation".
 - **Open questions:** run the full bats e2e once as final green, or merge on the strength of manual validation? feat/k3s-recipes is ready either way (C1+C2+k3s recipes+e2e, pushed).
 - **State:** feat/k3s-recipes (this branch) holds C1+C2+k3s recipes+e2e+docs; no PR yet. Deployments work (deployment-wide store + cloudify vars) sits on feat/deployments (based on master, 23 unit tests green, unpushed review). ivps main aa11968 (F1+F2+F3+ACL merged).
+
+## 2026-08-10 — k3s validated by real helm deploy (ntfy); k3s-cli merge bug fixed
+
+- **Full-stack cluster proof via a real helm chart**: re-spun the prod cluster (same 7 manual steps), deployed **ntfy** (official chart, oci://codeberg.org/wrenix/helm-charts/ntfy), exposed via `tailscale serve` on the node → **https://k3s-prod-1.komodo-everest.ts.net/** with a real Let's Encrypt cert.
+- **Verified end-to-end**: pod scheduled+Running, NodePort service routing, web UI served, API publish → read-back round-trip, and **sqlite persistence through pod kill+reschedule** (cache.db on a local-path PVC).
+- **Chart gotchas learned**: ntfy chart cache value path is `ntfy.cache.file` (not `cache.file`); PVC mounts at `/data` (not the commented /var/www/html); k3s ships local-path StorageClass so PVCs provision out of the box.
+- **k3s-cli kubeconfig merge bug found + fixed (cd503c9)**: k3s writes cluster/user/context all as "default"; recipe renamed only the context, so merging a 2nd cluster left both contexts pointing at one "default" entry (multi-cluster silently broken) and re-deploys kept stale CAs (kubectl: unknown authority). Now uniformly renames context/cluster/user to $K3S_CONTEXT, merges KCFILE-first. Verified live.
+- **Chosen chart rationale**: ntfy = lightest (Go, ~30MB), official chart, REST API + web UI, sqlite, zero external deps (round-trip with self-created data; Miniflux rejected — needs external RSS feeds to verify).
+- **State:** feat/k3s-recipes ready to merge (recipes + hardened e2e + all fixes).

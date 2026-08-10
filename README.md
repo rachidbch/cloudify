@@ -8,7 +8,7 @@ Cloudify installs development tools and system packages on Ubuntu/Debian machine
 
 **Key features:**
 
-- **80 package recipes** — apt packages, GitHub releases, custom scripts
+- **A growing number of package recipes** — apt packages, GitHub releases, custom scripts
 - **Remote execution** — install on any host reachable via SSH
 - **Tag-based filtering** — group hosts and packages with `@tag` files
 - **Host inventory** — define your fleet in `inventory/<host>/`

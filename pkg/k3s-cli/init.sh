@@ -37,12 +37,19 @@ scp -q -o StrictHostKeyChecking=no "root@${K3S_SERVER}:/etc/rancher/k3s/k3s.yaml
 # k3s writes the API server as 127.0.0.1 — point it at the tailscale DNS name.
 sed -i "s#server: https://127.0.0.1:6443#server: https://${K3S_SERVER}:6443#" "$KCFILE"
 
-# Context "default" -> per-cluster context name.
-kubectl --kubeconfig "$KCFILE" config rename-context default "$K3S_CONTEXT" >/dev/null
+# k3s writes cluster/user/context all as "default" — make them context-specific
+# or merging a second cluster makes both contexts point at one "default" entry
+# (and re-deploys keep stale CAs). Uniform rename to $K3S_CONTEXT.
+sed -i \
+    -e "s/name: default/name: ${K3S_CONTEXT}/g" \
+    -e "s/cluster: default/cluster: ${K3S_CONTEXT}/g" \
+    -e "s/user: default/user: ${K3S_CONTEXT}/g" \
+    -e "s/current-context: default/current-context: ${K3S_CONTEXT}/" "$KCFILE"
 
-# Merge into ~/.kube/config (backup first).
+# Merge into ~/.kube/config (backup first). KCFILE first so a re-run with a
+# fresh cluster CA replaces any stale same-name entry.
 [[ -f ~/.kube/config ]] && cp ~/.kube/config ~/.kube/config.bak
-KUBECONFIG="${HOME}/.kube/config:${KCFILE}" kubectl config view --flatten > "${HOME}/.kube/config.new" \
+KUBECONFIG="${KCFILE}:${HOME}/.kube/config" kubectl config view --flatten > "${HOME}/.kube/config.new" \
     && mv "${HOME}/.kube/config.new" "${HOME}/.kube/config"
 
 log_info "k3s-cli ready. Use: kubectl --context ${K3S_CONTEXT} get nodes"

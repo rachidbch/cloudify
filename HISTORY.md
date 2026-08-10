@@ -527,3 +527,20 @@ Final state:
   offline. `--clear-data` re-mints (old token dies).
 - **Verify**: service active + unauthenticated POST /mcp answers 401.
 - Integration test: tests/integration/package-affine.bats.
+
+## 2026-08-10 — pkg/affine integration-test fix
+
+- **Root cause (shadow)**: the cloudify git shadow compares options with a
+  literal `"!= \"-*\""` (quoted, not a glob), so `git clone --depth=1 URL`
+  fed `--depth=1` to the URL parser and rejected it ("Not a valid git url").
+  Fix: no options on the clone (plain `clone URL PATH`), which the shadow
+  parses cleanly. Integration test now 5/5 green.
+- **Root cause (creds)**: the stored cloudify GitHub credential was a
+  14-char password (not a PAT — GitHub killed password auth in 2021), so
+  private clones 401'd. This is the first pkg to clone a private GitHub
+  repo. The laptop's gh OAuth token was used for the test; the durable
+  credential update is the human's call (see OPEN THREADS).
+- **Live verification (staged)**: installed on the cloudify container;
+  master token printed; 7/7 probes green (master identity, mints admin,
+  admin-mint denial pinned string, master undeletable/undemotable, recovery
+  mint).

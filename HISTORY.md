@@ -507,3 +507,11 @@ Final state:
 - **k3s-cli kubeconfig merge bug found + fixed (cd503c9)**: k3s writes cluster/user/context all as "default"; recipe renamed only the context, so merging a 2nd cluster left both contexts pointing at one "default" entry (multi-cluster silently broken) and re-deploys kept stale CAs (kubectl: unknown authority). Now uniformly renames context/cluster/user to $K3S_CONTEXT, merges KCFILE-first. Verified live.
 - **Chosen chart rationale**: ntfy = lightest (Go, ~30MB), official chart, REST API + web UI, sqlite, zero external deps (round-trip with self-created data; Miniflux rejected — needs external RSS feeds to verify).
 - **State:** feat/k3s-recipes ready to merge (recipes + hardened e2e + all fixes).
+
+## 2026-08-10 — k3s track merged to master (one merge at a time, sanity after each)
+
+- **Merge 1**: feat/remote-vars → master (169ca41, PR #9 auto-detected MERGED). Sanity: lint + 276/276 unit tests in container.
+- **Merge 2**: feat/install-run-split → master (114b5e1, PR #10 auto-detected MERGED). README conflict (piface docs vs .remote-vars line) resolved by keeping both. Sanity: 283/283.
+- **Merge 3**: feat/k3s-recipes → master (d38ba17). HISTORY conflict (master's piface entries vs branch's 08-06..08-10 ledger) resolved chronologically, both kept. Sanity: 289/289 (k3s structural tests now in suite), lint clean.
+- **Full chain on master now**: pkg .remote-vars + install/run split + k3s-server/agent/cli recipes + live multi-cluster e2e spec (e2e itself is a live-tailnet test, run manually — last full manual validation 2026-08-09, 7/7 steps green).
+- **Open threads**: feat/deployments (deployment-wide store + cloudify vars, 23 unit tests green) parked on master base; not part of this merge. Feature branches feat/remote-vars, feat/install-run-split, feat/k3s-recipes can be deleted.

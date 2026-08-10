@@ -552,3 +552,14 @@ Final state:
   master token printed; 7/7 probes green (master identity, mints admin,
   admin-mint denial pinned string, master undeletable/undemotable, recovery
   mint).
+
+## 2026-08-10 — feat/deployments battery GREEN (integration suite 32/34)
+
+- Full battery: lint clean, unit 297/297 (289 + 5 git-shadow + 3 credentials),
+  integration 32/34. Failures = exactly {hermes-dashboard, hermes-openwebui} —
+  both OUT OF SCOPE (user decision 2026-08-10). Zero new failures.
+- All 3 in-scope defects fixed + verified one-by-one: affine 5/5 (git shadow
+  clone-arg parser + CLOUDIFY_GITHUB_READONLY_TOKEN end-to-end), hunk 3/3
+  (private npm prefix /opt/hunkdiff + symlinks), yazi 3/3 (pkg_depends unzip +
+  fail-fast die). Recipe fail-fast systemic fix parked as issue #14 + ROADMAP.
+- Skill: LEAN "Credentials & secrets" section added (filesystem-only, no commit).

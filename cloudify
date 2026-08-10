@@ -490,7 +490,11 @@ function main() {
             case "${1:-}" in
                 set)
                     local var_key="${2:-}"
-                    [[ -n "$var_key" ]] && shift 2 || die "Usage: cloudify vars set <key> <value> [--stdin|--file <path>]"
+                    if [[ -n "$var_key" ]]; then
+                        shift 2
+                    else
+                        die "Usage: cloudify vars set <key> <value> [--stdin|--file <path>]"
+                    fi
                     case "${1:-}" in
                         --stdin)
                             local var_val; var_val=$(cat)

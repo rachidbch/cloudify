@@ -198,16 +198,30 @@ function _cloudify_pkg_remote_vars() {
 
         # -- Deployment-wide vars (lowest priority; ADR-011) --
         if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]]; then
-            local dep_var_names dep_var
-            dep_var_names=$(_cloudify_deployment_read_vars "$CLOUDIFY_DEPLOYMENT")
-            if [[ -n "$dep_var_names" ]]; then
-                while IFS= read -r dep_var; do
-                    [[ -n "$dep_var" ]] || continue
-                    # Only claim if not already claimed (per-pkg wins)
-                    grep -qx "$dep_var" "$TMPFILE" 2>/dev/null && continue
-                    echo "$dep_var" >> "$TMPFILE"
-                done <<< "$dep_var_names"
-            fi
+            local dep_var_names_file dep_var _dep_n
+            # Snapshot values of already-claimed names: the deployment read
+            # exports unconditionally and must not clobber per-pkg/caller
+            # values (first-write-wins; deployment is lowest priority).
+            local -A _dep_prev=()
+            while IFS= read -r _dep_n; do
+                [[ -n "$_dep_n" ]] && _dep_prev["$_dep_n"]="${!_dep_n:-}"
+            done < "$TMPFILE"
+            # Run in the PARENT shell (not $()) so the exports survive for
+            # envsubst; capture the names via redirect, not command
+            # substitution (a $() subshell would kill the exports again).
+            dep_var_names_file=$(mktemp /tmp/cloudify-dep-vars-XXXXXX)
+            _cloudify_deployment_read_vars "$CLOUDIFY_DEPLOYMENT" > "$dep_var_names_file"
+            while IFS= read -r dep_var; do
+                [[ -n "$dep_var" ]] || continue
+                # Only claim if not already claimed (per-pkg wins)
+                grep -qx "$dep_var" "$TMPFILE" 2>/dev/null && continue
+                echo "$dep_var" >> "$TMPFILE"
+            done < "$dep_var_names_file"
+            # Restore claimed values clobbered by the unconditional exports
+            for _dep_n in "${!_dep_prev[@]}"; do
+                export "$_dep_n"="${_dep_prev[$_dep_n]}"
+            done
+            rm -f "$dep_var_names_file"
         fi
     fi
 

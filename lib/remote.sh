@@ -101,7 +101,10 @@ function _cloudify_pkg_remote_vars() {
     local in_install=false
 
     TMPFILE=$(mktemp /tmp/cloudify-pkg-vars-XXXXXX)
-    trap 'rm -f "$TMPFILE"' RETURN
+    # Only clean up when THIS function returns. Under functrace (set -T, used by
+    # bats) a RETURN trap also fires on nested function returns, which would
+    # delete TMPFILE mid-walk and break every subsequent claim.
+    trap '[[ "${FUNCNAME[0]:-}" == "_cloudify_pkg_remote_vars" ]] && rm -f "$TMPFILE"' RETURN
 
     # -- Helper: export vars from a yaml file, first-write-wins via temp file --
     _try_claim() {
@@ -118,6 +121,29 @@ function _cloudify_pkg_remote_vars() {
             value="${value#\'}"; value="${value%\'}"
             export "$key"="$value"
         done < "$yaml"
+    }
+
+    # -- Helper: claim a declared name from pkg .remote-vars; value from caller env (ADR-007).
+    # Env wins over disk claims (global remote-vars.yaml, per-pkg yaml). A declared
+    # but unset name warns and is left unclaimed — nothing forwards empty.
+    _try_claim_env() {
+        local remote_vars_file="$1"
+        local pkg_name="$2"
+        [[ -f "$remote_vars_file" ]] || return 0
+        local line key
+        while IFS= read -r line; do
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+            key="${line## }"; key="${key%% }"
+            [[ "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]] || continue
+            if [[ -n "${!key:-}" ]]; then
+                # Value comes from the caller's env, overriding any disk-claimed value.
+                export "$key"="${!key}"
+                grep -qx "$key" "$TMPFILE" 2>/dev/null || echo "$key" >> "$TMPFILE"
+            else
+                log_warn "Var $key (declared in pkg $pkg_name .remote-vars) is unset in caller env — not forwarded."
+            fi
+        done < "$remote_vars_file"
     }
 
     # -- Always-forward vars (highest priority) --
@@ -153,7 +179,8 @@ function _cloudify_pkg_remote_vars() {
             [[ -n "${_visited_pkgs[$pkg]:-}" ]] && return 0
             _visited_pkgs[$pkg]=1
 
-            _try_claim "$config_dir/pkgs/${pkg}.yaml"    # parent first
+            _try_claim_env "$CLOUDIFY_DIR/pkg/${pkg}/.remote-vars" "$pkg"   # env values win
+            _try_claim "$config_dir/pkgs/${pkg}.yaml"    # parent first (back-compat)
 
             local recipe deps
             recipe=$(cloudify_package_recipe_path "$pkg" 2>/dev/null) || return 0

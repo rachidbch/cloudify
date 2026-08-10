@@ -12,8 +12,13 @@ if ! command -v kubectl >/dev/null 2>&1; then
 fi
 
 # --- helm (skip if present) ---
+# Install to user-local bin (no sudo). Two gotchas:
+# 1. HELM_INSTALL_DIR must reach the installer script — process substitution
+#    (a leading VAR= on a pipeline only affects the first command).
+# 2. The installer ALWAYS runs the copy via runAsRoot (sudo) when not root;
+#    USE_SUDO=false is required even for a writable dir.
 if ! command -v helm >/dev/null 2>&1; then
-    HELM_INSTALL_DIR="${HOME}/.local/bin" curl -sfL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash \
+    HELM_INSTALL_DIR="${HOME}/.local/bin" USE_SUDO="false" bash <(curl -sfL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3) \
         || die "helm install failed"
 fi
 

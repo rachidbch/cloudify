@@ -13,6 +13,8 @@ Cloudify installs development tools and system packages on Ubuntu/Debian machine
 - **Tag-based filtering** — group hosts and packages with `@tag` files
 - **Host inventory** — define your fleet in `inventory/<host>/`
 - **Plugin API** — stable `pkg_*` functions for writing new recipes
+- **Install/configure split** — `install.sh` + `configure.sh` (ADR-008), `cloudify configure` re-runs the run phase without re-downloading
+- **Deployments** — applications across nodes with per-deployment vars (ADR-011), `CLOUDIFY_DEPLOYMENT` context
 
 ## Quick Start
 
@@ -51,6 +53,9 @@ Commands:
   credentials github          Set GitHub credentials only
   credentials gitlab          Set GitLab credentials only
   credentials --check         Check credential status
+  vars set <key> <value> [--stdin|--file <path>]  Set a var in the current deployment
+  vars show|list [--json]|delete <key>           Manage deployment vars
+  deployment create|list|use|delete <id>         Manage deployments (ADR-011)
   packages | pkgs             List installable packages
   packages | pkgs default     List default packages
   launch | run [remote:]<name> [image]  Launch container (default image: ubuntu/24.04/cloud)
@@ -112,10 +117,12 @@ Set interactively:
 ```bash
 cloudify credentials          # all sections
 cloudify credentials remote   # CLOUDIFY_REMOTE_USER, CLOUDIFY_REMOTE_PWD
-cloudify credentials github   # CLOUDIFY_GITHUBUSER, CLOUDIFY_GITHUBPWD
+cloudify credentials github   # CLOUDIFY_GITHUBUSER, CLOUDIFY_GITHUBPWD, CLOUDIFY_GITHUB_READONLY_TOKEN
 cloudify credentials gitlab   # CLOUDIFY_GITLABUSER, CLOUDIFY_GITLABPWD
 cloudify credentials --check  # status check
 ```
+
+Git auth on hosts: the git shadow (GIT_ASKPASS + url.insteadOf) needs a TOKEN — GitHub rejects passwords since 2021. Set `CLOUDIFY_GITHUB_READONLY_TOKEN` (fine-grained PAT, Contents: read-only) for clones; the shadow prefers it over the legacy `CLOUDIFY_GITHUBPWD` slot.
 
 Or export directly (overrides file):
 
@@ -156,6 +163,18 @@ Missing files are silently ignored (vars stay empty).
 Vars listed here are forwarded on every `--on` call regardless of which packages are installed.
 
 Vars already set in the environment take precedence over all config files.
+
+**Deployment-wide vars (ADR-011):** `~/.config/cloudify/deployments/<id>/config.yaml`
+A deployment is an application across nodes (e.g. a k3s cluster). Set the per-shell context and manage vars via the CLI:
+
+```bash
+cloudify deployment create my-cluster
+eval "$(cloudify deployment use my-cluster)"   # export CLOUDIFY_DEPLOYMENT=my-cluster
+cloudify vars set K3S_TOKEN secret
+```
+
+`cloudify --on <node> install <pkg>` then forwards the deployment vars to the host.
+Precedence: caller env > per-package config > deployment-wide.
 
 ### Environment Variables
 
@@ -227,12 +246,13 @@ When `cloudify install bat --on myhost` runs:
 ## Repository Structure
 
 ```
-cloudify              CLI router (367 lines) — sources lib/*.sh modules
+cloudify              CLI router — sources lib/*.sh modules
 Taskfile.yml          Task runner definitions (task setup-container, task test, etc.)
 lib/
   colors.sh           Terminal color setup
   containers.sh       Container operations via ivps (launch, delete, IP lookup)
   credentials.sh      System credential management: save, load, section-based prompting
+  deployments.sh      Deployment-wide store: deployment CRUD + vars set/delete/list/show (ADR-011)
   pkg-config.sh       Package config loader: flat YAML parsing from pkgs/<pkg>.yaml
   hosts.sh            Host inventory (list, filter by tags)
   os.sh               OS detection (distro, version, arch)
@@ -243,6 +263,9 @@ lib/
   utils.sh            Utilities: msg, die, backup/restore, git URL parsing
 pkg/
   <pkg>/init.sh       Package recipe (install script)
+  <pkg>/install.sh    Split pkg: install phase + guard (ADR-008)
+  <pkg>/configure.sh  Split pkg: run phase, no guard (ADR-008)
+  <pkg>/.remote-vars  Optional — var NAMES forwarded from caller env (ADR-007)
   <pkg>/@<tag>        Tag files for filtering
 inventory/
   <host>/@<tag>       Host tag files for grouping

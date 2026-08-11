@@ -563,3 +563,19 @@ Final state:
   (private npm prefix /opt/hunkdiff + symlinks), yazi 3/3 (pkg_depends unzip +
   fail-fast die). Recipe fail-fast systemic fix parked as issue #14 + ROADMAP.
 - Skill: LEAN "Credentials & secrets" section added (filesystem-only, no commit).
+
+## 2026-08-10 — deployments live validation PASSED (token from store, not env)
+
+- Built a 2-node k3s cluster with the join token coming ONLY from the deployment
+  store: `cloudify deployment create k3s-live-test` + `vars set K3S_TOKEN <t>` →
+  `CLOUDIFY_DEPLOYMENT=k3s-live-test cloudify --on <server> install k3s-server`
+  (no env token) → server config.yaml carried the store token → agent joined →
+  2 nodes Ready. Proves ADR-011 end-to-end + the §5.1 payload fix live.
+- Infra incidents fixed along the way: (1) incusd on cloudai lost its network
+  listener (core.https_address hostname DNS-race after a daemon restart) —
+  pinned to 100.87.49.111:8443, live re-bind, no restart needed; (2) the Windows
+  workstation had LOST tag:workstation (grant matched nobody — the F1 bug in
+  reverse); user retagged it via the admin console → k3s nodes instantly
+  reachable. Investigation: ivps source has NO device-tag write path, and the
+  API rejects removing in-use tagOwners — so ivps cannot have stripped the tag;
+  cause of that loss remains unexplained (admin audit log if it recurs).

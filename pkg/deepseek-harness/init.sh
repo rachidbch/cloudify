@@ -33,6 +33,8 @@ npm install -g @deepseek-ai/dsh || die "dsh: npm install failed"
 DSH_BIN="$(command -v dsh || true)"
 [[ -n "$DSH_BIN" ]] || die "dsh: binary not found after npm install (is mise node on PATH?)"
 log_info "dsh installed at $DSH_BIN"
+# mise shims aren't on the non-login ssh PATH — symlink so dsh is callable anywhere
+ln -sf "$DSH_BIN" /usr/local/bin/dsh
 
 # --- CLEAR_DATA: stop + wipe service and data dirs ---
 if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then

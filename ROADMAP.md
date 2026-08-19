@@ -139,8 +139,11 @@ the VXLAN-inside-WireGuard overlay, three recipes (`k3s-server`, `k3s-agent`,
 `pkgs/<pkg>.yaml` env-forwarding covers `K3S_TOKEN`/`K3S_URL`. ivps needs
 `tag create/delete`, `launch --tag`, and launch-waits-for-SSH.
 
-**Status:** proposal. Gated on a live spike (two throwaway nodes) confirming
-the mesh-grant and the 1230 MTU figure on the real tailnet.
+**Status: SHIPPED (2026-08-10).** Recipes merged to master and validated live 3×:
+spike (2026-07-31), manual 7-step cluster + ntfy helm deploy, and the
+deployments-driven run (token from the store). Tailnet ACL grants for the node
+mesh (`tag:cluster-<name> → same, 6443,8472`) + operator reach (`tag:workstation`
+must exist on a real device — see ivps HISTORY 2026-08-10).
 
 ## cloudify configure re-run validation (token rotation deferred)
 

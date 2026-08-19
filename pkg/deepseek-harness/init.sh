@@ -15,6 +15,15 @@
 DSH_SERVICE="/etc/systemd/system/dsh.service"
 DSH_PORT="${DSH_PORT:-3080}"
 
+# Host/Origin the /api browser-trust fence accepts (dsh rejects unknown Hosts
+# with 403 — tailscale serve forwards the real hostname). Config override wins;
+# else auto-derive the node's tailnet DNS name.
+DSH_TRUSTED_HOST="${DSH_TRUSTED_HOST:-}"
+if [[ -z "$DSH_TRUSTED_HOST" ]]; then
+    DSH_TRUSTED_HOST=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' 2>/dev/null | sed 's/\.$//')
+    [[ "$DSH_TRUSTED_HOST" == "null" ]] && DSH_TRUSTED_HOST=""
+fi
+
 # --- Install guard ---
 if [[ -f "$DSH_SERVICE" ]] && systemctl is-active dsh >/dev/null 2>&1 \
    && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
@@ -46,6 +55,8 @@ if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
 fi
 
 # --- Systemd service (reboot-surviving) ---
+DSH_TRUSTED_ARGS=""
+[[ -n "$DSH_TRUSTED_HOST" ]] && DSH_TRUSTED_ARGS=" --trusted-host ${DSH_TRUSTED_HOST}"
 cat > "$DSH_SERVICE" << SYSTEMDEOF
 [Unit]
 Description=DeepSeek Harness (dsh) web UI
@@ -54,7 +65,7 @@ After=network.target
 [Service]
 Type=simple
 Environment=PORT=${DSH_PORT}
-ExecStart=${DSH_BIN} web --no-open
+ExecStart=${DSH_BIN} web --no-open${DSH_TRUSTED_ARGS}
 Restart=always
 RestartSec=5
 

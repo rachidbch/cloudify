@@ -13,6 +13,7 @@ cloudify --on <node> install deepseek-harness
 | Var | Default | Description |
 |-----|---------|-------------|
 | `DSH_PORT` | `3080` | Web UI port (bound to 127.0.0.1 — expose via tailscale serve, don't rebind) |
+| `DSH_TRUSTED_HOST` | auto (node tailnet name) | Host the `/api` browser-trust fence accepts; set when serving via a proxy under another name |
 
 No other vars. The npm `latest` (currently `0.1.0-rc.7`) is pinned at install time; re-run install to bump.
 

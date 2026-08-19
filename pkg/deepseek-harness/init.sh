@@ -31,8 +31,11 @@ if [[ -f "$DSH_SERVICE" ]] && systemctl is-active dsh >/dev/null 2>&1 \
     return 0
 fi
 
-# --- Dependencies: node via mise (house runtime manager) ---
-pkg_depends mise
+# --- Dependencies: node via mise (house runtime manager) + nginx relay ---
+# nginx relays the tailnet URL → dsh with the Host rewritten to a loopback
+# authority: dsh's /api fence is loopback-only by design (settings/credentials/
+# llm routes reject any non-loopback Host with 403, even with --trusted-host).
+pkg_depends mise nginx
 export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
 mise use -g node@lts
 
@@ -47,7 +50,7 @@ ln -sf "$DSH_BIN" /usr/local/bin/dsh
 
 # --- CLEAR_DATA: stop + wipe service and data dirs ---
 if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
-    systemctl stop dsh 2>/dev/null || true
+    systemctl stop dsh nginx 2>/dev/null || true
     systemctl disable dsh 2>/dev/null || true
     rm -f "$DSH_SERVICE"
     rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/dsh" "${XDG_DATA_HOME:-$HOME/.local/share}/dsh"
@@ -76,9 +79,29 @@ SYSTEMDEOF
 systemctl daemon-reload
 systemctl enable --now dsh
 
+# --- Host-rewriting relay (loopback fence) ---
+# tailscale serve → 127.0.0.1:3081 → nginx → 127.0.0.1:3080 with Host rewritten.
+cat > /etc/nginx/sites-available/dsh-relay <<'NGINXEOF'
+server {
+    listen 127.0.0.1:3081;
+    location / {
+        proxy_pass http://127.0.0.1:3080;
+        proxy_set_header Host 127.0.0.1:3080;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_http_version 1.1;
+    }
+}
+NGINXEOF
+ln -sf /etc/nginx/sites-available/dsh-relay /etc/nginx/sites-enabled/dsh-relay
+rm -f /etc/nginx/sites-enabled/default
+nginx -t >/dev/null 2>&1 || die "dsh: nginx relay config invalid"
+systemctl enable --now nginx >/dev/null 2>&1
+systemctl restart nginx
+
 msg ""
 msg "${GREEN}dsh installed and running.${RESET}"
-msg "  Web UI:  http://127.0.0.1:${DSH_PORT}  (tailscale serve on this node → tailnet URL)"
+msg "  Web UI:  http://127.0.0.1:${DSH_PORT}  (tailnet: https://<node>.komodo-everest.ts.net via nginx relay)"
 msg "  Logs:    journalctl -u dsh -f"
 msg "  Restart: systemctl restart dsh"
 msg ""

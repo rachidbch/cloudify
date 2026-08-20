@@ -71,6 +71,22 @@ cat > "${DSH_HOME:-$HOME/.dsh}/reverse-proxy.json" <<PLUGINEOF
 }
 PLUGINEOF
 chmod 600 "${DSH_HOME:-$HOME/.dsh}/reverse-proxy.json"
+
+# Deterministic client gate: the plugin's page-bootstrap pins connection.isLoopback
+# via a ModuleLoader wrap, but rc.8's runtime doesn't cooperate in our env — the
+# settings mirror stays 'memory' and Settings/Models report "settings are
+# unavailable in this browser". sed the served bundle instead (proven); the
+# plugin still owns auth + the Host/Origin fence + WS forwarding. Version-drift
+# guard: skip + warn if the pattern moved.
+DSH_CLIENT_JS="$(npm root -g 2>/dev/null)/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js"
+if [[ -f "$DSH_CLIENT_JS" ]] && grep -q "isLoopback: pageLocation" "$DSH_CLIENT_JS"; then
+    cp -n "$DSH_CLIENT_JS" "$DSH_CLIENT_JS.bak" 2>/dev/null || true
+    sed -i "s/isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname)/isLoopback: true/" "$DSH_CLIENT_JS"
+    log_info "dsh client bundle pinned: isLoopback true (remote-browser settings)."
+else
+    log_warn "dsh bundle pattern not found — dsh version drifted; remote Settings/Models may be unavailable."
+fi
+
 msg ""
 msg "${YELLOW}=== dsh remote-access token — save this ===${RESET}"
 msg "  $DSH_PLUGIN_TOKEN"

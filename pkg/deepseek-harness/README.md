@@ -32,7 +32,7 @@ dsh's `/api` fence is **loopback-only by design** — settings/credentials/llm r
 The package installs the community plugin **dsh-full-remote** (pinned `0.3.4`; [repo](https://github.com/JUANWANG-BUAA/dsh-full-remote)) which solves both gates in one maintained, authenticated layer:
 
 - in-process proxy on `127.0.0.1:3081` rewrites Host/Origin to loopback → privileged APIs pass the fence
-- page-bootstrap pins `connection.isLoopback = true` → Settings/Models work from remote browsers
+- page-bootstrap pins `connection.isLoopback = true` (complemented by a deterministic bundle sed — the rc.8 runtime doesn't honor the loader-wrap pin) → Settings/Models work from remote browsers
 - **192-bit token + per-device sessions** (login once; HttpOnly SameSite cookie; optional approval mode)
 
 **Risk notes (audited 2026-08-10):** third-party plugin (not DeepSeek-official); minimal deps (schemastery + uqr), hand-rolled node:http proxy with hop-by-hop/spoofable-header stripping and loopback-only control routes; published npm artifact matches the reviewed repo. Residual: version drift against fast-moving dsh (pinned; re-audit on upgrades) and the token gate (one-time login per device).

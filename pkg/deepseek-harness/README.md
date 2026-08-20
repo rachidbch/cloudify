@@ -32,10 +32,10 @@ dsh's `/api` fence is **loopback-only by design** — settings/credentials/llm r
 The package installs the community plugin **dsh-full-remote** (pinned `0.3.4`; [repo](https://github.com/JUANWANG-BUAA/dsh-full-remote)) which solves both gates in one maintained, authenticated layer:
 
 - in-process proxy on `127.0.0.1:3081` rewrites Host/Origin to loopback → privileged APIs pass the fence
-- **dsh-loopback-pin (our plugin, shipped in this package)**: dsh-full-remote\'s page-bootstrap wraps `loader.load` once, but rc.8+ reassigns it (thin register arrow), silently clobbering the wrap. Our plugin installs an **accessor** on `loader.load` (getter returns the interceptor, setter captures reassignments) and pins `connection.isLoopback = true` via the connection module factory — survives dsh updates
+- **dsh-loopback-pin** (our plugin, shipped in this package) opens the client gate: pins `connection.isLoopback = true` so the settings UI loads from remote browsers. Why it exists: dsh-full-remote's page-bootstrap wraps `loader.load` once, but the shipped runtime reassigns it (thin `registration => this.register(registration)` arrow), silently clobbering the wrap (the marker survives, the wrapper doesn't). Our plugin installs an **accessor** on `loader.load` — getter always returns our intercepting function, setter captures reassignments as the new delegate — and wraps the connection module's factory to pin `isLoopback` right after its apply. Diagnosed live with a headless browser 2026-08-20; survives dsh updates by construction
 - **192-bit token + per-device sessions** (login once; HttpOnly SameSite cookie; optional approval mode)
 
-**Risk notes (audited 2026-08-10):** third-party plugin (not DeepSeek-official); minimal deps (schemastery + uqr), hand-rolled node:http proxy with hop-by-hop/spoofable-header stripping and loopback-only control routes; published npm artifact matches the reviewed repo. Residual: version drift against fast-moving dsh (pinned; re-audit on upgrades) and the token gate (one-time login per device).
+**Risk notes (audited 2026-08-10; pin re-audited 2026-08-20):** third-party plugin (not DeepSeek-official); minimal deps (schemastery + uqr), hand-rolled node:http proxy with hop-by-hop/spoofable-header stripping and loopback-only control routes; published npm artifact matches the reviewed repo. Residual: version drift against fast-moving dsh (pinned; re-audit on upgrades) and the token gate (one-time login per device).
 
 ## Behavior & gotchas
 

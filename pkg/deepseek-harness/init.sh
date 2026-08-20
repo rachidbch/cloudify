@@ -57,8 +57,8 @@ corepack prepare pnpm@latest --activate >/dev/null 2>&1 || true
 dsh plugin --profile web add dsh-full-remote@0.3.4 || die "dsh: plugin install failed"
 
 # --- dsh-loopback-pin (our plugin): accessor-based isLoopback pin ---
-# dsh-full-remote's page-bootstrap wraps loader.load once — rc.8+ REASSIGNS
-# load (thin register arrow), silently clobbering the wrap (marker survives,
+# dsh-full-remote's page-bootstrap wraps loader.load once — the shipped
+# runtime REASSIGNS load (thin register arrow), silently clobbering the wrap (marker survives,
 # wrapper doesn't) — Settings/Models still fail. Our plugin installs an
 # ACCESSOR on loader.load (getter returns our interceptor, setter captures
 # reassignments) so the pin survives. Diagnosed live 2026-08-20: all three

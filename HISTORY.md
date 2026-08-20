@@ -1,5 +1,13 @@
 # Cloudify — Session History
 
+## 2026-08-20 — dsh-loopback-pin: accessor-based isLoopback pin (replaces sed; ADR-013)
+
+- **Live diagnosis, root cause found**: remote Settings → Models failed ("settings are unavailable in this browser") on dsh rc.7. dsh-full-remote's page-bootstrap wraps `loader.load` once, but the shipped runtime REASSIGNS `load` to a thin `registration => this.register(registration)` arrow afterwards — silently clobbering the wrap (marker `__dshFullRemoteTrusted` survives, wrapper doesn't). Proven live in a headless browser: loader marked wrapped yet `load.toString()` is the 59-char arrow; instrumented diag sites never fired; connection module self-loads via `__ModuleLoader__.load` with the exact id the wrap looks for.
+- **Decision (ADR-013)**: our own plugin, `dsh-loopback-pin`, installs an ACCESSOR on `loader.load` — getter always returns our intercepting function, setter captures reassignments as the new delegate — and wraps the connection module's factory to pin `connection.isLoopback = true` right after its apply (settings injects connection → Cordis orders it after). Survives dsh updates by construction. Replaces the sed patch (removed from recipe; bundle pristine, `isLoopback: pageLocation` intact).
+- **Verified end-to-end live**: all three console markers fire (accessor installed → connection module intercepted → isLoopback pinned); Settings → Models renders the provider directory (DeepSeek card, API key configured) with NO error.
+- **Plugin shipped inside the pkg** (`pkg/deepseek-harness/dsh-loopback-pin/`), recipe copies to `/opt/dsh-loopback-pin` + `dsh plugin --profile web add` (local path); registered as profile bundle. Committed `7f235b6`, pushed.
+- **Ops**: smartphone (Redmi 14C) lost `tag:mobile` (known ivps tag-stripping bug, not chased now — second device after the workstation); re-added via Tailscale API. Untagged + authkey-registered devices match neither `autogroup:member` nor their tag → TCP dropped while app ping (disco) still works.
+
 ## 2026-08-10 — deployments branch rebased on master + §5.1 fix (CRITICAL GATE completed)
 
 - **Gate artifacts produced** (in ~/tmp/cloudify-deployments-gate/): `bash-magic.md` (subagent 1 — the bash magic end-to-end: forwarding, shadows, router, 16 invariants, composition points) and `rebase-analysis.md` (subagent 2 — grounded rebase analysis in a scratch worktree: rebase clean, 16-invariant verdicts, §5.1 confirmed).

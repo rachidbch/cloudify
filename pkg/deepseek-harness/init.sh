@@ -48,6 +48,20 @@ log_info "dsh installed at $DSH_BIN"
 # mise shims aren't on the non-login ssh PATH — symlink so dsh is callable anywhere
 ln -sf "$DSH_BIN" /usr/local/bin/dsh
 
+# --- Patch the browser bundle: dsh gates Settings/Models on a loopback page
+# URL (isLoopback from window.location) — remote browsers get "settings are
+# unavailable in this browser" by design. Force isLoopback true; the API fence
+# still enforces loopback Host/Origin server-side via the relay, so the wire
+# security is unchanged. Version-drift guard: skip + warn if the pattern moved.
+DSH_CLIENT_JS="$(npm root -g 2>/dev/null)/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js"
+if [[ -f "$DSH_CLIENT_JS" ]] && grep -q "isLoopback: pageLocation" "$DSH_CLIENT_JS"; then
+    cp -n "$DSH_CLIENT_JS" "$DSH_CLIENT_JS.bak" 2>/dev/null || true
+    sed -i "s/isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname)/isLoopback: true/" "$DSH_CLIENT_JS"
+    log_info "dsh bundle patched: isLoopback forced true (remote-browser settings)."
+else
+    log_warn "dsh bundle patch pattern not found — dsh version drifted; remote Settings/Models may be unavailable."
+fi
+
 # --- CLEAR_DATA: stop + wipe service and data dirs ---
 if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
     systemctl stop dsh nginx 2>/dev/null || true

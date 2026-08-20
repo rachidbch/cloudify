@@ -36,3 +36,20 @@ tailscale serve --bg --https=443 http://127.0.0.1:3081   # on the node (nginx re
 ## Verify
 
 Service active + Web UI answers on `http://127.0.0.1:<port>/` (see `verify.sh`).
+
+## Remote-browser settings patch (dsh dev-preview workaround)
+
+dsh gates Settings/Models on a loopback page URL by design: the browser bundle
+computes `isLoopback` from `window.location.hostname` and, when false, reports
+"settings are unavailable in this browser" without even calling the API. This
+blocks settings over any remote URL (tailnet serve, proxies).
+
+The package patches the served bundle (`dsh-client-connection/lib/client.js`):
+`isLoopback` is forced `true`. Wire security is unchanged — the server-side API
+fence still requires loopback Host/Origin, enforced by the nginx relay. The
+patch has a version-drift guard (skips with a warning if the pattern moved).
+
+Caveats: an npm update of `@deepseek-ai/dsh` reverts the patch (re-run install
+to re-apply; a backup `client.js.bak` is kept). If a future dsh release fixes
+remote settings natively, drop this step. Alternative without the patch: SSH
+tunnel (`ssh -L 3080:127.0.0.1:3080 root@<node>`, open http://localhost:3080).

@@ -26,7 +26,7 @@ tailscale serve --bg --https=443 http://127.0.0.1:3081   # on the node (nginx re
 
 ## Behavior ## Behavior & gotchas gotchas
 
-- **Loopback API fence**: settings/credentials/llm routes reject any non-loopback Host with 403 (by design; `--trusted-host` only covers the proxy API). The package installs an nginx relay on 127.0.0.1:3081 that rewrites Host to 127.0.0.1:3080 — tailscale serve must target :3081, or those API calls 403 in the browser.
+- **Loopback API fence**: settings/credentials/llm routes reject any non-loopback Host with 403 (by design; `--trusted-host` only covers the proxy API). The package installs an nginx relay on 127.0.0.1:3081 that rewrites Host AND Origin to 127.0.0.1:3080 (the fence requires both to match the same authority) — tailscale serve must target :3081, or those API calls 403 in the browser.
 
 - **Developer preview**: rapid breaking changes; expect `dsh` CLI/UI drift between versions.
 - Node is provided by **mise** (`mise use -g node@lts`) — the systemd `ExecStart` uses the absolute mise shim path captured at install, so the service keeps working after PATH changes.

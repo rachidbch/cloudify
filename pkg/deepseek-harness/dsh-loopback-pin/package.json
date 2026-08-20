@@ -1,0 +1,13 @@
+{
+  "name": "dsh-loopback-pin",
+  "version": "0.1.0",
+  "description": "dsh plugin: pin connection.isLoopback=true for remote browsers — accessor-based module-loader wrap that survives load reassignment (rc.8+)",
+  "type": "module",
+  "main": "lib/index.js",
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+# Insert the loopback pin into the Web composition.
+# Install with: dsh plugin --profile web add <path-or-ref>
+- insert:
+    - id: loopback-pin
+      name: dsh-loopback-pin

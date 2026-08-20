@@ -50,12 +50,25 @@ ln -sf "$DSH_BIN" /usr/local/bin/dsh
 
 # --- dsh-full-remote plugin: token-gated proxy for remote Settings/Models ---
 # Solves BOTH gates dsh imposes on remote browsers: the /api Host/Origin fence
-# (proxy rewrites both to loopback) and the client isLoopback gate (page
-# bootstrap pins connection.isLoopback). Adds a 192-bit token + per-device
-# sessions. Pin the version; re-audit on upgrades (see README risk notes).
+# (proxy rewrites both to loopback) and the client isLoopback gate. Adds a
+# 192-bit token + per-device sessions. Pin the version; re-audit on upgrades.
 corepack enable 2>/dev/null || true
 corepack prepare pnpm@latest --activate >/dev/null 2>&1 || true
 dsh plugin --profile web add dsh-full-remote@0.3.4 || die "dsh: plugin install failed"
+
+# --- dsh-loopback-pin (our plugin): accessor-based isLoopback pin ---
+# dsh-full-remote's page-bootstrap wraps loader.load once — rc.8+ REASSIGNS
+# load (thin register arrow), silently clobbering the wrap (marker survives,
+# wrapper doesn't) — Settings/Models still fail. Our plugin installs an
+# ACCESSOR on loader.load (getter returns our interceptor, setter captures
+# reassignments) so the pin survives. Diagnosed live 2026-08-20: all three
+# markers fire (accessor installed → module intercepted → isLoopback pinned).
+mkdir -p /opt
+cp -r "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/dsh-loopback-pin" /opt/ 2>/dev/null \
+    || cp -r "${CLOUDIFY_DIR:-$PWD}/pkg/deepseek-harness/dsh-loopback-pin" /opt/ 2>/dev/null \
+    || true
+[[ -d /opt/dsh-loopback-pin ]] || die "dsh: dsh-loopback-pin source missing"
+dsh plugin --profile web add /opt/dsh-loopback-pin || die "dsh: loopback-pin plugin install failed"
 
 # Pre-enable the proxy headlessly (normally via Settings → Reverse proxy):
 # state file read at plugin load, restart applies it. Token surfaced to the
@@ -71,21 +84,6 @@ cat > "${DSH_HOME:-$HOME/.dsh}/reverse-proxy.json" <<PLUGINEOF
 }
 PLUGINEOF
 chmod 600 "${DSH_HOME:-$HOME/.dsh}/reverse-proxy.json"
-
-# Deterministic client gate: the plugin's page-bootstrap pins connection.isLoopback
-# via a ModuleLoader wrap, but rc.8's runtime doesn't cooperate in our env — the
-# settings mirror stays 'memory' and Settings/Models report "settings are
-# unavailable in this browser". sed the served bundle instead (proven); the
-# plugin still owns auth + the Host/Origin fence + WS forwarding. Version-drift
-# guard: skip + warn if the pattern moved.
-DSH_CLIENT_JS="$(npm root -g 2>/dev/null)/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js"
-if [[ -f "$DSH_CLIENT_JS" ]] && grep -q "isLoopback: pageLocation" "$DSH_CLIENT_JS"; then
-    cp -n "$DSH_CLIENT_JS" "$DSH_CLIENT_JS.bak" 2>/dev/null || true
-    sed -i "s/isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname)/isLoopback: true/" "$DSH_CLIENT_JS"
-    log_info "dsh client bundle pinned: isLoopback true (remote-browser settings)."
-else
-    log_warn "dsh bundle pattern not found — dsh version drifted; remote Settings/Models may be unavailable."
-fi
 
 msg ""
 msg "${YELLOW}=== dsh remote-access token — save this ===${RESET}"

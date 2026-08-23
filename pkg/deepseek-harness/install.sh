@@ -2,12 +2,12 @@
 # deepseek-harness (dsh) — DeepSeek's agent harness (everything-is-a-plugin, Cordis-powered)
 # https://github.com/deepseek-ai/deepseek-harness
 #
+# Install phase (ADR-008 split; ADR-014): idempotent bits + install guard.
+# The update path is `cloudify configure deepseek-harness` (configure.sh) —
+# bumps npm latest, preserves token + sessions + state, re-applies plugins.
+#
 # Web UI at http://127.0.0.1:3080 (default) — expose via tailscale serve on the
 # container for a tailnet HTTPS URL. Runs as a systemd service → survives reboots.
-#
-# NOTE: developer preview — rapid breaking changes. `npm install -g` pins whatever
-# 'latest' is at install time. Re-run install (or `npm update -g @deepseek-ai/dsh`)
-# to bump.
 #
 # Config (~/.config/cloudify/pkgs/deepseek-harness.yaml):
 #   (none required — port is fixed at 3080)
@@ -27,7 +27,7 @@ fi
 # --- Install guard ---
 if [[ -f "$DSH_SERVICE" ]] && systemctl is-active dsh >/dev/null 2>&1 \
    && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
-    log_info "dsh already running. Skipping (use --clear-data to reinstall)."
+    log_info "dsh already running. Skipping (update: cloudify configure deepseek-harness; reinstall: --clear-data)."
     return 0
 fi
 
@@ -70,12 +70,16 @@ cp -r "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/dsh-loopback-pin" /opt/ 2
 [[ -d /opt/dsh-loopback-pin ]] || die "dsh: dsh-loopback-pin source missing"
 dsh plugin --profile web add /opt/dsh-loopback-pin || die "dsh: loopback-pin plugin install failed"
 
-# Pre-enable the proxy headlessly (normally via Settings → Reverse proxy):
-# state file read at plugin load, restart applies it. Token surfaced to the
-# operator for the one-time login.
-DSH_PLUGIN_TOKEN="$(openssl rand -hex 32)"
-mkdir -p "${DSH_HOME:-$HOME/.dsh}"
-cat > "${DSH_HOME:-$HOME/.dsh}/reverse-proxy.json" <<PLUGINEOF
+# Remote-access state: preserve existing token + sessions on re-install
+# (FORCE) — only CLEAR_DATA regenerates. The update path (configure.sh)
+# never touches this file at all.
+DSH_STATE="${DSH_HOME:-$HOME/.dsh}/reverse-proxy.json"
+if [[ "${CLOUDIFY_CLEAR_DATA:-}" != "true" ]] && [[ -f "$DSH_STATE" ]]; then
+    log_info "reverse-proxy state exists — preserving token + device sessions (update-safe)."
+else
+    DSH_PLUGIN_TOKEN="$(openssl rand -hex 32)"
+    mkdir -p "${DSH_HOME:-$HOME/.dsh}"
+    cat > "$DSH_STATE" <<PLUGINEOF
 {
   "enabled": true,
   "accessToken": "$DSH_PLUGIN_TOKEN",
@@ -83,14 +87,15 @@ cat > "${DSH_HOME:-$HOME/.dsh}/reverse-proxy.json" <<PLUGINEOF
   "listenPort": 3081
 }
 PLUGINEOF
-chmod 600 "${DSH_HOME:-$HOME/.dsh}/reverse-proxy.json"
+    chmod 600 "$DSH_STATE"
 
-msg ""
-msg "${YELLOW}=== dsh remote-access token — save this ===${RESET}"
-msg "  $DSH_PLUGIN_TOKEN"
-msg "  First visit to the tailnet URL shows a login form; enter this token once."
-msg "${YELLOW}============================================${RESET}"
-msg ""
+    msg ""
+    msg "${YELLOW}=== dsh remote-access token — save this ===${RESET}"
+    msg "  $DSH_PLUGIN_TOKEN"
+    msg "  First visit to the tailnet URL shows a login form; enter this token once."
+    msg "${YELLOW}============================================${RESET}"
+    msg ""
+fi
 
 # --- CLEAR_DATA: stop + wipe service and data dirs ---
 if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
@@ -112,7 +117,9 @@ After=network.target
 [Service]
 Type=simple
 Environment=PORT=${DSH_PORT}
-ExecStart=${DSH_BIN} web --no-open${DSH_TRUSTED_ARGS}
+# Stable path: /usr/local/bin/dsh symlink is re-pointed on every install/update,
+# so a mise node-version move can never dangle ExecStart.
+ExecStart=/usr/local/bin/dsh web --no-open${DSH_TRUSTED_ARGS}
 Restart=always
 RestartSec=5
 
@@ -135,4 +142,5 @@ msg "  Web UI:  https://<node>.komodo-everest.ts.net (tailnet, token-gated)"
 msg "  Local:   http://127.0.0.1:${DSH_PORT}"
 msg "  Logs:    journalctl -u dsh -f"
 msg "  Restart: systemctl restart dsh"
+msg "  Update:  cloudify configure deepseek-harness (keeps token/sessions/state)"
 msg ""

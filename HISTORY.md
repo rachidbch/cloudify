@@ -1,5 +1,14 @@
 # Cloudify — Session History
 
+## 2026-08-20 — deepseek-harness split: configure = update verb (ADR-014)
+
+- **Split applied (ADR-008 / ADR-014)**: `init.sh` → `install.sh` (guarded first install) + new `configure.sh` = the unguarded update phase. `cloudify configure deepseek-harness` = update to npm latest: bump, re-apply plugins (proven idempotent live), refresh unit (stable `ExecStart=/usr/local/bin/dsh`, kills the node-version-move break), restart, old→new + rollback hint. Verify hook runs after and gates the update.
+- **Token preservation**: install generates `reverse-proxy.json` only if missing (`--clear-data` still regenerates+wipes); configure never touches it. Sessions survive FORCE re-installs and every update. Verified: token byte-identical through a simulated configure.
+- **verify.sh hardened**: adds token file (0600, 64-hex) + served-index plugin-tag checks (`data-plugin="dsh-loopback-pin"` + `dsh-reverse-proxy`) — catches version drift that silently drops a plugin from the profile.
+- **Tests**: new `tests/unit/deepseek-harness.bats` (8 tests, PATH-shim stubs — nothing real installed): 6/8 green in-container; 2 configure tests had test-env bugs (dispatcher resolves recipes in the temp sandbox, missing pkg/ → tests now source directly from `CLOUDIFY_SCRIPT_DIR`; leaked unit file in setup now hermetic). Local sim verified: npm bump call, token preservation, die-on-missing-pin. Full container rerun PENDING — cloudai unreachable (see below).
+- **Taskfile lint glob** widened to cover `pkg/*/install.sh` + `pkg/*/configure.sh` (the rename had dropped them).
+- **INFRA (not chased, but blocking tests)**: workstation's tailnet data path died mid-session — Windows Tailscale daemon wedged (service "Running" but CLI/powershell interop hang on `UtilAcceptVsock accept4 failed 110`; WSL eth1 has routes, tunnels dead). Both cloudai and dsh unreachable from the workstation; phone still reaches dsh (network fine). ACL verified intact: live policy = Aug 9 snapshot + lighthouse additions only; hermes grants present; a redundant `tag:workstation→tag:node` grant attempt was a true no-op (row already had the tag). Fix = restart Windows Tailscale (tray or elevated).
+
 ## 2026-08-20 — dsh-loopback-pin: accessor-based isLoopback pin (replaces sed; ADR-013)
 
 - **Live diagnosis, root cause found**: remote Settings → Models failed ("settings are unavailable in this browser") on dsh rc.7. dsh-full-remote's page-bootstrap wraps `loader.load` once, but the shipped runtime REASSIGNS `load` to a thin `registration => this.register(registration)` arrow afterwards — silently clobbering the wrap (marker `__dshFullRemoteTrusted` survives, wrapper doesn't). Proven live in a headless browser: loader marked wrapped yet `load.toString()` is the 59-char arrow; instrumented diag sites never fired; connection module self-loads via `__ModuleLoader__.load` with the exact id the wrap looks for.

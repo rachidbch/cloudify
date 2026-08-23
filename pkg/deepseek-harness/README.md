@@ -17,6 +17,20 @@ cloudify --on <node> install deepseek-harness
 
 No other vars. The npm `latest` (currently `0.1.0-rc.7`) is pinned at install time; re-run install to bump.
 
+## Update lifecycle
+
+dsh ships as a split package (ADR-008 / ADR-014): `install.sh` (guarded first install) + `configure.sh` (unguarded run phase = the update verb).
+
+- **Install**: `cloudify --on <node> install deepseek-harness` (guard skips when already running).
+- **Update to latest**: `cloudify --on <node> configure deepseek-harness`
+  - bumps `@deepseek-ai/dsh` to npm latest (framework bundles ship inside the npm package, so they follow automatically)
+  - re-applies both plugins (idempotent), refreshes the unit (stable `ExecStart=/usr/local/bin/dsh`), restarts
+  - preserves the token + device sessions + all state (`~/.dsh`, `~/.config/dsh`, `~/.local/share/dsh` never touched)
+  - prints old → new version and a rollback one-liner; the verify hook (ADR-004) runs after and gates the update
+- **Rollback**: `npm install -g @deepseek-ai/dsh@<prev> && systemctl restart dsh` (the hint prints the version)
+- **Nuclear reset**: `cloudify --on <node> install deepseek-harness --clear-data` (wipes token, sessions, storages, profile)
+- A `--force` re-install also preserves the token (only `--clear-data` regenerates).
+
 ## Expose on the tailnet
 
 The install runs `tailscale serve` → `127.0.0.1:3081`, which is the **dsh-full-remote** proxy (see below):

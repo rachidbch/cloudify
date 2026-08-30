@@ -1,5 +1,9 @@
 # Cloudify — Session History
 
+## 2026-08-20 — deepseek-harness lifecycle tests complete
+
+- **Validation closed**: `task test-unit` passed all 305 tests in `cloudai:cloudify`; `task lint` passed shellcheck for all recipe phases, including `install.sh` and `configure.sh`. No files were published to the production dsh instance; testing used only the cloudify container.
+
 ## 2026-08-20 — deepseek-harness split: configure = update verb (ADR-014)
 
 - **Split applied (ADR-008 / ADR-014)**: `init.sh` → `install.sh` (guarded first install) + new `configure.sh` = the unguarded update phase. `cloudify configure deepseek-harness` = update to npm latest: bump, re-apply plugins (proven idempotent live), refresh unit (stable `ExecStart=/usr/local/bin/dsh`, kills the node-version-move break), restart, old→new + rollback hint. Verify hook runs after and gates the update.

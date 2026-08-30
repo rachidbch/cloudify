@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 # deepseek-harness split lifecycle (ADR-008 / ADR-014): install.sh (guarded,
 # token-preserving first install) + configure.sh (unguarded update verb) +
-# hardened verify. All external commands are PATH-shim stubs — nothing real
-# is installed, no network, no systemd state is touched.
+# hardened verify. External commands are PATH-shim stubs — nothing real is
+# installed or restarted; shared test paths are cleaned after each test.
 
 setup() {
     source tests/helpers/common.bash
@@ -16,15 +16,17 @@ setup() {
     source lib/remote.sh
     export CLOUDIFY_NO_VERIFY=true
     export DSH_HOME="$BATS_TEST_TMPDIR/dsh-home"
-    mkdir -p "$DSH_HOME"
+    export HOME="$BATS_TEST_TMPDIR/home"
+    mkdir -p "$DSH_HOME" "$HOME/.local/bin" "$HOME/.local/share/mise/shims"
 
     # Stub the mise dep and the mise CLI so the recipe never touches the
     # container's runtime manager.
     pkg_depends() { :; }
     mise() { :; }
 
-    export STUB_DIR="$BATS_TEST_TMPDIR/stubs"
-    mkdir -p "$STUB_DIR"
+    # The recipe prepends HOME/.local/bin before the inherited PATH, so put
+    # shims there rather than relying on STUB_DIR being first.
+    export STUB_DIR="$HOME/.local/bin"
     cat > "$STUB_DIR/dsh" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -69,13 +71,13 @@ EOF
     # configure.sh requires the shipped pin plugin on disk.
     mkdir -p /opt/dsh-loopback-pin
 
-    # Hermetic: the shared /etc/systemd unit file must not leak between tests.
-    rm -f /etc/systemd/system/dsh.service
+    # Hermetic: shared system files must not leak between tests.
+    rm -f /etc/systemd/system/dsh.service /usr/local/bin/dsh
 }
 
 teardown() {
     teardown_test_env
-    rm -f /etc/systemd/system/dsh.service
+    rm -f /etc/systemd/system/dsh.service /usr/local/bin/dsh
 }
 
 write_state() {
@@ -143,6 +145,7 @@ EOF
     write_state
     run source "$CLOUDIFY_SCRIPT_DIR/pkg/deepseek-harness/configure.sh"
     [ "$status" -eq 0 ]
+    local update_output="$output"
     # npm update ran
     grep -q "npm install -g @deepseek-ai/dsh" "$STUB_NPM_LOG"
     # token + sessions preserved byte-for-byte
@@ -151,8 +154,8 @@ EOF
     # service restarted
     grep -q "systemctl restart dsh" "$STUB_SYSTEMCTL_LOG"
     # old -> new reported with rollback hint
-    [[ "$output" == *"updated:"* ]]
-    [[ "$output" == *"rollback"* ]]
+    [[ "$update_output" == *"updated:"* ]]
+    [[ "$update_output" == *"Rollback"* ]]
 }
 
 @test "verify: green with valid state + both plugin tags served" {

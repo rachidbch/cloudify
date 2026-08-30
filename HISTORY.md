@@ -600,3 +600,7 @@ Final state:
   reachable. Investigation: ivps source has NO device-tag write path, and the
   API rejects removing in-use tagOwners — so ivps cannot have stripped the tag;
   cause of that loss remains unexplained (admin audit log if it recurs).
+
+## 2026-08-30 — handoff: dsh lifecycle implementation closed
+
+- **Closed**: dsh lifecycle split is committed and pushed (`eb11c9e`); all 305 unit tests and shellcheck pass in `cloudai:cloudify`; production dsh was not touched. No active blocker remains. Future production updates use `cloudify --on <node> configure deepseek-harness`, never `--clear-data` for routine updates.

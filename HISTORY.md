@@ -624,3 +624,9 @@ Final state:
 
 - Enabled Cortile auto-tiling (v2.5.2, checksum-verified) + autostart on guac-gui; windows tile automatically. Wallpaper set to user image. New snapshot `guac-gui-cortile`.
 - Investigated XFCE theming under xrdp; root-caused to a known upstream bug (xorgxrdp lacks XI2 → xfsettingsd can't register `_XSETTINGS_S0` → no GTK theme), confirmed by Launchpad #354830 + Xfce forums. Parked — cosmetic, low-ROI to fix; delivered tiling/speed/wallpaper instead.
+
+## 2026-08-31 — "Restore this snapshot" nag on guac-gui (incus-agent false positive)
+
+- **What**: guac-gui shows a persistent "You are currently using this snapshot. Please restore it before rebooting to the normal system." banner.
+- **Why**: a false positive from the guest's incus-agent. The container was frozen during `incus snapshot create` (guac-gui-cortile) while running; the agent misreads the freeze/thaw as "booted from snapshot." Verified NOT running from a snapshot: `incus info` shows the original boot (Created/Started same-time), no restore/snapshot source.
+- **To remove**: reboot the container clears it (agent reset); it may recur while snapshots exist. Permanent fix = delete the guac-gui snapshots (`guac-gui-pre-cortile`, `guac-gui-cortile`) — but those are the rollback points, so keep them unless the nag is intolerable. Harmless either way.

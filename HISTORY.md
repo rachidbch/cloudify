@@ -619,3 +619,8 @@ Final state:
 ## 2026-08-31 — Guacamole admin password reset (lost credentials)
 
 - Reset the web-admin (`rbc`) password in `guacamole_db` with the SOP salt+hash formula; discovered Guacamole 1.6.0 moved the login name to `guacamole_entity.name` (no `username` column on `guacamole_user`). Login verified via `/api/tokens`. New password stored in `/home/rbc/guacamole/.env` (600), never in the repo.
+
+## 2026-08-31 — guac-gui auto-tiling; XFCE theming parked (upstream xrdp bug)
+
+- Enabled Cortile auto-tiling (v2.5.2, checksum-verified) + autostart on guac-gui; windows tile automatically. Wallpaper set to user image. New snapshot `guac-gui-cortile`.
+- Investigated XFCE theming under xrdp; root-caused to a known upstream bug (xorgxrdp lacks XI2 → xfsettingsd can't register `_XSETTINGS_S0` → no GTK theme), confirmed by Launchpad #354830 + Xfce forums. Parked — cosmetic, low-ROI to fix; delivered tiling/speed/wallpaper instead.

@@ -615,3 +615,7 @@ Final state:
 - Re-grounded the plan with web research: Omarchy = Arch + Hyprland (Wayland) + Quickshell; v4.0.1 ISO + SHA256 confirmed; xrdp cannot serve Wayland (maintainer-confirmed, xrdp#2637), the community remote-desktop path is wayvnc/VNC; no precedent exists for Omarchy's full desktop in an LXC/Incus container (domarchy wraps QEMU, devmarchy is CLI-only).
 - Decision: no Incus VM (QEMU overhead unacceptable on cloudstation's 8 GiB/4-core host) and no container experiment until the community proves one. Omarchy automation parked; ADR-015 superseded by ADR-016.
 - `ivps tag create incus` minted the `tag:incus` authkey (cache `~/.config/ivps/tags/incus.env`, reusable, expires 2026-09-01 02:05) ready for the eventual headless join.
+
+## 2026-08-31 — Guacamole admin password reset (lost credentials)
+
+- Reset the web-admin (`rbc`) password in `guacamole_db` with the SOP salt+hash formula; discovered Guacamole 1.6.0 moved the login name to `guacamole_entity.name` (no `username` column on `guacamole_user`). Login verified via `/api/tokens`. New password stored in `/home/rbc/guacamole/.env` (600), never in the repo.

@@ -119,3 +119,13 @@ Never edit a past body; supersede via a new ADR. One-liner per decision lives in
 **Context:** dsh ships fast (new rc every few days) but the package had no update path: the install guard made `cloudify install` a no-op once running, and `--force` regenerated the remote-access token (killing every device session). ADR-008's split existed (k3s) but its "no re-fetch" phrasing described the k3s validation case (token rotation), not a mechanism prohibition.
 **Decision:** Apply the split to deepseek-harness. `install.sh` = guarded first install (renamed from init.sh), generating `reverse-proxy.json` only if missing (CLEAR_DATA still regenerates+wipes). `configure.sh` = the unguarded update phase — `cloudify configure deepseek-harness` bumps npm latest (idempotent), re-applies both plugins, refreshes the unit (stable `ExecStart=/usr/local/bin/dsh` — a mise node-version move can never dangle it), restarts, prints old→new + a rollback one-liner. For fast-moving packages, the npm re-fetch IS the run-phase action; the verify hook (ADR-004) runs after configure and gates the update.
 **Consequences:** Update = one command, sessions/token/state survive by construction (npm + recipe never touch `~/.dsh`, `~/.config/dsh`, `~/.local/share/dsh`). verify.sh hardened to assert the served composition (both plugin bootstraps) + token file — drift that silently drops a plugin fails the gate loudly. Rollback is a printed one-liner (no auto-rollback: a bump may migrate the profile format). The "no re-fetch in configure" reading of ADR-008 is refined for this class of package.
+
+## ADR-015: Omarchy deployment uses an Incus VM and unattended ISO
+
+**Status:** Accepted
+
+**Context:** The official Omarchy manual documents an ISO installation path and an unattended mode that consumes a second `cidata` configuration disk; the existing ivps launch command creates containers, while cloudstation's Incus server supports virtual machines.
+
+**Decision:** Deploy Omarchy only as an Incus VM using the official pinned ISO, a generated `cidata` disk, and no disk encryption for the first unattended remote test; download and verify the ISO on cloudstation, use ivps for Tailscale tagging, and configure Guacamole after the guest reaches RDP.
+
+**Consequences:** Omarchy is not an Ubuntu or container package; the first implementation uses Incus VM operations until ivps gains an explicit VM workflow; the VM must be sized against cloudstation's 8 GiB host memory and all credentials remain secret inputs rather than SOP literals.

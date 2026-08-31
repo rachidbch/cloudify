@@ -604,3 +604,7 @@ Final state:
 ## 2026-08-30 — handoff: dsh lifecycle implementation closed
 
 - **Closed**: dsh lifecycle split is committed and pushed (`eb11c9e`); all 305 unit tests and shellcheck pass in `cloudai:cloudify`; production dsh was not touched. No active blocker remains. Future production updates use `cloudify --on <node> configure deepseek-harness`, never `--clear-data` for routine updates.
+
+## 2026-08-31 — Omarchy VM automation preflight (ADR-015)
+
+- Official Omarchy research confirmed ISO-only installation with unattended `cidata` configuration; no VM was created after a mistaken local ISO download was aborted and trashed; next execution downloads directly on cloudstation and creates an Incus VM before automating Guacamole.

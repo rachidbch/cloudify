@@ -608,3 +608,10 @@ Final state:
 ## 2026-08-31 — Omarchy VM automation preflight (ADR-015)
 
 - Official Omarchy research confirmed ISO-only installation with unattended `cidata` configuration; no VM was created after a mistaken local ISO download was aborted and trashed; next execution downloads directly on cloudstation and creates an Incus VM before automating Guacamole.
+
+## 2026-08-31 — Omarchy deployment deferred (ADR-016)
+
+- Root-caused the cloudstation SSH blocker: `/etc/hosts` pinned `cloudstation` to its public IP (45.151.123.90), bypassing MagicDNS — every admin action went over the internet as root. User removed the pin; `ssh cloudstation` now reaches the tailnet (Tailscale MagicSSH), so the oracle's management plane is tailnet-only from now on.
+- Re-grounded the plan with web research: Omarchy = Arch + Hyprland (Wayland) + Quickshell; v4.0.1 ISO + SHA256 confirmed; xrdp cannot serve Wayland (maintainer-confirmed, xrdp#2637), the community remote-desktop path is wayvnc/VNC; no precedent exists for Omarchy's full desktop in an LXC/Incus container (domarchy wraps QEMU, devmarchy is CLI-only).
+- Decision: no Incus VM (QEMU overhead unacceptable on cloudstation's 8 GiB/4-core host) and no container experiment until the community proves one. Omarchy automation parked; ADR-015 superseded by ADR-016.
+- `ivps tag create incus` minted the `tag:incus` authkey (cache `~/.config/ivps/tags/incus.env`, reusable, expires 2026-09-01 02:05) ready for the eventual headless join.

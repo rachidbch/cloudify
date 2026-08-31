@@ -129,3 +129,13 @@ Never edit a past body; supersede via a new ADR. One-liner per decision lives in
 **Decision:** Deploy Omarchy only as an Incus VM using the official pinned ISO, a generated `cidata` disk, and no disk encryption for the first unattended remote test; download and verify the ISO on cloudstation, use ivps for Tailscale tagging, and configure Guacamole after the guest reaches RDP.
 
 **Consequences:** Omarchy is not an Ubuntu or container package; the first implementation uses Incus VM operations until ivps gains an explicit VM workflow; the VM must be sized against cloudstation's 8 GiB host memory and all credentials remain secret inputs rather than SOP literals.
+
+## ADR-016: Omarchy deployment deferred until a container path is community-proven
+
+**Status:** Accepted (supersedes ADR-015)
+
+**Context:** ADR-015 chose an Incus VM. Execution review found QEMU VM overhead unacceptable on cloudstation's 8 GiB/4-core host (double memory, disk image, KVM contention with the running Guacamole stack). The alternative, running Omarchy's desktop as an Incus container, has no precedent: Omarchy is Arch + Hyprland (Wayland) + Quickshell, xrdp cannot serve Wayland (maintainer-confirmed), and no community project runs the full Hyprland desktop in LXC/Incus (domarchy wraps QEMU in Docker; devmarchy containerizes only the CLI toolchain).
+
+**Decision:** Park Omarchy GUI automation. No VM, no container experiment. Revisit when the community produces a proven container path (headless Hyprland + wayvnc in LXC/Incus with software rendering, or equivalent). Keep the ivps `tag:incus` authkey machinery warm for that day.
+
+**Consequences:** No cloudify Omarchy package yet; ADR-015's VM plan is not executed; the Guacamole stack and `guac-gui` oracle remain the reference for future GUI guests; the RDP assumption for Omarchy is dropped in favor of VNC (wayvnc) when the topic reopens.

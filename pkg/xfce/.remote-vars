@@ -1,0 +1,9 @@
+# pkg/xfce - remote var NAMES (ADR-007): value lives in the caller env or
+# ~/.config/cloudify/pkgs/xfce.yaml, never in the repo.
+# CLOUDIFY_XFCE_USER: human-given login name (default gui when unset).
+# CLOUDIFY_XFCE_USER_PASSWORD: OPTIONAL. When set, used as the GUI user's
+# password at user creation (preserved, never printed). When unset, the
+# recipe auto-generates one and prints it once. No single quotes or control
+# chars in passwords (payload landmine L1).
+CLOUDIFY_XFCE_USER
+CLOUDIFY_XFCE_USER_PASSWORD

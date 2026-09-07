@@ -31,12 +31,51 @@ setup() {
     done
 }
 
+# Streaming runner for the heavy installs: no silent black box. Runs the
+# command in the background, polls its log every 5s, and reports progress
+# (elapsed + last line) to /tmp/guac-itest-progress.log and FD3. Fails fast
+# and loudly on stall (no output for 90s) or after the 900s cap, so a slow
+# install is distinguishable from a stuck one.
+PROGRESS_FILE="/tmp/guac-itest-progress.log"
+run_install() {
+    local tag="$1"; shift
+    local logf="/tmp/guac-${tag}.log"
+    : > "$logf"
+    ( "$@" > "$logf" 2>&1 ) &
+    local pid=$! last=0 idle=0 elapsed=0 line size rc
+    echo "[$tag starting]" >> "$PROGRESS_FILE"
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 5; elapsed=$((elapsed + 5))
+        size=$(wc -c < "$logf")
+        if [ "$size" -gt "$last" ]; then
+            idle=0; last=$size
+            line=$(tail -1 "$logf" | tr -d '\033' | sed 's/\[[0-9;]*m//g')
+            echo "[$tag ${elapsed}s] $line" | tee -a "$PROGRESS_FILE" >&3
+        else
+            idle=$((idle + 5))
+            if [ "$idle" -ge 90 ]; then
+                echo "[$tag STALLED - no output for 90s]" | tee -a "$PROGRESS_FILE" >&3
+                tail -3 "$logf" | tee -a "$PROGRESS_FILE" >&3
+                kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+                return 124
+            fi
+        fi
+        if [ "$elapsed" -ge 900 ]; then
+            echo "[$tag TIMEOUT after 900s]" | tee -a "$PROGRESS_FILE" >&3
+            kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+            return 124
+        fi
+    done
+    wait "$pid"; rc=$?
+    echo "[$tag done in ${elapsed}s, exit $rc]" | tee -a "$PROGRESS_FILE" >&3
+    return "$rc"
+}
+
 # Remote shell helper: print the RDP parameters of the connection named GUI.
 CONN_HOSTPORT='ds=$(curl -fsS -X POST http://127.0.0.1:8080/api/tokens --data-urlencode username=rbc --data-urlencode password=guac-itest-admin-pass1 | jq -r .dataSource); t=$(curl -fsS -X POST http://127.0.0.1:8080/api/tokens --data-urlencode username=rbc --data-urlencode password=guac-itest-admin-pass1 | jq -r .authToken); id=$(curl -fsS "http://127.0.0.1:8080/api/session/data/$ds/connections?token=$t" | jq -r --arg n GUI '\''to_entries[] | select(.value.name == $n) | .key'\''); curl -fsS "http://127.0.0.1:8080/api/session/data/$ds/connections/$id/parameters?token=$t" | jq -r '\''.hostname + ":" + .port'\'''
 
 @test "cloudify --on $TEST_HOST install guacamole succeeds (docker dep + stack)" {
-    run cloudify --no-defaults --on "$TEST_HOST" install guacamole
-    if [ "$status" -ne 0 ]; then echo "install output: $output" >&3; fi
+    run_install install cloudify --no-defaults --on "$TEST_HOST" install guacamole
     [ "$status" -eq 0 ]
 }
 
@@ -60,8 +99,7 @@ CONN_HOSTPORT='ds=$(curl -fsS -X POST http://127.0.0.1:8080/api/tokens --data-ur
     [ "$status" -eq 0 ]
     local pg_before="$output"
 
-    run cloudify --no-defaults --on "$TEST_HOST" install guacamole
-    if [ "$status" -ne 0 ]; then echo "reinstall output: $output" >&3; fi
+    run_install reinstall cloudify --no-defaults --on "$TEST_HOST" install guacamole
     [ "$status" -eq 0 ]
 
     run $TEST_SSH "root@$TEST_HOST" 'docker compose -f /root/guacamole/docker-compose.yml ps -q postgres'

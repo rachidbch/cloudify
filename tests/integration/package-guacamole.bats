@@ -19,11 +19,24 @@ export CLOUDIFY_GUACAMOLE_RDP_PASSWORD='guac-itest-rdp-pass1'
 export CLOUDIFY_GUACAMOLE_RDP_HOST='10.99.99.11'
 export PKG_VERIFY_TIMEOUT=300
 
+# After a snapshot restore the container needs time to boot + rejoin the
+# tailnet; wait for ssh readiness before every test so the first install is
+# not racing the boot window.
+setup() {
+    local i=0
+    until $TEST_SSH "root@$TEST_HOST" 'true' >/dev/null 2>&1; do
+        i=$((i + 1))
+        ((i < 45)) || { echo "ssh to $TEST_HOST never came up" >&3; return 1; }
+        sleep 2
+    done
+}
+
 # Remote shell helper: print the RDP parameters of the connection named GUI.
 CONN_HOSTPORT='ds=$(curl -fsS -X POST http://127.0.0.1:8080/api/tokens --data-urlencode username=rbc --data-urlencode password=guac-itest-admin-pass1 | jq -r .dataSource); t=$(curl -fsS -X POST http://127.0.0.1:8080/api/tokens --data-urlencode username=rbc --data-urlencode password=guac-itest-admin-pass1 | jq -r .authToken); id=$(curl -fsS "http://127.0.0.1:8080/api/session/data/$ds/connections?token=$t" | jq -r --arg n GUI '\''to_entries[] | select(.value.name == $n) | .key'\''); curl -fsS "http://127.0.0.1:8080/api/session/data/$ds/connections/$id/parameters?token=$t" | jq -r '\''.hostname + ":" + .port'\'''
 
 @test "cloudify --on $TEST_HOST install guacamole succeeds (docker dep + stack)" {
     run cloudify --no-defaults --on "$TEST_HOST" install guacamole
+    if [ "$status" -ne 0 ]; then echo "install output: $output" >&3; fi
     [ "$status" -eq 0 ]
 }
 
@@ -43,10 +56,12 @@ CONN_HOSTPORT='ds=$(curl -fsS -X POST http://127.0.0.1:8080/api/tokens --data-ur
 
 @test "FORCE reinstall preserves the database (postgres container not recreated, creds valid)" {
     run $TEST_SSH "root@$TEST_HOST" 'docker compose -f /root/guacamole/docker-compose.yml ps -q postgres'
+    if [ "$status" -ne 0 ]; then echo "pg capture failed: $output" >&3; fi
     [ "$status" -eq 0 ]
     local pg_before="$output"
 
     run cloudify --no-defaults --on "$TEST_HOST" install guacamole
+    if [ "$status" -ne 0 ]; then echo "reinstall output: $output" >&3; fi
     [ "$status" -eq 0 ]
 
     run $TEST_SSH "root@$TEST_HOST" 'docker compose -f /root/guacamole/docker-compose.yml ps -q postgres'

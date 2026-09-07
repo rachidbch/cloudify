@@ -386,6 +386,7 @@ function _cloudify_source_pkg_phases() {
 
 # Adds a package dependeny
 function pkg_depends() {
+    local pkg
     local package_recipe_path
     local script_basename
     local -a failed_packages=()

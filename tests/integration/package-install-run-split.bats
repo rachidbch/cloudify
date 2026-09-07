@@ -8,7 +8,21 @@ TEST_SSH="ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
 setup() {
     # Fresh markers per test (fixture recipes append)
-    run $TEST_SSH "root@$TEST_HOST" 'rm -f /tmp/fixture-split-log /tmp/fixture-split-installed /tmp/fixture-legacy-log'
+    run $TEST_SSH "root@$TEST_HOST" 'rm -f /tmp/fixture-split-log /tmp/fixture-split-installed /tmp/fixture-legacy-log /tmp/fixture-dep-split-log'
+}
+
+@test "install of a split pkg whose install.sh pulls a dep still runs configure.sh (regression)" {
+    # Guard: pkg_depends used to leak its loop var into the caller's scope, so
+    # the post-install configure lookup saw the DEP's name and skipped
+    # configure.sh. fixture-dep-split pulls fixture-legacy in install.sh.
+    run cloudify --no-defaults --on "$TEST_HOST" install fixture-dep-split
+    [ "$status" -eq 0 ]
+    run $TEST_SSH "root@$TEST_HOST" 'cat /tmp/fixture-dep-split-log'
+    [[ "$output" == *"DEP_SPLIT_INSTALL_RAN"* ]]
+    [[ "$output" == *"DEP_SPLIT_CONFIGURE_RAN"* ]]
+    # the dependency ran (cloudify recipe, not apt fallback)
+    run $TEST_SSH "root@$TEST_HOST" 'cat /tmp/fixture-legacy-log'
+    [[ "$output" == *"LEGACY_INIT_RAN"* ]]
 }
 
 @test "install of a split pkg runs install.sh then configure.sh" {

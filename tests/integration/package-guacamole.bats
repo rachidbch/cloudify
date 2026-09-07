@@ -76,7 +76,9 @@ CONN_HOSTPORT='ds=$(curl -fsS -X POST http://127.0.0.1:8080/api/tokens --data-ur
 
 @test "cloudify --on $TEST_HOST install guacamole succeeds (docker dep + stack)" {
     run_install install cloudify --no-defaults --on "$TEST_HOST" install guacamole
-    [ "$status" -eq 0 ]
+    local rc=$?
+    echo "install rc=$rc" >&3
+    [ "$rc" -eq 0 ]
 }
 
 @test "webapp answers HTTP and .env is mode 600 on $TEST_HOST" {
@@ -100,7 +102,9 @@ CONN_HOSTPORT='ds=$(curl -fsS -X POST http://127.0.0.1:8080/api/tokens --data-ur
     local pg_before="$output"
 
     run_install reinstall cloudify --no-defaults --on "$TEST_HOST" install guacamole
-    [ "$status" -eq 0 ]
+    local rc=$?
+    echo "reinstall rc=$rc" >&3
+    [ "$rc" -eq 0 ]
 
     run $TEST_SSH "root@$TEST_HOST" 'docker compose -f /root/guacamole/docker-compose.yml ps -q postgres'
     [ "$output" = "$pg_before" ]

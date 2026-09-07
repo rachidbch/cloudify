@@ -95,7 +95,7 @@ STATE_PW='awk -F"'\''" "/^XFCE_PASSWORD=/{print \$2}" /etc/cloudify/xfce-user.en
     [ "$output" -ge 1 ]
     run $TEST_SSH "root@$TEST_HOST" 'test -e /etc/xrdp/key.pem && getent group ssl-cert | grep -qw xrdp && echo OK'
     [ "$output" = "OK" ]
-    run $TEST_SSH "root@$TEST_HOST" 'command -v google-chrome && grep -q "WebBrowser=google-chrome" /home/gui/.config/xfce4/helpers.rc && echo OK'
+    run $TEST_SSH "root@$TEST_HOST" 'command -v google-chrome >/dev/null && grep -q "WebBrowser=google-chrome" /home/gui/.config/xfce4/helpers.rc && echo OK'
     [ "$output" = "OK" ]
 }
 

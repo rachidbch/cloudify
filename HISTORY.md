@@ -630,3 +630,11 @@ Final state:
 - **What**: guac-gui shows a persistent "You are currently using this snapshot. Please restore it before rebooting to the normal system." banner.
 - **Why**: a false positive from the guest's incus-agent. The container was frozen during `incus snapshot create` (guac-gui-cortile) while running; the agent misreads the freeze/thaw as "booted from snapshot." Verified NOT running from a snapshot: `incus info` shows the original boot (Created/Started same-time), no restore/snapshot source.
 - **To remove**: reboot the container clears it (agent reset); it may recur while snapshots exist. Permanent fix = delete the guac-gui snapshots (`guac-gui-pre-cortile`, `guac-gui-cortile`) — but those are the rollback points, so keep them unless the nag is intolerable. Harmless either way.
+
+## 2026-09-07 — guac-gui + Guacamole end state re-verified (read-only)
+
+- Re-verified the oracle read-only: Guacamole stack Up 7 days (1.6.0/guacd/postgres 16, bind 100.102.121.73:8080).
+guac-gui RUNNING (.12, xrdp 3389); gui in sudo group; Cortile autostart present.
+Tailnet name back to plain `guac-gui`; both snapshots intact.
+- SOP draft corrected (stale `guac-gui-1` reference, duplicate-hostname gotcha).
+- Journal 2026-09-07 holds the reconnect notes (connection name, credential pointers, gotchas).

@@ -10,7 +10,8 @@ They are not package constants or defaults.
 
 Future recipes must receive deployment-specific values through environment variables, package configuration, or runtime discovery.
 
-The Tailscale hostname `guac-gui-1` is not used in this SOP; the RDP target is represented by `CLOUDIFY_GUACAMOLE_RDP_HOST`.
+The tailnet device reclaimed the plain `guac-gui` name after the stale duplicate was deleted (verified 2026-09-07).
+The RDP target is still represented by `CLOUDIFY_GUACAMOLE_RDP_HOST`, not a literal hostname.
 
 The `xfce` package runs on the GUI guest.
 
@@ -456,3 +457,31 @@ The manual workflow is not considered package-ready until it passes a clean rebu
 - Guest DNS persistence after reboot should be confirmed.
 - HTTPS tailnet-only exposure through `ivps expose-private` remains separate from the Guacamole package’s basic HTTP oracle.
 - The existing exposed Tailscale auth key remains accepted for this installation but must not be copied into future automation.
+
+## Session 2026-08-31 learnings (durable rebuild facts)
+
+These were found while working the live oracle; they should shape a rebuild and the future packages.
+
+### Guacamole letterbox: set `resize-method=display-update`
+
+The GUI was letterboxed (black strips top/bottom) because the connection used Guacamole's default fixed resolution and the client scaled it to the browser preserving aspect. Fix: set the RDP connection parameter `resize-method=display-update` (guacamole_connection_parameter). The remote session then tracks the browser window size, so it fills the client with no letterbox. The clue was that right-clicking the strip showed the *browser* menu, not XFCE — i.e. it was client-side, not desktop-side. This belongs in the Guacamole package's connection record.
+
+### XFCE GTK/icon theming is unrenderable under xrdp (parked)
+
+xorgxrdp's virtual X server lacks the XI2 (X Input 2) extension, so `xfsettingsd` never registers the `_XSETTINGS_S0` XSETTINGS manager and GTK apps receive no theme — even with the config set correctly (Arc/Papirus). Confirmed not a config error (config is correct, rendering just doesn't happen). Receipts: Launchpad #354830 ("no gtk theme" when XI absent via xrdp/VNC), Xfce forums #8112 and #8603. A rebuild should NOT chase this; the GTK theme is cosmetic. If theming is required, the path is a non-xrdp display (wlroots/VNC), which is a larger change.
+
+### Guest auto-tiling: Cortile (works on top of xfwm4)
+
+Cortile (Go binary, v2.5.2, MIT) provides dynamic auto-tiling on top of Xfwm with no keybinding needed — windows tile automatically on open. Install from GitHub releases (`cortile_<ver>_linux_amd64.tar.gz`), verify the SHA256 against `cortile_<ver>_checksums.txt`, place the binary in `/usr/local/bin`, and add an XDG autostart entry (`~/.config/autostart/cortile.desktop`). This is the intended tiling solution for the XFCE guest (avoid i3/WM swap).
+
+### GUI login account may be sudo (instance-specific, not the package default)
+
+The live instance enables `sudo` for the `gui` user (`usermod -aG sudo gui`), which deviates from the package design's "non-sudo by default". Sudo is gated per deployment; the package should keep the non-sudo default and treat sudo as an opt-in variable. The `gui` password is recoverable from the Guacamole connection record (the RDP password equals the system password, since xrdp authenticates against PAM).
+
+### Tailscale duplicate-hostname gotcha
+
+Two Incus containers that share an internal hostname (e.g. `guac-gui`) will both join Tailscale with that name; Tailscale names them `guac-gui` and `guac-gui-1`, and MagicDNS serves the older first — so `ssh guac-gui` can hit the wrong box. Fix: delete the stale instance WITH its tailnet device (`ivps delete <node>:<name>` removes both), then rename the survivor to the base name in the Tailscale console (done 2026-08-31 for guac-gui, verified 2026-09-07). The container's own hostname is unaffected; only the DNS name is.
+
+### Other cosmetic post-install tweaks applied on the oracle
+
+- Wallpaper set to a user image (`/usr/share/backgrounds/modern.png`); desktop icons hidden (`xfce4-desktop:/desktop-icons/style=0`); xfwm compositing off (`use_compositing=false`). These are taste/performance, not requirements for a rebuild.

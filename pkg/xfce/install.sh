@@ -46,23 +46,34 @@ if _xfce_user_exists "$XFCE_USER" && [[ -f "$STATE_FILE" ]] && systemctl is-acti
 fi
 
 # --- Packages (oracle fact table). Heartbeat between batches so long apt runs
-# are visible as progress, not silence. ---
+# are visible as progress, not silence. NOTE: recipes run sourced inside
+# pkg_depends' `if ! ( ... )` subshell, so errexit is SUSPENDED - every
+# failure-prone command needs explicit `|| die`; never rely on set -e here.
 log_info "xfce: installing desktop packages (xfce4, goodies) - first install takes minutes..."
-pkg_apt_install xfce4 xfce4-goodies xdg-utils
+pkg_apt_install xfce4 xfce4-goodies xdg-utils || die "xfce: apt install of the desktop failed"
 log_info "xfce: installing RDP server packages (xrdp, xorgxrdp, dbus-x11)..."
-pkg_apt_install xrdp xorgxrdp dbus-x11
+pkg_apt_install xrdp xorgxrdp dbus-x11 || die "xfce: apt install of xrdp failed"
 
-# --- Chrome via the google-chrome apt repo (oracle fact: DEB822 + keyring) ---
+# --- Chrome via the google-chrome apt repo (oracle fact: DEB822 + keyring).
+# Key: dl.google.com serves an ASCII-armored key; apt needs a DEARMORED binary
+# keyring (oracle: /usr/share/keyrings/google-chrome.gpg, key 7721F63BD38B4796).
+# The repo file is written once; the key is (re)installed every run so a bad
+# previous key cannot wedge a rerun.
 if [[ "$XFCE_CHROME" == "true" ]]; then
     log_info "xfce: adding google-chrome apt repo..."
+    command -v gpg >/dev/null 2>&1 || pkg_apt_install gnupg || die "xfce: gnupg required for the chrome keyring"
+    sudo install -d -m 755 /usr/share/keyrings || die "xfce: cannot create /usr/share/keyrings"
+    _tmpkey=$(mktemp)
+    curl -fsSL https://dl.google.com/linux/linux_signing_key.pub -o "$_tmpkey" \
+        || die "xfce: failed to fetch the google-chrome signing key"
+    _tmpkg=$(mktemp)
+    gpg --dearmor < "$_tmpkey" > "$_tmpkg" \
+        || die "xfce: failed to dearmor the google-chrome signing key"
+    rm -f "$_tmpkey"
+    sudo install -o root -g root -m 644 "$_tmpkg" /usr/share/keyrings/google-chrome.gpg \
+        || die "xfce: failed to install the chrome keyring"
+    rm -f "$_tmpkg"
     if [[ ! -f /etc/apt/sources.list.d/google-chrome.sources ]]; then
-        _keyring=/usr/share/keyrings/google-chrome.gpg
-        sudo install -d -m 755 /usr/share/keyrings
-        _tmpkey=$(mktemp)
-        curl -fsSL https://dl.google.com/linux/linux_signing_key.pub -o "$_tmpkey" \
-            || die "xfce: failed to fetch the google-chrome signing key"
-        sudo install -o root -g root -m 644 "$_tmpkey" "$_keyring"
-        rm -f "$_tmpkey"
         _tmpsrc=$(mktemp)
         cat > "$_tmpsrc" <<'EOF'
 Types: deb
@@ -72,12 +83,15 @@ Components: main
 Architectures: amd64
 Signed-By: /usr/share/keyrings/google-chrome.gpg
 EOF
-        sudo install -o root -g root -m 644 "$_tmpsrc" /etc/apt/sources.list.d/google-chrome.sources
+        sudo install -o root -g root -m 644 "$_tmpsrc" /etc/apt/sources.list.d/google-chrome.sources \
+            || die "xfce: failed to write the google-chrome sources file"
         rm -f "$_tmpsrc"
-        pkg_apt_update --force
     fi
+    pkg_apt_update --force || die "xfce: apt update failed (google-chrome repo unusable?)"
     log_info "xfce: installing google-chrome-stable..."
-    pkg_apt_install google-chrome-stable
+    pkg_apt_install google-chrome-stable || die "xfce: google-chrome-stable install failed"
+    command -v google-chrome >/dev/null 2>&1 \
+        || die "xfce: google-chrome not found after install - postcondition failed"
 fi
 
 # --- GUI account (created once; password never changes on reruns) ---

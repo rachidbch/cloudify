@@ -114,3 +114,13 @@ tests (integration bats mirroring package-guacamole.bats structure: streamed ins
 pre-baked itest-base images for xrdp/xfce packages if needed, no silent steps).
 No lib/router/shadows changes. Mechanism description = existing artifact (pkg-agnostic);
 this plan + the fact table are the xfce-specific gate record. Consent required before code.
+
+## Mechanism finding (2026-09-07, root cause of silent continuation)
+
+Recipes are sourced inside pkg_depends' `if ! ( _cloudify_source_pkg_phases ... )`
+subshell. Bash: a subshell that IS an if/while condition runs with errexit
+SUSPENDED for its whole body (proven locally). So recipes have NO effective
+set -e: every failure-prone command needs explicit `|| die`; critical
+installers need a postcondition assert (chrome E: continued silently exactly
+this way). Framework fix candidate (gated): restructure pkg_depends to
+subshell + rc capture so errexit is real again.

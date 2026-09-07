@@ -1,1 +1,1 @@
-plans/guacamole-pkg-plan.md
+plans/xfce-pkg-plan.md

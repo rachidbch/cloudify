@@ -360,6 +360,11 @@ function _cloudify_run_verify() {
         fi
         sleep 2
         elapsed=$((elapsed + 2))
+        # Heartbeat every ~20s so a retrying verify is visible in the live log
+        # instead of a silent black box until the timeout verdict.
+        if (( attempt % 10 == 0 )); then
+            log_info "Verifying ${pkg}: attempt ${attempt} still failing (${elapsed}s elapsed) - retrying"
+        fi
     done
 
     log_error "Verification FAILED for ${pkg} (timeout after ${timeout}s)."

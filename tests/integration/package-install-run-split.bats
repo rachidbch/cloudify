@@ -75,6 +75,10 @@ setup() {
     run $TEST_SSH "root@$TEST_HOST" 'rm -f /tmp/fixture-split-log /tmp/fixture-split-installed'
     run cloudify --no-defaults --on "$TEST_HOST" configure fixture-split
     [ "$status" -ne 0 ]
+    # Regression: the retrying verify must emit heartbeats in the live log
+    # (no silent black box) before the timeout verdict.
+    [[ "$output" == *"still failing"* ]]
+    [[ "$output" == *"retrying"* ]]
 }
 
 @test "configure on a non-split pkg errors clearly" {

@@ -1,1 +1,1 @@
-tmp/plans/k3s-multi-cluster.md
+plans/guacamole-pkg-plan.md

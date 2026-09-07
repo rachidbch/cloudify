@@ -1,0 +1,7 @@
+# pkg/guacamole - remote var NAMES (ADR-007): value lives in the caller env or
+# ~/.config/cloudify/pkgs/guacamole.yaml, never in the repo.
+# Secrets must not contain single quotes or control chars (payload landmine L1).
+CLOUDIFY_GUACAMOLE_DB_PASSWORD
+CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD
+CLOUDIFY_GUACAMOLE_RDP_PASSWORD
+CLOUDIFY_GUACAMOLE_RDP_HOST

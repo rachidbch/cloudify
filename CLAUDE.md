@@ -72,7 +72,7 @@ task lint              # Push + shellcheck
 
 **Debugging:** Read `/tmp/cloudify/logs/<timestamp>.log`. Fix one issue, push, re-test.
 
-**Planning:** `PLAN.md` → symlink to `tmp/plans/<current>.md` (gitignored). Issues/PRs document outcomes; plans reference issues. Done → rm symlink.
+**Planning:** `PLAN.md` → symlink to `plans/<current>.md`. Done plans move to `plans/archived/`. Issues/PRs document outcomes; plans reference issues.
 
 **Issues:** filed on GitHub (`github.com/rachidbch/cloudify`), not as local markdown.
 **PRs:** `git push -u origin <branch>` then `gh pr create`.

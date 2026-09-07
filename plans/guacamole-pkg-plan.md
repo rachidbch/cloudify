@@ -1,6 +1,6 @@
-# Plan: pkg/guacamole (per CRITICAL GATE — plan + non-breakage argument)
+# Plan: pkg/guacamole (per CRITICAL GATE - plan + non-breakage argument)
 
-Status: pending explicit human consent. Grounded in plans/guacamole-pkg-description.md (the
+Status: approved (Rachid GO 2026-09-07). Grounded in plans/guacamole-pkg-description.md (the
 gate's description artifact, code-read) + .drafts/xfce-guacamole-sop.md (oracle facts) +
 precedent reads (pkg/k3s-server split, pkg/docker, tests/run-integration.sh).
 
@@ -9,17 +9,17 @@ precedent reads (pkg/k3s-server split, pkg/docker, tests/run-integration.sh).
 New files ONLY under `pkg/guacamole/` + one integration test file. Nothing in cloudify/ router,
 lib/, shadows, existing pkg behavior, tests helpers.
 
-- `pkg/guacamole/install.sh` — split-pkg install phase (ADR-008, k3s-server model)
-- `pkg/guacamole/configure.sh` — run phase: rewrite software config, restart, ensure admin+connection
-- `pkg/guacamole/verify.sh` — self-contained pkg_verify()
-- `pkg/guacamole/.remote-vars` — secret NAMES: CLOUDIFY_GUACAMOLE_DB_PASSWORD,
+- `pkg/guacamole/install.sh` - split-pkg install phase (ADR-008, k3s-server model)
+- `pkg/guacamole/configure.sh` - run phase: rewrite software config, restart, ensure admin+connection
+- `pkg/guacamole/verify.sh` - self-contained pkg_verify()
+- `pkg/guacamole/.remote-vars` - secret NAMES: CLOUDIFY_GUACAMOLE_DB_PASSWORD,
   CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD, CLOUDIFY_GUACAMOLE_RDP_PASSWORD
 - `pkg/guacamole/README.md`
 - `tests/integration/package-guacamole.bats`
 
 ## Non-breakage argument
 
-The description artifact §5 proves: adding only pkg/<name>/ files cannot alter any mechanism —
+The description artifact §5 proves: adding only pkg/<name>/ files cannot alter any mechanism -
 package discovery is data-driven over pkg/ dirs; forwarding is driven by files inside the new
 pkg dir; shadows activate by name at router startup (new pkg = new consumer, no loader change);
 verify is opt-in by file presence. Every landmine L1-L11 from the artifact maps to a design rule
@@ -30,7 +30,7 @@ construction. Pushed to GitHub before any --on test (remote hosts run repo code)
 
 Defaults per SOP. BIND default 127.0.0.1 (loopback safer; tailnet = explicit var). PORT 8080.
 VERSION 1.6.0, POSTGRES 16. New non-secret var CLOUDIFY_GUACAMOLE_CONNECTION_NAME (default
-"GUI" — display name of the RDP connection record).
+"GUI" - display name of the RDP connection record).
 
 Secret transport: three names in .remote-vars; values from caller env or pkgs/guacamole.yaml
 (first-write-wins, env > yaml). .env written mode 600 in $CLOUDIFY_GUACAMOLE_DIR
@@ -45,7 +45,7 @@ Never echoed to stdout/logs.
 - R2 (L2): NEVER pipe data through `sudo` into a stdin-reading command. Container ops use
   `sudo docker ...` only for non-stdin commands (pull, cp, compose up/down/ps, exec). The
   initdb schema (100KB+) is docker cp'd into the postgres container then `sudo docker exec`
-  psql `-f /tmp/initdb.sql` — no stdin, any size. Mirrors the oracle's stdin pipeline result
+  psql `-f /tmp/initdb.sql` - no stdin, any size. Mirrors the oracle's stdin pipeline result
   without the shadow trap. `sudo docker` (not bare docker) because docker-dep install adds the
   group only for NEW sessions (docker pkg's own newgrp warning); bare docker after dep would
   fail on first-run in-session.
@@ -85,7 +85,7 @@ guacd / guacamole running; bind:port answers HTTP from .env values; admin API to
 succeeds (creds from .env); connection record exists with expected RDP host/port (API,
 from .env). Retried by framework until PKG_VERIFY_TIMEOUT.
 
-## Test plan (disposable targets only — production cloudstation untouched)
+## Test plan (disposable targets only - production cloudstation untouched)
 
 1. Unit-ish: shellcheck (task lint) + fixture-env/fixture-split conventions respected.
 2. Integration: tests/integration/package-guacamole.bats run via run-integration.sh in a
@@ -93,7 +93,7 @@ from .env). Retried by framework until PKG_VERIFY_TIMEOUT.
    pkg (docker dep pulled first-run → proves dep path), bind 127.0.0.1:18080, asserts
    compose healthy + HTTP + token + connection. Fixture exports the three secrets.
 3. Real --on smoke on a NEW scratch container (cloudai or cloudstation, disposable) is the
-   eventual end-to-end proof with a real RDP guest — deferred to the xfce pkg phase which
+   eventual end-to-end proof with a real RDP guest - deferred to the xfce pkg phase which
    provides the GUI target; guacamole alone proves up to connection-record level (its
    boundary per SOP).
 4. Push to GitHub before integration (remote runs repo code).
@@ -103,4 +103,9 @@ from .env). Retried by framework until PKG_VERIFY_TIMEOUT.
 - No change to cloudify/lib/shadows/router/README of mechanisms.
 - No test on cloudstation's live guacamole stack; its port 8080/volume stay untouched.
 - No SFTP/TOTP/HTTPS claims (SOP known-unresolved; not in scope).
+
+## Follow-up (validated separately after the pkg is green, per SOP known-unresolved)
+
+- HTTPS tailnet-only exposure through ivps expose-service/expose-private (Caddy TLS
+  termination in front of the guacamole bind) - separate layer, not owned by the recipe.
 - No destructive op on any real host.

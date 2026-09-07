@@ -43,21 +43,27 @@ WebBrowser=google-chrome, .xsession owned by the user.
 - CLOUDIFY_XFCE_SESSION, default startxfce4.
 - CLOUDIFY_XFCE_RDP_PORT, default 3389.
 - CLOUDIFY_XFCE_INSTALL_CHROME, default true; CLOUDIFY_XFCE_CHROME_URL default the Google .deb.
-- No password input: generated on user creation.
+- CLOUDIFY_XFCE_USER_PASSWORD, OPTIONAL env/yaml-provided password (declared in
+  .remote-vars so it forwards remotely like guacamole secrets). When unset, the recipe
+  auto-generates at user creation and prints it.
 
-## Password model (decision 2)
+## Password model (decision 2 + env-passed refinement)
 
-- Generate at user creation on the guest: 24+ chars, URL-safe alphabet only (no single
-  quotes/control chars - payload landmine L1; the value later crosses the payload into
-  guacamole config).
-- Persist on the guest: mode-600 file (e.g. /etc/cloudify/xfce-user.env) so reruns never
-  regenerate (normal rerun preserves the password; force reinstall preserves it too unless
-  --clear-data, which is destructive by design).
-- Print ONCE at creation with a clear banner in the install output. That printed value is
-  the handoff: the orchestrator reads it from the log and sets it as
-  CLOUDIFY_GUACAMOLE_RDP_PASSWORD (deployment store or pkgs/guacamole.yaml) before running
-  `cloudify configure guacamole`.
-- Loss recovery documented: read the mode-600 file on the guest (ssh as root).
+Precedence: caller-provided password (env > yaml > deployment) when present, else
+auto-generate. Both paths converge on the same rules:
+
+- Set/changed ONLY at user creation (first install on a guest without the user). Reruns
+  never alter an existing password (SOP: no silent changes on normal rerun). Password
+  rotation is a documented explicit operation, not a rerun side effect.
+- Env-passed passwords are validated: no single quotes or control chars (payload
+  landmine L1, same rule as guacamole secrets).
+- Generated password: 24+ chars, URL-safe alphabet only (no quotes/control chars, safe
+  for the later guacamole payload), generated on the guest at creation.
+- Persist the active password mode 600 on the guest (e.g. /etc/cloudify/xfce-user.env)
+  as the on-guest record + loss recovery (ssh read as root).
+- Print to the install output ONLY when auto-generated (the human does not know it).
+  That printed value is the handoff into CLOUDIFY_GUACAMOLE_RDP_PASSWORD before
+  `cloudify configure guacamole`. Env-passed passwords are never printed.
 - gui stays non-sudo by default (SOP package default; the live oracle's sudo is an
   instance-specific deviation, not a package default).
 

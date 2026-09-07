@@ -22,27 +22,34 @@ the XFCE session command, Chrome, helpers.rc, the XRDP service.
 Does NOT own: Incus, Tailscale identity/tags, ACLs, UFW forwarding, guacamole, or the
 guacamole connection record (guacamole pkg owns that, driven by config vars).
 
-## Oracle-first (ground truth before code - post-mortem rule)
+## Fact table (verified 2026-09-07, read-only on cloudstation:guac-gui)
 
-Read the live oracle read-only and record facts into a fact-source table BEFORE writing any
-recipe line. Targets on cloudstation:guac-gui (via ssh, tailnet only):
-- installed package list (xfce4, xfce4-goodies, xrdp, xorgxrdp, dbus-x11, chrome)
-- /home/gui/.xsession content, /home/gui/.config/xfce4/helpers.rc
-- xrdp service state, /etc/xrdp/key.pem perms + ownership, ssl-cert group
-- how Chrome was installed (.deb path) and its user registration
-- gui user creation facts (shell, home, group)
-Each constant (package names, session cmd, key.pem mode, helpers.rc line, chrome URL) gets a
-row: value + source (guac-gui state or upstream doc fetched via exa). Recipe is written only
-after the table is complete. Known from the SOP already (to confirm, not assume):
-startxfce4, key.pem readable via ssl-cert, Chrome from dl.google.com .deb, helpers.rc
-WebBrowser=google-chrome, .xsession owned by the user.
+| Constant | Oracle value | Source |
+| --- | --- | --- |
+| OS | Ubuntu 24.04.4 LTS | /etc/os-release |
+| Desktop pkgs | xfce4 4.18 (meta), xfce4-goodies 4.18.2, xfce4-session, xfdesktop4, xfwm4, dbus-x11 | dpkg -l |
+| RDP server | xrdp 0.9.24-4 + xorgxrdp 0.9.19 | dpkg -l |
+| xrdp state | enabled + active, LISTEN *:3389 | systemctl + ss |
+| key.pem | symlink /etc/xrdp/key.pem -> ssl-cert-snakeoil.key; xrdp in ssl-cert group | ls -la + getent group |
+| Session cmd | /home/gui/.xsession = "startxfce4" (gui-owned) | cat + ls |
+| Browser | google-chrome-stable 152.0.7977.64, /usr/bin/google-chrome | dpkg -l |
+| Chrome method | google-chrome apt repo (DEB822 /etc/apt/sources.list.d/google-chrome.sources) | file listing |
+| Default browser | helpers.rc WebBrowser=google-chrome (mode 600) + mimeapps.list http/https/text-html = google-chrome.desktop | cat |
+| GUI user | gui uid 1001, home /home/gui, shell /bin/bash, in sudo (instance deviation, not pkg default) | getent + id |
+| Not pkg-owned | autostart/cortile.desktop (add-on), chatgpt.sources (add-on) | autostart ls |
+
+Deltas vs the SOP draft (SOP superseded by oracle where they differ):
+- Chrome: apt repo, not .deb download. CLOUDIFY_XFCE_CHROME_URL/.deb vars dropped; recipe adds the DEB822 repo (docker pkg pattern; idempotency = write-if-absent, L10) then pkg_apt_install google-chrome-stable.
+- Default-browser registration: mimeapps.list entries in addition to helpers.rc.
+- key.pem: symlink to the snakeoil key; recipe ensures xrdp in ssl-cert + symlink present, not file perms on key.pem itself.
 
 ## Inputs
 
 - CLOUDIFY_XFCE_USER, human-given, default gui.
 - CLOUDIFY_XFCE_SESSION, default startxfce4.
 - CLOUDIFY_XFCE_RDP_PORT, default 3389.
-- CLOUDIFY_XFCE_INSTALL_CHROME, default true; CLOUDIFY_XFCE_CHROME_URL default the Google .deb.
+- CLOUDIFY_XFCE_INSTALL_CHROME, default true. Chrome comes from the google-chrome apt repo
+  (oracle fact), not a .deb URL.
 - CLOUDIFY_XFCE_USER_PASSWORD, OPTIONAL env/yaml-provided password (declared in
   .remote-vars so it forwards remotely like guacamole secrets). When unset, the recipe
   auto-generates at user creation and prints it.
@@ -75,7 +82,9 @@ auto-generate. Both paths converge on the same rules:
 3. Write ~/.xsession (session command, user-owned); helpers.rc WebBrowser=google-chrome.
 4. Fix /etc/xrdp/key.pem perms (ssl-cert group readable), add xrdp to ssl-cert, restart xrdp,
    enable + start service.
-5. Chrome .deb install + register as user's http/https/html handler (oracle-confirmed path).
+5. Chrome: add the google-chrome DEB822 repo (write-if-absent) + pkg_apt_install
+   google-chrome-stable (fact table: oracle uses the repo). Register as default browser:
+   mimeapps.list http/https/text-html entries + helpers.rc WebBrowser=google-chrome.
 6. Install guard: skip when healthy and FORCE/CLEAR_DATA empty. CLEAR_DATA wipes only
    pkg-owned state (never the user home unless explicitly designed - SOP rule).
 

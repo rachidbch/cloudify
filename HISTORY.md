@@ -638,3 +638,11 @@ guac-gui RUNNING (.12, xrdp 3389); gui in sudo group; Cortile autostart present.
 Tailnet name back to plain `guac-gui`; both snapshots intact.
 - SOP draft corrected (stale `guac-gui-1` reference, duplicate-hostname gotcha).
 - Journal 2026-09-07 holds the reconnect notes (connection name, credential pointers, gotchas).
+
+## 2026-09-07 — pkg/guacamole shipped; pkg_depends scope leak fixed
+
+- **pkg/guacamole built + green**: split pkg (install.sh + configure.sh + verify.sh + .remote-vars), Apache Guacamole 1.6.0 + guacd + postgres 16 compose stack, DB init via docker cp + psql -f (no stdin through sudo), admin with the SOP hash formula, RDP connection upsert via REST API. Integration 5/5 bats on cloudai:cloudify.
+- **Core bug fixed (CRITICAL GATE, consented)**: `pkg_depends` looped `for pkg in "$@"` without `local pkg`, leaking into `_cloudify_source_pkg_phases`' dynamically-scoped `pkg` — any split pkg whose install.sh pulls a dep silently skipped configure.sh on install (guacamole was the first such pkg; latent since ADR-008). One-line fix + regression fixture pkg/fixture-dep-split.
+- **Oracle config facts learned**: guacamole image needs `WEBAPP_CONTEXT: ROOT` (else serves at /guacamole and every / -based check fails) and reads `POSTGRESQL_*` env (not POSTGRES_*). Both were in /home/rbc/guacamole/compose.yaml on cloudstation; the SOP prose did not carry them.
+- **itest-base refreshed**: recreated with a valid tailnet identity (snapshot restores time-travel tailscale state; the old snapshot's identity was rejected → container off the tailnet, NeedsLogin) + the three docker images baked (run dropped from ~15 min to ~1 min).
+- **Test observability**: guacamole bats streams install progress with stall detection (no silent e2e); cloudify skill gained "Debugging a recipe" (probe ladder, no-silent-steps, logging prominence).

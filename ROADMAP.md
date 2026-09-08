@@ -195,3 +195,28 @@ line succeeds and cloudify reports SUCCESS (an exit-0 lie). Proven on
 package-yazi (2026-08-10). Tracked: issue #14. Low-risk subset (explicit
 `die` on critical steps) applied per-recipe as needed; systemic change
 deferred pending an audit of recipes that deliberately tolerate failures.
+
+## Deployments as runbooks (ADR-019 follow-up; parked behind the 8-trap cleanup)
+
+Deployments (ADR-011, config-only today) should become the application-level
+abstraction that owns the sequence to bring an application up: roles + a
+generated runbook, executed by `cloudify deployment run <id>`. Design ideas
+from the 2026-09-07 E2E analysis (see trap review + plans/xfce-guacamole-e2e.md):
+
+- Deployment declares roles: `{host-or-node, pkg}` (e.g. guest: pkg xfce,
+  gateway: pkg guacamole). Addresses resolve at run time from tailnet names
+  (MagicDNS), never literals. Step outputs (e.g. the launched guest's tailnet
+  name) flow into the deployment's own vars automatically.
+- Runbook = ordered typed steps derived from roles: launch, install, verify,
+  configure, human-gate (pause with a message for render acceptance),
+  teardown. Editing = data, not code.
+- End state: a deployment declares what it wants (roles + pkgs + exposure);
+  cloudify derives and runs the sequence from pkg boundaries.
+
+GATING: do NOT build on today's surface. Prerequisite cleanup (in order):
+1) vars command surface (trap 1), 2) verify-only syntax (trap 5),
+3) bind forwarding + forwarding-channel model in lib/remote.sh (traps 2+3,
+same root, CRITICAL GATE), 4) stale-volume hygiene (trap 4), 5) conventions:
+password handoff, tailnet names, naming defaults (traps 6-8, pkg READMEs +
+defaults). Each cleanup fix = description + plan + consent (CRITICAL GATE
+where lib/router). Revisit this ROADMAP section after the cleanup.

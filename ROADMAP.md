@@ -5,22 +5,22 @@
 Policy: compose-ability. Fix at the root (CRITICAL GATE where lib/router touches code), then revisit the deployment-runbook section below.
 
 1. `vars` sits outside `deployment` and needs ambient `CLOUDIFY_DEPLOYMENT`. Fix: explicit flag `cloudify vars set|show|list|delete <key> [<value>] --deployment <id>` (omitted = ambient). Standardize on the existing flag idiom.
-2. Forwarding eligibility is invisible: deployment/machine values reach the host only if the name is declared in the repo declaration (`pkg/<name>/.remote-vars`). Undeclared names (e.g. guacamole `BIND`) are silently inert. Root fix in lib/remote.sh (gate).
-3. Exposure/bind values have no forwarding channel today; only machine values (`pkgs/<pkg>.yaml`) carry them. Same root as 2.
-4. Stale postgres volume breaks DB auth; `--clear-data` is the pkg-native wipe. Cleanup order: `compose down` BEFORE removing the project dir. Docs + habit.
-5. Remote verify-only syntax is `--verify install`, not `verify`. Fix CLI.
-6. Password handoff: xfce env-passed passwords are never printed; a glued deployment must carry them. Convention + docs.
-7. Human URLs use tailnet names (MagicDNS), never IPs; guacamole serves at root.
-8. Naming defaults: admin `rbc`, connection `GUI`, guest user `gui`, guacamole secret names. Docs/defaults.
+2. Forwarding truth (corrected 2026-09-07, from lib/remote.sh): only the ENV path is declaration-gated; file stores (global file, machine values, deployment) forward unconditionally. So an undeclared env var is silently inert, and it cannot be warned at set time (env is a shared user namespace; cloudify never sees undeclared names). Mitigation = the pkg-writing standard below (declaration kept in sync with the recipe).
+3. Stale postgres volume breaks DB auth; `--clear-data` is the pkg-native wipe. Cleanup order: `compose down` BEFORE removing the project dir. Docs + habit.
+4. Remote verify-only syntax is `--verify install`, not `verify`. Fix CLI.
+5. Password handoff: xfce env-passed passwords are never printed; a glued deployment must carry them. Convention + docs.
+6. Human URLs use tailnet names (MagicDNS), never IPs; guacamole serves at root.
+7. Naming defaults: admin `rbc`, connection `GUI`, guest user `gui`, guacamole secret names. Docs/defaults.
 
 ### Vars CLI + declaration (decided 2026-09-07)
 
 - Vars CLI, flag-scoped, mutually exclusive: `cloudify vars show|set|unset|list <key> [<value>] [--global | --pkg <name> | --deployment <id>]`; no flag = ambient `CLOUDIFY_DEPLOYMENT`, error with hint if unset.
-- Repo declaration `pkg/<name>/.remote-vars` syntax: `NAME` (required) / `NAME=default` (optional + default value). No drift-detection machinery; the cloudify skill carries the rule "edit recipe defaults and the repo declaration in sync".
+- Repo declaration `pkg/<name>/.remote-vars` carries the pkg-writing standard; no drift-detection machinery, the cloudify skill carries the rule "edit recipe defaults and the repo declaration in sync".
+- Pkg-writing standard for vars (decided 2026-09-07): required `NAME`; defaulted `NAME=value` (declaration mirrors the recipe default; the recipe's `${NAME:-value}` stays runtime truth, so local and remote installs behave the same); optional `NAME=` (empty = absent, silent). Declaring a name is what makes the env path forward it.
 - Reader command: `cloudify vars declared <pkg>` prints each consumed var + its default if any.
 - Revive the state registry (design from the archived k3s plan, unblocked since ivps node-as-dir landed, never implemented): after an install, write the resolved slice `$(ivps node path <host>)/deployments/<id>/pkgs/<pkg>/config.yaml`. Key is (deployment, instance, package). The record is a REPLAY INPUT, outside the precedence ladder: resolution stays intent-only (recipe default < global < package < deployment < env), and recorded values are re-applied only on explicit re-enactment (`deployment run` / replay), never silently. Supersedes ADR-011 point 6 (which had put the record in the ladder) - amend when implementing. `ivps delete <host>` removes the slice; secrets as references/hashes, never plaintext.
 
-### Target config model (record; implement with items 2-3)
+### Target config model (record; implement with the forwarding model above)
 
 REPO: R1 recipe `${VAR:-default}` (weakest value layer); R2 `pkg/<name>/.remote-vars` = declaration, names only (contract, not a value).
 MACHINE, applied in order, last wins: M1 `~/.config/cloudify/remote-vars.yaml` global default; M2 `~/.config/cloudify/pkgs/<pkg>.yaml` package values; M3 `~/.config/cloudify/deployments/<id>/` application values; M4 caller env (strongest).

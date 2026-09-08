@@ -124,3 +124,6 @@ set -e: every failure-prone command needs explicit `|| die`; critical
 installers need a postcondition assert (chrome E: continued silently exactly
 this way). Framework fix candidate (gated): restructure pkg_depends to
 subshell + rc capture so errexit is real again.
+
+## STATUS: DONE 2026-09-07
+Shipped + integration 5/5 + E2E acceptance passed (ADR-017/019).

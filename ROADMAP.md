@@ -1,5 +1,24 @@
 # Cloudify Roadmap
 
+## URGENT - clean the surface before anything else (2026-09-07 E2E traps)
+
+Policy: compose-ability. Fix at the root (CRITICAL GATE where lib/router touches code), then revisit the deployment-runbook section below.
+
+1. `vars` sits outside `deployment` and needs ambient `CLOUDIFY_DEPLOYMENT`. Fix: explicit flag `cloudify vars set|show|list|delete <key> [<value>] --deployment <id>` (omitted = ambient). Standardize on the existing flag idiom.
+2. Forwarding eligibility is invisible: deployment/machine values reach the host only if the name is declared in the repo declaration (`pkg/<name>/.remote-vars`). Undeclared names (e.g. guacamole `BIND`) are silently inert. Root fix in lib/remote.sh (gate).
+3. Exposure/bind values have no forwarding channel today; only machine values (`pkgs/<pkg>.yaml`) carry them. Same root as 2.
+4. Stale postgres volume breaks DB auth; `--clear-data` is the pkg-native wipe. Cleanup order: `compose down` BEFORE removing the project dir. Docs + habit.
+5. Remote verify-only syntax is `--verify install`, not `verify`. Fix CLI.
+6. Password handoff: xfce env-passed passwords are never printed; a glued deployment must carry them. Convention + docs.
+7. Human URLs use tailnet names (MagicDNS), never IPs; guacamole serves at root.
+8. Naming defaults: admin `rbc`, connection `GUI`, guest user `gui`, guacamole secret names. Docs/defaults.
+
+### Target config model (record; implement with items 2-3)
+
+REPO: R1 recipe `${VAR:-default}` (weakest value layer); R2 `pkg/<name>/.remote-vars` = declaration, names only (contract, not a value).
+MACHINE, applied in order, last wins: M1 `~/.config/cloudify/remote-vars.yaml` global default; M2 `~/.config/cloudify/pkgs/<pkg>.yaml` package values; M3 `~/.config/cloudify/deployments/<id>/` application values; M4 caller env (strongest).
+Today inverted: `remote-vars.yaml` is strongest (flip to global default); deployment vars are weakest (promote above package values).
+
 ## Package discovery: one-liner descriptions in `cloudify packages`
 
 `cloudify packages` lists package names only — no descriptions. To discover what a package does, users must read `pkg/<name>/init.sh` individually. Each init.sh already has a header comment (e.g. `# bat is better cat`).
@@ -220,3 +239,8 @@ same root, CRITICAL GATE), 4) stale-volume hygiene (trap 4), 5) conventions:
 password handoff, tailnet names, naming defaults (traps 6-8, pkg READMEs +
 defaults). Each cleanup fix = description + plan + consent (CRITICAL GATE
 where lib/router). Revisit this ROADMAP section after the cleanup.
+
+Deployment-level var BINDINGS (idea from the 2026-09-07 E2E): a deployment
+should be able to bind package vars to each other, e.g. guacamole's
+`RDP_PASSWORD` = xfce's `XFCE_USER_PASSWORD`, so the duplicate-secret handoff
+is declarative instead of manual. Pairs naturally with `deployment run`.

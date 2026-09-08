@@ -139,3 +139,55 @@ Never edit a past body; supersede via a new ADR. One-liner per decision lives in
 **Decision:** Park Omarchy GUI automation. No VM, no container experiment. Revisit when the community produces a proven container path (headless Hyprland + wayvnc in LXC/Incus with software rendering, or equivalent). Keep the ivps `tag:incus` authkey machinery warm for that day.
 
 **Consequences:** No cloudify Omarchy package yet; ADR-015's VM plan is not executed; the Guacamole stack and `guac-gui` oracle remain the reference for future GUI guests; the RDP assumption for Omarchy is dropped in favor of VNC (wayvnc) when the topic reopens.
+
+## ADR-017: xfce GUI account password — env-passed preserved, auto-generate as fallback
+
+Status: accepted 2026-09-07.
+Context: pkg/xfce creates a GUI login account whose password doubles as the RDP
+password (xrdp auths via PAM) and must reach the guacamole connection record.
+Original SOP draft required the password from env; a pure auto-generate design
+was also proposed.
+Decision: CLOUDIFY_XFCE_USER_PASSWORD, when provided (env/yaml/deployment via
+.remote-vars), is used at user creation, preserved, never printed. When unset,
+the recipe auto-generates a 24+ char URL-safe password on the guest and prints
+it once. Password is set/changed ONLY at user creation; reruns never alter an
+existing password (rotation is an explicit documented operation). Active
+password persisted mode 600 at /etc/cloudify/xfce-user.env on the guest.
+Consequences: standalone installs are zero-input (generate+print); glued
+deployments generate once in the deployment store and pass env to both pkgs;
+the xfce generate+print path is the fallback, not the primary flow.
+
+## ADR-018: no framework errexit restore — recipes contract is explicit `|| die`
+
+Status: accepted 2026-09-07 (CRITICAL GATE; rejected by gate description, see
+plans/errexit-restore-description.md).
+Context: recipes are sourced inside pkg_depends' `if ! ( ... )` subshell, so
+errexit is suspended and bare failing commands continue silently (root cause of
+a silent chrome-install failure). A proposal to restore real errexit by
+restructuring pkg_depends was evaluated end to end.
+Decision: the restructure is rejected. Grounds: rc bookkeeping unreachable in
+active paths; @default path stays masked (not pierceable); ERR-trap cleanup
+would rm shared temp mid-recipe; audit found ~150 unguarded failure-prone
+commands across 84/97 recipes that would false-abort working installs.
+Consequences: silent-continuation is handled by recipe discipline - explicit
+`|| die` on every failure-prone command + postcondition asserts after shadowed
+installers (verified: the apt-get shadow can swallow failure exit codes). The
+verify retry loop now emits heartbeats (~20s) so its retries are visible.
+
+## ADR-019: xfce + guacamole stay independent; glue = deployment store + runbook
+
+Status: accepted 2026-09-07 (E2E acceptance passed).
+Context: two packages each proved independently; wiring them end to end needed
+shared config (user, password, RDP target) plus a sequence spanning container
+creation, two hosts, and human render acceptance.
+Decision: no orchestration package and no pkg coupling (SOP boundary). Config
+glue lives in the cloudify deployment store (ADR-011), one source of truth,
+read by both pkgs via .remote-vars names. Sequence glue is a pure runbook of
+ivps + cloudify commands plus one orchestrator-side password generation
+(plans/xfce-guacamole-e2e.md); no custom scripts. Reachability policy is the
+tailnet ACL (ivps), proven by the human browser session - the only
+unautomatable acceptance step.
+Consequences: any future GUI deployment = same runbook with new targets; a
+cloudify "runbook" concept does not exist yet (deployment is config-only) -
+the runbook is a plain documented sequence until repetition justifies a
+feature.

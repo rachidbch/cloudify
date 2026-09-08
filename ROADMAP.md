@@ -13,6 +13,13 @@ Policy: compose-ability. Fix at the root (CRITICAL GATE where lib/router touches
 7. Human URLs use tailnet names (MagicDNS), never IPs; guacamole serves at root.
 8. Naming defaults: admin `rbc`, connection `GUI`, guest user `gui`, guacamole secret names. Docs/defaults.
 
+### Vars CLI + declaration (decided 2026-09-07)
+
+- Vars CLI, flag-scoped, mutually exclusive: `cloudify vars show|set|unset|list <key> [<value>] [--global | --pkg <name> | --deployment <id>]`; no flag = ambient `CLOUDIFY_DEPLOYMENT`, error with hint if unset.
+- Repo declaration `pkg/<name>/.remote-vars` syntax: `NAME` (required) / `NAME=default` (optional + default value). No drift-detection machinery; the cloudify skill carries the rule "edit recipe defaults and the repo declaration in sync".
+- Reader command: `cloudify vars declared <pkg>` prints each consumed var + its default if any.
+- Revive the state registry (design C3 from the archived k3s plan, unblocked since ivps node-as-dir landed, never implemented): after an install, write the resolved per-node slice `$(ivps node path <host>)/deployments/<id>/pkgs/<pkg>/config.yaml`; re-install without env reuses the stored value; `ivps delete <host>` removes the slice. Secrets stored as references/hashes, never plaintext.
+
 ### Target config model (record; implement with items 2-3)
 
 REPO: R1 recipe `${VAR:-default}` (weakest value layer); R2 `pkg/<name>/.remote-vars` = declaration, names only (contract, not a value).

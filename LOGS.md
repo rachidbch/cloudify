@@ -95,3 +95,7 @@
 ## 2026-09-09 - branch 2 gate
 
 - Read-only description of verify/uninstall action surface; plan + R2-1..12 written into the plan. ROADMAP non-urgent "Dependency garbage collection" added. Consent pending.
+
+## 2026-09-09 - branch 2 (verify + uninstall)
+
+- verify is a first-class action local/remote; uninstall runs optional uninstall.sh, refuses absent legs, never touches deps, forwards resolved vars; parser errors fixed; remove|rem|r aliases. Fixed the pre-existing verify yaml clobber (fill-only load) proven against 4378e71. 386/386 unit, shellcheck clean, package-uninstall + install-run-split integration green.

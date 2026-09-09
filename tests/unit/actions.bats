@@ -42,3 +42,15 @@ teardown() {
     router verify novpkg
     [ "$status" -eq 0 ]
 }
+
+@test "router: uninstall with no package errors" {
+    router uninstall
+    [ "$status" -ne 0 ]
+    echo "$output" | grep -q "Empty package"
+}
+
+@test "router: a flag after the action errors instead of becoming a package" {
+    router install --verify
+    [ "$status" -ne 0 ]
+    echo "$output" | grep -q "unexpected flag"
+}

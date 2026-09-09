@@ -304,3 +304,11 @@ run_router() {
     run_router vars list --global --resolve
     [ "$status" -ne 0 ]
 }
+
+@test "walker: uninstall forwards package vars (branch 2)" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/upkg"
+    cloudify_vars_pkg_write upkg UP_VAR fromyaml
+    unset UP_VAR
+    _cloudify_pkg_remote_vars uninstall upkg > /dev/null 2>&1
+    [ "$UP_VAR" = "fromyaml" ]
+}

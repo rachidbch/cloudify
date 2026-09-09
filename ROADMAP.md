@@ -35,6 +35,12 @@ REPO: R1 recipe `${VAR:-default}` (weakest value layer); R2 `pkg/<name>/.remote-
 MACHINE, applied in order, last wins: M1 `~/.config/cloudify/remote-vars.yaml` global default; M2 `~/.config/cloudify/pkgs/<pkg>.yaml` package values; M3 `~/.config/cloudify/deployments/<id>/` application values; M4 caller env (strongest).
 Today inverted: `remote-vars.yaml` is strongest (flip to global default); deployment vars are weakest (promote above package values).
 
+### Runbooks (urgent; in order, after the trap cleanups)
+
+a) Agent runbooks (docs, not code). Plain documents under a `runbooks/` tree in the cloudify repo, executed by an agent or human with ONLY ivps + cloudify commands. Tree = flavors: `runbooks/<app>/<flavor>.md`. Rules: no ad-hoc scripts; variable NAMES in steps, never values; addresses by MagicDNS name, never IP; explicit human-gate steps (render acceptance); explicit teardown steps. Validation = the amnesiac test: a fresh agent session given only the cloudify skill + the runbook path completes the deployment on disposable infra with no human hints; every stumble is a runbook defect. First candidate: rewrite plans/xfce-guacamole-e2e.md into runbooks/ under these rules.
+
+b) Cloudify runbooks (`cloudify deployment run <id>`), after (a). Deployment declares roles + typed steps as data: launch, install, configure, verify, uninstall, human-gate. Addresses by name. Step outputs (e.g. the launched guest's tailnet name) live in the state record (deployment, instance, package) as replay input, never merged into intent config; later steps consume them live. Preflight validates required vars via `vars declared` before launching anything. Secrets referenced by name (five-source walker; optional vault on either end). Per-step security rules: payload via stdin, no secret in argv, masking. Build on the fixed surface only (trap cleanups first).
+
 ## Package discovery: one-liner descriptions in `cloudify packages`
 
 `cloudify packages` lists package names only — no descriptions. To discover what a package does, users must read `pkg/<name>/init.sh` individually. Each init.sh already has a header comment (e.g. `# bat is better cat`).
@@ -231,35 +237,18 @@ package-yazi (2026-08-10). Tracked: issue #14. Low-risk subset (explicit
 `die` on critical steps) applied per-recipe as needed; systemic change
 deferred pending an audit of recipes that deliberately tolerate failures.
 
-## Deployments as runbooks (ADR-019 follow-up; parked behind the 8-trap cleanup)
+## Idea 3: runbook generator (non-urgent)
 
-Deployments (ADR-011, config-only today) should become the application-level
-abstraction that owns the sequence to bring an application up: roles + a
-generated runbook, executed by `cloudify deployment run <id>`. Design ideas
-from the 2026-09-07 E2E analysis (see trap review + plans/xfce-guacamole-e2e.md):
-
-- Deployment declares roles: `{host-or-node, pkg}` (e.g. guest: pkg xfce,
-  gateway: pkg guacamole). Addresses resolve at run time from tailnet names
-  (MagicDNS), never literals. Step outputs (e.g. the launched guest's tailnet
-  name) flow into the deployment's own vars automatically.
-- Runbook = ordered typed steps derived from roles: launch, install, verify,
-  configure, human-gate (pause with a message for render acceptance),
-  teardown. Editing = data, not code.
-- End state: a deployment declares what it wants (roles + pkgs + exposure);
-  cloudify derives and runs the sequence from pkg boundaries.
-
-GATING: do NOT build on today's surface. Prerequisite cleanup (in order):
-1) vars command surface (trap 1), 2) verify-only syntax (trap 5),
-3) bind forwarding + forwarding-channel model in lib/remote.sh (traps 2+3,
-same root, CRITICAL GATE), 4) stale-volume hygiene (trap 4), 5) conventions:
-password handoff, tailnet names, naming defaults (traps 6-8, pkg READMEs +
-defaults). Each cleanup fix = description + plan + consent (CRITICAL GATE
-where lib/router). Revisit this ROADMAP section after the cleanup.
-
-Deployment-level var BINDINGS (idea from the 2026-09-07 E2E): a deployment
-should be able to bind package vars to each other, e.g. guacamole's
-`RDP_PASSWORD` = xfce's `XFCE_USER_PASSWORD`, so the duplicate-secret handoff
-is declarative instead of manual. Pairs naturally with `deployment run`.
+The declarative extreme: a deployment declares roles + pkgs + exposure, and a
+generator emits the cloudify-runbook steps (see URGENT runbooks b) from pkg
+boundaries instead of hand-writing them. Enabled only when packages are
+self-describing (declared vars with kinds, lifecycle legs) and deployment var
+BINDINGS exist - e.g. guacamole `RDP_PASSWORD` = xfce `XFCE_USER_PASSWORD`,
+or a role-derived address `guacamole.RDP_HOST := guest.tailnet_name`. Do not
+build an inference engine now: keep runbook steps data-shaped so a generator
+can be added later and validated by comparing generated vs hand-written
+runbooks on the same application. Lifecycle: explore manually (agent runbook)
+-> codify (cloudify runbook) -> generate (this idea).
 
 ## Per-target credentials (design question, 2026-09-07)
 

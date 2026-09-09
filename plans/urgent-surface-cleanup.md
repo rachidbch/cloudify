@@ -27,7 +27,7 @@ Rules:
 - [v] Branch 1 - vars internals: five-source helpers + walker + precedence + resolver
 - [v] Branch 1b - vars CLI surface + declaration syntax + `vars declared` (merged c12783e)
 - [v] Branch 1b-fix - R9: printing secrets is opt-in (mask default, `--reveal`, `--resolve`) (merged b0176ec)
-- [ ] Branch 2 - CLI actions: verify + uninstall
+- [~] Branch 2 - CLI actions: verify + uninstall
 - [ ] Branch 3 - security: payload via stdin + skill Security section
 - [ ] Branch 4 - guacamole 3-leg rewrite
 - [ ] Branch 5 - xfce alignment
@@ -398,29 +398,133 @@ Gate: router (`cloudify:491-563`), `lib/vars.sh` (declaration parse + write path
 
 ## Branch 2 - CLI actions: verify + uninstall
 
-Gate: router + `lib/packages.sh` + `lib/package-api.sh`.
+Gate (widened): router + `lib/packages.sh` + `lib/package-api.sh` + `lib/remote.sh`
+(walker token set for uninstall var forwarding).
 
-Design (traps 3, 4; lifecycle rule):
-- `verify` first-class in both contexts: `cloudify --on <host> verify <pkg>`; keep
-  `--verify install` alias; clear parser error when trailing words are not packages.
-- `uninstall` action: router + phase sourcing; optional `pkg/<name>/uninstall.sh` with a
-  defined default when absent; `pkg_depends`-style dep handling; verify not run.
-- Lifecycle: install provisions / configure configures / uninstall tears down
-  (`compose down -v` before removing the project dir).
+### Gate tasks
 
-Tasks:
-- [ ] Make `verify` an action in the router; keep the alias.
-- [ ] Fix the misleading "no packages found" parser error.
-- [ ] Implement `uninstall`: router action, phase sourcing, optional `uninstall.sh`,
-  default teardown.
-- [ ] Document the action vocabulary + uninstall contract in README and the skill.
+- [x] Description artifact (2026-09-09): current surface traced below; repros `~/tmp/b2/`.
+- [x] Plan + non-breakage argument (this section).
+- [ ] Explicit consent (Rachid).
 
-Tests:
-- [ ] Integration: fixture pkg with `uninstall.sh` removes its markers.
-- [ ] Integration: remote verify action; `--verify install` alias still works.
-- [ ] Regression: existing split/verify tests green.
+### What the code does today
 
-Done when: both actions green on the test container.
+- Two disjoint word tables: `_cloudify_is_reserved` (`cloudify:180-194`) and
+  `_cloudify_is_action` (`cloudify:197-203`). `verify`, `remove`, `rem`, `r` are in neither.
+- `--on <host>` consumes words until a reserved/action/flag word (`cloudify:599-626`), so
+  `cloudify --on host verify pkg` swallows `verify` as a host and dies
+  `No packages found for hosts: ...` (`cloudify:625`).
+- Action block (`cloudify:627-661`): `packages` carries `--<action>`; a second action word
+  dispatches the first. A flag after the verb is treated as a package.
+- Local dispatch `_cloudify_execute_package_action` (`cloudify:206-259`): install runs
+  `@default` then backgrounds the action; configure calls the walker then
+  `cloudify_configure_package`; uninstall backgrounds `cloudify_uninstall_package` with no
+  walker call (`:251-256`). Remote ships `--<action> <pkgs>` (`:309-310`).
+- `cloudify_uninstall_package` and `cloudify_uninstall_default_packages` are stubs
+  (`lib/packages.sh:275-282`); `remove|rem|r` are documented but unimplemented.
+- Phase sourcing: `_cloudify_source_pkg_phases` sources `init.sh` + `configure.sh`
+  (`lib/package-api.sh:379-391`), used only by `pkg_depends`; `cloudify_configure_package`
+  sources `configure.sh` separately (`lib/packages.sh:180-208`). No uninstall resolver, no
+  `uninstall.sh` in any recipe. Recipes run with errexit suspended (ADR-018).
+- Verify: `_cloudify_run_verify` (`lib/package-api.sh:335-377`) no-op rc 0 without verify.sh,
+  loads `pkgs/<pkg>.yaml` in overwrite mode (`:345`), retries with `PKG_VERIFY_TIMEOUT`.
+  Local `cloudify verify` is a top-level case (`cloudify:480-490`) that ignores `--on`.
+  Remote verify-only = `--verify install <pkg>` (`cloudify:271-292`), ships
+  `cloudify verify <pkgs>` to the host. Walker treats only install/configure as install-like
+  (`lib/remote.sh:113-116`), so verify and uninstall forward the global source only.
+- Pinned: `shell-router.bats:243-280` (local verify subcommand), `package-api.bats:465-578`
+  (verify hook, incl. `:528-549` pkg-yaml load), `install-run-split.bats`,
+  `integration/package-install-run-split.bats`, and `vars.bats:352-360` which pins
+  verify = global-only forwarding (I11).
+
+### Invariants
+
+- I2-1 `--on` before the verb; host block word consumption unchanged.
+- I2-2 reserved and action tables stay distinct; adding an action must not shadow a host word.
+- I2-3 `packages` keeps the `--<action>` prefix; local strips it, remote ships it.
+- I2-4 `--on localhost` stays local.
+- I2-5 background model + OK/FAILED reporting + exit 1 on any failure.
+- I2-6 `CLOUDIFY_FORCE` only for explicit install; deps unset FORCE/CLEAR_DATA.
+- I2-7 verify hook gated by `CLOUDIFY_NO_VERIFY`, runs after install and configure.
+- I2-8 verify no-op rc 0 without verify.sh/recipe.
+- I2-9 forwarding: install/configure (+uninstall per R2-7) walk the sources; verify stays
+  global-only remotely (I11) and pkg-yaml locally.
+- I2-10 ADR-008 back-compat: init-only packages install unchanged.
+- I2-11 uninstall with no leg fails non-zero and changes nothing.
+- I2-12 configure on a non-split package still errors `no configure.sh`.
+
+### Landmines (in scope flagged)
+
+- L2-1 top-level `verify)` case shadows an action-table `verify` and runs locally (proved).
+  IN SCOPE (R2-4).
+- L2-2 a package literally named `verify` becomes un-installable (proved). IN SCOPE (R2-8).
+- L2-3 treating `verify` as install-like breaks `vars.bats:352-360`. Avoided (R2-2).
+- L2-4 empty-package guard (`cloudify:268`) omits `--uninstall`/`--verify`: empty dispatch
+  reaches ssh/recipes. IN SCOPE (R2-3).
+- L2-5 local uninstall skips the walker; remote uninstall is global-only, so a teardown leg
+  needing package/deployment vars fails. IN SCOPE (R2-7).
+- L2-6 shipping `--verify <pkgs>` to the host hits `Unknown argument`; must send
+  `verify <pkgs>`. IN SCOPE (R2-1).
+- L2-7 absent-leg `die` aborts sibling packages in a multi-package uninstall. IN SCOPE (R2-6).
+- L2-8 pre-existing: verify loads the pkg yaml in overwrite mode and clobbers the walker value
+  (proved). IN SCOPE (R2-12).
+- L2-9 a naive "not a package" parser check breaks install's native apt fallback. IN SCOPE (R2-3).
+- L2-10 `verify <unknown>` and `<no verify.sh>` both exit 0 silently. IN SCOPE (R2-5).
+- L2-11 alias collisions (`v`, host/package named verify). IN SCOPE (R2-8).
+- L2-12 ADR-018 errexit suspension in a sourced uninstall leg: bare failures continue. IN SCOPE
+  (uninstall legs use explicit `|| die` + postconditions, house style).
+
+### Proposed resolutions
+
+- R2-1 `verify` joins the action table and dispatch; remove the top-level `verify)` case so
+  there is one path; remote ships `verify <pkgs>`; `--verify install` maps to the action.
+- R2-2 verify var forwarding unchanged: global-only remotely (I11, `vars.bats:352-360`),
+  pkg-yaml locally. Document the asymmetry.
+- R2-3 Parser errors: empty package list, a flag where a package is expected, or an
+  action/reserved word after the verb dies clearly. `verify`/`uninstall` require a known
+  cloudify package (`Not a cloudify package: X`); `install` keeps the native apt fallback.
+  The empty-package guard covers `--uninstall`/`--verify`.
+- R2-4 Single verify path (no top-level shadow).
+- R2-5 Known package without `verify.sh` -> no-op rc 0 (deep verify optional); unknown name -> die.
+- R2-6 Uninstall collects per-package failures and exits non-zero if any; siblings still run.
+- R2-7 Uninstall forwards package/deployment/global vars: add uninstall tokens to the walker's
+  install-like check (`lib/remote.sh:113-116`) and call the walker on the local uninstall path.
+- R2-8 No `v` alias; `verify` is a reserved action word (documented, like install/configure).
+- R2-9 `--no-verify` is ignored when the action is `verify` (explicit verify wins).
+- R2-10 Uninstall never calls `pkg_depends` and never runs verify; deps untouched.
+- R2-11 Docs: README:44, router help, and the skill's uninstall-stub line.
+- R2-12 Fix L2-8: `_cloudify_run_verify` loads the pkg yaml through a temporary claim ledger in
+  no-clobber mode, so walker/caller values survive; `package-api.bats:528-549` stays green
+  (its var is unset before the load).
+
+### Tasks
+
+- [ ] T1 verify action: action table + dispatch, remove the top-level case, remote `verify <pkgs>`,
+  `--verify install` alias, `--no-verify` ignored for verify (R2-1/4/9).
+- [ ] T2 parser + empty-package guard for verify/uninstall; known-package check; install fallback
+  untouched (R2-3/5).
+- [ ] T3 uninstall action: real `cloudify_uninstall_package`, `cloudify_package_uninstall_path`,
+  absent leg = clear error + non-zero + no action, per-package failure collection, deps untouched,
+  verify not run (R2-6/10).
+- [ ] T4 uninstall var forwarding: walker install-like tokens + local uninstall walker call (R2-7).
+- [ ] T5 verify yaml load no-clobber via a temp ledger (R2-12).
+- [ ] T6 docs: README, router help, skill (R2-11).
+
+### Tests
+
+- [ ] Unit: `verify` action routing local and `--on`; `--verify install` alias; `--no-verify` ignored.
+- [ ] Unit: parser errors (empty, flag, non-package) + install apt fallback intact.
+- [ ] Unit: uninstall resolution, absent leg error + no action, multi-package failure collection.
+- [ ] Unit: uninstall forwards package/deployment vars; verify stays global-only (pinned).
+- [ ] Unit: verify keeps a walker-set value over the pkg yaml (L2-8 fix).
+- [ ] Integration: fixture package with `uninstall.sh` removes its markers; absent leg errors;
+  deps untouched; remote verify action; existing split/verify tests green.
+
+### Done when / merge gate
+
+- [ ] All tasks `[v]`; unit suite green; pinned split/verify tests unmodified.
+- [ ] Merge gate: blast-radius integration (new uninstall fixture + `package-install-run-split`)
+  green + a CLI smoke of `--on <host> verify` and `uninstall` on `cloudai:cloudify`.
 
 ## Branch 3 - security: payload via stdin + skill Security section
 

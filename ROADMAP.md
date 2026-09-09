@@ -41,6 +41,10 @@ a) Agent runbooks (docs, not code). Plain documents under a `runbooks/` tree in 
 
 b) Cloudify runbooks (`cloudify deployment run <id>`), after (a). Deployment declares roles + typed steps as data: launch, install, configure, verify, uninstall, human-gate. Addresses by name. Step outputs (e.g. the launched guest's tailnet name) live in the state record (deployment, instance, package) as replay input, never merged into intent config; later steps consume them live. Preflight validates required vars via `vars declared` before launching anything. Secrets referenced by name (five-source walker; optional vault on either end). Per-step security rules: payload via stdin, no secret in argv, masking. Build on the fixed surface only (trap cleanups first).
 
+## Dependency garbage collection (non-urgent)
+
+Uninstall removes only the named package; dependencies are never auto-removed (they may be shared). Future: scan the inventory and uninstall packages and dependencies no longer needed by anything. Inputs: the per-node state registry (what landed, keyed by deployment, instance, package) plus each recipe's `pkg_depends` graph. Output: a candidate list for explicit user consent, never an automatic purge. Depends on the state registry.
+
 ## Package discovery: one-liner descriptions in `cloudify packages`
 
 `cloudify packages` lists package names only — no descriptions. To discover what a package does, users must read `pkg/<name>/init.sh` individually. Each init.sh already has a header comment (e.g. `# bat is better cat`).

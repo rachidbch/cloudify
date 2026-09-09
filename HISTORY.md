@@ -706,3 +706,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Rachid decision: printing a secret is always an explicit opt-in. `cloudify vars show`/`list` now mask values whose name matches `PASSWORD|TOKEN|SECRET|KEY` by default; `--reveal` prints them; `--resolve` decodes a `@backend:locator` reference (still masked unless `--reveal`); `vars declared --reveal` unmasks a defaulted mirror.
 - Masking lives in the router only: the library functions (`cloudify_vars_show/list`, store helpers) stay raw, so the pinned exact-value tests (`deployments.bats:108-126`, `:167-184`) hold unchanged.
 - Tests: 5 new router tests; full unit 372 green; shellcheck clean; CLI smoke on `cloudai:cloudify` shows `***` by default, `tok` with `--reveal`, `s3cr3t` with `--resolve --reveal`.
+
+### 2026-09-09 - branch 2 gate: verify + uninstall description + plan
+
+- Read-only description of the action surface (parser tables `cloudify:180-203`, `--on` host swallowing `verify` into `No packages found`, dispatch, phase sourcing, verify paths, dep walk); repros `~/tmp/b2/`. Found: `remove|rem|r` documented but unimplemented; empty-package guard omits `--uninstall`/`--verify`; local uninstall skips the walker; a pre-existing verify-yaml clobber (walker value overwritten).
+- Alignment confirmed with Rachid: absent `uninstall.sh` = clear error, no action, non-zero; deps never auto-removed (consent-gated). Non-urgent ROADMAP entry added: "Dependency garbage collection".
+- Plan + non-breakage written into the plan file (invariants I2-1..I2-12, landmines L2-1..L2-12, resolutions R2-1..R2-12). Gate widened to `lib/remote.sh`. Consent pending.

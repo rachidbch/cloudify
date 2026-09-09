@@ -91,3 +91,7 @@
 ## 2026-09-09 - R9 masking/reveal/resolve
 
 - Secrets opt-in at the CLI: mask by default, `--reveal`, `--resolve`. Library functions stay raw (pinned tests hold). 372/372 unit, shellcheck clean, container smoke green.
+
+## 2026-09-09 - branch 2 gate
+
+- Read-only description of verify/uninstall action surface; plan + R2-1..12 written into the plan. ROADMAP non-urgent "Dependency garbage collection" added. Consent pending.

@@ -41,6 +41,10 @@ a) Agent runbooks (docs, not code). Plain documents under a `runbooks/` tree in 
 
 b) Cloudify runbooks (`cloudify deployment run <id>`), after (a). Deployment declares roles + typed steps as data: launch, install, configure, verify, uninstall, human-gate. Addresses by name. Step outputs (e.g. the launched guest's tailnet name) live in the state record (deployment, instance, package) as replay input, never merged into intent config; later steps consume them live. Preflight validates required vars via `vars declared` before launching anything. Secrets referenced by name (five-source walker; optional vault on either end). Per-step security rules: payload via stdin, no secret in argv, masking. Build on the fixed surface only (trap cleanups first).
 
+## Resolution precedes every phase (non-urgent)
+
+Today install/configure/uninstall resolve vars through the walker, and verify fills unset names from the package yaml (verify-only has no walker). Cleaner: make resolution a step that always precedes a phase, verify-only included, then remove the source read from verify. Effect: verify never re-reads a source, so there is no precedence question inside verify. Cost: verify-only would apply the full five-source ladder instead of the package yaml alone, and remote verify-only forwarding would need a decision. Not needed for the parent-override fix already shipped.
+
 ## Dependency garbage collection (non-urgent)
 
 Uninstall removes only the named package; dependencies are never auto-removed (they may be shared). Future: scan the inventory and uninstall packages and dependencies no longer needed by anything. Inputs: the per-node state registry (what landed, keyed by deployment, instance, package) plus each recipe's `pkg_depends` graph. Output: a candidate list for explicit user consent, never an automatic purge. Depends on the state registry.

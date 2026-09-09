@@ -59,6 +59,8 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 
 TDD cycle. All tests run inside an Incus container (`cloudai:cloudify`), never on localhost.
 
+**Skills:** before editing cloudify or a package, read `cloudify-dev` (framework) or `cloudify-pkg-dev` (recipes); the bats harness is the completion gate, never the debugger.
+
 **Prerequisites:** Incus, `ivps` CLI, running container `cloudai:cloudify`.
 
 ```bash

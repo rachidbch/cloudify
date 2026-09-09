@@ -745,3 +745,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - **Trap 7**: admin default `rbc` -> `guacadmin`; `.remote-vars` now declares `CLOUDIFY_GUACAMOLE_ADMIN_USER`; `verify.sh` fallback synced; README updated.
 - **Tests**: `package-guacamole.bats` rewritten to the report standard (rubric/subrubric/step, fd 9 live, `setup_file` readiness, base URL derived from the deployed `.env`), 7/7 green. Schema init kept as docker cp + psql (initdb.d evaluated, not adopted).
 - **Infra**: `itest-base` carried a stale `guacamole_guacamole_pgdata` volume with the old `rbc` DB; removed and re-baked. Test hermeticity vs the operator's `pkgs/guacamole.yaml` (supplies the bind) noted.
+
+### 2026-09-09 - skill constitution: harness is the completion gate
+
+- `cloudify-dev` + `cloudify-pkg-dev`: added a `## Constitution` rule (bats harness = completion gate, never the debugger; prove cheaply, run once) and trigger-rich descriptions so they autoload. AGENTS.md SDLC nudges reading them before editing.

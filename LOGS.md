@@ -115,3 +115,7 @@
 ## 2026-09-09 - branch 4 (guacamole 3-leg)
 
 - install provisions / configure configures (DB role + admin convergence) / uninstall `down -v`; admin `guacadmin`; ADMIN_USER declared; verify synced. bats rewritten to the report standard, 7/7. Re-baked itest-base after removing a stale guacamole volume.
+
+## 2026-09-09 - skill constitution
+
+- Constitution rule + autoload-friendly descriptions in cloudify-dev/cloudify-pkg-dev; AGENTS.md nudge.

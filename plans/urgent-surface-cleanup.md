@@ -557,7 +557,7 @@ Gate: `lib/remote.sh`.
 - [x] Description artifact (2026-09-09): read-only trace of payload build/transport, exit-code
   capture, TTY/stdin ownership, secret exposure points, pinned tests (below).
 - [x] Plan + non-breakage argument (this section).
-- [ ] Explicit consent (Rachid).
+- [x] Explicit consent (Rachid): approved 2026-09-09 ("Continue").
 
 ### What the code does today
 

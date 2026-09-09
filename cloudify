@@ -27,6 +27,7 @@ function usage() {
         cloudify --no-verify --on <host> install <pkg>  install on remote host, skip verification
         cloudify --verify --on <host> install <pkg>     verify only (no install) on remote host
         cloudify verify <pkg>                           verify package (local)
+        cloudify --on <host> verify <pkg>               verify package on remote host
         cloudify vars set <key> <value> [scope]        set a var (scope: --global|--pkg <n>|--deployment <id>)
         cloudify vars set <key> --stdin                set var from stdin (secrets)
         cloudify vars set <key> --file <path>          set var from file
@@ -40,7 +41,7 @@ function usage() {
         cloudify deployment use <id>                   print export command
         cloudify --no-defaults install <pkg>            install only basics + <pkg> (skip @default)
         cloudify --no-defaults --on <host> install <pkg>  minimal install on remote host
-        cloudify remove| rem | r <pkg>                  uninstall package
+        cloudify uninstall|remove|rem|r <pkg>          uninstall package (needs pkg uninstall.sh)
         cloudify --on <host> uninstall <pkg>            uninstall package on remote host
         cloudify launch|run [remote:]<name> [image]     Launch container (default image: ubuntu/24.04/cloud)
         cloudify delete|del [remote:]<name>             Delete container
@@ -197,7 +198,7 @@ function _cloudify_is_reserved() {
 function _cloudify_is_action() {
     local word="${1:-}"
     case "$word" in
-        --install | install | inst | i | --uninstall | uninstall | u | --configure | configure) return 0 ;;
+        --install | install | inst | i | --uninstall | uninstall | u | --configure | configure | verify | remove | rem | r) return 0 ;;
     esac
     return 1
 }
@@ -250,7 +251,21 @@ function _cloudify_execute_package_action() {
         is_setup_in_progress=true
     elif [[ "$action" == "uninstall" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs[*]}${RESET}"
-        (cloudify_uninstall_package "${pkgs[@]}") &
+        # The uninstall leg needs the same resolved vars as install/configure.
+        ( _cloudify_pkg_remote_vars uninstall "${pkgs[@]}" > /dev/null; cloudify_uninstall_package "${pkgs[@]}" ) &
+        _CLOUDIFY_BG_PIDS+=($!)
+        _CLOUDIFY_BG_HOSTS[$!]="localhost"
+        is_setup_in_progress=true
+    elif [[ "$action" == "verify" ]]; then
+        PKG_DEBUG "${YELLOW}cloudify verify ${pkgs[*]}${RESET}"
+        (
+            _rc=0
+            for _vpkg in "${pkgs[@]}"; do
+                [[ -d "$CLOUDIFY_DIR/pkg/$_vpkg" ]] || die "Not a cloudify package: $_vpkg"
+                _cloudify_run_verify "$_vpkg" || _rc=1
+            done
+            exit "$_rc"
+        ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         is_setup_in_progress=true
@@ -265,24 +280,21 @@ function _cloudify_dispatch() {
     local hosts="$2"
     local packages="$3"
 
-    [[ "$packages" == *--install || "$packages" == *--configure ]] && die "Cloudify usage error: Empty package section."
+    [[ "$packages" == *--install || "$packages" == *--configure || "$packages" == *--uninstall ]] && die "Cloudify usage error: Empty package section."
     [[ "$hosts" != "localhost" ]] && _cloudify_require_remote_creds
 
-    # Verify-only mode (--verify): dispatch verify instead of install.
-    # The packages string looks like "--install pkg1 pkg2"; strip the marker.
-    if [[ "${CLOUDIFY_VERIFY_ONLY:-}" == "true" ]]; then
-        [[ "$action" != "install" ]] && die "Cloudify usage error: --verify is only valid with install."
-        local verify_pkgs="${packages#--install}"
+    # Verify path: the `verify` action, or the `--verify install` alias.
+    if [[ "$action" == "verify" || "${CLOUDIFY_VERIFY_ONLY:-}" == "true" ]]; then
+        [[ "$action" != "verify" && "$action" != "install" ]] && die "Cloudify usage error: --verify is only valid with install."
+        local verify_pkgs="${packages#--"$action"}"
         verify_pkgs="${verify_pkgs# }"
-        [[ -z "$verify_pkgs" ]] && die "Cloudify usage error: No packages to verify."
+        [[ -z "$verify_pkgs" ]] && die "Missing package for 'cloudify verify'"
         for host in $hosts; do
             rm -f "$CLOUDIFY_TMP/${host}.exit"
             if [[ "$hosts" == "localhost" ]]; then
-                cloudify_init_paths
-                ( _rc=0; for _vpkg in $verify_pkgs; do _cloudify_run_verify "$_vpkg" || _rc=1; done; exit "$_rc" ) &
-                _CLOUDIFY_BG_PIDS+=($!)
-                _CLOUDIFY_BG_HOSTS[$!]="$host"
-                is_setup_in_progress=true
+                local -a _vp=()
+                read -ra _vp <<< "$verify_pkgs"
+                _cloudify_execute_package_action verify "${_vp[@]}"
             else
                 PKG_DEBUG_LN "${GREEN}cloudify_remote $host verify $verify_pkgs${RESET}"
                 cloudify_remote "$host" "verify $verify_pkgs" && is_setup_in_progress=true
@@ -477,18 +489,6 @@ function main() {
             shift && cloudify_info "$@"
             break
             ;;
-        verify)
-            shift
-            [[ -z "${1:-}" ]] && die "Missing package for 'cloudify verify'"
-            cloudify_init_paths
-            local verify_had_failures=false
-            local _vpkg
-            for _vpkg in "$@"; do
-                _cloudify_run_verify "$_vpkg" || verify_had_failures=true
-            done
-            $verify_had_failures && die "Verification failed for one or more packages." 1
-            break
-            ;;
         vars)
             shift
             local var_verb="${1:-}"
@@ -624,7 +624,7 @@ function main() {
             done
             [[ -z "${2:-}" ]] && die "No packages found for hosts: $hosts"
             ;;
-        --install | install | inst | i | --uninstall | uninstall | u | --configure | configure)
+        --install | install | inst | i | --uninstall | uninstall | u | --configure | configure | verify | remove | rem | r)
             [[ $is_parsing_hosts == "started" ]] && die "Cloudify usage error: unexpected action '$1'"
             [[ -z "$hosts" ]] && hosts="localhost"
             is_parsing_packages="started"
@@ -634,11 +634,14 @@ function main() {
             --install | install | inst | i)
                 action='install'
                 ;;
-            --uninstall | uninstall | u)
+            --uninstall | uninstall | u | remove | rem | r)
                 action='uninstall'
                 ;;
             --configure | configure)
                 action='configure'
+                ;;
+            verify)
+                action='verify'
                 ;;
             esac
 
@@ -660,6 +663,7 @@ function main() {
                     _cloudify_dispatch "$action" "$hosts" "$packages"
                     break
                 }
+                [[ "${2:-}" == -* ]] && die "Cloudify usage error: unexpected flag '${2:-}' after the action (flags go before the action)."
                 packages="$packages ${2:-}"
                 shift
             done

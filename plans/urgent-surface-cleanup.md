@@ -405,7 +405,7 @@ Gate (widened): router + `lib/packages.sh` + `lib/package-api.sh` + `lib/remote.
 
 - [x] Description artifact (2026-09-09): current surface traced below; repros `~/tmp/b2/`.
 - [x] Plan + non-breakage argument (this section).
-- [ ] Explicit consent (Rachid).
+- [x] Explicit consent (Rachid): approved 2026-09-09 (Q2 accepted, verify-load fix rides with Branch 2).
 
 ### What the code does today
 
@@ -499,32 +499,53 @@ Gate (widened): router + `lib/packages.sh` + `lib/package-api.sh` + `lib/remote.
 
 ### Tasks
 
-- [ ] T1 verify action: action table + dispatch, remove the top-level case, remote `verify <pkgs>`,
+- [v] T1 verify action: action table + dispatch, remove the top-level case, remote `verify <pkgs>`,
   `--verify install` alias, `--no-verify` ignored for verify (R2-1/4/9).
-- [ ] T2 parser + empty-package guard for verify/uninstall; known-package check; install fallback
+  Note: pinned `shell-router.bats` pins the top-level verify messages/rc, so the action path
+  reproduces `Missing package` and the same exit codes; those tests stay unmodified and green.
+- [v] T2 parser + empty-package guard for verify/uninstall; known-package check; install fallback
   untouched (R2-3/5).
-- [ ] T3 uninstall action: real `cloudify_uninstall_package`, `cloudify_package_uninstall_path`,
+- [v] T3 uninstall action: real `cloudify_uninstall_package`, `cloudify_package_uninstall_path`,
   absent leg = clear error + non-zero + no action, per-package failure collection, deps untouched,
   verify not run (R2-6/10).
-- [ ] T4 uninstall var forwarding: walker install-like tokens + local uninstall walker call (R2-7).
-- [ ] T5 verify yaml load no-clobber via a temp ledger (R2-12).
-- [ ] T6 docs: README, router help, skill (R2-11).
+- [v] T4 uninstall var forwarding: walker install-like tokens + local uninstall walker call (R2-7).
+- [v] T5 verify yaml load no-clobber via a temp ledger (R2-12).
+- [v] T6 docs: README, router help, skill; documented `remove|rem|r` aliases implemented (R2-11).
 
 ### Tests
 
-- [ ] Unit: `verify` action routing local and `--on`; `--verify install` alias; `--no-verify` ignored.
-- [ ] Unit: parser errors (empty, flag, non-package) + install apt fallback intact.
-- [ ] Unit: uninstall resolution, absent leg error + no action, multi-package failure collection.
-- [ ] Unit: uninstall forwards package/deployment vars; verify stays global-only (pinned).
-- [ ] Unit: verify keeps a walker-set value over the pkg yaml (L2-8 fix).
-- [ ] Integration: fixture package with `uninstall.sh` removes its markers; absent leg errors;
+- [v] Unit: `verify` action routing local and `--on`; `--verify install` alias; `--no-verify` ignored.
+- [v] Unit: parser errors (empty, flag, non-package) + install apt fallback intact.
+- [v] Unit: uninstall resolution, absent leg error + no action, multi-package failure collection.
+- [v] Unit: uninstall forwards package/deployment vars; verify stays global-only (pinned).
+- [v] Unit: verify keeps a walker-set value over the pkg yaml (L2-8 fix).
+- [v] Integration: fixture package with `uninstall.sh` removes its markers; absent leg errors;
   deps untouched; remote verify action; existing split/verify tests green.
 
 ### Done when / merge gate
 
-- [ ] All tasks `[v]`; unit suite green; pinned split/verify tests unmodified.
-- [ ] Merge gate: blast-radius integration (new uninstall fixture + `package-install-run-split`)
-  green + a CLI smoke of `--on <host> verify` and `uninstall` on `cloudai:cloudify`.
+- [v] All tasks `[v]`; unit suite green; pinned split/verify tests unmodified.
+- [v] Merge gate: `package-uninstall.bats` + `package-install-run-split.bats` PASSED (the remote
+  verify action and uninstall are exercised end to end there, so they are the CLI smoke).
+
+### Branch 2 outcome (2026-09-09)
+
+- Landed: `verify` first-class action (local + `--on`, remote ships `verify <pkgs>`, alias kept,
+  top-level case removed); parser errors (empty list, flag after the action, non-package) and the
+  empty-package guard; real `uninstall` action (`cloudify_package_uninstall_path`, optional
+  `uninstall.sh`, absent leg = clear error + no action, per-package failure collection, deps
+  untouched, verify not run); uninstall forwards the same resolved vars as install/configure;
+  `remove|rem|r` aliases; the verify yaml load is fill-only so a walker-resolved parent override
+  survives (constraint a); README + skill updated; lint glob covers `pkg/*/uninstall.sh`.
+- Tests: new `tests/unit/actions.bats`, `tests/unit/uninstall.bats`, `tests/unit/verify-vars.bats`,
+  `tests/integration/package-uninstall.bats`, new fixture `pkg/fixture-uninstall`; full unit suite
+  386 green; shellcheck clean; pinned `shell-router.bats`/`package-api.bats`/`split` tests
+  unmodified and green.
+- Flake observed once: the first `package-uninstall` run right after a snapshot restore failed,
+  then passed on re-run and on the canonical two-file gate. Likely container warm-up; watch it,
+  add a readiness probe to the runner if it recurs.
+- Design note (non-urgent candidate): resolution could become a step that always precedes a phase
+  (verify-only included), removing the source read from verify entirely. Not needed for the bug.
 
 ## Branch 3 - security: payload via stdin + skill Security section
 

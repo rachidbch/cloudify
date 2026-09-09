@@ -41,9 +41,10 @@ cloudify [action] [package]
 Actions:
   install | i <pkg>           Install a package locally
   configure <pkg>             Configure-only, local (split pkgs: run phase, no re-download)
-  uninstall | u <pkg>         Uninstall a package locally
+  uninstall | remove | rem | r <pkg>  Uninstall a package locally (needs pkg uninstall.sh)
   --on <host> install <pkg>   Install a package on a remote host
   --on <host> configure <pkg> Configure-only on a remote host
+  --on <host> verify <pkg>    Verify-only on a remote host
 
 Commands:
   help                        Print usage help
@@ -459,6 +460,15 @@ their own — no last-write-wins race. The classic per-pkg yaml
 (`~/.config/cloudify/pkgs/<pkg>.yaml`) and the global `remote-vars.yaml` remain
 supported; the full five-source ladder is documented under "Package
 Configuration" above.
+
+#### Lifecycle (install / configure / uninstall)
+
+- `install` provisions: create-if-absent, never mutates existing config.
+- `configure` configures: run phase, applies desired config, converges.
+- `uninstall` tears down: runs the package's optional `uninstall.sh`.
+  No `uninstall.sh` -> clear error, nothing changed, non-zero exit. Cloudify never guesses a teardown.
+  Dependencies are never removed (they may be shared); orphan cleanup is a separate, consent-gated future feature.
+  Uninstall forwards the same resolved vars as install and configure, and does not run verify.
 
 #### Verification (`verify.sh`)
 

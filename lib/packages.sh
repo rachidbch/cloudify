@@ -173,6 +173,13 @@ function cloudify_package_configure_path() {
     cloudify_package_recipe_path "$1" configure.sh
 }
 
+# Resolve the optional uninstall.sh path of a package.
+# Returns 1 when the package has no uninstall leg (cloudify refuses to guess).
+# Usage: uninstall_path=$(cloudify_package_uninstall_path "$pkg") || die ...
+function cloudify_package_uninstall_path() {
+    cloudify_package_recipe_path "$1" uninstall.sh
+}
+
 # Configure (run-phase only) one or more packages — for split pkgs (ADR-008).
 # Runs configure.sh (rewrite unit, restart, resolve secrets) with no install
 # guard. Errors clearly for non-split packages. Verify-hook runs after.
@@ -275,7 +282,39 @@ function cloudify_install_package {
 function cloudify_uninstall_default_packages {
     die "Uninstall package features not ready." 1
 }
-# Uninstall one or several package by name
+# Uninstall one or several packages by name.
+# Runs the package's optional uninstall.sh. No uninstall leg = clear error and
+# no action (never guess a teardown). Dependencies are NEVER removed here (they
+# may be shared); orphan cleanup is consent-gated future work. Verify is not run.
+# Usage: cloudify_uninstall_package pkg [pkg...]
 function cloudify_uninstall_package {
-    die "Uninstall package features not ready." 1
+    local pkg uninstall_path
+    local -a failed_packages=()
+    for pkg in "$@"; do
+        if [[ "$pkg" == @* || "$pkg" == \#* ]]; then
+            msg "${RED}Error: Illegal tag. cloudify_uninstall_package does not accept tags. Ignoring \"$pkg\".${RESET}"
+            continue
+        fi
+        if [[ ! -d "$CLOUDIFY_DIR/pkg/$pkg" ]]; then
+            msg "${RED}Error: Not a cloudify package: $pkg${RESET}"
+            failed_packages+=("$pkg")
+            continue
+        fi
+        msg "${GREEN}Uninstalling $pkg cloudify package${RESET}"
+        if uninstall_path=$(cloudify_package_uninstall_path "$pkg"); then
+            # shellcheck source=/dev/null
+            if ! ( _CLOUDIFY_PKG_DEPTH=1 source "$uninstall_path" ); then
+                failed_packages+=("$pkg")
+                continue
+            fi
+        else
+            msg "${RED}Error: Package $pkg has no uninstall.sh — refusing to guess a teardown. Nothing was changed.${RESET}"
+            failed_packages+=("$pkg")
+            continue
+        fi
+    done
+    if [[ ${#failed_packages[@]} -gt 0 ]]; then
+        msg "${RED}Failed packages: ${failed_packages[*]}${RESET}"
+        return 1
+    fi
 }

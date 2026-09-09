@@ -25,7 +25,7 @@ Rules:
 
 - [x] Branch 0 - decisions + ROADMAP URGENT bucket + this plan (2026-09-07)
 - [v] Branch 1 - vars internals: five-source helpers + walker + precedence + resolver
-- [~] Branch 1b - vars CLI surface + declaration syntax + `vars declared`
+- [v] Branch 1b - vars CLI surface + declaration syntax + `vars declared` (merged c12783e)
 - [ ] Branch 2 - CLI actions: verify + uninstall
 - [ ] Branch 3 - security: payload via stdin + skill Security section
 - [ ] Branch 4 - guacamole 3-leg rewrite
@@ -379,6 +379,7 @@ Gate: router (`cloudify:491-563`), `lib/vars.sh` (declaration parse + write path
 
 ### Branch 1b outcome (2026-09-09)
 
+- Merged to master as `c12783e` (--no-ff) after the e2e merge gate.
 - Landed: declaration kinds (`NAME`/`NAME=value`/`NAME=`), declared-file kind column,
   scope flags + `--` sentinel + `unset`, optional deployment id, write-time `@` validation
   (option A), uppercase key guard for global/pkg, byte-preserving `--stdin`/`--file`,

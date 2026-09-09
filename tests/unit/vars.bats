@@ -178,6 +178,19 @@ EOF
     [ "$SPACED" = "lots   of   spaces" ]
 }
 
+@test "multi-line write is stored as @base64: and round-trips (L4/R6)" {
+    cloudify_deployment_create testdep
+    export CLOUDIFY_DEPLOYMENT=testdep
+    local pem
+    pem=$(printf -- '-----BEGIN KEY-----\nabc\n-----END KEY-----')
+    cloudify_vars_deployment_write PEM_VAR "$pem"
+    run grep '^PEM_VAR:' "$CLOUDIFY_DEPLOYMENTS_DIR/testdep/config.yaml"
+    [[ "$output" == *'@base64:'* ]]
+    unset PEM_VAR
+    cloudify_vars_deployment_read testdep > /dev/null
+    [ "$PEM_VAR" = "$pem" ]
+}
+
 @test "deployment read resolves @base64: multi-line values (R6)" {
     cloudify_deployment_create testdep
     local encoded

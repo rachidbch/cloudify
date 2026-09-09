@@ -270,7 +270,7 @@ lib/
   containers.sh       Container operations via ivps (launch, delete, IP lookup)
   credentials.sh      System credential management: save, load, section-based prompting
   deployments.sh      Deployment-wide store: deployment CRUD (ADR-011)
-  pkg-config.sh       Package config loader: flat YAML parsing from pkgs/<pkg>.yaml
+  pkg-config.sh       Sources lib/vars.sh for package-config consumers (reader lives there)
   vars.sh             Five-source var helpers + precedence walker core + resolver
   secrets.sh          Secret-backend loader (sources lib/secrets/*.sh)
   hosts.sh            Host inventory (list, filter by tags)

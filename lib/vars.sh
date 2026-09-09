@@ -157,10 +157,15 @@ _cloudify_vars_chmod() {
 }
 
 # _cloudify_vars_file_set <file> <key> <value> — replace or append one key.
+# A multi-line value cannot live on one `KEY: value` line, so it is stored as
+# a `@base64:` reference the flat reader + resolver round-trip (R6/L4).
 _cloudify_vars_file_set() {
     local file="$1" key="$2" value="$3"
     [[ -n "$key" ]] || die "Usage: cloudify vars set <key> <value>"
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid var name: $key"
+    if [[ "$value" == *$'\n'* ]]; then
+        value="@base64:$(printf '%s' "$value" | base64 -w0)"
+    fi
     mkdir -p "$(dirname "$file")"
     local tmp
     tmp=$(mktemp)

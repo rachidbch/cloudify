@@ -228,13 +228,16 @@ Non-breakage argument below; consent required before any edit.
 - Landed: `lib/vars.sh` (five-source helpers + claim ledger + resolver + reserved
   guard), `lib/secrets.sh` + `lib/secrets/base64.sh`, walker rewrite in
   `lib/remote.sh`, local-path walker in the router, README var sections.
-- Tests: `tests/unit/vars.bats` (39), full unit suite 344 green; pinned
+- Tests: `tests/unit/vars.bats` (40), full unit suite 345 green; pinned
   `remote-vars.bats`, `deployments.bats`, `package-api.bats`, `remote.bats`,
   `install-run-split.bats` green unmodified; both pinned integration files green.
 - Bug fixed in passing: the dep scan `deps=$(grep ... | sed | tr)` returned 1 for a
   recipe with no `pkg_depends` line and aborted the walk under errexit+pipefail.
   Latent in pre-branch code; fixed with `|| true` (proved by the local-path test,
   whose fixture recipe has no `pkg_depends`).
+- Write side of L4 closed in review: `_cloudify_vars_file_set` stored a
+  multi-line value raw, silently truncating it at the first newline; it now
+  encodes as `@base64:` (R6), proved by a new round-trip test.
 - Plan-internal contradiction resolved in favour of task 3 + ROADMAP "Target config
   model": I5/L9 say the deployment read must not clobber earlier claims, but the
   target precedence (repeated in task 3 and ROADMAP M1-M4) promotes deployment
@@ -273,6 +276,10 @@ Tasks:
   ambient fallback with hint.
 - [ ] Add `--stdin`/`--file` to `vars set`; store literal or `@backend:locator` reference.
 - [ ] Add `vars declared <pkg>` (three kinds + current source); mask secret-looking output.
+- [ ] Fix the residual `xargs` in `cloudify_vars_deployment_list --json` (a value with
+  `"` still yields invalid JSON).
+- [ ] Write-time validation: a value starting with `@` that is not a valid reference
+  dies with a hint to use `@@` (today it dies later, at read/install time).
 - [ ] Update the cloudify skill with the var standard + the sync rule.
 
 Tests:

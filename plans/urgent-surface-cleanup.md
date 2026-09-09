@@ -11,6 +11,10 @@ Status markers (EVERY task uses one):
 
 Rules:
 - One branch at a time; merged to master before the next branch starts.
+- Merge gate (every branch): full unit suite green + the branch's blast-radius
+  integration files green + a real CLI smoke of the branch's new path. Record all
+  three as `[v]` in the branch before merging. Full `task test` (all packages)
+  runs at milestone boundaries only.
 - Any branch touching `lib/` or the router runs the CRITICAL GATE: description
   artifact -> plan + non-breakage argument -> explicit human consent. All three
   live in this file; no separate artifact files.
@@ -220,6 +224,7 @@ Non-breakage argument below; consent required before any edit.
 ### Done when
 
 - [v] Precedence tests pass, remote-vars integration green, no recipe changes needed.
+- [v] Merge gate: unit 345/345; `package-remote-vars.bats` + `package-install-run-split.bats` PASSED on HEAD b40b97e; R1 local path covered by `vars.bats` test 40 (real router subprocess).
 - [v] No invariant I1-I12 regressed; every landmine in scope has a test.
 - [v] HISTORY.md + LOGS.md updated; `git status --short` clean.
 

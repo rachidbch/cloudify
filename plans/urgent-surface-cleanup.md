@@ -346,32 +346,53 @@ Gate: router (`cloudify:491-563`), `lib/vars.sh` (declaration parse + write path
 
 ### Tasks
 
-- [ ] T1 declaration parser: accept `NAME`, `NAME=value`, `NAME=`; emit `name\tpkg\tkind`;
+- [v] T1 declaration parser: accept `NAME`, `NAME=value`, `NAME=`; emit `name\tpkg\tkind`;
   never export the mirror (I1b1/I1b2, R1b-4).
-- [ ] T2 `remote.sh`: read the kind column in both declared-file loops; warn only for `required` (R1b-5).
-- [ ] T3 router: `vars` scope flags anywhere + `--` sentinel, mutual exclusion, ambient fallback
+- [v] T2 `remote.sh`: read the kind column in both declared-file loops; warn only for `required` (R1b-5).
+- [v] T3 router: `vars` scope flags anywhere + `--` sentinel, mutual exclusion, ambient fallback
   hint (R1b-1/2); `unset` alias of delete.
-- [ ] T4 deployment fns: optional trailing id arg; router plumbing (R1b-8).
-- [ ] T5 `vars set --stdin/--file` byte preservation + write-time `@` validation + uppercase key
+- [v] T4 deployment fns: optional trailing id arg; router plumbing (R1b-8).
+- [v] T5 `vars set --stdin/--file` byte preservation + write-time `@` validation + uppercase key
   guard (R1b-7/9/10).
-- [ ] T6 `vars declared <pkg>` with `--sources` + masking (R1b-3).
-- [ ] T7 `--json` pure-bash escaping (R1b-6); `show` missing key exit 0 (R1b-11).
-- [ ] T8 skill: pkg-writing var standard + the declaration/recipe sync rule.
+- [v] T6 `vars declared <pkg>` with `--sources` + masking (R1b-3).
+- [v] T7 `--json` pure-bash escaping (R1b-6); `show` missing key exit 0 (R1b-11).
+- [v] T8 skill: pkg-writing var standard + the declaration/recipe sync rule.
+- [ ] R9 conflict (from branch 1): default masking on `vars show`/`list` contradicts the pinned
+  exact-value tests (`deployments.bats:108-126`, `:167-184`); proposal = opt-in `--mask`. Needs consent.
 
 ### Tests
 
-- [ ] Unit: declaration parse matrix (three kinds, tabs, CRLF, back-compat bare) + warn only for required.
-- [ ] Unit: router scope flags (mutual exclusion, ambient fallback, `--` sentinel, flag-looking value).
-- [ ] Unit: `vars declared` three kinds, `--sources`, masking, unknown pkg.
-- [ ] Unit: write-time `@` validation (accept `@@`, `@base64:`, registered backend; reject unknown with hint).
-- [ ] Unit: `--json` with `"`/`\`/spaces/comments; `show` missing key exit 0; `--stdin` trailing-newline preservation.
-- [ ] Regression: `deployments.bats`, `remote-vars.bats`, `vars.bats` unmodified and green.
+- [v] Unit: declaration parse matrix (three kinds, tabs, CRLF, back-compat bare) + warn only for required.
+- [v] Unit: router scope flags (mutual exclusion, ambient fallback, `--` sentinel, flag-looking value).
+- [v] Unit: `vars declared` three kinds, `--sources`, masking, unknown pkg.
+- [v] Unit: write-time `@` validation (accept `@@`, `@base64:`, registered backend; reject unknown with hint).
+- [v] Unit: `--json` with `"`/`\`/spaces/comments; `show` missing key exit 0; `--stdin` trailing-newline preservation.
+- [v] Router subprocess: scoped set/show/list, stdin bytes, `@` reject, `declared` (shell-router gap closed for vars).
+- [v] Regression: `deployments.bats`, `remote-vars.bats` unmodified and green; `vars.bats` one test
+  precondition updated (see outcome).
 
 ### Done when / merge gate
 
-- [ ] All tasks `[v]`; unit suite green; `deployments.bats`/`remote-vars.bats` unmodified.
-- [ ] Merge gate: blast-radius integration (`package-remote-vars.bats`) green + a real CLI smoke
+- [v] All tasks `[v]`; unit suite green; `deployments.bats`/`remote-vars.bats` unmodified.
+- [v] Merge gate: blast-radius integration (`package-remote-vars.bats`) green + a real CLI smoke
   of `vars declared` and a scoped `vars set/show` on `cloudai:cloudify`.
+
+### Branch 1b outcome (2026-09-09)
+
+- Landed: declaration kinds (`NAME`/`NAME=value`/`NAME=`), declared-file kind column,
+  scope flags + `--` sentinel + `unset`, optional deployment id, write-time `@` validation
+  (option A), uppercase key guard for global/pkg, byte-preserving `--stdin`/`--file`,
+  `vars declared [--sources]` with masking, pure-bash `--json`, `show` missing key exit 0,
+  router help text, skill var standard.
+- Tests: new `tests/unit/vars-cli.bats` (22); full unit suite 367 green; shellcheck clean.
+- Merge gate: `package-remote-vars.bats` PASSED; CLI smoke on `cloudai:cloudify` green
+  (`vars declared guacamole --sources`, scoped set/show/list, stdin secret, `@` reject).
+- Deviation (approved R1b-7): an unknown backend now dies at write time, so the branch-1 test
+  "walker: an unresolvable file-store reference dies" can no longer set it up via
+  `cloudify_vars_pkg_write`; it now writes the file directly, preserving the read-time-die
+  assertion. `deployments.bats`/`remote-vars.bats` untouched.
+- Open: R9 (default masking on show/list) conflicts with pinned exact-value tests; opt-in
+  `--mask` proposed, consent pending.
 
 ## Branch 2 - CLI actions: verify + uninstall
 

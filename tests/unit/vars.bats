@@ -380,8 +380,10 @@ make_walker_fixture() {
 }
 
 @test "walker: an unresolvable file-store reference dies (never forwards empty)" {
-    mkdir -p "$CLOUDIFY_DIR/pkg/walk"
-    cloudify_vars_pkg_write walk BAD_REF "@nope:whatever"
+    mkdir -p "$CLOUDIFY_DIR/pkg/walk" "$(dirname "$(cloudify_vars_pkg_file walk)")"
+    # Write directly: the write-time guard (branch 1b, R1b-7) rejects an unknown
+    # backend, so a read-time die is only reachable from a hand-written file.
+    printf 'BAD_REF: @nope:whatever\n' > "$(cloudify_vars_pkg_file walk)"
     unset BAD_REF
     run _cloudify_pkg_remote_vars install walk
     [ "$status" -ne 0 ]

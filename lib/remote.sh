@@ -166,15 +166,17 @@ function _cloudify_pkg_remote_vars() {
         if [[ -s "$declared_file" ]]; then
             local -a _declared_names=()
             local _dname _dpkg
-            while IFS=$'\t' read -r _dname _dpkg; do
+            local _dname _dpkg _dkind
+            while IFS=$'\t' read -r _dname _dpkg _dkind; do
                 [[ -n "$_dname" ]] && _declared_names+=("$_dname")
             done < "$declared_file"
             if (( ${#_declared_names[@]} )); then
                 cloudify_vars_env_read "${_declared_names[@]}" > /dev/null
             fi
             # Genuine warn only: a declared name with no value from any source (L12)
-            while IFS=$'\t' read -r _dname _dpkg; do
+            while IFS=$'\t' read -r _dname _dpkg _dkind; do
                 [[ -n "$_dname" ]] || continue
+                [[ "${_dkind:-required}" == required ]] || continue
                 [[ -n "${!_dname:-}" ]] || log_warn "Var $_dname (declared in pkg $_dpkg .remote-vars) is unset in caller env — not forwarded."
             done < "$declared_file"
         fi

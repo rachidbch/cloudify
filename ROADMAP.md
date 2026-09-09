@@ -22,6 +22,13 @@ Policy: compose-ability. Fix at the root (CRITICAL GATE where lib/router touches
 - Reader command: `cloudify vars declared <pkg>` prints each consumed var + its default if any.
 - Revive the state registry (design from the archived k3s plan, unblocked since ivps node-as-dir landed, never implemented): after an install, write the resolved slice `$(ivps node path <host>)/deployments/<id>/pkgs/<pkg>/config.yaml`. Key is (deployment, instance, package). The record is a REPLAY INPUT, outside the precedence ladder: resolution stays intent-only (recipe default < global < package < deployment < env), and recorded values are re-applied only on explicit re-enactment (`deployment run` / replay), never silently. Supersedes ADR-011 point 6 (which had put the record in the ladder) - amend when implementing. `ivps delete <host>` removes the slice; secrets as references/hashes, never plaintext.
 
+### Vars internals + security (decided 2026-09-07)
+
+- Five-source naming refactor (URGENT): one read/write helper per source, one scheme - `cloudify_vars_{global,pkg,deployment,env}_read|write`, `cloudify_vars_state_read` (replay, read-only). The collector becomes a thin precedence walker over them, replacing `_try_claim`, `_try_claim_env`, `_cloudify_deployment_read_vars`.
+- Vault integration, two supported models (a reference resolves at either end): operator-side (default; cloudify resolves and ships plaintext; hosts stay vault-free) and host-side (only the reference ships; host needs vault credentials + reachability). No vault configured -> the vault reader is never consulted (zero cost, zero pkg-dev work; the resolver has an identity default).
+- Exposure inventory + rules: transit = SSH-encrypted; operator argv + config files hold plaintext in the operator-side model (host-side removes argv); host argv holds plaintext today -> harden by sending the payload via stdin, not argv; recipe state files 0600; cloudify's own config/state files hold references or hashes, never plaintext; software config files a recipe writes (compose .env) may hold secrets, 0600, unavoidable. Fundamental limit: the host must hold the plaintext; no vault removes that.
+- Cloudify skill: add a Security section (stars: payload via stdin not argv; references in cloudify state; masking PASSWORD/TOKEN/SECRET/KEY; 0600; no secrets in logs; the two vault models + the fundamental limit).
+
 ### Target config model (record; implement with the forwarding model above)
 
 REPO: R1 recipe `${VAR:-default}` (weakest value layer); R2 `pkg/<name>/.remote-vars` = declaration, names only (contract, not a value).

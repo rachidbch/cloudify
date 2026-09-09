@@ -405,7 +405,7 @@ Gate (widened): router + `lib/packages.sh` + `lib/package-api.sh` + `lib/remote.
 
 - [x] Description artifact (2026-09-09): current surface traced below; repros `~/tmp/b2/`.
 - [x] Plan + non-breakage argument (this section).
-- [ ] Explicit consent (Rachid).
+- [x] Explicit consent (Rachid): approved 2026-09-09 (Q2 accepted, verify-load fix rides with Branch 2).
 
 ### What the code does today
 
@@ -499,8 +499,10 @@ Gate (widened): router + `lib/packages.sh` + `lib/package-api.sh` + `lib/remote.
 
 ### Tasks
 
-- [ ] T1 verify action: action table + dispatch, remove the top-level case, remote `verify <pkgs>`,
+- [v] T1 verify action: action table + dispatch, remove the top-level case, remote `verify <pkgs>`,
   `--verify install` alias, `--no-verify` ignored for verify (R2-1/4/9).
+  Note: pinned `shell-router.bats` pins the top-level verify messages/rc, so the action path
+  reproduces `Missing package` and the same exit codes; those tests stay unmodified and green.
 - [ ] T2 parser + empty-package guard for verify/uninstall; known-package check; install fallback
   untouched (R2-3/5).
 - [ ] T3 uninstall action: real `cloudify_uninstall_package`, `cloudify_package_uninstall_path`,

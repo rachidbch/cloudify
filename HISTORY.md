@@ -668,3 +668,11 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - **Runbooks**: (a) agent runbooks under `runbooks/` with an amnesiac validation protocol; (b) `cloudify deployment run` on the fixed surface; idea 3 (declarative generator) parked non-urgent.
 - **Plan**: plans/urgent-surface-cleanup.md (8 branches, merge before next), PLAN.md repointed.
 - **Skill**: Logging section, L0-L4 testing/debugging ladder, errexit-suspension contract, run hygiene (exit-marker polling, raw reads, PID kills). Security section pending (branch 3).
+
+## 2026-09-09 — branch 1 gate description; single-file URGENT plan
+
+- **Gate description done (read-only subagent, no code touched)**: current var forwarding + precedence traced end to end (`lib/remote.sh:98-230`, `lib/deployments.sh:178-196`, `lib/pkg-config.sh:19-45`), 30 empirical repros in `~/tmp/vars-desc/e*.sh` (E1-E16). Artifact absorbed into `plans/urgent-surface-cleanup.md`; the standalone artifact file was trashed (Rachid mandate: all planning/progress in that one file).
+- **5 claims corrected**: `remote-vars.yaml` is loaded by `_cloudify_load_yaml_vars` (pkg-config.sh:19 via remote.sh:152), not `credentials.sh`; `.remote-vars` today accepts bare `NAME` only (`NAME=value`/`NAME=` silently skipped, remote.sh:139); caller env is NOT strongest today (global file beats it, E1c; per-pkg yaml beats it for undeclared names, E14); remote.sh:128 "env wins" comment half false; README:159 single-source-of-truth is remote-only. Confirmed: global strongest / deployment weakest; only the env path is declaration-gated.
+- **Two live hazards found**: `xargs` in `_cloudify_deployment_read_vars` (deployments.sh:187-188) mangles `'`/`\`/spaces and aborts on multi-line values (host FAILED); no reserved-name guard, so a config key `CLOUDIFY_REMOTE_USER` retargets ssh (E16).
+- **Plan restructured** (`plans/urgent-surface-cleanup.md`): single tracking file for ALL URGENT work, every task marked `[ ]`/`[~]`/`[x]`/`[v]`; added Branch 1b (vars CLI + declaration syntax + `vars declared`, previously unassigned); inlined invariants I1-I12, landmines L1-L12, proposed resolutions R1-R9, trap->branch map.
+- **State**: Branch 1 gate = description `[x]`, plan `[~]`, consent `[ ]`. No lib/router/test change.

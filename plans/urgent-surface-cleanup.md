@@ -26,7 +26,7 @@ Rules:
 - [x] Branch 0 - decisions + ROADMAP URGENT bucket + this plan (2026-09-07)
 - [v] Branch 1 - vars internals: five-source helpers + walker + precedence + resolver
 - [v] Branch 1b - vars CLI surface + declaration syntax + `vars declared` (merged c12783e)
-- [~] Branch 1b-fix - R9: printing secrets is opt-in (mask default, `--reveal`, `--resolve`)
+- [v] Branch 1b-fix - R9: printing secrets is opt-in (mask default, `--reveal`, `--resolve`) (merged b0176ec)
 - [ ] Branch 2 - CLI actions: verify + uninstall
 - [ ] Branch 3 - security: payload via stdin + skill Security section
 - [ ] Branch 4 - guacamole 3-leg rewrite

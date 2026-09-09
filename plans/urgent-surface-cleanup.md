@@ -29,7 +29,7 @@ Rules:
 - [v] Branch 1b-fix - R9: printing secrets is opt-in (mask default, `--reveal`, `--resolve`) (merged b0176ec)
 - [v] Branch 2 - CLI actions: verify + uninstall (merged 48962d8)
 - [v] Branch 3 - security: payload via stdin + skill Security section (merged 28f715c)
-- [ ] Branch 4 - guacamole 3-leg rewrite
+- [v] Branch 4 - guacamole 3-leg rewrite (merged 23af7c1)
 - [ ] Branch 5 - xfce alignment
 - [ ] Branch 6 - runbooks a
 - [ ] Branch 7 - state registry
@@ -691,6 +691,7 @@ Tests:
 
 ### Branch 4 outcome (2026-09-09)
 
+- Merged to master as `23af7c1` (--no-ff) after the e2e merge gate (7/7).
 - Landed: install provisions (create-if-absent `.env`/compose, `up -d --wait postgres guacd`,
   one-time schema init); configure configures (rewrite, `up -d --wait`, converge the postgres role
   password via the container local socket, converge the admin hash + rename, upsert the RDP

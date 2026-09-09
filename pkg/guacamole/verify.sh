@@ -30,7 +30,7 @@ pkg_verify() {
     # Administrator can obtain an API token.
     local login token ds id
     login="$(curl -fsS -X POST "$base_url/api/tokens" \
-        --data-urlencode "username=${CLOUDIFY_GUACAMOLE_ADMIN_USER:-rbc}" \
+        --data-urlencode "username=${CLOUDIFY_GUACAMOLE_ADMIN_USER:-guacadmin}" \
         --data-urlencode "password=${CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD:-}" 2>/dev/null)" || return 1
     token="$(printf '%s' "$login" | jq -r '.authToken // empty' 2>/dev/null)" || return 1
     [[ -n "$token" ]] || return 1

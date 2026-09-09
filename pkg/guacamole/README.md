@@ -26,11 +26,14 @@ connection target.
 cloudify --on <docker-host> install guacamole
 cloudify --on <docker-host> configure guacamole   # reapply config / rotate target
 cloudify --on <docker-host> verify guacamole      # verify-only
+cloudify --on <docker-host> uninstall guacamole   # down -v + remove project dir
 ```
 
-Split package (ADR-008): `install` = dep + guard + provision + one-time schema
-init + admin; `configure` = rewrite config, start stack, ensure connection.
-Both phases run on `install`.
+Lifecycle: `install` provisions (dep + guard + compose/.env create-if-absent +
+one-time schema init); `configure` configures (rewrite compose/.env, converge the
+postgres role password and the admin hash, start the stack, upsert the RDP
+connection); `uninstall` tears down (`docker compose down -v` then remove the
+project dir). `cloudify install` sources install then configure.
 
 ## Configuration
 
@@ -38,7 +41,7 @@ Secrets and deployment values arrive via the caller environment or
 `~/.config/cloudify/pkgs/guacamole.yaml` (never in the repo). Names forwarded
 remotely (`.remote-vars`): `CLOUDIFY_GUACAMOLE_DB_PASSWORD`,
 `CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD`, `CLOUDIFY_GUACAMOLE_RDP_PASSWORD`,
-`CLOUDIFY_GUACAMOLE_RDP_HOST`.
+`CLOUDIFY_GUACAMOLE_RDP_HOST`, `CLOUDIFY_GUACAMOLE_ADMIN_USER`.
 
 Configuration values (env or per-pkg yaml):
 
@@ -50,8 +53,8 @@ Configuration values (env or per-pkg yaml):
 - ``CLOUDIFY_GUACAMOLE_DB_NAME`` - default `guacamole_db` - postgres database
 - ``CLOUDIFY_GUACAMOLE_DB_USER`` - default `guacamole_user` - postgres role (no `postgres` superuser exists)
 - ``CLOUDIFY_GUACAMOLE_DB_PASSWORD`` - default required - secret
-- ``CLOUDIFY_GUACAMOLE_ADMIN_USER`` - default `rbc` - replaces the seeded `guacadmin` at init
-- ``CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD`` - default required - secret, used for the API hash at init
+- ``CLOUDIFY_GUACAMOLE_ADMIN_USER`` - default `guacadmin` - the seeded name; configure renames it only if set to something else
+- ``CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD`` - default required - secret, converged by configure on every run
 - ``CLOUDIFY_GUACAMOLE_RDP_HOST`` - default required - connection record target (e.g. guest Tailscale IP)
 - ``CLOUDIFY_GUACAMOLE_RDP_PORT`` - default `3389` - 
 - ``CLOUDIFY_GUACAMOLE_RDP_USER`` - default `gui` - 
@@ -89,16 +92,15 @@ tracked in the SOP acceptance gate.
 - Secrets (DB/admin/RDP passwords) must not contain single quotes or control
   characters: cloudify bakes forwarded values into the payload in single
   quotes (mechanism landmine L1).
-- Admin password rotation is a database operation (the hash formula in the
-  SOP), not a compose/env change - changing `CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD`
-  on a rerun updates the stored `.env` but NOT the existing DB hash. Fresh
-  installs or `--clear-data` apply it.
+- Admin password rotation is a configure operation: `configure` recomputes the
+  database hash from `CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD` on every run.
 - RDP password stored in the connection record is only (re)written when the
   record is created or updated; the API may mask it, so a password-only change
   requires deleting the record or changing a compared field (host/port/user/
   security/ignore-cert/resize-method).
-- Changing `CLOUDIFY_GUACAMOLE_DB_PASSWORD` after init does not reinitialize
-  or safely rotate the database credential - treat as a DB operation.
+- Changing `CLOUDIFY_GUACAMOLE_DB_PASSWORD` converges the postgres role via the
+  container's local socket on the next `configure`; the webapp is restarted
+  with the new password.
 - `--on` remote hosts run code from GitHub master: push before testing.
 - A non-default `CLOUDIFY_GUACAMOLE_DIR` must come from per-pkg yaml or
   deployment vars to reach a remote host (not a `.remote-vars` name).

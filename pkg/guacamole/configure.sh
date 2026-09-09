@@ -41,7 +41,7 @@ CLOUDIFY_GUACAMOLE_BIND="${CLOUDIFY_GUACAMOLE_BIND:-127.0.0.1}"
 CLOUDIFY_GUACAMOLE_PORT="${CLOUDIFY_GUACAMOLE_PORT:-8080}"
 CLOUDIFY_GUACAMOLE_DB_NAME="${CLOUDIFY_GUACAMOLE_DB_NAME:-guacamole_db}"
 CLOUDIFY_GUACAMOLE_DB_USER="${CLOUDIFY_GUACAMOLE_DB_USER:-guacamole_user}"
-CLOUDIFY_GUACAMOLE_ADMIN_USER="${CLOUDIFY_GUACAMOLE_ADMIN_USER:-rbc}"
+CLOUDIFY_GUACAMOLE_ADMIN_USER="${CLOUDIFY_GUACAMOLE_ADMIN_USER:-guacadmin}"
 CLOUDIFY_GUACAMOLE_RDP_PORT="${CLOUDIFY_GUACAMOLE_RDP_PORT:-3389}"
 CLOUDIFY_GUACAMOLE_RDP_USER="${CLOUDIFY_GUACAMOLE_RDP_USER:-gui}"
 CLOUDIFY_GUACAMOLE_CONNECTION_NAME="${CLOUDIFY_GUACAMOLE_CONNECTION_NAME:-GUI}"
@@ -119,8 +119,54 @@ volumes:
   guacamole_pgdata:
 COMPOSEEOF
 
-log_info "guacamole: starting full stack (webapp image downloads on first run)..."
-sudo docker compose -f "$COMPOSE_FILE" up -d
+log_info "guacamole: ensuring postgres + guacd (image pull on first run)..."
+sudo docker compose -f "$COMPOSE_FILE" up -d --wait postgres guacd
+
+PG_CID="$(sudo docker compose -f "$COMPOSE_FILE" ps -q postgres | head -n1)"
+[[ -n "$PG_CID" ]] || die "guacamole: postgres container not found"
+
+# --- Converge the postgres role password (trap 3): the volume keeps the old role
+# password when .env changes; ALTER USER via the container's local socket (trust)
+# makes the role match the desired config. SQL travels via a 0600 file docker cp'd
+# in - never argv, never a pipe through sudo (landmine L2). ---
+cat > "$DIR/.dbpass.sql" <<SQLEOF
+ALTER USER "${CLOUDIFY_GUACAMOLE_DB_USER}" WITH PASSWORD '${CLOUDIFY_GUACAMOLE_DB_PASSWORD}';
+SQLEOF
+chmod 600 "$DIR/.dbpass.sql"
+sudo docker cp "$DIR/.dbpass.sql" "$PG_CID":/tmp/.dbpass.sql
+sudo docker exec "$PG_CID" psql -U "${CLOUDIFY_GUACAMOLE_DB_USER}" -d "${CLOUDIFY_GUACAMOLE_DB_NAME}" -v ON_ERROR_STOP=1 -q -f /tmp/.dbpass.sql \
+    || die "guacamole: failed to converge the postgres role password"
+sudo docker exec "$PG_CID" rm -f /tmp/.dbpass.sql
+rm -f "$DIR/.dbpass.sql"
+
+# --- Converge the Guacamole administrator: exact oracle hash formula
+# (sha256(password + UPPERCASE_HEX_SALT)), rename guacadmin to the configured
+# admin user. Idempotent; runs on every configure. ---
+_SALT_HEX="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n' | tr 'a-f' 'A-F')"
+_HASH_HEX="$(printf '%s%s' "${CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD}" "$_SALT_HEX" | sha256sum | cut -d' ' -f1)"
+_ADMIN_SQL_USER="$(printf '%s' "${CLOUDIFY_GUACAMOLE_ADMIN_USER}" | sed "s/'/''/g")"
+cat > "$DIR/.admin.sql" <<SQLEOF
+UPDATE guacamole_user
+   SET password_hash = decode('${_HASH_HEX}', 'hex'),
+       password_salt = decode('${_SALT_HEX}', 'hex')
+ WHERE user_id = (
+       SELECT u.user_id FROM guacamole_user u
+         JOIN guacamole_entity e ON u.entity_id = e.entity_id
+        WHERE e.name IN ('guacadmin', '${_ADMIN_SQL_USER}')
+        ORDER BY CASE WHEN e.name = '${_ADMIN_SQL_USER}' THEN 0 ELSE 1 END
+        LIMIT 1);
+UPDATE guacamole_entity SET name = '${_ADMIN_SQL_USER}' WHERE name = 'guacadmin';
+SQLEOF
+chmod 600 "$DIR/.admin.sql"
+sudo docker cp "$DIR/.admin.sql" "$PG_CID":/tmp/.admin.sql
+sudo docker exec "$PG_CID" psql -U "${CLOUDIFY_GUACAMOLE_DB_USER}" -d "${CLOUDIFY_GUACAMOLE_DB_NAME}" -v ON_ERROR_STOP=1 -q -f /tmp/.admin.sql \
+    || die "guacamole: admin convergence failed"
+sudo docker exec "$PG_CID" rm -f /tmp/.admin.sql
+rm -f "$DIR/.admin.sql"
+
+# --- Start/restart the webapp with the converged credentials ---
+log_info "guacamole: starting the webapp..."
+sudo docker compose -f "$COMPOSE_FILE" up -d guacamole
 
 # --- Wait for the webapp to answer HTTP ---
 _base_url="http://${CLOUDIFY_GUACAMOLE_BIND}:${CLOUDIFY_GUACAMOLE_PORT}"

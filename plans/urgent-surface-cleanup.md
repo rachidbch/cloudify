@@ -675,20 +675,37 @@ Design (trap 3, 7; lifecycle + compose-semantics-first):
   docker cp + psql (revisit partial-init detection).
 
 Tasks:
-- [ ] Rewrite `pkg/guacamole/{install,configure,uninstall}.sh` per the 3-leg contract.
-- [ ] Sync `verify.sh`: admin fallback `rbc` -> `guacadmin`; re-check it against the new
+- [v] Rewrite `pkg/guacamole/{install,configure,uninstall}.sh` per the 3-leg contract.
+- [v] Sync `verify.sh`: admin fallback `rbc` -> `guacadmin`; re-check it against the new
   schema-init and DB-converge paths (it reads on-disk `.env` state).
-- [ ] Decide whether to declare `CLOUDIFY_GUACAMOLE_ADMIN_USER` in `.remote-vars` (verify uses
-  it, but it is not forwarded today).
-- [ ] Change the admin default to `guacadmin`.
-- [ ] Decide + implement the schema-init mechanism.
-- [ ] Update `pkg/guacamole/README.md` + declaration.
+- [v] Decide whether to declare `CLOUDIFY_GUACAMOLE_ADMIN_USER` in `.remote-vars`: declared.
+- [v] Change the admin default to `guacadmin`.
+- [v] Decide + implement the schema-init mechanism: kept docker cp + psql (initdb.d evaluated,
+  not adopted: the marker + partial-init detection already work, and initdb.d needs an image
+  binary assumption for the healthcheck).
+- [v] Update `pkg/guacamole/README.md` + declaration.
 
 Tests:
-- [ ] Integration: install, configure (incl. changed DB password converges), uninstall
-  removes volumes, FORCE reinstall preserves data.
+- [v] Integration: install, configure (incl. changed DB password converges), uninstall
+  removes volumes, FORCE reinstall preserves data. 7/7 on `cloudai:cloudify`.
 
-Done when: bats green, run time <= previous, no compose mechanics duplicated in bash.
+### Branch 4 outcome (2026-09-09)
+
+- Landed: install provisions (create-if-absent `.env`/compose, `up -d --wait postgres guacd`,
+  one-time schema init); configure configures (rewrite, `up -d --wait`, converge the postgres role
+  password via the container local socket, converge the admin hash + rename, upsert the RDP
+  connection); new `uninstall.sh` (`down -v` then remove the project dir); admin default
+  `guacadmin`; `.remote-vars` declares `CLOUDIFY_GUACAMOLE_ADMIN_USER`; README + verify synced.
+- Tests: `package-guacamole.bats` rewritten to the report standard (rubric/subrubric/step, fd 9
+  live, `setup_file` readiness wait, base URL derived from the deployed `.env`). 7/7 green.
+- Infra fix: the `itest-base` snapshot carried a stale `guacamole_guacamole_pgdata` volume with
+  the old `rbc` database, which made the recipe correctly refuse to reseed. Removed it and
+  re-baked `itest-base`.
+- Note: the operator's `~/.config/cloudify/pkgs/guacamole.yaml` supplies `CLOUDIFY_GUACAMOLE_BIND`
+  (tailnet IP); the test derives the base URL instead of assuming loopback. Test hermeticity vs
+  the operator config is a known gap.
+- Note: a FORCE reinstall recreates the postgres container (compose config drift), which keeps the
+  named volume; the test asserts data survival (admin login + connection), not the container id.
 
 ## Branch 5 - xfce alignment
 

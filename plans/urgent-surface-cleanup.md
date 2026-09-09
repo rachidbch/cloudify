@@ -30,7 +30,7 @@ Rules:
 - [v] Branch 2 - CLI actions: verify + uninstall (merged 48962d8)
 - [v] Branch 3 - security: payload via stdin + skill Security section (merged 28f715c)
 - [v] Branch 4 - guacamole 3-leg rewrite (merged 23af7c1)
-- [ ] Branch 5 - xfce alignment
+- [v] Branch 5 - xfce alignment (merged 9ea2750)
 - [ ] Branch 6 - runbooks a
 - [ ] Branch 7 - state registry
 - [ ] Branch 8 - runbooks b
@@ -726,6 +726,7 @@ Tests:
 
 ### Branch 5 outcome (2026-09-09)
 
+- Merged to master as `9ea2750` (--no-ff) after the e2e merge gate (7/7).
 - Landed: `.remote-vars` now uses the three-kind declaration (`CLOUDIFY_XFCE_USER=gui`,
   `CLOUDIFY_XFCE_USER_PASSWORD=`, `CLOUDIFY_XFCE_SESSION=startxfce4`,
   `CLOUDIFY_XFCE_RDP_PORT=3389`, `CLOUDIFY_XFCE_INSTALL_CHROME=true`,

@@ -266,7 +266,7 @@ Gate: router (`cloudify:491-563`), `lib/vars.sh` (declaration parse + write path
 
 - [x] Description artifact (2026-09-09): current surface traced below; repros `~/tmp/b1b/`.
 - [x] Plan + non-breakage argument (this section).
-- [ ] Explicit consent (Rachid).
+- [x] Explicit consent (Rachid): approved 2026-09-09, R1b-7 option A (backend must exist at write time).
 
 ### What the code does today
 

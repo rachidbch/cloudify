@@ -27,7 +27,7 @@ Rules:
 - [v] Branch 1 - vars internals: five-source helpers + walker + precedence + resolver
 - [v] Branch 1b - vars CLI surface + declaration syntax + `vars declared` (merged c12783e)
 - [v] Branch 1b-fix - R9: printing secrets is opt-in (mask default, `--reveal`, `--resolve`) (merged b0176ec)
-- [~] Branch 2 - CLI actions: verify + uninstall
+- [v] Branch 2 - CLI actions: verify + uninstall (merged 48962d8)
 - [ ] Branch 3 - security: payload via stdin + skill Security section
 - [ ] Branch 4 - guacamole 3-leg rewrite
 - [ ] Branch 5 - xfce alignment
@@ -530,6 +530,7 @@ Gate (widened): router + `lib/packages.sh` + `lib/package-api.sh` + `lib/remote.
 
 ### Branch 2 outcome (2026-09-09)
 
+- Merged to master as `48962d8` (--no-ff) after the e2e merge gate.
 - Landed: `verify` first-class action (local + `--on`, remote ships `verify <pkgs>`, alias kept,
   top-level case removed); parser errors (empty list, flag after the action, non-package) and the
   empty-package guard; real `uninstall` action (`cloudify_package_uninstall_path`, optional

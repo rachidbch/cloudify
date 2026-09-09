@@ -749,3 +749,4 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ### 2026-09-09 - skill constitution: harness is the completion gate
 
 - `cloudify-dev` + `cloudify-pkg-dev`: added a `## Constitution` rule (bats harness = completion gate, never the debugger; prove cheaply, run once) and trigger-rich descriptions so they autoload. AGENTS.md SDLC nudges reading them before editing.
+- Descriptions simplified to the plain triggers (develop/upgrade/debug the tool; write/upgrade/modify packages); AGENTS.md names them as skills.

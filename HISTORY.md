@@ -726,3 +726,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Read-only trace (subagent delegation failed twice; done directly) of the remote payload build/transport: payload is the last ssh argv (`lib/remote.sh:312-317`); template ends with a global `exec ... </dev/null` (`:84`); exit code via pipefail into `.exit`; no sshpass/`-t` on this path.
 - Proven landmine: `bash -s` reads the script from stdin, so the global `exec </dev/null` truncates the payload (repro `~/tmp/b3/`: small script loses everything after `exec`; 10k-line script loses all). Per-command stdin redirects are safe.
 - Plan: local 0600 payload file + `ssh host 'bash -s' < file` (no secret in argv, no pipe SIGPIPE race); per-command `</dev/null`; pinned `remote-vars.bats` ssh stub must read stdin (mechanism only); skill Security section. Consent pending.
+
+### 2026-09-09 - branch 3: payload via stdin + test output standard
+
+- **Payload transport**: `ssh host 'bash -s' < payload` from a 0600 local temp file; the payload is never in argv, so no secret in the operator or host process list. Proven landmine: the template's global `exec </dev/null` truncates `bash -s`; removed it and redirect stdin per command (bootstrap, `cloudify init`, `cloudify $*`).
+- **Test output standard**: `tests/helpers/report.bash` (`rubric`/`subrubric`/`step`, timestamped) writes to fd 9 when the runner opens it, so lines stream live through bats. Runner: `bats -T --show-output-of-passing-tests | tee results/<name>.tap`, prints the numbered plan. Tests retrofit: `package-uninstall`, `package-remote-vars` (later deleted).
+- **Deleted as redundant**: `tests/integration/package-remote-vars.bats` + `pkg/fixture-env`. Race guard is the unit `remote-vars.bats`; single-host forwarding is `package-install-run-split.bats:64-67`; payload baking is `remote-vars.bats:39-47`. The second container cost ~50s + a readiness flake.
+- **Skills split**: `cloudify` (usage), `cloudify-dev` (framework), `cloudify-pkg-dev` (recipes + the test workflow).

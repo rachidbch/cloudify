@@ -41,7 +41,8 @@ make_fixture() {
     export K3S_TOKEN=token-A
     export CLOUDIFY_REMOTE_USER=testuser
     cloudify_init_log
-    ssh() { printf '%s' "${@: -1}" > "$CLOUDIFY_TMP/payload"; return 0; }
+    # Payload now travels on stdin (branch 3); capture it there, not from argv.
+    ssh() { cat > "$CLOUDIFY_TMP/payload"; return 0; }
     cloudify_remote_sync somehost install foo
     grep -q "K3S_TOKEN='token-A'" "$CLOUDIFY_TMP/payload"
 }

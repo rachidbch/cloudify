@@ -57,7 +57,7 @@ function cloudify_remote_payload_template() {
     # shellcheck disable=SC1009,SC1054,SC1056,SC1072,SC1073,SC1083,SC2016,SC2086
     if '$CLOUDIFY_FORCE_UPDATE' || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -'$CLOUDIFY_UPDATE_DELAY' 2>/dev/null)" ]]; then
         command -v git >/dev/null 2>&1 || apt-get install -y -qq git
-        bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL')"
+        bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL')" </dev/null
     fi
     mkdir -p /tmp/cloudify/logs
     # Use the local log filename if passed (matching pair), otherwise generate one
@@ -70,14 +70,10 @@ function cloudify_remote_payload_template() {
     export CLOUDIFY_LOG_FILE
     : > "$CLOUDIFY_LOG_FILE"
     ln -sf "$CLOUDIFY_LOG_FILE" /tmp/cloudify/logs/latest.log
-    cloudify init
-    # Tee output to both log file and SSH channel (process substitution).
-    # This makes remote install output visible on local terminal in real-time AND
-    # persisted to the log file. The original hang was caused by `cat -` blocking on
-    # stdin, not by process substitution. Now that </dev/null is in place, this is safe.
-    # After exec, pipelines within package recipes still work — `|` creates its own fd
-    # independent of the process's inherited stdin.
-    exec > >(tee -a "$CLOUDIFY_LOG_FILE") 2>&1 </dev/null
+    cloudify init </dev/null
+    # Tee output to log + SSH channel. Do NOT detach stdin globally: the payload
+    # arrives on stdin; package-code commands carry their own `</dev/null`.
+    exec > >(tee -a "$CLOUDIFY_LOG_FILE") 2>&1
     :
 }
 
@@ -246,8 +242,8 @@ function cloudify_remote_sync() {
             "\$CLOUDIFY_DISABLE_COLORS \$DEBUG \$CLOUDIFY_LOG_LEVEL \$CLOUDIFY_NO_DEFAULTS \$CLOUDIFY_CLEAR_DATA \$CLOUDIFY_FORCE \$CLOUDIFY_NO_VERIFY \$PKG_VERIFY_TIMEOUT \$CLOUDIFY_FORCE_UPDATE \$CLOUDIFY_UPDATE_DELAY \$CLOUDIFY_REMOTE_USER \$CLOUDIFY_REMOTE_PWD \$CLOUDIFY_GITHUBUSER \$CLOUDIFY_GITHUBPWD \$CLOUDIFY_GITHUB_READONLY_TOKEN \$CLOUDIFY_GITLABUSER \$CLOUDIFY_GITLABPWD \$CLOUDIFY_RCLONE_REMOTE \$CLOUDIFY_RCLONE_REMOTE_REGION \$CLOUDIFY_RCLONE_REMOTE_ENDPOINT \$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID \$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY \$RESTIC_PASSWORD \$CLOUDIFY_BOOTSTRAP_URL \$CLOUDIFY_LOG_BASENAME${pkg_envsubst}" \
             <<< "$cloudify_remote_payload")
 
-        # Add actual cloudify command (plus force output colorization as cloudify won't colorize output when running
-        cloudify_remote_payload="$cloudify_remote_payload; cloudify $*"
+        # Append the command; </dev/null keeps package code off the payload's stdin.
+        cloudify_remote_payload="$cloudify_remote_payload; cloudify $* </dev/null"
 
         PKG_DEBUG "Payload to execute remotely on $host:"
         # Passwords are replaced by asterisks before printing
@@ -268,12 +264,19 @@ function cloudify_remote_sync() {
         # This avoids first-connection prompts but accepts a MITM risk. Future improvement:
         # pre-populate known_hosts from the inventory, or parse SSH banners to prompt the user.
         local cloudify_remote_exit_code=0
+        # Payload on stdin, never argv (no secret in the process list). A 0600 file
+        # redirect (not a pipe) avoids a SIGPIPE race under pipefail.
+        local payload_file
+        payload_file=$(mktemp "$CLOUDIFY_TMP/cloudify-payload-XXXXXX")
+        chmod 600 "$payload_file"
+        printf '%s\n' "$cloudify_remote_payload" > "$payload_file"
         ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" -o "ConnectTimeout=10" \
-            "$CLOUDIFY_REMOTE_USER@$host" "$cloudify_remote_payload" 2>&1 \
+            "$CLOUDIFY_REMOTE_USER@$host" 'bash -s' < "$payload_file" 2>&1 \
             | stdbuf -oL sed "s/^/$host: /" \
             | stdbuf -oL sed "s/^${host}: \$//" \
             | tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}" >&2 \
             || cloudify_remote_exit_code=$?
+        rm -f "$payload_file"
         echo "$cloudify_remote_exit_code" > "$CLOUDIFY_TMP/${host}.exit"
         return "$cloudify_remote_exit_code"
     fi

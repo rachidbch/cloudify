@@ -68,6 +68,7 @@ for test_file in "${TEST_FILES[@]}"; do
     tap_file="$RESULTS_DIR/${test_name}.tap"
 
     echo "--- Running: $test_name ---"
+    awk -F'"' '/^@test /{printf "  %d. %s\n", ++n, $2}' "$test_file"
 
     # 1. Restore clean snapshot (incus — host-side only)
     echo "  Restoring snapshot '$SNAPSHOT'..."
@@ -109,7 +110,7 @@ for test_file in "${TEST_FILES[@]}"; do
 
     # 6. Run bats on localhost (tests SSH into container via cloudify --on)
     echo "  Running bats..."
-    if bats "$test_file" > "$tap_file" 2>&1; then
+    if stdbuf -oL bats -T --show-output-of-passing-tests "$test_file" 9>&1 2>&1 | tee "$tap_file"; then
         echo "  PASSED"
         ((passed++)) || true
     else

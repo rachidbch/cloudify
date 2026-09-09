@@ -575,7 +575,7 @@ Gate: `lib/remote.sh`.
   command output; the DEBUG dump is masked.
 - Pinned: `tests/unit/remote-vars.bats:39-47` stubs `ssh()` and reads the **last argv** as the
   payload; `tests/unit/remote.bats` asserts template body contents (transport-agnostic);
-  `tests/integration/package-remote-vars.bats` exercises the real path.
+  `tests/integration/package-install-run-split.bats` exercises the real path.
 
 ### Proven landmine (empirical)
 
@@ -632,13 +632,20 @@ Gate: `lib/remote.sh`.
 - [ ] Unit: template contains no global `exec ... </dev/null`; `cloudify init` and the appended
   command redirect stdin.
 - [ ] Integration: during a slow install, the host process table shows `bash -s` and no secret;
-  `package-remote-vars.bats` still green.
+  `package-install-run-split.bats` still green.
 
 ### Done when / merge gate
 
 - [ ] All tasks `[v]`; unit suite green; pinned `remote-vars.bats` mechanism updated and green.
-- [ ] Merge gate: `package-remote-vars.bats` + a CLI smoke proving a secret is absent from the
-  host argv during a remote install.
+- [ ] Merge gate: `package-uninstall.bats` + `package-install-run-split.bats` + a secret-absence
+  proof during a remote install.
+
+### Deleted as redundant (2026-09-09)
+
+- `tests/integration/package-remote-vars.bats` and `pkg/fixture-env`: the parallel race guard is
+  the unit test `remote-vars.bats` (parallel collections keep their own env), single-host E2E
+  forwarding is `package-install-run-split.bats:64-67`, payload baking is `remote-vars.bats:39-47`.
+  The second container cost ~50s and a readiness flake for no marginal coverage.
 
 ## Branch 4 - guacamole 3-leg rewrite (reference package)
 

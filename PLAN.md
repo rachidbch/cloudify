@@ -1,1 +1,1 @@
-plans/xfce-guacamole-e2e.md
+plans/urgent-surface-cleanup.md

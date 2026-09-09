@@ -25,7 +25,7 @@ Rules:
 
 - [x] Branch 0 - decisions + ROADMAP URGENT bucket + this plan (2026-09-07)
 - [v] Branch 1 - vars internals: five-source helpers + walker + precedence + resolver
-- [ ] Branch 1b - vars CLI surface + declaration syntax + `vars declared`
+- [~] Branch 1b - vars CLI surface + declaration syntax + `vars declared`
 - [ ] Branch 2 - CLI actions: verify + uninstall
 - [ ] Branch 3 - security: payload via stdin + skill Security section
 - [ ] Branch 4 - guacamole 3-leg rewrite
@@ -259,42 +259,119 @@ Non-breakage argument below; consent required before any edit.
 
 ## Branch 1b - vars CLI surface + declaration syntax + `vars declared`
 
-Gate: touches router (`cloudify`), `lib/deployments.sh`, `lib/remote.sh` (declaration parse).
+Gate: router (`cloudify:491-563`), `lib/vars.sh` (declaration parse + write path),
+`lib/remote.sh` (declared-file format). CRITICAL GATE.
 
-Design (ROADMAP "Vars CLI + declaration"):
-- Flag-scoped, mutually exclusive: `cloudify vars show|set|unset|list <key> [<value>]
-  [--global | --pkg <name> | --deployment <id>]`; no flag = ambient `CLOUDIFY_DEPLOYMENT`,
-  clear error + hint when unset (trap 1).
-- `--stdin` / `--file` for values so secrets stay out of shell history.
-- `cloudify vars declared <pkg>` prints the whole knob surface: `NAME` = required,
-  `NAME=value` = defaulted (default shown), `NAME=` = optional; optionally the source
-  currently setting it (trap 7 discovery fix).
-- Declaration syntax gains `NAME=value` / `NAME=` (trap 2 + L6): the declaration stays
-  a documentation mirror, never a value source; recipe `${VAR:-}` remains runtime truth,
-  so local and remote installs behave identically.
-- No drift-detection machinery; the cloudify skill carries "edit recipe defaults and the
-  repo declaration in sync".
+### Gate tasks
 
-Tasks:
-- [ ] Extend `_try_claim_env` to accept `NAME`, `NAME=value`, `NAME=`; keep bare `NAME`
-  back-compat (I12).
-- [ ] Add the scope flags to the `vars` subcommand in the router; mutually exclusive,
-  ambient fallback with hint.
-- [ ] Add `--stdin`/`--file` to `vars set`; store literal or `@backend:locator` reference.
-- [ ] Add `vars declared <pkg>` (three kinds + current source); mask secret-looking output.
-- [ ] Fix the residual `xargs` in `cloudify_vars_deployment_list --json` (a value with
-  `"` still yields invalid JSON).
-- [ ] Write-time validation: a value starting with `@` that is not a valid reference
-  dies with a hint to use `@@` (today it dies later, at read/install time).
-- [ ] Update the cloudify skill with the var standard + the sync rule.
+- [x] Description artifact (2026-09-09): current surface traced below; repros `~/tmp/b1b/`.
+- [x] Plan + non-breakage argument (this section).
+- [ ] Explicit consent (Rachid).
 
-Tests:
-- [ ] Unit: flag parsing (mutual exclusion, ambient fallback error).
-- [ ] Unit: `vars declared` output for a fixture with all three kinds.
-- [ ] Unit: declaration parse back-compat (bare `NAME` unchanged).
-- [ ] Integration: set/show/list/unset against the container, per scope.
+### What the code does today
 
-Done when: CLI + reader green on the test container, existing `deployments.bats` unmodified.
+- Router `vars` (`cloudify:491-539`): verbs set/delete|del/show/list|ls, no `unset`/`declared`;
+  `set` consumes key then one of `--stdin` (`$(cat)`), `--file <path>` (`$(<file)`), or a
+  positional value; trailing args silently ignored; every verb calls a
+  `cloudify_vars_deployment_*` fn that reads only ambient `CLOUDIFY_DEPLOYMENT`.
+- Ambient context is user-set only: `deployment use` prints `export CLOUDIFY_DEPLOYMENT=...`
+  (`lib/deployments.sh:95-99`); ADR-011 point 4 (per-shell env, `unset` closes).
+- Declaration parser (`lib/vars.sh:197-222`) accepts bare `^[A-Z_][A-Z0-9_]*$` only;
+  `NAME=value`, `NAME=`, tabs, `\r`, extra spaces are dropped silently. Names feed the walker
+  via a `name\tpkg` temp file (`vars.sh:211`) read by two loops (`remote.sh:167-178`); a
+  declared name present in caller env is claimed/exported (`vars.sh:213-217`).
+- Write path: `_cloudify_vars_file_set` (`vars.sh:162-177`) allows lowercase keys, stores
+  multi-line as `@base64:`; deployment write needs ambient id; `list --json` trims with
+  `xargs` (`vars.sh:292-293`); `show` prints raw and exits 1 on a missing key (pipefail, :313).
+- Pinned: `deployments.bats` (aliases 21-31, ambient grep 152-157, --json 167-184,
+  read/export 194-224, special chars 228-245), `remote-vars.bats` (bare declaration + warn +
+  precedence), `vars.bats` (declaration registration 150-158, walker precedence 250-305).
+  `shell-router.bats` has NO vars/deployment test: router arg parsing is untested.
+
+### Invariants (must survive)
+
+- I1b1 bare `NAME` still registers and still warns when nothing provides it.
+- I1b2 declaration never exports a value; walker order env > deployment > package > global unchanged.
+- I1b3 no scope flag = ambient; error text still contains `CLOUDIFY_DEPLOYMENT`.
+- I1b4 legacy names `cloudify_vars_set|delete|list|show`, `_cloudify_deployment_read_vars` stay.
+- I1b5 flat `KEY: value` + `@base64:` + 600/700 perms unchanged.
+- I1b6 `--stdin`/`--file` keep secrets out of argv; `vars list` non-json stays raw; `--json` stays valid.
+- I1b7 `vars show` prints the raw stored value (no resolution) for non-secret keys.
+- I1b8 reserved-name warn+skip on read unchanged; reader exports stay redirect-only (no `$()`).
+
+### Landmines (in scope flagged)
+
+- L1b1 flag/value ambiguity: `vars set V --global` today stores `--global`; new flags change an
+  accepted command line's meaning. IN SCOPE (R1b-1).
+- L1b2 declaration default must never be exported: exporting `NAME=value` would become an
+  env-strength source and beat global (`remote.sh:130-163`). IN SCOPE (R1b-4).
+- L1b3 declared-file `name\tpkg` is consumed by two loops; a kind column corrupts `_dpkg`
+  unless both change, and the warn must fire only for bare `NAME`. IN SCOPE (R1b-5).
+- L1b4 `vars declared` must read the declaration mirror, never parse recipe `${VAR:-}`, and must
+  not run the walker (exports + can `die`). IN SCOPE (R1b-3).
+- L1b5 deployment fns read only ambient; explicit id needs an additive param. IN SCOPE (R1b-8).
+- L1b6 `--json` xargs corruption (`"` breaks JSON, `\` stripped, comments become keys). IN SCOPE (R1b-6).
+- L1b7 literal `@` stored raw, dies later at read/install. IN SCOPE (R1b-7).
+- L1b8 name-regex asymmetry (write allows lowercase; global/pkg readers are uppercase-only). IN SCOPE (R1b-9).
+- L1b9 `--stdin`/`--file` strip trailing newlines (`$(cat)`), losing PEM bytes. IN SCOPE (R1b-10).
+- L1b10 `vars show <missing>` exits 1 via pipefail; status unpinned. IN SCOPE (R1b-11).
+
+### Proposed resolutions
+
+- R1b-1 Scope flags anywhere + `--` sentinel; mutually exclusive; `die` with a hint.
+  `vars set V --global` becomes a scope (breaking, documented in HISTORY).
+- R1b-2 One mutual-exclusion message; one ambient-unset message per verb containing
+  `CLOUDIFY_DEPLOYMENT` + the `deployment use` hint.
+- R1b-3 `vars declared <pkg>` default output = the declaration mirror, one line per var:
+  `NAME` (required) / `NAME=value` (defaulted) / `NAME=` (optional); `--sources` appends
+  `\t<source>` computed by read-only inspection (env, then deployment, package, global files,
+  else `recipe-default`), never exporting. Unknown pkg -> die; no `.remote-vars` ->
+  `(no declared vars)`. Secret-looking names (`PASSWORD|TOKEN|SECRET|KEY`) mask the shown
+  default as `***`.
+- R1b-4 Declaration `NAME=value` / `NAME=` are documentation mirrors: parsed for display and
+  kind only, never exported; `${VAR:-}` stays runtime truth. Warn fires only for `required`
+  with no value from any source.
+- R1b-5 Internal declared-file becomes `name\tpkg\tkind` (kind = required|defaulted|optional);
+  both `remote.sh` loops read the third field; warn gated on `required`.
+- R1b-6 `--json` built in pure bash with `_cloudify_vars_json_escape` (`\` and `"` escaped,
+  control chars dropped) and comment/blank lines skipped.
+- R1b-7 Write-time reference validation: accept `@@...` (literal), `@base64:...`, and
+  `@<backend>:<locator>` whose backend function exists; else die with the `@@` hint.
+- R1b-8 Add an optional trailing id arg to the four deployment fns (default ambient); router
+  passes `--deployment <id>`. Aliases unchanged.
+- R1b-9 Write-time key validation: uppercase-only for `--global`/`--pkg` (their readers are
+  uppercase-only); the deployment store stays permissive (back-compat).
+- R1b-10 Preserve exact bytes for `--stdin`/`--file` (`v=$(cat; printf x); v="${v%x}"`).
+- R1b-11 `vars show <missing>` prints nothing and exits 0.
+
+### Tasks
+
+- [ ] T1 declaration parser: accept `NAME`, `NAME=value`, `NAME=`; emit `name\tpkg\tkind`;
+  never export the mirror (I1b1/I1b2, R1b-4).
+- [ ] T2 `remote.sh`: read the kind column in both declared-file loops; warn only for `required` (R1b-5).
+- [ ] T3 router: `vars` scope flags anywhere + `--` sentinel, mutual exclusion, ambient fallback
+  hint (R1b-1/2); `unset` alias of delete.
+- [ ] T4 deployment fns: optional trailing id arg; router plumbing (R1b-8).
+- [ ] T5 `vars set --stdin/--file` byte preservation + write-time `@` validation + uppercase key
+  guard (R1b-7/9/10).
+- [ ] T6 `vars declared <pkg>` with `--sources` + masking (R1b-3).
+- [ ] T7 `--json` pure-bash escaping (R1b-6); `show` missing key exit 0 (R1b-11).
+- [ ] T8 skill: pkg-writing var standard + the declaration/recipe sync rule.
+
+### Tests
+
+- [ ] Unit: declaration parse matrix (three kinds, tabs, CRLF, back-compat bare) + warn only for required.
+- [ ] Unit: router scope flags (mutual exclusion, ambient fallback, `--` sentinel, flag-looking value).
+- [ ] Unit: `vars declared` three kinds, `--sources`, masking, unknown pkg.
+- [ ] Unit: write-time `@` validation (accept `@@`, `@base64:`, registered backend; reject unknown with hint).
+- [ ] Unit: `--json` with `"`/`\`/spaces/comments; `show` missing key exit 0; `--stdin` trailing-newline preservation.
+- [ ] Regression: `deployments.bats`, `remote-vars.bats`, `vars.bats` unmodified and green.
+
+### Done when / merge gate
+
+- [ ] All tasks `[v]`; unit suite green; `deployments.bats`/`remote-vars.bats` unmodified.
+- [ ] Merge gate: blast-radius integration (`package-remote-vars.bats`) green + a real CLI smoke
+  of `vars declared` and a scoped `vars set/show` on `cloudai:cloudify`.
 
 ## Branch 2 - CLI actions: verify + uninstall
 

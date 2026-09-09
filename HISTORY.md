@@ -687,3 +687,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - **R4 refinement**: resolver called from file-store readers and the verify yaml load, not the env reader — with R1 the host re-runs the walker, and re-resolving the already-plaintext payload env would break the `@@` escape across the SSH hop.
 - **Docs**: README var sections corrected (five sources + precedence + secret references + reserved names).
 - **Merged** to master (`397c064`, --no-ff) after the e2e merge gate: unit 345/345, `package-remote-vars` + `package-install-run-split` PASSED. AGENTS.md/CLAUDE.md Configuration bullet corrected (consent; AGENTS.md is a symlink to CLAUDE.md).
+
+### 2026-09-09 - branch 1b gate: description + plan
+
+- Read-only description of the vars CLI surface (router `cloudify:491-563`, declaration parser `lib/vars.sh:197-222`, write path, pinned tests); repros `~/tmp/b1b/`. Found: router arg parsing has NO test (`shell-router.bats` empty on vars/deployment); declaration accepts bare `NAME` only; `vars set V --global` today stores `--global` as the value; write allows lowercase keys their own reader ignores.
+- Plan + non-breakage argument written into `plans/urgent-surface-cleanup.md` (Branch 1b): invariants I1b1-I1b8, landmines L1b1-L1b10, resolutions R1b-1..R1b-11, tasks T1-T8, tests, merge gate. Consent pending.

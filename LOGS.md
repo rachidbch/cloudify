@@ -79,3 +79,7 @@
 
 - E2e merge gate on final HEAD: unit 345/345, `package-remote-vars.bats` + `package-install-run-split.bats` PASSED. Merged `feat/branch1-vars-internals` to master as `397c064` (--no-ff).
 - AGENTS.md/CLAUDE.md "Configuration" bullet corrected (consent); AGENTS.md is a symlink to CLAUDE.md, one edit covers both.
+
+## 2026-09-09 - branch 1b gate
+
+- Description subagent traced the vars CLI/declaration/write surface (read-only); plan + resolutions R1b-1..11 written into the plan file. Consent pending before edits.

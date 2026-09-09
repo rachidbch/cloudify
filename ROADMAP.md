@@ -41,6 +41,22 @@ a) Agent runbooks (docs, not code). Plain documents under a `runbooks/` tree in 
 
 b) Cloudify runbooks (`cloudify deployment run <id>`), after (a). Deployment declares roles + typed steps as data: launch, install, configure, verify, uninstall, human-gate. Addresses by name. Step outputs (e.g. the launched guest's tailnet name) live in the state record (deployment, instance, package) as replay input, never merged into intent config; later steps consume them live. Preflight validates required vars via `vars declared` before launching anything. Secrets referenced by name (five-source walker; optional vault on either end). Per-step security rules: payload via stdin, no secret in argv, masking. Build on the fixed surface only (trap cleanups first).
 
+## apt dpkg lock race (non-urgent)
+
+**What happened:** `cloudify uninstall xfce` failed with `E: Could not get lock /var/lib/dpkg/lock-frontend ... held by process (unattended-upgr)`; the recipe's `apt-get purge || die` turned a transient lock into a hard failure. The xfce uninstall leg now passes `-o DPkg::Lock::Timeout=300`, but the shadow `apt-get install`/`update` paths do not, so any install can hit the same race.
+
+**Why:** Ubuntu runs `unattended-upgrades` on a timer and it holds the dpkg lock. The shadow apt-get runs `sudo apt-get -qq install`/`update` with no lock wait.
+
+**Plausible fixes to study:** add `-o DPkg::Lock::Timeout=<n>` to the shadow's install/update calls (framework-wide, CRITICAL GATE); or a preflight that waits for the lock before any package action; or a package-api helper recipes must call. Trade-off: an unbounded wait can hide a genuinely stuck apt; prefer a bounded wait with a clear message.
+
+## shadow sudo requires a password even as root (non-urgent)
+
+**What happened:** `cloudify --on localhost uninstall xfce` from a shell without `CLOUDIFY_LOCAL_PWD` died silently; the shadow `sudo` calls `die "Password not set for user ... on host ..."`, and the message was lost in the remote tee, so the failure looked like a mid-recipe abort and cost diagnosis time.
+
+**Why:** the shadow always injects a password via a herestring; it never tries `sudo -n` first. Running as root (or with a valid sudo timestamp) needs no password, so the requirement is artificial in that case. The failure is also silent.
+
+**Plausible fixes to study:** try `command sudo -n "$@"` first and fall back to the password path; ensure the shadow's `die` message always reaches the log (flush/log before exit); otherwise document that `--on localhost` needs `CLOUDIFY_LOCAL_PWD`.
+
 ## Resolution precedes every phase (non-urgent)
 
 Today install/configure/uninstall resolve vars through the walker, and verify fills unset names from the package yaml (verify-only has no walker). Cleaner: make resolution a step that always precedes a phase, verify-only included, then remove the source read from verify. Effect: verify never re-reads a source, so there is no precedence question inside verify. Cost: verify-only would apply the full five-source ladder instead of the package yaml alone, and remote verify-only forwarding would need a decision. Not needed for the parent-override fix already shipped.

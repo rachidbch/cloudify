@@ -757,3 +757,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - **Uninstall**: new `pkg/xfce/uninstall.sh` purges packages + disables/removes xrdp, deletes the state file; the account is removed only with `CLOUDIFY_XFCE_UNINSTALL_USER=true` and the home is never removed. Purge waits on a concurrent dpkg lock (`-o DPkg::Lock::Timeout=300`); shadow untouched.
 - **Tests**: `package-xfce.bats` rewritten to the report standard (rubric/subrubric/step, fd 9 live, `setup_file` readiness), uninstall coverage added, 7/7 green. L1 proof on the container for the uninstall leg.
 - **Findings**: shadow `sudo` requires a password (`--on localhost` probes must set `CLOUDIFY_LOCAL_PWD`); one gate run was lost to a ~64-min host suspend (ssh dropped, install had succeeded remotely).
+
+### 2026-09-09 - roadmap: two failure modes to study
+
+- Added non-urgent ROADMAP entries: apt dpkg lock race (shadow install/update lack a lock wait) and shadow sudo requiring a password even as root (silent die).

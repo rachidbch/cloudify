@@ -750,3 +750,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - `cloudify-dev` + `cloudify-pkg-dev`: added a `## Constitution` rule (bats harness = completion gate, never the debugger; prove cheaply, run once) and trigger-rich descriptions so they autoload. AGENTS.md SDLC nudges reading them before editing.
 - Descriptions simplified to the plain triggers (develop/upgrade/debug the tool; write/upgrade/modify packages); AGENTS.md names them as skills.
+
+### 2026-09-09 - branch 5: xfce alignment
+
+- **Declaration**: `pkg/xfce/.remote-vars` now uses the three-kind standard (`CLOUDIFY_XFCE_USER=gui`, `CLOUDIFY_XFCE_USER_PASSWORD=`, `CLOUDIFY_XFCE_SESSION=startxfce4`, `CLOUDIFY_XFCE_RDP_PORT=3389`, `CLOUDIFY_XFCE_INSTALL_CHROME=true`, `CLOUDIFY_XFCE_UNINSTALL_USER=`); `vars declared xfce` prints them.
+- **Uninstall**: new `pkg/xfce/uninstall.sh` purges packages + disables/removes xrdp, deletes the state file; the account is removed only with `CLOUDIFY_XFCE_UNINSTALL_USER=true` and the home is never removed. Purge waits on a concurrent dpkg lock (`-o DPkg::Lock::Timeout=300`); shadow untouched.
+- **Tests**: `package-xfce.bats` rewritten to the report standard (rubric/subrubric/step, fd 9 live, `setup_file` readiness), uninstall coverage added, 7/7 green. L1 proof on the container for the uninstall leg.
+- **Findings**: shadow `sudo` requires a password (`--on localhost` probes must set `CLOUDIFY_LOCAL_PWD`); one gate run was lost to a ~64-min host suspend (ssh dropped, install had succeeded remotely).

@@ -20,7 +20,7 @@ Rules:
 ## Progress board
 
 - [x] Branch 0 - decisions + ROADMAP URGENT bucket + this plan (2026-09-07)
-- [~] Branch 1 - vars internals: five-source helpers + walker + precedence + resolver
+- [v] Branch 1 - vars internals: five-source helpers + walker + precedence + resolver
 - [ ] Branch 1b - vars CLI surface + declaration syntax + `vars declared`
 - [ ] Branch 2 - CLI actions: verify + uninstall
 - [ ] Branch 3 - security: payload via stdin + skill Security section
@@ -186,42 +186,67 @@ Non-breakage argument below; consent required before any edit.
 
 ### Implementation tasks
 
-- [ ] Create `lib/vars.sh` (guard `_CLOUDIFY_VARS_LOADED`) with the five-source helpers:
+- [v] Create `lib/vars.sh` (guard `_CLOUDIFY_VARS_LOADED`) with the five-source helpers:
   `cloudify_vars_global_read|write`, `cloudify_vars_pkg_read|write`,
   `cloudify_vars_deployment_read|write`, `cloudify_vars_env_read`, and
   `cloudify_vars_state_read` (replay, read-only, no-op until branch 7).
-- [ ] Rewrite `_cloudify_pkg_remote_vars` as a thin precedence walker over the helpers;
+- [v] Rewrite `_cloudify_pkg_remote_vars` as a thin precedence walker over the helpers;
   keep the redirect invocation and the claim ledger (I1, I4).
-- [ ] Implement the target precedence recipe default < global < package < deployment < env,
+- [v] Implement the target precedence recipe default < global < package < deployment < env,
   with non-clobbering reads (R3) and the env candidate set of R2.
-- [ ] Add `_cloudify_resolve_var_value` + `lib/secrets.sh` + built-in `base64` backend (R4);
+- [v] Add `_cloudify_resolve_var_value` + `lib/secrets.sh` + built-in `base64` backend (R4);
   call it from every value-entry reader.
-- [ ] Add the reserved-name deny-list warn+skip (R5).
-- [ ] Fix `_cloudify_deployment_read_vars` value parsing: pure-bash, no `xargs` (R6).
-- [ ] Enforce 0700/0600 on helper writes to the two yaml stores (I10).
-- [ ] Run the walker on the local install path (R1).
-- [ ] Add aliases for the renamed public functions (R7).
-- [ ] Correct README.md:159/165 var-source claims in the same branch.
+- [v] Add the reserved-name deny-list warn+skip (R5).
+- [v] Fix `_cloudify_deployment_read_vars` value parsing: pure-bash, no `xargs` (R6).
+- [v] Enforce 0700/0600 on helper writes to the two yaml stores (I10).
+- [v] Run the walker on the local install path (R1).
+- [v] Add aliases for the renamed public functions (R7).
+- [x] Correct README.md:159/165 var-source claims in the same branch.
 
 ### Tests
 
-- [ ] Unit: one test per helper (read/write round-trip, perms, back-compat formats).
-- [ ] Unit: precedence matrix including today's uncovered cases: global vs caller env
+- [v] Unit: one test per helper (read/write round-trip, perms, back-compat formats).
+- [v] Unit: precedence matrix including today's uncovered cases: global vs caller env
   (E1c), cross-package claim order (E3c), collector + deployment snapshot (L9),
   false-positive warn (L12).
-- [ ] Unit: resolver identity, `@@` escape, `@base64:`, unknown backend dies.
-- [ ] Unit: reserved-name skip; special chars `'` `\` `"` spaces and multi-line in the
+- [v] Unit: resolver identity, `@@` escape, `@base64:`, unknown backend dies.
+- [v] Unit: reserved-name skip; special chars `'` `\` `"` spaces and multi-line in the
   deployment reader.
-- [ ] Integration: `tests/integration/package-remote-vars.bats` still green (per-host
+- [v] Integration: `tests/integration/package-remote-vars.bats` still green (per-host
   concurrent token), `tests/integration/package-install-run-split.bats:61-68` still green.
-- [ ] Regression: `tests/unit/remote-vars.bats` and `tests/unit/deployments.bats`
+- [v] Regression: `tests/unit/remote-vars.bats` and `tests/unit/deployments.bats`
   unmodified and green.
 
 ### Done when
 
-- [ ] Precedence tests pass, remote-vars integration green, no recipe changes needed.
-- [ ] No invariant I1-I12 regressed; every landmine in scope has a test.
-- [ ] HISTORY.md + LOGS.md updated; `git status --short` clean.
+- [v] Precedence tests pass, remote-vars integration green, no recipe changes needed.
+- [v] No invariant I1-I12 regressed; every landmine in scope has a test.
+- [v] HISTORY.md + LOGS.md updated; `git status --short` clean.
+
+### Branch 1 outcome (2026-09-09)
+
+- Landed: `lib/vars.sh` (five-source helpers + claim ledger + resolver + reserved
+  guard), `lib/secrets.sh` + `lib/secrets/base64.sh`, walker rewrite in
+  `lib/remote.sh`, local-path walker in the router, README var sections.
+- Tests: `tests/unit/vars.bats` (37), full unit suite 342 green; pinned
+  `remote-vars.bats`, `deployments.bats`, `package-api.bats`, `remote.bats`,
+  `install-run-split.bats` green unmodified; both pinned integration files green.
+- Bug fixed in passing: the dep scan `deps=$(grep ... | sed | tr)` returned 1 for a
+  recipe with no `pkg_depends` line and aborted the walk under errexit+pipefail.
+  Latent in pre-branch code; fixed with `|| true` (proved by the local-path test,
+  whose fixture recipe has no `pkg_depends`).
+- Plan-internal contradiction resolved in favour of task 3 + ROADMAP "Target config
+  model": I5/L9 say the deployment read must not clobber earlier claims, but the
+  target precedence (repeated in task 3 and ROADMAP M1-M4) promotes deployment
+  above package values. Implemented deployment > package; I5 is honoured only for
+  the caller env (the one source stronger than deployment). Flagged for the ADR
+  trail; no pinned test asserts either order.
+- R4 refinement: the resolver is called from every FILE value-entry reader
+  (global/package/deployment) and from the verify yaml load, not from the env
+  reader. Reason: with R1 the walker runs again on the host; the payload already
+  carries the operator-resolved plaintext, so resolving env values a second time
+  would double-resolve and break the `@@` escape across the SSH hop. The env
+  reader is pass-through by design (caller plaintext is authoritative).
 
 ## Branch 1b - vars CLI surface + declaration syntax + `vars declared`
 

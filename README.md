@@ -140,7 +140,7 @@ export CLOUDIFY_SKIPCREDENTIALS=true
 ### Package Configuration
 
 Package-specific vars live in `~/.config/cloudify/pkgs/<pkg>.yaml` (flat key:value, `chmod 600`).
-These are forwarded to the remote host when installing the package via `--on`.
+They are forwarded whenever the package is installed or configured, locally and via `--on`.
 
 Example `~/.config/cloudify/pkgs/open-webui.yaml`:
 
@@ -156,13 +156,30 @@ CLOUDIFY_HERMES_API_URL: "https://hermes.example.ts.net/v1"
 CLOUDIFY_HERMES_API_KEY: "sk-..."
 ```
 
-The user yaml is the single source of truth — both var names and values.
+The per-package yaml is one source among five, not the single source of truth.
 Missing files are silently ignored (vars stay empty).
 
-**Always-forward vars:** `~/.config/cloudify/remote-vars.yaml`
-Vars listed here are forwarded on every `--on` call regardless of which packages are installed.
+**Var sources and precedence.** Five sources feed a var, weakest to strongest:
 
-Vars already set in the environment take precedence over all config files.
+1. recipe default (`${VAR:-default}` in the recipe — runtime truth)
+2. `~/.config/cloudify/remote-vars.yaml` (global always-forward, `chmod 600`)
+3. `~/.config/cloudify/pkgs/<pkg>.yaml` (package values)
+4. `~/.config/cloudify/deployments/<id>/config.yaml` (deployment values, ADR-011)
+5. caller environment at install/configure time (strongest)
+
+A name is forwarded only when a source knows it: a `.remote-vars` declaration, or
+any of the three file stores. An ambient env var no source mentions never enters
+the payload.
+
+**Secret references.** A value may be a reference instead of a literal:
+`@base64:<base64>` decodes a value (the way to store a multi-line secret on one
+line); `@@literal` escapes a literal leading `@`. A failed or unknown backend
+aborts the run — an empty value is never forwarded. Backends are shell files in
+`lib/secrets/` (the built-in one is `base64`).
+
+**Reserved names.** `CLOUDIFY_REMOTE_USER`, `CLOUDIFY_REMOTE_PWD`, `DEBUG`,
+`CLOUDIFY_BOOTSTRAP_URL` and `CLOUDIFY_UPDATE_DELAY` are framework-owned: a file
+store that tries to set one is warned about and skipped.
 
 **Deployment-wide vars (ADR-011):** `~/.config/cloudify/deployments/<id>/config.yaml`
 A deployment is an application across nodes (e.g. a k3s cluster). Set the per-shell context and manage vars via the CLI:
@@ -174,7 +191,7 @@ cloudify vars set K3S_TOKEN secret
 ```
 
 `cloudify --on <node> install <pkg>` then forwards the deployment vars to the host.
-Precedence: caller env > per-package config > deployment-wide.
+Deployment values beat package and global values; the caller env still wins.
 
 ### Environment Variables
 
@@ -252,8 +269,10 @@ lib/
   colors.sh           Terminal color setup
   containers.sh       Container operations via ivps (launch, delete, IP lookup)
   credentials.sh      System credential management: save, load, section-based prompting
-  deployments.sh      Deployment-wide store: deployment CRUD + vars set/delete/list/show (ADR-011)
+  deployments.sh      Deployment-wide store: deployment CRUD (ADR-011)
   pkg-config.sh       Package config loader: flat YAML parsing from pkgs/<pkg>.yaml
+  vars.sh             Five-source var helpers + precedence walker core + resolver
+  secrets.sh          Secret-backend loader (sources lib/secrets/*.sh)
   hosts.sh            Host inventory (list, filter by tags)
   os.sh               OS detection (distro, version, arch)
   package-api.sh      Public pkg_* plugin API used by package recipes
@@ -428,14 +447,16 @@ K3S_TOKEN=abc123 cloudify --on host install k3s-server
 ```
 
 The value is taken from the caller's env (`${!key}`) and forwarded to the remote
-payload. Env wins over disk config for the same name. A declared-but-unset name
+payload. A declared name may also be supplied by any file store; the caller env
+wins when it is set. A declared-but-unset name with no value from any source
 prints a warning and is not forwarded (nothing empty reaches the recipe).
 
 Parallel-safe by construction: values never touch a shared file, so two
 concurrent installs of the same package with different env values each forward
 their own — no last-write-wins race. The classic per-pkg yaml
 (`~/.config/cloudify/pkgs/<pkg>.yaml`) and the global `remote-vars.yaml` remain
-supported as back-compat reads for packages without `.remote-vars`.
+supported; the full five-source ladder is documented under "Package
+Configuration" above.
 
 #### Verification (`verify.sh`)
 
@@ -506,7 +527,7 @@ into CLOUDIFY_HOSTPWD             -S reads password from stdin
 on remote host                    herestring supplies password
 ```
 
-System credentials are loaded from `~/.config/cloudify/credentials` at startup. Package config is loaded from `~/.config/cloudify/pkgs/<pkg>.yaml` by `lib/pkg-config.sh` on demand. Environment variables always take precedence. For remote execution, `lib/remote.sh` uses `envsubst` with an explicit allow-list to inject creds and package vars into the SSH payload. Passwords are redacted to `***********` in debug output.
+System credentials are loaded from `~/.config/cloudify/credentials` at startup. Package config is loaded from `~/.config/cloudify/pkgs/<pkg>.yaml` by `lib/vars.sh` on demand. Caller environment variables are the strongest var source for names a store or declaration knows (see "Package Configuration"). For remote execution, `lib/remote.sh` uses `envsubst` with an explicit allow-list to inject creds and package vars into the SSH payload. Passwords are redacted to `***********` in debug output.
 
 #### Shadow `sudo`
 

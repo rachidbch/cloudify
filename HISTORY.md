@@ -738,3 +738,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - AGENTS.md SDLC: test output standard (rubric/subrubric/step on fd 9, background + poll `results/<name>.tap` with plain tail, no grep, no invented log, e2e last).
 - Skills split: `cloudify` (usage), `cloudify-dev` (framework), `cloudify-pkg-dev` (recipes). The full test standard is in both dev skills.
+
+### 2026-09-09 - branch 4: guacamole 3-leg rewrite (reference package)
+
+- **3-leg lifecycle**: install provisions (create-if-absent `.env`/compose, `up -d --wait postgres guacd`, one-time schema init); configure configures (rewrite, converge the postgres role password via the container local socket, converge the admin hash + rename, upsert the RDP connection); new `uninstall.sh` (`docker compose down -v` then remove the project dir) - the trap 3 fix.
+- **Trap 7**: admin default `rbc` -> `guacadmin`; `.remote-vars` now declares `CLOUDIFY_GUACAMOLE_ADMIN_USER`; `verify.sh` fallback synced; README updated.
+- **Tests**: `package-guacamole.bats` rewritten to the report standard (rubric/subrubric/step, fd 9 live, `setup_file` readiness, base URL derived from the deployed `.env`), 7/7 green. Schema init kept as docker cp + psql (initdb.d evaluated, not adopted).
+- **Infra**: `itest-base` carried a stale `guacamole_guacamole_pgdata` volume with the old `rbc` DB; removed and re-baked. Test hermeticity vs the operator's `pkgs/guacamole.yaml` (supplies the bind) noted.

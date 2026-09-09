@@ -20,15 +20,21 @@ tailnet IP go into guacamole's config, then `cloudify configure guacamole`.
 cloudify --on <guest> install xfce
 cloudify --on <guest> configure xfce    # re-assert session/registration + xrdp
 cloudify --on <guest> verify xfce       # verify-only
+cloudify --on <guest> uninstall xfce    # purge packages + xrdp service
 ```
 
 Split package (ADR-008). Password handling is install-time only.
+Lifecycle: install provisions, configure re-asserts config, uninstall tears down
+(packages + service; the account only with explicit intent).
 
 ## Configuration
 
 Secrets/deployment values arrive via caller env or
-`~/.config/cloudify/pkgs/xfce.yaml`. Remote-forwarded names (`.remote-vars`):
-`CLOUDIFY_XFCE_USER`, `CLOUDIFY_XFCE_USER_PASSWORD`.
+`~/.config/cloudify/pkgs/xfce.yaml`. Declared names (`.remote-vars`):
+`CLOUDIFY_XFCE_USER=gui`, `CLOUDIFY_XFCE_USER_PASSWORD=` (optional),
+`CLOUDIFY_XFCE_SESSION=startxfce4`, `CLOUDIFY_XFCE_RDP_PORT=3389`,
+`CLOUDIFY_XFCE_INSTALL_CHROME=true`, `CLOUDIFY_XFCE_UNINSTALL_USER=` (optional).
+`cloudify vars declared xfce` prints them.
 
 - `CLOUDIFY_XFCE_USER` - human-given login name, default `gui`. Created once
   (POSIX name: lowercase start, alnum/`_`/`-`).
@@ -39,6 +45,13 @@ Secrets/deployment values arrive via caller env or
 - `CLOUDIFY_XFCE_RDP_PORT` - default `3389`.
 - `CLOUDIFY_XFCE_INSTALL_CHROME` - default `true` (google-chrome apt repo,
   oracle-proven; not a .deb download).
+
+## Uninstall
+
+`cloudify uninstall xfce` purges the desktop/RDP packages, disables and removes
+the xrdp service and key.pem, and deletes the state file. The GUI account and
+its home are preserved by default; set `CLOUDIFY_XFCE_UNINSTALL_USER=true` to
+remove the account. The home is never removed.
 
 ## Password model
 

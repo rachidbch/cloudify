@@ -717,14 +717,30 @@ install/configure; optional `uninstall.sh` (remove packages/user only with expli
 intent; never the home).
 
 Tasks:
-- [ ] Align `pkg/xfce` declaration + defaults with the standard.
-- [ ] Add the optional `uninstall.sh` with the explicit-intent guard.
-- [ ] Update `pkg/xfce/README.md`.
+- [v] Align `pkg/xfce` declaration + defaults with the standard.
+- [v] Add the optional `uninstall.sh` with the explicit-intent guard.
+- [v] Update `pkg/xfce/README.md`.
 
 Tests:
-- [ ] Integration: existing `package-xfce.bats` green + declaration reader output.
+- [v] Integration: `package-xfce.bats` green (7/7) + `vars declared xfce` output.
 
-Done when: bats green, declaration matches the recipe defaults.
+### Branch 5 outcome (2026-09-09)
+
+- Landed: `.remote-vars` now uses the three-kind declaration (`CLOUDIFY_XFCE_USER=gui`,
+  `CLOUDIFY_XFCE_USER_PASSWORD=`, `CLOUDIFY_XFCE_SESSION=startxfce4`,
+  `CLOUDIFY_XFCE_RDP_PORT=3389`, `CLOUDIFY_XFCE_INSTALL_CHROME=true`,
+  `CLOUDIFY_XFCE_UNINSTALL_USER=`); new `uninstall.sh` (purge packages + disable/remove xrdp,
+  delete the state file; account removed only with `CLOUDIFY_XFCE_UNINSTALL_USER=true`, home never
+  removed); README updated; `package-xfce.bats` rewritten to the report standard (rubric/subrubric/
+  step, fd 9 live, `setup_file` readiness) with uninstall coverage.
+- Evidence: L0 shellcheck + `bash -n` clean; `cloudify vars declared xfce` prints the six kinds;
+  L1 proof of the uninstall leg on the container (default keeps the account, explicit removes it,
+  home preserved); harness 7/7 green.
+- Findings: `apt-get purge` can fail on a concurrent `unattended-upgrades` dpkg lock; the leg now
+  passes `-o DPkg::Lock::Timeout=300` (shadow untouched). The shadow `sudo` requires a password;
+  `--on localhost` probes must set `CLOUDIFY_LOCAL_PWD` or they die silently.
+- Environment: one gate run was lost to a ~64-minute host suspend (ssh dropped; the install
+  succeeded on the host and all other tests passed). Re-run green.
 
 ## Branch 6 - runbooks (a): agent runbooks tree + amnesiac validation
 

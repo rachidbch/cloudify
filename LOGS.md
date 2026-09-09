@@ -119,3 +119,7 @@
 ## 2026-09-09 - skill constitution
 
 - Constitution rule + autoload-friendly descriptions in cloudify-dev/cloudify-pkg-dev; AGENTS.md nudge.
+
+## 2026-09-09 - branch 5 (xfce alignment)
+
+- Three-kind declaration, new uninstall leg (explicit account removal, home preserved), README, bats to the report standard, 7/7. Purge waits on the dpkg lock; shadow untouched.

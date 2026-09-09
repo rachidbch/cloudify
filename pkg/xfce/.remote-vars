@@ -1,9 +1,11 @@
-# pkg/xfce - remote var NAMES (ADR-007): value lives in the caller env or
-# ~/.config/cloudify/pkgs/xfce.yaml, never in the repo.
-# CLOUDIFY_XFCE_USER: human-given login name (default gui when unset).
-# CLOUDIFY_XFCE_USER_PASSWORD: OPTIONAL. When set, used as the GUI user's
-# password at user creation (preserved, never printed). When unset, the
-# recipe auto-generates one and prints it once. No single quotes or control
-# chars in passwords (payload landmine L1).
-CLOUDIFY_XFCE_USER
-CLOUDIFY_XFCE_USER_PASSWORD
+# pkg/xfce - declared vars (ADR-007). Declaration mirror only; the recipe's
+# ${VAR:-default} stays runtime truth. Values come from the caller env or
+# ~/.config/cloudify/pkgs/xfce.yaml. CLOUDIFY_XFCE_USER_PASSWORD is optional:
+# set -> used at user creation (preserved, never printed); unset -> generated
+# and printed once. No single quotes or control chars in passwords.
+CLOUDIFY_XFCE_USER=gui
+CLOUDIFY_XFCE_USER_PASSWORD=
+CLOUDIFY_XFCE_SESSION=startxfce4
+CLOUDIFY_XFCE_RDP_PORT=3389
+CLOUDIFY_XFCE_INSTALL_CHROME=true
+CLOUDIFY_XFCE_UNINSTALL_USER=

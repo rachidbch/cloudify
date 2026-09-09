@@ -291,6 +291,28 @@ make_walker_fixture() {
     [ "$OTHER_VAR" = "fromenv" ]
 }
 
+@test "walker: cross-package claim order — rightmost CLI arg wins (E3c)" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/pkga" "$CLOUDIFY_DIR/pkg/pkgb"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/pkga/init.sh"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/pkgb/init.sh"
+    cloudify_vars_pkg_write pkga SHARED froma
+    cloudify_vars_pkg_write pkgb SHARED fromb
+    unset SHARED
+    _cloudify_pkg_remote_vars install pkga pkgb > /dev/null 2>&1
+    [ "$SHARED" = "fromb" ]
+}
+
+@test "walker: cross-package claim order — reversed args reverse the winner (E3c)" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/pkga" "$CLOUDIFY_DIR/pkg/pkgb"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/pkga/init.sh"
+    echo '# recipe' > "$CLOUDIFY_DIR/pkg/pkgb/init.sh"
+    cloudify_vars_pkg_write pkga SHARED froma
+    cloudify_vars_pkg_write pkgb SHARED fromb
+    unset SHARED
+    _cloudify_pkg_remote_vars install pkgb pkga > /dev/null 2>&1
+    [ "$SHARED" = "froma" ]
+}
+
 @test "walker: an ambient var no source knows is not forwarded (R2)" {
     mkdir -p "$CLOUDIFY_DIR/pkg/walk"
     export AMBIENT_SECRET=leak

@@ -70,6 +70,6 @@
 
 ## 2026-09-09 — branch 1 execution (vars internals)
 
-- TDD in `cloudai:cloudify`: wrote `tests/unit/vars.bats` red first, then `lib/vars.sh` + `lib/secrets*` + walker + router R1. 37/37 new, 342/342 unit, 2/2 pinned integration, shellcheck clean.
+- TDD in `cloudai:cloudify`: wrote `tests/unit/vars.bats` red first, then `lib/vars.sh` + `lib/secrets*` + walker + router R1. 39/39 new, 344/344 unit, 2/2 pinned integration, shellcheck clean.
 - Found + fixed a latent errexit abort in the dep scan (recipe without `pkg_depends`); proved via the local-path test.
 - I5/L9 vs target precedence contradiction documented in the plan + HISTORY; resolver-on-env deviation documented (double-resolution across the SSH hop).

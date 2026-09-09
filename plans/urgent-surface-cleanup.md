@@ -228,7 +228,7 @@ Non-breakage argument below; consent required before any edit.
 - Landed: `lib/vars.sh` (five-source helpers + claim ledger + resolver + reserved
   guard), `lib/secrets.sh` + `lib/secrets/base64.sh`, walker rewrite in
   `lib/remote.sh`, local-path walker in the router, README var sections.
-- Tests: `tests/unit/vars.bats` (37), full unit suite 342 green; pinned
+- Tests: `tests/unit/vars.bats` (39), full unit suite 344 green; pinned
   `remote-vars.bats`, `deployments.bats`, `package-api.bats`, `remote.bats`,
   `install-run-split.bats` green unmodified; both pinned integration files green.
 - Bug fixed in passing: the dep scan `deps=$(grep ... | sed | tr)` returned 1 for a

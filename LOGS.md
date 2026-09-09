@@ -74,3 +74,8 @@
 - Review found the write-side L4 gap (multi-line value truncated at first newline); fixed by encoding `@base64:` in `_cloudify_vars_file_set` + a round-trip test.
 - Found + fixed a latent errexit abort in the dep scan (recipe without `pkg_depends`); proved via the local-path test.
 - I5/L9 vs target precedence contradiction documented in the plan + HISTORY; resolver-on-env deviation documented (double-resolution across the SSH hop).
+
+## 2026-09-09 — branch 1 merged
+
+- E2e merge gate on final HEAD: unit 345/345, `package-remote-vars.bats` + `package-install-run-split.bats` PASSED. Merged `feat/branch1-vars-internals` to master as `397c064` (--no-ff).
+- AGENTS.md/CLAUDE.md "Configuration" bullet corrected (consent); AGENTS.md is a symlink to CLAUDE.md, one edit covers both.

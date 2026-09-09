@@ -230,6 +230,7 @@ Non-breakage argument below; consent required before any edit.
 
 ### Branch 1 outcome (2026-09-09)
 
+- Merged to master as `397c064` (--no-ff) after the e2e merge gate.
 - Landed: `lib/vars.sh` (five-source helpers + claim ledger + resolver + reserved
   guard), `lib/secrets.sh` + `lib/secrets/base64.sh`, walker rewrite in
   `lib/remote.sh`, local-path walker in the router, README var sections.

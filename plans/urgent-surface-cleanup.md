@@ -676,6 +676,10 @@ Design (trap 3, 7; lifecycle + compose-semantics-first):
 
 Tasks:
 - [ ] Rewrite `pkg/guacamole/{install,configure,uninstall}.sh` per the 3-leg contract.
+- [ ] Sync `verify.sh`: admin fallback `rbc` -> `guacadmin`; re-check it against the new
+  schema-init and DB-converge paths (it reads on-disk `.env` state).
+- [ ] Decide whether to declare `CLOUDIFY_GUACAMOLE_ADMIN_USER` in `.remote-vars` (verify uses
+  it, but it is not forwarded today).
 - [ ] Change the admin default to `guacadmin`.
 - [ ] Decide + implement the schema-init mechanism.
 - [ ] Update `pkg/guacamole/README.md` + declaration.

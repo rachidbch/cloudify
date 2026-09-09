@@ -56,7 +56,7 @@ Non-breakage argument below; consent required before any edit.
   (E1-E16), bash 5.x, `set -Eeuo pipefail`; every claim cites file:line.
 - [x] Plan + non-breakage argument (this section): invariants I1-I12, landmines L1-L12,
   proposed resolutions R1-R9.
-- [ ] Explicit consent (Rachid) before any edit.
+- [x] Explicit consent (Rachid) before any edit (2026-09-09).
 
 ### What the code does today (gate description, read-only)
 

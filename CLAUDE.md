@@ -70,6 +70,8 @@ task lint              # Push + shellcheck
 
 **Push before tests.** Integration tests SSH into the container, pull from GitHub, run there.
 
+**Test output:** rubric/subrubric/step (`tests/helpers/report.bash`, fd 9 = live stream). Run long tests in the background and poll `results/<name>.tap` with plain `tail`, never grep, never invent a log; E2E only as the final gate.
+
 **Debugging:** Read `/tmp/cloudify/logs/<timestamp>.log`. Fix one issue, push, re-test.
 
 **Planning:** `PLAN.md` → symlink to `plans/<current>.md`. Done plans move to `plans/archived/`. Issues/PRs document outcomes; plans reference issues.

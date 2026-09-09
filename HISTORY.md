@@ -733,3 +733,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - **Test output standard**: `tests/helpers/report.bash` (`rubric`/`subrubric`/`step`, timestamped) writes to fd 9 when the runner opens it, so lines stream live through bats. Runner: `bats -T --show-output-of-passing-tests | tee results/<name>.tap`, prints the numbered plan. Tests retrofit: `package-uninstall`, `package-remote-vars` (later deleted).
 - **Deleted as redundant**: `tests/integration/package-remote-vars.bats` + `pkg/fixture-env`. Race guard is the unit `remote-vars.bats`; single-host forwarding is `package-install-run-split.bats:64-67`; payload baking is `remote-vars.bats:39-47`. The second container cost ~50s + a readiness flake.
 - **Skills split**: `cloudify` (usage), `cloudify-dev` (framework), `cloudify-pkg-dev` (recipes + the test workflow).
+
+### 2026-09-09 - test output standard persisted
+
+- AGENTS.md SDLC: test output standard (rubric/subrubric/step on fd 9, background + poll `results/<name>.tap` with plain tail, no grep, no invented log, e2e last).
+- Skills split: `cloudify` (usage), `cloudify-dev` (framework), `cloudify-pkg-dev` (recipes). The full test standard is in both dev skills.

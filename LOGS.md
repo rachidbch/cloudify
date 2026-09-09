@@ -107,3 +107,7 @@
 ## 2026-09-09 - branch 3 (payload via stdin) + test output standard
 
 - Payload on stdin from a 0600 file; per-command stdin redirects (global `exec </dev/null` truncates `bash -s`). Live report helper (fd 9) + runner tee to `.tap`. Deleted redundant `package-remote-vars.bats`/`fixture-env`. Skills split into cloudify/cloudify-dev/cloudify-pkg-dev.
+
+## 2026-09-09 - test output standard persisted
+
+- AGENTS.md line + test standard in cloudify-dev and cloudify-pkg-dev. Skills split done.

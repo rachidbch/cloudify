@@ -143,8 +143,10 @@ function _cloudify_pkg_remote_vars() {
 
             local recipe deps
             recipe=$(cloudify_package_recipe_path "$pkg" 2>/dev/null) || return 0
+            # `|| true`: grep exits 1 when a recipe has no pkg_depends line, which
+            # under errexit+pipefail would abort the whole walk.
             deps=$(grep '^[[:space:]]*pkg_depends ' "$recipe" 2>/dev/null \
-                | sed 's/.*pkg_depends //' | tr ' ' '\n')
+                | sed 's/.*pkg_depends //' | tr ' ' '\n' || true)
             local dep
             for dep in $deps; do
                 [[ -n "$dep" ]] && _recurse_pkg_vars "$dep"

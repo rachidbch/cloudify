@@ -223,7 +223,9 @@ function _cloudify_execute_package_action() {
             # @default install is synchronous and a prerequisite env check
             # (e.g. sudo password). If it fails, the user-requested package is
             # NOT attempted — fail fast with a clear message + remediation.
-            if ! cloudify_install_package $defaults; then
+            # R1: the five-source walker runs on the local path too, so one
+            # precedence governs local and remote installs (I9).
+            if ! ( _cloudify_pkg_remote_vars install $defaults > /dev/null; cloudify_install_package $defaults ); then
                 msg "${RED}@default package(s) failed to install — your requested package(s) were NOT attempted.${RESET}"
                 msg "${RED}Fix the failure above, or re-run with --no-defaults to install only basics + your package(s).${RESET}"
                 exit 1
@@ -235,13 +237,13 @@ function _cloudify_execute_package_action() {
         # --clear-data implies CLOUDIFY_FORCE.
         PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs[*]}${RESET}"
         # shellcheck disable=SC2030
-        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; cloudify_install_package "${pkgs[@]}") &
+        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; _cloudify_pkg_remote_vars install "${pkgs[@]}" > /dev/null; cloudify_install_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         is_setup_in_progress=true
     elif [[ "$action" == "configure" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_configure_package ${pkgs[*]}${RESET}"
-        (cloudify_configure_package "${pkgs[@]}") &
+        ( _cloudify_pkg_remote_vars configure "${pkgs[@]}" > /dev/null; cloudify_configure_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         is_setup_in_progress=true

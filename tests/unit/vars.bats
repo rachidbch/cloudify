@@ -226,3 +226,155 @@ EOF
     cloudify_vars_deployment_read testdep > /dev/null 2>&1
     [ "$CLOUDIFY_UPDATE_DELAY" = "30" ]
 }
+
+# --- precedence walker (R1/R2/R3) ---
+
+make_walker_fixture() {
+    mkdir -p "$CLOUDIFY_DIR/pkg/walk"
+    printf 'WALK_VAR\n' > "$CLOUDIFY_DIR/pkg/walk/.remote-vars"
+}
+
+@test "walker: caller env beats deployment, package and global" {
+    make_walker_fixture
+    printf 'WALK_VAR: fromglobal\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
+    cloudify_vars_pkg_write walk WALK_VAR frompkg
+    cloudify_deployment_create dep
+    printf 'WALK_VAR: fromdep\n' > "$CLOUDIFY_DEPLOYMENTS_DIR/dep/config.yaml"
+    export CLOUDIFY_DEPLOYMENT=dep
+    export WALK_VAR=fromenv
+    _cloudify_pkg_remote_vars install walk > "$CLOUDIFY_TMP/names" 2>/dev/null
+    [ "$WALK_VAR" = "fromenv" ]
+    grep -qx WALK_VAR "$CLOUDIFY_TMP/names"
+}
+
+@test "walker: deployment beats package and global" {
+    make_walker_fixture
+    printf 'WALK_VAR: fromglobal\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
+    cloudify_vars_pkg_write walk WALK_VAR frompkg
+    cloudify_deployment_create dep
+    printf 'WALK_VAR: fromdep\n' > "$CLOUDIFY_DEPLOYMENTS_DIR/dep/config.yaml"
+    export CLOUDIFY_DEPLOYMENT=dep
+    unset WALK_VAR
+    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    [ "$WALK_VAR" = "fromdep" ]
+}
+
+@test "walker: package beats global" {
+    make_walker_fixture
+    printf 'WALK_VAR: fromglobal\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
+    cloudify_vars_pkg_write walk WALK_VAR frompkg
+    unset WALK_VAR
+    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    [ "$WALK_VAR" = "frompkg" ]
+}
+
+@test "walker: global alone is forwarded" {
+    make_walker_fixture
+    printf 'WALK_VAR: fromglobal\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
+    unset WALK_VAR
+    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    [ "$WALK_VAR" = "fromglobal" ]
+}
+
+@test "walker: no source leaves the recipe default in charge" {
+    make_walker_fixture
+    unset WALK_VAR
+    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    [ -z "${WALK_VAR:-}" ]
+}
+
+@test "walker: caller env beats an undeclared per-pkg yaml value (E14/R2)" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/walk"
+    cloudify_vars_pkg_write walk OTHER_VAR fromyaml
+    export OTHER_VAR=fromenv
+    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    [ "$OTHER_VAR" = "fromenv" ]
+}
+
+@test "walker: an ambient var no source knows is not forwarded (R2)" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/walk"
+    export AMBIENT_SECRET=leak
+    _cloudify_pkg_remote_vars install walk > "$CLOUDIFY_TMP/names" 2>/dev/null
+    ! grep -qx AMBIENT_SECRET "$CLOUDIFY_TMP/names"
+}
+
+@test "walker: no false-positive warn when a file store provides the declared name (L12)" {
+    make_walker_fixture
+    cloudify_vars_pkg_write walk WALK_VAR frompkg
+    unset WALK_VAR
+    _cloudify_pkg_remote_vars install walk > /dev/null 2> "$CLOUDIFY_TMP/err"
+    [ "$WALK_VAR" = "frompkg" ]
+    ! grep -q "unset in caller env" "$CLOUDIFY_TMP/err"
+}
+
+@test "walker: genuine warn when nothing provides the declared name (L12)" {
+    make_walker_fixture
+    unset WALK_VAR
+    _cloudify_pkg_remote_vars install walk > /dev/null 2> "$CLOUDIFY_TMP/err"
+    grep -q "unset in caller env" "$CLOUDIFY_TMP/err"
+}
+
+@test "walker: non-install path forwards only the global source (I11)" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/walk"
+    printf 'GLOBAL_ONLY: g\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
+    cloudify_vars_pkg_write walk PKG_ONLY p
+    unset GLOBAL_ONLY PKG_ONLY
+    _cloudify_pkg_remote_vars verify walk > "$CLOUDIFY_TMP/names" 2>/dev/null
+    [ "$GLOBAL_ONLY" = "g" ]
+    [ -z "${PKG_ONLY:-}" ]
+    ! grep -qx PKG_ONLY "$CLOUDIFY_TMP/names"
+}
+
+@test "walker: reserved name from a file store is skipped and not forwarded" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/walk"
+    printf 'DEBUG: true\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
+    export DEBUG=false
+    _cloudify_pkg_remote_vars install walk > "$CLOUDIFY_TMP/names" 2>/dev/null
+    [ "$DEBUG" = "false" ]
+    ! grep -qx DEBUG "$CLOUDIFY_TMP/names"
+}
+
+@test "walker: file-store value is resolved through the secret backend (R4)" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/walk"
+    local encoded
+    encoded=$(printf 's3cr3t' | base64 -w0)
+    cloudify_vars_pkg_write walk SECRET_REF "@base64:${encoded}"
+    unset SECRET_REF
+    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    [ "$SECRET_REF" = "s3cr3t" ]
+}
+
+@test "walker: an unresolvable file-store reference dies (never forwards empty)" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/walk"
+    cloudify_vars_pkg_write walk BAD_REF "@nope:whatever"
+    unset BAD_REF
+    run _cloudify_pkg_remote_vars install walk
+    [ "$status" -ne 0 ]
+}
+
+# --- local install path parity (R1) ---
+
+@test "local install path runs the walker: pkg yaml reaches the recipe (R1)" {
+    local home
+    home=$(mktemp -d)
+    local cfg="$CLOUDIFY_TMP/lp-config"
+    mkdir -p "$cfg/pkgs" "$CLOUDIFY_DIR/pkg/basics" "$CLOUDIFY_DIR/pkg/localtest"
+    echo '# no-op basics (test stub)' > "$CLOUDIFY_DIR/pkg/basics/init.sh"
+    cat > "$CLOUDIFY_DIR/pkg/localtest/init.sh" <<EOF
+echo "\${LOCAL_VAR:-unset}" > "$CLOUDIFY_TMP/local-var-out"
+EOF
+    printf 'LOCAL_VAR: fromyaml\n' > "$cfg/pkgs/localtest.yaml"
+
+    run env HOME="$home" \
+        CLOUDIFY_DIR="$CLOUDIFY_DIR" \
+        CLOUDIFY_CREDENTIALS_DIR="$cfg" \
+        CLOUDIFY_CREDENTIALS_FILE="$cfg/credentials" \
+        CLOUDIFY_TMP="$CLOUDIFY_TMP" \
+        CLOUDIFY_LOCAL_BIN="$CLOUDIFY_TMP/.local/bin" \
+        CLOUDIFY_SCRIPT_DIR="$CLOUDIFY_SCRIPT_DIR" \
+        CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_DISABLE_COLORS=true DEBUG=false \
+        bash "$CLOUDIFY_SCRIPT_DIR/cloudify" --no-defaults --no-verify install localtest
+    [ "$status" -eq 0 ]
+    [ "$(cat "$CLOUDIFY_TMP/local-var-out")" = "fromyaml" ]
+    rm -rf "$home"
+}

@@ -6,6 +6,18 @@ starts. Several roadmap entries share a branch when they touch the same surface.
 Every branch: gate artifacts (description -> plan -> consent) where lib/router is
 touched; tests per branch; `git status` clean + docs (HISTORY/LOGS) at merge.
 
+## Progress
+
+- [x] Branch 0 - decisions + ROADMAP URGENT bucket + this plan (2026-09-07)
+- [ ] Branch 1 - vars internals: five-source helpers + walker + precedence
+- [ ] Branch 2 - CLI actions: verify + uninstall
+- [ ] Branch 3 - security: payload via stdin + skill Security section
+- [ ] Branch 4 - guacamole 3-leg rewrite
+- [ ] Branch 5 - xfce alignment
+- [ ] Branch 6 - runbooks a
+- [ ] Branch 7 - state registry
+- [ ] Branch 8 - runbooks b
+
 ## Branch 1 - vars internals: five-source helpers + walker + precedence
 
 Scope (ROADMAP: Vars internals + security, Target config model):

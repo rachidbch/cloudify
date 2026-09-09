@@ -692,3 +692,11 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Read-only description of the vars CLI surface (router `cloudify:491-563`, declaration parser `lib/vars.sh:197-222`, write path, pinned tests); repros `~/tmp/b1b/`. Found: router arg parsing has NO test (`shell-router.bats` empty on vars/deployment); declaration accepts bare `NAME` only; `vars set V --global` today stores `--global` as the value; write allows lowercase keys their own reader ignores.
 - Plan + non-breakage argument written into `plans/urgent-surface-cleanup.md` (Branch 1b): invariants I1b1-I1b8, landmines L1b1-L1b10, resolutions R1b-1..R1b-11, tasks T1-T8, tests, merge gate. Consent pending.
+
+### 2026-09-09 - branch 1b: vars CLI surface + declaration syntax + `vars declared`
+
+- **Landed**: declaration kinds `NAME`/`NAME=value`/`NAME=` (mirror only, never a value source; warn only for required), declared-file kind column, scope flags `--global|--pkg|--deployment` with `--` sentinel and mutual exclusion, `unset` alias, optional deployment id arg, write-time `@` reference validation (option A: backend must exist), uppercase key guard for global/pkg, byte-preserving `--stdin`/`--file`, `vars declared [--sources]` with `PASSWORD|TOKEN|SECRET|KEY` masking, pure-bash `--json` escaping, `show` missing key exits 0.
+- **Tests**: new `tests/unit/vars-cli.bats` (22); full unit suite 367 green; shellcheck clean; router-subprocess coverage closes the shell-router vars gap.
+- **Merge gate green**: `package-remote-vars.bats` PASSED; CLI smoke on `cloudai:cloudify` (`vars declared guacamole --sources`, scoped set/show/list, stdin secret, `@` reject).
+- **Deviation (approved R1b-7)**: unknown backend now dies at write time, so the branch-1 test "walker: an unresolvable file-store reference dies" writes the file directly to keep proving the read-time die; `deployments.bats`/`remote-vars.bats` untouched.
+- **Open**: R9 (default masking on `vars show`/`list`) contradicts pinned exact-value tests; opt-in `--mask` proposed, consent pending.

@@ -156,13 +156,27 @@ _cloudify_vars_chmod() {
     chmod 600 "$file" 2>/dev/null || true
 }
 
-# _cloudify_vars_file_set <file> <key> <value> — replace or append one key.
+# _cloudify_vars_file_set <file> <key> <value> [strict]
+# strict=1 enforces uppercase keys (global/pkg readers are uppercase-only).
 # A multi-line value cannot live on one `KEY: value` line, so it is stored as
 # a `@base64:` reference the flat reader + resolver round-trip (R6/L4).
+# A value starting with `@` must be a valid reference or the `@@` escape (R1b-7).
 _cloudify_vars_file_set() {
-    local file="$1" key="$2" value="$3"
+    local file="$1" key="$2" value="$3" strict="${4:-}" _ref _backend
     [[ -n "$key" ]] || die "Usage: cloudify vars set <key> <value>"
-    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid var name: $key"
+    if [[ -n "$strict" ]]; then
+        [[ "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]] || die "Invalid var name: $key (use UPPERCASE_WITH_UNDERSCORES)"
+    else
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid var name: $key"
+    fi
+    if [[ "$value" == @* && "$value" != @@* ]]; then
+        _ref="${value#@}"
+        if [[ "$_ref" != *:* || "$_ref" == :* || "$_ref" == *: ]]; then
+            die "Var $key: value starts with '@' — use '@@' for a literal leading '@' or '@<backend>:<locator>' for a secret reference."
+        fi
+        _backend="${_ref%%:*}"
+        declare -F "cloudify_secret_backend_$_backend" >/dev/null 2>&1 || die "Var $key: unknown secret backend '$_backend'."
+    fi
     if [[ "$value" == *$'\n'* ]]; then
         value="@base64:$(printf '%s' "$value" | base64 -w0)"
     fi
@@ -185,7 +199,7 @@ cloudify_vars_global_read() {
 }
 
 cloudify_vars_global_write() {
-    _cloudify_vars_file_set "$(cloudify_vars_global_file)" "$1" "$2"
+    _cloudify_vars_file_set "$(cloudify_vars_global_file)" "$1" "$2" 1
 }
 
 # --- package source ---
@@ -202,13 +216,20 @@ cloudify_vars_pkg_read() {
 
     local decl="$CLOUDIFY_DIR/pkg/${pkg}/.remote-vars"
     if [[ -f "$decl" ]]; then
+        local name kind mirror
         while IFS= read -r line; do
-            [[ "$line" =~ ^[[:space:]]*# ]] && continue
-            [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-            local name="${line## }"; name="${name%% }"
-            [[ "$name" =~ ^[A-Z_][A-Z0-9_]*$ ]] || continue
+            line="$(_cloudify_vars_trim "$line")"
+            [[ -z "$line" || "$line" == \#* ]] && continue
+            if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
+                name="${BASH_REMATCH[1]}"; mirror="${BASH_REMATCH[2]}"
+                if [[ -n "$mirror" ]]; then kind=defaulted; else kind=optional; fi
+            elif [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)$ ]]; then
+                name="${BASH_REMATCH[1]}"; kind=required
+            else
+                continue
+            fi
             if [[ -n "${_CLOUDIFY_VARS_DECLARED:-}" ]]; then
-                printf '%s\t%s\n' "$name" "$pkg" >> "$_CLOUDIFY_VARS_DECLARED"
+                printf '%s\t%s\t%s\n' "$name" "$pkg" "$kind" >> "$_CLOUDIFY_VARS_DECLARED"
             fi
             if [[ -n "${!name:-}" ]]; then
                 _cloudify_vars_claim "$name" || continue
@@ -224,7 +245,7 @@ cloudify_vars_pkg_read() {
 cloudify_vars_pkg_write() {
     local pkg="$1"
     [[ -n "$pkg" ]] || die "Usage: cloudify vars set <key> <value> --pkg <name>"
-    _cloudify_vars_file_set "$(cloudify_vars_pkg_file "$pkg")" "$2" "$3"
+    _cloudify_vars_file_set "$(cloudify_vars_pkg_file "$pkg")" "$2" "$3" 1
 }
 
 # --- deployment source ---
@@ -252,66 +273,33 @@ cloudify_vars_deployment_read() {
 }
 
 cloudify_vars_deployment_write() {
-    local key="$1" value="$2"
-    local id="${CLOUDIFY_DEPLOYMENT:-}"
+    local key="$1" value="$2" id="${3:-${CLOUDIFY_DEPLOYMENT:-}}"
     [[ -n "$key" ]] || die "Usage: cloudify vars set <key> <value>"
-    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Set it or create a deployment first."
+    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
     _cloudify_deployment_ensure "$id"
     _cloudify_vars_file_set "$(_cloudify_deployment_config "$id")" "$key" "$value"
 }
 
 cloudify_vars_deployment_delete() {
-    local key="$1"
+    local key="$1" id="${2:-${CLOUDIFY_DEPLOYMENT:-}}"
     [[ -n "$key" ]] || die "Usage: cloudify vars delete <key>"
-    local id="${CLOUDIFY_DEPLOYMENT:-}"
-    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set."
-    local config
-    config=$(_cloudify_deployment_config "$id")
-    [[ -f "$config" ]] || { log_info "No config for deployment '$id'."; return 0; }
-    local tmp
-    tmp=$(mktemp)
-    grep -v "^${key}:" "$config" > "$tmp" 2>/dev/null || true
-    mv "$tmp" "$config"
-    chmod 600 "$config" 2>/dev/null || true
+    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
+    _cloudify_vars_store_delete "$(_cloudify_deployment_config "$id")" "$key"
 }
 
 cloudify_vars_deployment_list() {
-    local id="${CLOUDIFY_DEPLOYMENT:-}"
-    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set."
-    local config
-    config=$(_cloudify_deployment_config "$id")
-    if [[ ! -f "$config" || ! -s "$config" ]]; then
-        [[ "${1:-}" == "--json" ]] && echo "{}" || echo "(no vars)"
-        return 0
-    fi
-    if [[ "${1:-}" == "--json" ]]; then
-        echo "{"
-        local first=true
-        while IFS=: read -r k v; do
-            [[ -z "$k" ]] && continue
-            k=$(echo "$k" | xargs)  # trim
-            v=$(echo "$v" | xargs)
-            $first && first=false || echo ","
-            printf '  "%s": "%s"' "$k" "$v"
-        done < "$config"
-        echo
-        echo "}"
-    else
-        cat "$config"
-    fi
+    local mode="" id
+    if [[ "${1:-}" == "--json" ]]; then mode="--json"; shift; fi
+    id="${1:-${CLOUDIFY_DEPLOYMENT:-}}"
+    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
+    _cloudify_vars_store_list "$(_cloudify_deployment_config "$id")" "$mode"
 }
 
 cloudify_vars_deployment_show() {
-    local key="$1"
+    local key="$1" id="${2:-${CLOUDIFY_DEPLOYMENT:-}}"
     [[ -n "$key" ]] || die "Usage: cloudify vars show <key>"
-    local id="${CLOUDIFY_DEPLOYMENT:-}"
-    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set."
-    local config
-    config=$(_cloudify_deployment_config "$id")
-    [[ -f "$config" ]] || { echo ""; return 0; }
-    local val
-    val=$(grep "^${key}:" "$config" 2>/dev/null | head -1 | sed "s/^${key}: *//")
-    echo "${val:-}"
+    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
+    _cloudify_vars_store_get "$(_cloudify_deployment_config "$id")" "$key"
 }
 
 # --- env source (strongest; candidate names only — no ambient var enters) ---
@@ -327,6 +315,156 @@ cloudify_vars_env_read() {
         [[ -n "$print" ]] && echo "$name"
         export "$name"="${!name}"
     done
+}
+
+# --- generic flat-store ops + scope/arg helpers (branch 1b) ---
+
+_cloudify_vars_json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s=$(printf '%s' "$s" | tr -d '\000-\037')
+    printf '%s' "$s"
+}
+
+# _cloudify_vars_store_get <file> <key> — raw stored value; missing key = empty, rc 0.
+_cloudify_vars_store_get() {
+    local file="$1" key="$2" line
+    [[ -f "$file" ]] || return 0
+    line=$(grep "^${key}:" "$file" 2>/dev/null | head -1) || true
+    [[ -n "$line" ]] || return 0
+    printf '%s\n' "$(printf '%s' "$line" | sed "s/^${key}: *//")"
+}
+
+# _cloudify_vars_store_list <file> [--json] — raw file, or escaped JSON object.
+_cloudify_vars_store_list() {
+    local file="$1" mode="${2:-}" line k v first=true
+    if [[ ! -f "$file" || ! -s "$file" ]]; then
+        if [[ "$mode" == "--json" ]]; then echo "{}"; else echo "(no vars)"; fi
+        return 0
+    fi
+    if [[ "$mode" == "--json" ]]; then
+        echo "{"
+        while IFS= read -r line; do
+            line="$(_cloudify_vars_trim "$line")"
+            [[ -z "$line" || "$line" == \#* || "$line" != *:* ]] && continue
+            k="$(_cloudify_vars_trim "${line%%:*}")"
+            v="$(_cloudify_vars_trim "${line#*:}")"
+            [[ -n "$k" ]] || continue
+            if $first; then first=false; else echo ","; fi
+            printf '  "%s": "%s"' "$(_cloudify_vars_json_escape "$k")" "$(_cloudify_vars_json_escape "$v")"
+        done < "$file"
+        echo
+        echo "}"
+    else
+        cat "$file"
+    fi
+}
+
+_cloudify_vars_store_delete() {
+    local file="$1" key="$2" tmp
+    [[ -f "$file" ]] || return 0
+    tmp=$(mktemp)
+    grep -v "^${key}:" "$file" > "$tmp" 2>/dev/null || true
+    mv "$tmp" "$file"
+    chmod 600 "$file" 2>/dev/null || true
+}
+
+# _cloudify_vars_scope_file <scope> [arg] — target file for global/pkg/deployment.
+_cloudify_vars_scope_file() {
+    local scope="$1" arg="${2:-}" id
+    case "$scope" in
+        global) cloudify_vars_global_file ;;
+        pkg)
+            [[ -n "$arg" ]] || die "vars: --pkg needs a package name."
+            cloudify_vars_pkg_file "$arg" ;;
+        deployment | ambient)
+            id="${arg:-${CLOUDIFY_DEPLOYMENT:-}}"
+            [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
+            _cloudify_deployment_config "$id" ;;
+        *) die "vars: unknown scope '$scope'." ;;
+    esac
+}
+
+# _cloudify_vars_parse_args <args...> — sets _CV_SCOPE/_CV_SCOPE_ARG,
+# _CV_VALUE_MODE/_CV_VALUE_ARG, _CV_JSON, _CV_SOURCES, _CV_POS (positionals).
+_cloudify_vars_parse_args() {
+    _CV_SCOPE=ambient; _CV_SCOPE_ARG=""; _CV_VALUE_MODE=literal; _CV_VALUE_ARG=""
+    _CV_JSON=0; _CV_SOURCES=0; _CV_POS=()
+    local stop=false scope_seen=0 value_seen=0
+    while [[ $# -gt 0 ]]; do
+        if $stop; then _CV_POS+=("$1"); shift; continue; fi
+        case "$1" in
+            --) stop=true ;;
+            --global | --pkg | --deployment)
+                [[ $scope_seen -eq 0 ]] || die "vars: --global, --pkg and --deployment are mutually exclusive."
+                scope_seen=1; _CV_SCOPE="${1#--}"
+                if [[ "$1" != --global ]]; then
+                    shift
+                    [[ -n "${1:-}" ]] || die "vars: $1 needs a value."
+                    _CV_SCOPE_ARG="$1"
+                fi ;;
+            --stdin | --file)
+                [[ $value_seen -eq 0 ]] || die "vars: --stdin and --file are mutually exclusive."
+                value_seen=1
+                if [[ "$1" == --stdin ]]; then _CV_VALUE_MODE="stdin"; else
+                    shift
+                    [[ -n "${1:-}" ]] || die "vars: --file needs a path."
+                    _CV_VALUE_MODE="file"; _CV_VALUE_ARG="$1"
+                fi ;;
+            --json) _CV_JSON=1 ;;
+            --sources) _CV_SOURCES=1 ;;
+            --*) die "vars: unknown flag '$1'." ;;
+            *) _CV_POS+=("$1") ;;
+        esac
+        shift
+    done
+}
+
+# _cloudify_vars_source_of <name> <pkg> — walker-order source, read-only, no export.
+_cloudify_vars_source_of() {
+    local name="$1" pkg="$2"
+    [[ -n "${!name:-}" ]] && { echo env; return 0; }
+    if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]] && grep -q "^${name}:" "$(_cloudify_deployment_config "$CLOUDIFY_DEPLOYMENT")" 2>/dev/null; then
+        echo deployment; return 0
+    fi
+    grep -q "^${name}:" "$(cloudify_vars_pkg_file "$pkg")" 2>/dev/null && { echo package; return 0; }
+    grep -q "^${name}:" "$(cloudify_vars_global_file)" 2>/dev/null && { echo global; return 0; }
+    echo recipe-default
+}
+
+# cloudify_vars_declared <pkg> [--sources] — the declaration mirror, three kinds.
+cloudify_vars_declared() {
+    local pkg="$1" sources="" decl line name kind mirror src shown
+    [[ "${2:-}" == "1" || "${2:-}" == "--sources" ]] && sources=1
+    [[ -n "$pkg" ]] || die "Usage: cloudify vars declared <pkg> [--sources]"
+    [[ -d "$CLOUDIFY_DIR/pkg/$pkg" ]] || die "Unknown package '$pkg'."
+    decl="$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
+    if [[ ! -f "$decl" ]]; then echo "(no declared vars)"; return 0; fi
+    while IFS= read -r line; do
+        line="$(_cloudify_vars_trim "$line")"
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
+            name="${BASH_REMATCH[1]}"; mirror="${BASH_REMATCH[2]}"
+            if [[ -n "$mirror" ]]; then kind=defaulted; else kind=optional; fi
+        elif [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)$ ]]; then
+            name="${BASH_REMATCH[1]}"; kind=required; mirror=""
+        else
+            continue
+        fi
+        case "$kind" in
+            required) shown="$name" ;;
+            optional) shown="$name=" ;;
+            defaulted)
+                if [[ "$name" =~ (PASSWORD|TOKEN|SECRET|KEY) ]]; then shown="$name=***"; else shown="$name=$mirror"; fi ;;
+        esac
+        if [[ -n "$sources" ]]; then
+            src="$(_cloudify_vars_source_of "$name" "$pkg")"
+            printf '%s\t%s\n' "$shown" "$src"
+        else
+            printf '%s\n' "$shown"
+        fi
+    done < "$decl"
 }
 
 # --- legacy public aliases (R7) ---

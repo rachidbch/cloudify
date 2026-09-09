@@ -720,3 +720,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - **parser**: empty package list and a flag after the action now error clearly; `verify`/`uninstall` require a known cloudify package; install's native apt fallback untouched.
 - **pre-existing verify var bug fixed (constraint a)**: verify loaded the pkg yaml in overwrite mode, clobbering a parent override the walker had forwarded. Proven pre-existing by running the repro against `4378e71`. Now the yaml load is fill-only (temporary claim ledger), so walker/caller values survive and unset names still load.
 - **Tests**: new `tests/unit/actions.bats`, `uninstall.bats`, `verify-vars.bats`, `tests/integration/package-uninstall.bats`, fixture `pkg/fixture-uninstall`; full unit 386 green; shellcheck clean (lint glob now covers `pkg/*/uninstall.sh`); merge gate `package-uninstall` + `package-install-run-split` PASSED. One cold-start flake observed and re-run green.
+
+### 2026-09-09 - branch 3 gate: payload via stdin description + plan
+
+- Read-only trace (subagent delegation failed twice; done directly) of the remote payload build/transport: payload is the last ssh argv (`lib/remote.sh:312-317`); template ends with a global `exec ... </dev/null` (`:84`); exit code via pipefail into `.exit`; no sshpass/`-t` on this path.
+- Proven landmine: `bash -s` reads the script from stdin, so the global `exec </dev/null` truncates the payload (repro `~/tmp/b3/`: small script loses everything after `exec`; 10k-line script loses all). Per-command stdin redirects are safe.
+- Plan: local 0600 payload file + `ssh host 'bash -s' < file` (no secret in argv, no pipe SIGPIPE race); per-command `</dev/null`; pinned `remote-vars.bats` ssh stub must read stdin (mechanism only); skill Security section. Consent pending.

@@ -28,7 +28,7 @@ Rules:
 - [v] Branch 1b - vars CLI surface + declaration syntax + `vars declared` (merged c12783e)
 - [v] Branch 1b-fix - R9: printing secrets is opt-in (mask default, `--reveal`, `--resolve`) (merged b0176ec)
 - [v] Branch 2 - CLI actions: verify + uninstall (merged 48962d8)
-- [ ] Branch 3 - security: payload via stdin + skill Security section
+- [~] Branch 3 - security: payload via stdin + skill Security section
 - [ ] Branch 4 - guacamole 3-leg rewrite
 - [ ] Branch 5 - xfce alignment
 - [ ] Branch 6 - runbooks a
@@ -552,28 +552,93 @@ Gate (widened): router + `lib/packages.sh` + `lib/package-api.sh` + `lib/remote.
 
 Gate: `lib/remote.sh`.
 
-Design (trap 5, 6; exposure inventory):
-- Send the payload via stdin (`ssh host 'bash -s' < payload`) instead of argv; secrets no
-  longer visible in the operator or host process lists.
-- Skill Security section: stdin payload; references in cloudify state; masking
-  `PASSWORD`/`TOKEN`/`SECRET`/`KEY`; 0600; no secrets in logs; the two vault models
-  (operator-side default, host-side) and the fundamental limit that the host must hold
-  the plaintext.
-- MagicDNS names never IPs; address-shaped values derived at run time (trap 6).
-- Revisit the single-quote baking once the payload is no longer argv (R8); re-validate I8.
+### Gate tasks
 
-Tasks:
-- [ ] Switch the remote payload transport to stdin; keep I7 literal-var behavior.
-- [ ] Re-validate the quoting contract after the transport change (I8/L7).
-- [ ] Skill: add the Security section + the MagicDNS-names rule.
-- [ ] Validate once that guacd resolves MagicDNS from inside the compose network.
+- [x] Description artifact (2026-09-09): read-only trace of payload build/transport, exit-code
+  capture, TTY/stdin ownership, secret exposure points, pinned tests (below).
+- [x] Plan + non-breakage argument (this section).
+- [ ] Explicit consent (Rachid).
 
-Tests:
-- [ ] Integration: probe the remote process table during a slow install and assert a
-  secret is absent from argv.
-- [ ] Regression: full remote install suite green.
+### What the code does today
 
-Done when: stdin path green, no regression in remote installs.
+- Payload build (`lib/remote.sh:279-302`): `declare -f cloudify_remote_payload_template` body,
+  `_CLOUDIFY_PKG_EXPORTS_` placeholder, `envsubst` allow-list, single-quote baking, appended
+  `; cloudify $*` (`:291`), DEBUG dump masked for `PWD|PASSWORD|SECRET|TOKEN|KEY` (`:297-302`).
+- Transport (`lib/remote.sh:312-317`): the payload is the **last argv** of
+  `ssh -o ... "$CLOUDIFY_REMOTE_USER@$host" "$cloudify_remote_payload"`, piped through two
+  `sed` + `tee`. No sshpass; key/MagicSSH auth. No `-t` on this path (`shell` is separate).
+- The template ends `exec > >(tee -a "$CLOUDIFY_LOG_FILE") 2>&1 </dev/null` (`lib/remote.sh:84`),
+  deliberately detaching stdin (comment: the old hang was `cat -` blocking on stdin).
+- Exit code: `set -Eeuo pipefail` makes the ssh pipeline status the last non-zero; captured into
+  `$CLOUDIFY_TMP/<host>.exit` (`lib/remote.sh:277`, `:318`); the wait loop prints OK/FAILED.
+- Secrets today sit in operator argv and host argv (the whole payload string). Logs capture
+  command output; the DEBUG dump is masked.
+- Pinned: `tests/unit/remote-vars.bats:39-47` stubs `ssh()` and reads the **last argv** as the
+  payload; `tests/unit/remote.bats` asserts template body contents (transport-agnostic);
+  `tests/integration/package-remote-vars.bats` exercises the real path.
+
+### Proven landmine (empirical)
+
+- `printf 'echo ONE\nexec </dev/null\necho TWO\n' | bash -s` prints `ONE` only; a 10k-line
+  script prints nothing after the `exec`. `bash -s` reads the script from stdin, so a global
+  `exec </dev/null` truncates it. The naive `ssh host 'bash -s' < payload` would drop
+  `cloudify init` and the appended `cloudify $*` (silent no-op installs). Repro `~/tmp/b3/`.
+- Per-command stdin redirects are safe: `bash -s` keeps reading the script while a command's
+  stdin is `/dev/null` (verified).
+
+### Invariants
+
+- I3-1 exports remain the value channel; the payload's `export` lines are unchanged (I1).
+- I3-2 envsubst allow-list + single-quote baking unchanged (I6, I8).
+- I3-3 the remote re-invocation `cloudify $*` still runs and its exit code is what the operator
+  reports (OK/FAILED, `.exit` file).
+- I3-4 the DEBUG dump stays masked.
+- I3-5 localhost path unchanged (it never sshs; `lib/remote.sh:200-208`).
+- I3-6 `cloudify shell` and its `-t` handling are untouched.
+- I3-7 the host still holds the plaintext in its environment (fundamental limit, documented).
+
+### Proposed resolutions
+
+- R3-1 Transport: write the payload to a local `0600` temp file under `$CLOUDIFY_TMP` and run
+  `ssh ... "$CLOUDIFY_REMOTE_USER@$host" 'bash -s' < "$payload_file"`. No secret in operator or
+  host argv. A file redirect (not a pipe) avoids a SIGPIPE race that a pipe would introduce with
+  `pipefail`. Remove the file after the ssh returns.
+- R3-2 Template stdin policy: drop the global `</dev/null` from the `exec` line; add `</dev/null`
+  to every template command that can consume stdin: the bootstrap `bash -c "$(curl ...)"`,
+  `cloudify init`, and the appended `; cloudify $* </dev/null`. Proven shape.
+- R3-3 Exit code: unchanged mechanism (ssh rc through `pipefail` into `.exit`); add a test that a
+  failing remote command still yields FAILED.
+- R3-4 Pinned-test mechanism: `remote-vars.bats:39-47` must read the stub's **stdin** instead of
+  its last argv. Contract (payload contains `K3S_TOKEN='token-A'`) is unchanged; only the capture
+  mechanism changes. Flagged because it edits a pinned test file.
+- R3-5 Skill Security section: stdin payload; references in cloudify state; masking; 0600; no
+  secrets in logs; the two vault models (operator-side default, host-side); the fundamental limit
+  that the host must hold the plaintext.
+- R3-6 MagicDNS names never IPs; address-shaped values derived at run time (trap 6); validate once
+  that guacd resolves MagicDNS inside the compose network (rides Branch 4's stack, recorded here).
+
+### Tasks
+
+- [ ] T1 transport to `bash -s` with a `0600` local payload file; remove it after (R3-1).
+- [ ] T2 template stdin policy: per-command `</dev/null` (R3-2).
+- [ ] T3 update the `ssh()` stub in `remote-vars.bats` to read stdin (R3-4).
+- [ ] T4 skill Security section + MagicDNS rule (R3-5/6).
+
+### Tests
+
+- [ ] Unit: stub `ssh` reads stdin; assert the payload carries `K3S_TOKEN='token-A'` and the
+  remote command is `bash -s` with no secret in argv.
+- [ ] Unit: a failing remote command still writes a non-zero `.exit`.
+- [ ] Unit: template contains no global `exec ... </dev/null`; `cloudify init` and the appended
+  command redirect stdin.
+- [ ] Integration: during a slow install, the host process table shows `bash -s` and no secret;
+  `package-remote-vars.bats` still green.
+
+### Done when / merge gate
+
+- [ ] All tasks `[v]`; unit suite green; pinned `remote-vars.bats` mechanism updated and green.
+- [ ] Merge gate: `package-remote-vars.bats` + a CLI smoke proving a secret is absent from the
+  host argv during a remote install.
 
 ## Branch 4 - guacamole 3-leg rewrite (reference package)
 

@@ -67,3 +67,10 @@
 - Read-only description subagent traced the current var forwarding/precedence machinery; 30 empirical repros in `~/tmp/vars-desc/`. Corrected 5 documented claims, found 2 live hazards (xargs value corruption, no reserved-name guard).
 - Rachid mandate: all planning/progress tracked in `plans/urgent-surface-cleanup.md` alone. Rewrote it as the single URGENT tracking file (80 tasks, `[ ]/[~]/[x]/[v]` markers, Branch 1b added, invariants/landmines/resolutions inlined) and trashed the standalone description artifact.
 - No code change. Next: finish the branch 1 plan section, then request explicit consent before editing lib/router.
+
+## 2026-09-09 — branch 1 execution (vars internals)
+
+- TDD in `cloudai:cloudify`: wrote `tests/unit/vars.bats` red first, then `lib/vars.sh` + `lib/secrets*` + walker + router R1. 40/40 new, 345/345 unit, 2/2 pinned integration, shellcheck clean.
+- Review found the write-side L4 gap (multi-line value truncated at first newline); fixed by encoding `@base64:` in `_cloudify_vars_file_set` + a round-trip test.
+- Found + fixed a latent errexit abort in the dep scan (recipe without `pkg_depends`); proved via the local-path test.
+- I5/L9 vs target precedence contradiction documented in the plan + HISTORY; resolver-on-env deviation documented (double-resolution across the SSH hop).

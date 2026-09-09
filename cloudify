@@ -92,6 +92,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/os.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/package-api.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/credentials.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/pkg-config.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/vars.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/shadow.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/containers.sh"
 # shellcheck disable=SC1094
@@ -222,7 +223,9 @@ function _cloudify_execute_package_action() {
             # @default install is synchronous and a prerequisite env check
             # (e.g. sudo password). If it fails, the user-requested package is
             # NOT attempted — fail fast with a clear message + remediation.
-            if ! cloudify_install_package $defaults; then
+            # R1: the five-source walker runs on the local path too, so one
+            # precedence governs local and remote installs (I9).
+            if ! ( _cloudify_pkg_remote_vars install $defaults > /dev/null; cloudify_install_package $defaults ); then
                 msg "${RED}@default package(s) failed to install — your requested package(s) were NOT attempted.${RESET}"
                 msg "${RED}Fix the failure above, or re-run with --no-defaults to install only basics + your package(s).${RESET}"
                 exit 1
@@ -234,13 +237,13 @@ function _cloudify_execute_package_action() {
         # --clear-data implies CLOUDIFY_FORCE.
         PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs[*]}${RESET}"
         # shellcheck disable=SC2030
-        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; cloudify_install_package "${pkgs[@]}") &
+        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; _cloudify_pkg_remote_vars install "${pkgs[@]}" > /dev/null; cloudify_install_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         is_setup_in_progress=true
     elif [[ "$action" == "configure" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_configure_package ${pkgs[*]}${RESET}"
-        (cloudify_configure_package "${pkgs[@]}") &
+        ( _cloudify_pkg_remote_vars configure "${pkgs[@]}" > /dev/null; cloudify_configure_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         is_setup_in_progress=true
@@ -498,36 +501,36 @@ function main() {
                     case "${1:-}" in
                         --stdin)
                             local var_val; var_val=$(cat)
-                            cloudify_vars_set "$var_key" "$var_val"
+                            cloudify_vars_deployment_write "$var_key" "$var_val"
                             ;;
                         --file)
                             local var_path="${2:-}"
                             [[ -n "$var_path" && -f "$var_path" ]] || die "File not found: ${var_path:-}"
                             local var_val; var_val=$(<"$var_path")
-                            cloudify_vars_set "$var_key" "$var_val"
+                            cloudify_vars_deployment_write "$var_key" "$var_val"
                             shift
                             ;;
                         *)
                             local var_val="${1:-}"
                             [[ -n "$var_val" ]] || die "Usage: cloudify vars set <key> <value>"
                             shift
-                            cloudify_vars_set "$var_key" "$var_val"
+                            cloudify_vars_deployment_write "$var_key" "$var_val"
                             ;;
                     esac
                     ;;
                 delete | del)
                     shift
                     [[ -n "${1:-}" ]] || die "Usage: cloudify vars delete <key>"
-                    cloudify_vars_delete "$1"
+                    cloudify_vars_deployment_delete "$1"
                     ;;
                 show)
                     shift
                     [[ -n "${1:-}" ]] || die "Usage: cloudify vars show <key>"
-                    cloudify_vars_show "$1"
+                    cloudify_vars_deployment_show "$1"
                     ;;
                 list | ls)
                     shift
-                    cloudify_vars_list "$@"
+                    cloudify_vars_deployment_list "$@"
                     ;;
                 *)
                     die "Usage: cloudify vars <set|delete|show|list> [args]"

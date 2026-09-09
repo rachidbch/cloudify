@@ -84,78 +84,32 @@ function cloudify_remote_payload_template() {
 # Collect remote var names for the given command args with recursive dependency walk.
 # Usage: _cloudify_pkg_remote_vars install pkg1 pkg2  (or --install pkg1 pkg2)
 #
-# Algorithm:
-#   1. Always-forward vars (remote-vars.yaml) loaded first — highest priority
-#   2. Named packages processed right-to-left (last CLI arg wins)
-#   3. For each package, recursive walk of pkg_depends lines; parent before deps
-#   4. First-write-wins via temp file: once a var is claimed, descendants can't override
-#   5. Cycle guard via local associative array
+# Thin precedence walker over the five-source helpers (lib/vars.sh). Target
+# precedence, weakest -> strongest:
+#   recipe default < global < package < deployment < caller env
+# The walker sets a claim ledger (_CLOUDIFY_VARS_LEDGER); readers are
+# non-clobbering, so the FIRST source to claim a name wins. That is why the
+# walker visits sources strongest-first (env survives because file reads never
+# overwrite a set caller value).
 #
-# Priority: remote-vars.yaml > rightmost-pkg > ... > leftmost-pkg > deps > deps-of-deps
-#
-# Side effect: exports config values into environment (first-write-wins).
-# Outputs: var names, one per line (deduplicated)
+# I1: exports ARE the value channel — this function is always invoked with a
+# redirect, never `$()`. Output: claimed var names, one per line (deduplicated).
 function _cloudify_pkg_remote_vars() {
-    # shellcheck disable=SC2206  # intentional word-splitting of $@ for "--install pkg1 pkg2"
+    # shellcheck disable=SC2206  # intentional word-splitting of $@ for "install pkg1 pkg2"
     local args=($@)
-    local config_dir="${CLOUDIFY_CREDENTIALS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/cloudify}"
-    local in_install=false
+    local config_dir
+    config_dir=$(cloudify_vars_config_dir)
+    local in_install=false arg
 
     TMPFILE=$(mktemp /tmp/cloudify-pkg-vars-XXXXXX)
+    local declared_file
+    declared_file=$(mktemp /tmp/cloudify-pkg-declared-XXXXXX)
+    _CLOUDIFY_VARS_LEDGER="$TMPFILE"
+    _CLOUDIFY_VARS_DECLARED="$declared_file"
     # Only clean up when THIS function returns. Under functrace (set -T, used by
     # bats) a RETURN trap also fires on nested function returns, which would
     # delete TMPFILE mid-walk and break every subsequent claim.
-    trap '[[ "${FUNCNAME[0]:-}" == "_cloudify_pkg_remote_vars" ]] && rm -f "$TMPFILE"' RETURN
-
-    # -- Helper: export vars from a yaml file, first-write-wins via temp file --
-    _try_claim() {
-        local yaml="$1"
-        [[ -f "$yaml" ]] || return 0
-        while IFS= read -r line; do
-            [[ "$line" =~ ^[A-Z_][A-Z0-9_]*: ]] || continue
-            local key="${line%%:*}"
-            grep -qx "$key" "$TMPFILE" 2>/dev/null && continue  # already claimed
-            echo "$key" >> "$TMPFILE"
-            local value="${line#*:}"
-            value="${value## }"; value="${value%% }"
-            value="${value#\"}"; value="${value%\"}"
-            value="${value#\'}"; value="${value%\'}"
-            export "$key"="$value"
-        done < "$yaml"
-    }
-
-    # -- Helper: claim a declared name from pkg .remote-vars; value from caller env (ADR-007).
-    # Env wins over disk claims (global remote-vars.yaml, per-pkg yaml). A declared
-    # but unset name warns and is left unclaimed — nothing forwards empty.
-    _try_claim_env() {
-        local remote_vars_file="$1"
-        local pkg_name="$2"
-        [[ -f "$remote_vars_file" ]] || return 0
-        local line key
-        while IFS= read -r line; do
-            [[ "$line" =~ ^[[:space:]]*# ]] && continue
-            [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-            key="${line## }"; key="${key%% }"
-            [[ "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]] || continue
-            if [[ -n "${!key:-}" ]]; then
-                # Value comes from the caller's env, overriding any disk-claimed value.
-                export "$key"="${!key}"
-                grep -qx "$key" "$TMPFILE" 2>/dev/null || echo "$key" >> "$TMPFILE"
-            else
-                log_warn "Var $key (declared in pkg $pkg_name .remote-vars) is unset in caller env — not forwarded."
-            fi
-        done < "$remote_vars_file"
-    }
-
-    # -- Always-forward vars (highest priority) --
-    local always_file="$config_dir/remote-vars.yaml"
-    _cloudify_load_yaml_vars "$always_file"
-    if [[ -f "$always_file" ]]; then
-        while IFS= read -r line; do
-            [[ "$line" =~ ^[A-Z_][A-Z0-9_]*: ]] || continue
-            echo "${line%%:*}" >> "$TMPFILE"
-        done < "$always_file"
-    fi
+    trap '[[ "${FUNCNAME[0]:-}" == "_cloudify_pkg_remote_vars" ]] && { rm -f "$TMPFILE" "$declared_file"; unset _CLOUDIFY_VARS_LEDGER _CLOUDIFY_VARS_DECLARED; }' RETURN
 
     # -- Detect install/configure command (both dispatch package vars) --
     for arg in "${args[@]}"; do
@@ -163,7 +117,7 @@ function _cloudify_pkg_remote_vars() {
     done
 
     if $in_install; then
-        # Collect named packages (args after "install" that aren't flags)
+        # -- Collect named packages (args after install/configure that aren't flags) --
         local -a pkgs=()
         local saw_install=false
         for arg in "${args[@]}"; do
@@ -173,57 +127,60 @@ function _cloudify_pkg_remote_vars() {
             $saw_install && [[ "$arg" != -* ]] && pkgs+=("$arg")
         done
 
-        # -- Recursive walk with cycle guard --
+        # -- Deployment (application values): stronger than package/global --
+        if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]]; then
+            cloudify_vars_deployment_read "$CLOUDIFY_DEPLOYMENT" > /dev/null
+        fi
+
+        # -- Packages: rightmost CLI arg first, parent before deps (I4) --
         declare -A _visited_pkgs
         _recurse_pkg_vars() {
             local pkg="$1"
             [[ -n "${_visited_pkgs[$pkg]:-}" ]] && return 0
             _visited_pkgs[$pkg]=1
 
-            _try_claim_env "$CLOUDIFY_DIR/pkg/${pkg}/.remote-vars" "$pkg"   # env values win
-            _try_claim "$config_dir/pkgs/${pkg}.yaml"    # parent first (back-compat)
+            cloudify_vars_pkg_read "$pkg" > /dev/null
 
             local recipe deps
             recipe=$(cloudify_package_recipe_path "$pkg" 2>/dev/null) || return 0
+            # `|| true`: grep exits 1 when a recipe has no pkg_depends line, which
+            # under errexit+pipefail would abort the whole walk.
             deps=$(grep '^[[:space:]]*pkg_depends ' "$recipe" 2>/dev/null \
-                | sed 's/.*pkg_depends //' | tr ' ' '\n')
+                | sed 's/.*pkg_depends //' | tr ' ' '\n' || true)
+            local dep
             for dep in $deps; do
                 [[ -n "$dep" ]] && _recurse_pkg_vars "$dep"
             done
         }
 
         # Right-to-left: last CLI arg = highest priority
+        local i
         for ((i = ${#pkgs[@]} - 1; i >= 0; i--)); do
             _recurse_pkg_vars "${pkgs[i]}"
         done
 
-        # -- Deployment-wide vars (lowest priority; ADR-011) --
-        if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]]; then
-            local dep_var_names_file dep_var _dep_n
-            # Snapshot values of already-claimed names: the deployment read
-            # exports unconditionally and must not clobber per-pkg/caller
-            # values (first-write-wins; deployment is lowest priority).
-            local -A _dep_prev=()
-            while IFS= read -r _dep_n; do
-                [[ -n "$_dep_n" ]] && _dep_prev["$_dep_n"]="${!_dep_n:-}"
-            done < "$TMPFILE"
-            # Run in the PARENT shell (not $()) so the exports survive for
-            # envsubst; capture the names via redirect, not command
-            # substitution (a $() subshell would kill the exports again).
-            dep_var_names_file=$(mktemp /tmp/cloudify-dep-vars-XXXXXX)
-            _cloudify_deployment_read_vars "$CLOUDIFY_DEPLOYMENT" > "$dep_var_names_file"
-            while IFS= read -r dep_var; do
-                [[ -n "$dep_var" ]] || continue
-                # Only claim if not already claimed (per-pkg wins)
-                grep -qx "$dep_var" "$TMPFILE" 2>/dev/null && continue
-                echo "$dep_var" >> "$TMPFILE"
-            done < "$dep_var_names_file"
-            # Restore claimed values clobbered by the unconditional exports
-            for _dep_n in "${!_dep_prev[@]}"; do
-                export "$_dep_n"="${_dep_prev[$_dep_n]}"
-            done
-            rm -f "$dep_var_names_file"
+        # -- Global (weakest file source) --
+        cloudify_vars_global_read "$config_dir/remote-vars.yaml" > /dev/null
+
+        # -- Caller env (strongest): candidate set = declaration + file stores --
+        if [[ -s "$declared_file" ]]; then
+            local -a _declared_names=()
+            local _dname _dpkg
+            while IFS=$'\t' read -r _dname _dpkg; do
+                [[ -n "$_dname" ]] && _declared_names+=("$_dname")
+            done < "$declared_file"
+            if (( ${#_declared_names[@]} )); then
+                cloudify_vars_env_read "${_declared_names[@]}" > /dev/null
+            fi
+            # Genuine warn only: a declared name with no value from any source (L12)
+            while IFS=$'\t' read -r _dname _dpkg; do
+                [[ -n "$_dname" ]] || continue
+                [[ -n "${!_dname:-}" ]] || log_warn "Var $_dname (declared in pkg $_dpkg .remote-vars) is unset in caller env — not forwarded."
+            done < "$declared_file"
         fi
+    else
+        # Non-install (verify-only/exec): global only (I11)
+        cloudify_vars_global_read "$config_dir/remote-vars.yaml" > /dev/null
     fi
 
     sort -u "$TMPFILE" 2>/dev/null

@@ -87,3 +87,7 @@
 ## 2026-09-09 - branch 1b (vars CLI)
 
 - Implemented scope flags + `--` sentinel, declaration kinds + kind column, write-time `@` validation (A), byte-preserving stdin, `vars declared --sources` + masking, pure-bash `--json`. 367/367 unit, shellcheck clean, `package-remote-vars` e2e + CLI smoke green. One vars.bats test precondition updated (R1b-7). R9 masking conflict flagged (opt-in `--mask` proposed).
+
+## 2026-09-09 - R9 masking/reveal/resolve
+
+- Secrets opt-in at the CLI: mask by default, `--reveal`, `--resolve`. Library functions stay raw (pinned tests hold). 372/372 unit, shellcheck clean, container smoke green.

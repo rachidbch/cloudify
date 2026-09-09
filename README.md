@@ -53,8 +53,8 @@ Commands:
   credentials github          Set GitHub credentials only
   credentials gitlab          Set GitLab credentials only
   credentials --check         Check credential status
-  vars set <key> <value> [--stdin|--file <path>]  Set a var in the current deployment
-  vars show|list [--json]|delete <key>           Manage deployment vars
+  vars set <key> <value> [scope] [--stdin|--file <path>]  Set a var (scope: --global|--pkg <n>|--deployment <id>)
+  vars show|list [--json]|delete <key> [scope]   Manage vars (masked unless --reveal)
   deployment create|list|use|delete <id>         Manage deployments (ADR-011)
   packages | pkgs             List installable packages
   packages | pkgs default     List default packages
@@ -189,6 +189,8 @@ cloudify deployment create my-cluster
 eval "$(cloudify deployment use my-cluster)"   # export CLOUDIFY_DEPLOYMENT=my-cluster
 cloudify vars set K3S_TOKEN secret
 ```
+
+`vars show`/`vars list` mask secret-looking values (`PASSWORD|TOKEN|SECRET|KEY`) by default; add `--reveal` to print them. `vars show <key> --resolve` decodes a `@backend:locator` reference.
 
 `cloudify --on <node> install <pkg>` then forwards the deployment vars to the host.
 Deployment values beat package and global values; the caller env still wins.

@@ -327,6 +327,11 @@ _cloudify_vars_json_escape() {
     printf '%s' "$s"
 }
 
+# _cloudify_vars_is_secret_name <name> — the masking heuristic (name-based).
+_cloudify_vars_is_secret_name() {
+    [[ "$1" =~ (PASSWORD|TOKEN|SECRET|KEY) ]]
+}
+
 # _cloudify_vars_store_get <file> <key> — raw stored value; missing key = empty, rc 0.
 _cloudify_vars_store_get() {
     local file="$1" key="$2" line
@@ -336,9 +341,10 @@ _cloudify_vars_store_get() {
     printf '%s\n' "$(printf '%s' "$line" | sed "s/^${key}: *//")"
 }
 
-# _cloudify_vars_store_list <file> [--json] — raw file, or escaped JSON object.
+# _cloudify_vars_store_list <file> [--json] [mask] — raw by default; mask=1 replaces
+# secret-looking values with *** (the router passes it unless --reveal).
 _cloudify_vars_store_list() {
-    local file="$1" mode="${2:-}" line k v first=true
+    local file="$1" mode="${2:-}" mask="${3:-}" line k v kt first=true
     if [[ ! -f "$file" || ! -s "$file" ]]; then
         if [[ "$mode" == "--json" ]]; then echo "{}"; else echo "(no vars)"; fi
         return 0
@@ -351,11 +357,20 @@ _cloudify_vars_store_list() {
             k="$(_cloudify_vars_trim "${line%%:*}")"
             v="$(_cloudify_vars_trim "${line#*:}")"
             [[ -n "$k" ]] || continue
+            [[ -n "$mask" ]] && _cloudify_vars_is_secret_name "$k" && v="***"
             if $first; then first=false; else echo ","; fi
             printf '  "%s": "%s"' "$(_cloudify_vars_json_escape "$k")" "$(_cloudify_vars_json_escape "$v")"
         done < "$file"
         echo
         echo "}"
+    elif [[ -n "$mask" ]]; then
+        while IFS= read -r line; do
+            if [[ "$line" == *:* && "$line" != \#* ]]; then
+                kt="$(_cloudify_vars_trim "${line%%:*}")"
+                if _cloudify_vars_is_secret_name "$kt"; then printf '%s: ***\n' "$kt"; continue; fi
+            fi
+            printf '%s\n' "$line"
+        done < "$file"
     else
         cat "$file"
     fi
@@ -390,7 +405,7 @@ _cloudify_vars_scope_file() {
 # _CV_VALUE_MODE/_CV_VALUE_ARG, _CV_JSON, _CV_SOURCES, _CV_POS (positionals).
 _cloudify_vars_parse_args() {
     _CV_SCOPE=ambient; _CV_SCOPE_ARG=""; _CV_VALUE_MODE=literal; _CV_VALUE_ARG=""
-    _CV_JSON=0; _CV_SOURCES=0; _CV_POS=()
+    _CV_JSON=0; _CV_SOURCES=0; _CV_REVEAL=0; _CV_RESOLVE=0; _CV_POS=()
     local stop=false scope_seen=0 value_seen=0
     while [[ $# -gt 0 ]]; do
         if $stop; then _CV_POS+=("$1"); shift; continue; fi
@@ -414,6 +429,8 @@ _cloudify_vars_parse_args() {
                 fi ;;
             --json) _CV_JSON=1 ;;
             --sources) _CV_SOURCES=1 ;;
+            --reveal) _CV_REVEAL=1 ;;
+            --resolve) _CV_RESOLVE=1 ;;
             --*) die "vars: unknown flag '$1'." ;;
             *) _CV_POS+=("$1") ;;
         esac
@@ -435,8 +452,9 @@ _cloudify_vars_source_of() {
 
 # cloudify_vars_declared <pkg> [--sources] — the declaration mirror, three kinds.
 cloudify_vars_declared() {
-    local pkg="$1" sources="" decl line name kind mirror src shown
+    local pkg="$1" sources="" reveal="" decl line name kind mirror src shown
     [[ "${2:-}" == "1" || "${2:-}" == "--sources" ]] && sources=1
+    [[ "${3:-}" == "1" || "${3:-}" == "--reveal" ]] && reveal=1
     [[ -n "$pkg" ]] || die "Usage: cloudify vars declared <pkg> [--sources]"
     [[ -d "$CLOUDIFY_DIR/pkg/$pkg" ]] || die "Unknown package '$pkg'."
     decl="$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
@@ -456,7 +474,7 @@ cloudify_vars_declared() {
             required) shown="$name" ;;
             optional) shown="$name=" ;;
             defaulted)
-                if [[ "$name" =~ (PASSWORD|TOKEN|SECRET|KEY) ]]; then shown="$name=***"; else shown="$name=$mirror"; fi ;;
+                if _cloudify_vars_is_secret_name "$name" && [[ -z "$reveal" ]]; then shown="$name=***"; else shown="$name=$mirror"; fi ;;
         esac
         if [[ -n "$sources" ]]; then
             src="$(_cloudify_vars_source_of "$name" "$pkg")"

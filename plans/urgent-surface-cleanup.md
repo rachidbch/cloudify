@@ -26,6 +26,7 @@ Rules:
 - [x] Branch 0 - decisions + ROADMAP URGENT bucket + this plan (2026-09-07)
 - [v] Branch 1 - vars internals: five-source helpers + walker + precedence + resolver
 - [v] Branch 1b - vars CLI surface + declaration syntax + `vars declared` (merged c12783e)
+- [~] Branch 1b-fix - R9: printing secrets is opt-in (mask default, `--reveal`, `--resolve`)
 - [ ] Branch 2 - CLI actions: verify + uninstall
 - [ ] Branch 3 - security: payload via stdin + skill Security section
 - [ ] Branch 4 - guacamole 3-leg rewrite
@@ -357,8 +358,9 @@ Gate: router (`cloudify:491-563`), `lib/vars.sh` (declaration parse + write path
 - [v] T6 `vars declared <pkg>` with `--sources` + masking (R1b-3).
 - [v] T7 `--json` pure-bash escaping (R1b-6); `show` missing key exit 0 (R1b-11).
 - [v] T8 skill: pkg-writing var standard + the declaration/recipe sync rule.
-- [ ] R9 conflict (from branch 1): default masking on `vars show`/`list` contradicts the pinned
-  exact-value tests (`deployments.bats:108-126`, `:167-184`); proposal = opt-in `--mask`. Needs consent.
+- [v] R9 (re-anchored): printing secrets is opt-in. `vars show`/`list` mask secret-looking values by
+  default, `--reveal` prints them, `--resolve` decodes a reference. Masking lives in the router, so
+  the library functions stay raw and the pinned exact-value tests hold. Shipped as branch 1b-fix.
 
 ### Tests
 
@@ -392,8 +394,7 @@ Gate: router (`cloudify:491-563`), `lib/vars.sh` (declaration parse + write path
   "walker: an unresolvable file-store reference dies" can no longer set it up via
   `cloudify_vars_pkg_write`; it now writes the file directly, preserving the read-time-die
   assertion. `deployments.bats`/`remote-vars.bats` untouched.
-- Open: R9 (default masking on show/list) conflicts with pinned exact-value tests; opt-in
-  `--mask` proposed, consent pending.
+- Open: none for 1b; R9 shipped as branch 1b-fix (secrets opt-in: mask default, `--reveal`, `--resolve`).
 
 ## Branch 2 - CLI actions: verify + uninstall
 

@@ -31,9 +31,9 @@ function usage() {
         cloudify vars set <key> --stdin                set var from stdin (secrets)
         cloudify vars set <key> --file <path>          set var from file
         cloudify vars delete|unset <key> [scope]       delete var
-        cloudify vars show <key> [scope]               show var value
-        cloudify vars list|ls [--json] [scope]         list vars
-        cloudify vars declared <pkg> [--sources]       show a package's declared vars
+        cloudify vars show <key> [scope] [--resolve] [--reveal]  show a var (masked unless --reveal)
+        cloudify vars list|ls [--json] [scope] [--reveal]        list vars (masked unless --reveal)
+        cloudify vars declared <pkg> [--sources] [--reveal]      show a package's declared vars
         cloudify deployment create|new <id>            create a deployment
         cloudify deployment delete|del <id>            delete a deployment
         cloudify deployment list|ls                    list deployments
@@ -497,7 +497,7 @@ function main() {
             case "$var_verb" in
                 set)
                     _cloudify_vars_parse_args "$@"
-                    [[ $_CV_JSON -eq 0 && $_CV_SOURCES -eq 0 ]] || die "vars set: --json/--sources are not valid here."
+                    [[ $_CV_JSON -eq 0 && $_CV_SOURCES -eq 0 && $_CV_REVEAL -eq 0 && $_CV_RESOLVE -eq 0 ]] || die "vars set: invalid flag."
                     local var_key="${_CV_POS[0]:-}" var_val var_file var_strict=""
                     [[ -n "$var_key" ]] || die "Usage: cloudify vars set <key> <value> [scope] [--stdin|--file <path>]"
                     case "$_CV_VALUE_MODE" in
@@ -515,7 +515,7 @@ function main() {
                     ;;
                 delete | del | unset)
                     _cloudify_vars_parse_args "$@"
-                    [[ $_CV_JSON -eq 0 && $_CV_SOURCES -eq 0 && "$_CV_VALUE_MODE" == literal ]] || die "vars delete: invalid flag."
+                    [[ $_CV_JSON -eq 0 && $_CV_SOURCES -eq 0 && $_CV_REVEAL -eq 0 && $_CV_RESOLVE -eq 0 && "$_CV_VALUE_MODE" == literal ]] || die "vars delete: invalid flag."
                     local var_key="${_CV_POS[0]:-}"
                     [[ -n "$var_key" ]] || die "Usage: cloudify vars delete <key> [scope]"
                     _cloudify_vars_store_delete "$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")" "$var_key"
@@ -523,20 +523,30 @@ function main() {
                 show)
                     _cloudify_vars_parse_args "$@"
                     [[ $_CV_JSON -eq 0 && $_CV_SOURCES -eq 0 && "$_CV_VALUE_MODE" == literal ]] || die "vars show: invalid flag."
-                    local var_key="${_CV_POS[0]:-}"
-                    [[ -n "$var_key" ]] || die "Usage: cloudify vars show <key> [scope]"
-                    _cloudify_vars_store_get "$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")" "$var_key"
+                    local var_key="${_CV_POS[0]:-}" var_file var_val
+                    [[ -n "$var_key" ]] || die "Usage: cloudify vars show <key> [scope] [--resolve] [--reveal]"
+                    var_file=$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")
+                    var_val=$(_cloudify_vars_store_get "$var_file" "$var_key")
+                    if [[ $_CV_RESOLVE -eq 1 && -n "$var_val" ]]; then
+                        var_val=$(_cloudify_resolve_var_value "$var_key" "$var_val") || die "Var $var_key: cannot resolve its reference."
+                    fi
+                    if [[ $_CV_REVEAL -eq 0 ]] && _cloudify_vars_is_secret_name "$var_key"; then
+                        var_val="***"
+                    fi
+                    [[ -n "$var_val" ]] && printf '%s\n' "$var_val"
                     ;;
                 list | ls)
                     _cloudify_vars_parse_args "$@"
-                    [[ $_CV_SOURCES -eq 0 && "$_CV_VALUE_MODE" == literal ]] || die "vars list: invalid flag."
-                    local var_mode=""; [[ $_CV_JSON -eq 1 ]] && var_mode="--json"
-                    _cloudify_vars_store_list "$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")" "$var_mode"
+                    [[ $_CV_SOURCES -eq 0 && $_CV_RESOLVE -eq 0 && "$_CV_VALUE_MODE" == literal ]] || die "vars list: invalid flag."
+                    local var_mode="" var_mask=""
+                    [[ $_CV_JSON -eq 1 ]] && var_mode="--json"
+                    [[ $_CV_REVEAL -eq 0 ]] && var_mask=1
+                    _cloudify_vars_store_list "$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")" "$var_mode" "$var_mask"
                     ;;
                 declared)
                     _cloudify_vars_parse_args "$@"
-                    [[ $_CV_JSON -eq 0 && "$_CV_VALUE_MODE" == literal && "$_CV_SCOPE" == ambient ]] || die "vars declared: invalid flag."
-                    cloudify_vars_declared "${_CV_POS[0]:-}" "$_CV_SOURCES"
+                    [[ $_CV_JSON -eq 0 && $_CV_RESOLVE -eq 0 && "$_CV_VALUE_MODE" == literal && "$_CV_SCOPE" == ambient ]] || die "vars declared: invalid flag."
+                    cloudify_vars_declared "${_CV_POS[0]:-}" "$_CV_SOURCES" "$_CV_REVEAL"
                     ;;
                 *)
                     die "Usage: cloudify vars <set|unset|delete|show|list|declared> [args]"

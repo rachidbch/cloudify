@@ -251,3 +251,56 @@ run_router() {
     echo "$output" | grep -qx "DEF=fb"
     echo "$output" | grep -qx "OPT="
 }
+
+# --- R9 (re-anchored): printing secrets is opt-in; --resolve ships ---
+
+@test "router: secret values masked by default, --reveal prints them" {
+    run_router vars set MY_TOKEN tok --global
+    [ "$status" -eq 0 ]
+    run_router vars show MY_TOKEN --global
+    [ "$output" = "***" ]
+    run_router vars show MY_TOKEN --global --reveal
+    [ "$output" = "tok" ]
+    run_router vars list --global
+    echo "$output" | grep -q "MY_TOKEN: ***"
+    run_router vars list --global --reveal
+    echo "$output" | grep -q "MY_TOKEN: tok"
+    run_router vars list --json --global
+    echo "$output" | grep -q '"MY_TOKEN": "***"'
+}
+
+@test "router: --resolve decodes a reference, still masked unless --reveal" {
+    local b64
+    b64=$(printf 's3cr3t' | base64 -w0)
+    run_router vars set REF_SECRET "@base64:$b64" --global
+    [ "$status" -eq 0 ]
+    run_router vars show REF_SECRET --global
+    [ "$output" = "***" ]
+    run_router vars show REF_SECRET --global --resolve
+    [ "$output" = "***" ]
+    run_router vars show REF_SECRET --global --resolve --reveal
+    [ "$output" = "s3cr3t" ]
+}
+
+@test "router: --resolve on a non-secret name prints plaintext" {
+    local b64
+    b64=$(printf 'https://host:6443' | base64 -w0)
+    run_router vars set ENDPOINT_URL "@base64:$b64" --global
+    [ "$status" -eq 0 ]
+    run_router vars show ENDPOINT_URL --global --resolve
+    [ "$output" = "https://host:6443" ]
+}
+
+@test "router: vars declared --reveal shows a masked default" {
+    mkdir -p "$CLOUDIFY_DIR/pkg/decl"
+    printf 'API_TOKEN=secret-default\n' > "$CLOUDIFY_DIR/pkg/decl/.remote-vars"
+    run_router vars declared decl
+    echo "$output" | grep -qxF "API_TOKEN=***"
+    run_router vars declared decl --reveal
+    echo "$output" | grep -qxF "API_TOKEN=secret-default"
+}
+
+@test "router: vars list rejects --resolve" {
+    run_router vars list --global --resolve
+    [ "$status" -ne 0 ]
+}

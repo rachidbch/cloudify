@@ -28,7 +28,7 @@ Rules:
 - [v] Branch 1b - vars CLI surface + declaration syntax + `vars declared` (merged c12783e)
 - [v] Branch 1b-fix - R9: printing secrets is opt-in (mask default, `--reveal`, `--resolve`) (merged b0176ec)
 - [v] Branch 2 - CLI actions: verify + uninstall (merged 48962d8)
-- [~] Branch 3 - security: payload via stdin + skill Security section
+- [v] Branch 3 - security: payload via stdin + skill Security section (merged 28f715c)
 - [ ] Branch 4 - guacamole 3-leg rewrite
 - [ ] Branch 5 - xfce alignment
 - [ ] Branch 6 - runbooks a
@@ -642,6 +642,7 @@ Gate: `lib/remote.sh`.
 
 ### Branch 3 outcome (2026-09-09)
 
+- Merged to master as `28f715c` (--no-ff) after the e2e merge gate.
 - Landed: stdin payload transport (0600 local temp file, `ssh host 'bash -s' < file`), per-command
   stdin redirects (the global `exec </dev/null` truncates `bash -s`, proven), `remote-stdin.bats`,
   `remote-vars.bats` stub reads stdin, skill Security section.

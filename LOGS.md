@@ -103,3 +103,7 @@
 ## 2026-09-09 - branch 3 gate
 
 - Traced payload transport; proved `bash -s` + global `exec </dev/null` truncates the payload. Plan R3-1..6 written (stdin via 0600 local file, per-command stdin redirects, pinned ssh-stub update, skill Security section). Consent pending.
+
+## 2026-09-09 - branch 3 (payload via stdin) + test output standard
+
+- Payload on stdin from a 0600 file; per-command stdin redirects (global `exec </dev/null` truncates `bash -s`). Live report helper (fd 9) + runner tee to `.tap`. Deleted redundant `package-remote-vars.bats`/`fixture-env`. Skills split into cloudify/cloudify-dev/cloudify-pkg-dev.

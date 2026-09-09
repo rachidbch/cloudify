@@ -6,6 +6,10 @@ load '/usr/lib/bats/bats-assert/load'
 load '/usr/lib/bats/bats-support/load'
 load '/usr/lib/bats/bats-file/load'
 
+# Timestamped rubric/step report (tests/helpers/report.bash)
+# shellcheck source=/dev/null
+source "${BASH_SOURCE[0]%/*}/report.bash"
+
 # Setup a test environment with mock directories
 setup_test_env() {
     # Create temp CLOUDIFY_DIR with mock pkg/inventory dirs

@@ -575,7 +575,7 @@ Gate: `lib/remote.sh`.
   command output; the DEBUG dump is masked.
 - Pinned: `tests/unit/remote-vars.bats:39-47` stubs `ssh()` and reads the **last argv** as the
   payload; `tests/unit/remote.bats` asserts template body contents (transport-agnostic);
-  `tests/integration/package-remote-vars.bats` exercises the real path.
+  `tests/integration/package-install-run-split.bats` exercises the real path.
 
 ### Proven landmine (empirical)
 
@@ -619,26 +619,44 @@ Gate: `lib/remote.sh`.
 
 ### Tasks
 
-- [ ] T1 transport to `bash -s` with a `0600` local payload file; remove it after (R3-1).
-- [ ] T2 template stdin policy: per-command `</dev/null` (R3-2).
-- [ ] T3 update the `ssh()` stub in `remote-vars.bats` to read stdin (R3-4).
-- [ ] T4 skill Security section + MagicDNS rule (R3-5/6).
+- [v] T1 transport to `bash -s` with a `0600` local payload file; remove it after (R3-1).
+- [v] T2 template stdin policy: per-command `</dev/null` (R3-2).
+- [v] T3 update the `ssh()` stub in `remote-vars.bats` to read stdin (R3-4).
+- [v] T4 skill Security section + MagicDNS rule (R3-5/6).
 
 ### Tests
 
-- [ ] Unit: stub `ssh` reads stdin; assert the payload carries `K3S_TOKEN='token-A'` and the
+- [v] Unit: stub `ssh` reads stdin; assert the payload carries `K3S_TOKEN='token-A'` and the
   remote command is `bash -s` with no secret in argv.
-- [ ] Unit: a failing remote command still writes a non-zero `.exit`.
-- [ ] Unit: template contains no global `exec ... </dev/null`; `cloudify init` and the appended
+- [v] Unit: a failing remote command still writes a non-zero `.exit`.
+- [v] Unit: template contains no global `exec ... </dev/null`; `cloudify init` and the appended
   command redirect stdin.
-- [ ] Integration: during a slow install, the host process table shows `bash -s` and no secret;
-  `package-remote-vars.bats` still green.
+- [v] Integration: `package-uninstall.bats` + `package-install-run-split.bats` green (the two-host
+  file was deleted as redundant).
 
 ### Done when / merge gate
 
-- [ ] All tasks `[v]`; unit suite green; pinned `remote-vars.bats` mechanism updated and green.
-- [ ] Merge gate: `package-remote-vars.bats` + a CLI smoke proving a secret is absent from the
-  host argv during a remote install.
+- [v] All tasks `[v]`; unit suite green; pinned `remote-vars.bats` mechanism updated and green.
+- [v] Merge gate: `package-uninstall.bats` + `package-install-run-split.bats` PASSED; secret-absence
+  proved by `tests/unit/remote-stdin.bats` (stub ssh: payload on stdin, argv is `bash -s`).
+
+### Branch 3 outcome (2026-09-09)
+
+- Landed: stdin payload transport (0600 local temp file, `ssh host 'bash -s' < file`), per-command
+  stdin redirects (the global `exec </dev/null` truncates `bash -s`, proven), `remote-stdin.bats`,
+  `remote-vars.bats` stub reads stdin, skill Security section.
+- Test output standard: `tests/helpers/report.bash` (fd 9 live), runner streams `bats -T
+  --show-output-of-passing-tests | tee results/<name>.tap` + plan; rubrics in `package-uninstall`.
+- Deleted `package-remote-vars.bats` + `pkg/fixture-env` as redundant.
+- Evidence: unit 389/389 rc 0; shellcheck clean; integration `package-uninstall` 3/3 +
+  `package-install-run-split` 8/8, streamed live from the `.tap`.
+
+### Deleted as redundant (2026-09-09)
+
+- `tests/integration/package-remote-vars.bats` and `pkg/fixture-env`: the parallel race guard is
+  the unit test `remote-vars.bats` (parallel collections keep their own env), single-host E2E
+  forwarding is `package-install-run-split.bats:64-67`, payload baking is `remote-vars.bats:39-47`.
+  The second container cost ~50s and a readiness flake for no marginal coverage.
 
 ## Branch 4 - guacamole 3-leg rewrite (reference package)
 

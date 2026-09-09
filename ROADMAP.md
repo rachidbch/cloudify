@@ -253,3 +253,28 @@ Deployment-level var BINDINGS (idea from the 2026-09-07 E2E): a deployment
 should be able to bind package vars to each other, e.g. guacamole's
 `RDP_PASSWORD` = xfce's `XFCE_USER_PASSWORD`, so the duplicate-secret handoff
 is declarative instead of manual. Pairs naturally with `deployment run`.
+
+## Per-target credentials (design question, 2026-09-07)
+
+`~/.config/cloudify/credentials` is per OPERATOR machine and single-valued: one
+remote SSH user/password and one local sudo password, used for every target.
+Heterogeneous fleets (different admin credentials per host) are not expressible.
+Decide later: host-scoped credentials (e.g. per-node in the ivps tree, or a host
+section in the credentials file) vs relying on per-host SSH keys/MagicSSH.
+No urgent driver.
+
+## Secrets: resolver seam (design, 2026-09-07)
+
+Goal: a vault-like backend later, without changing packages or the collector.
+Seam, grounded in current code: one helper `_cloudify_resolve_var_value <name>
+<raw>` inserted before the three value-entry exports - `_try_claim` (lib/remote.sh,
+global + per-pkg machine files), `_try_claim_env` (caller env),
+`_cloudify_deployment_read_vars` (lib/deployments.sh:178). Today identity.
+A raw value matching `@<backend>:<locator>` resolves via
+`_cloudify_secret_backend_<backend> <locator>`; anything else passes through.
+Backends are plugins: `lib/secrets/*.sh` glob-sourced by `lib/secrets.sh`,
+mirroring `lib/shadow.sh` -> `lib/shadows/*.sh`.
+Scope: at rest only (config holds a reference); in transit the plaintext still
+reaches the host via the payload, so single-quoting + debug masking stay
+mandatory. Backend failure = die with a clear message, never forward empty.
+Write path unchanged (`vars set --stdin` stores a literal or a reference).

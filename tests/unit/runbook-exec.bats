@@ -76,6 +76,12 @@ _snapshot() {
     ls "$CLOUDIFY_DEPLOYMENTS_DIR/$1/runs/"*.yaml
 }
 
+# The most recently written run snapshot for <id> (a same-second run/replay pair
+# shares the timestamp prefix, so names do not order them).
+_newest_snapshot() {
+    ls -1t "$CLOUDIFY_DEPLOYMENTS_DIR/$1/runs/"*.yaml | head -1
+}
+
 # ---------------------------------------------------------------
 # Step runner + outputs + snapshot
 # ---------------------------------------------------------------
@@ -167,7 +173,7 @@ EOF
     run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test --yes
     [ "$status" -eq 0 ]
     [[ "$output" == *"Confirm the desktop renders."* ]]
-    grep -q "^status: succeeded$" "$(_snapshot exec-gate | tail -1)"
+    grep -q "^status: succeeded$" "$(_newest_snapshot exec-gate)"
 }
 
 @test "execute: --from starts at that step and skips the earlier ones" {

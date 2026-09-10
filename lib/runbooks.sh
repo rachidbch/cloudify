@@ -6,7 +6,9 @@
 # ```bash step=<type> ...``` block is one step. T6a parses, discovers, binds
 # targets, preflights required vars and previews (`--dry-run`). T6b executes the
 # steps (`cloudify_runbook_execute`): run-wide exports, step outputs, the human
-# gate and the run snapshot; replay is T6c.
+# gate and the run snapshot. T6c replays a recorded run
+# (`cloudify_deployment_replay`): seed the environment from a run snapshot (target
+# bindings + resolved values), then run the same engine.
 #
 # Machine contract (tab-separated, stable):
 #   cloudify_runbook_parse <path>            one line per step:
@@ -19,6 +21,15 @@
 #   cloudify_runbook_execute <path> [--target name=addr]... [--from <id>] [--yes]
 #   cloudify_deployment_run <id> [--runbook <path>] [--target name=addr]...
 #                               [--from <id>] [--dry-run] [--yes]
+#   cloudify_deployment_replay <id> [--at <run>] [--runbook <path>]
+#                               [--target name=addr]... [--from <id>] [--dry-run] [--yes]
+#
+# cloudify_runbook_execute also honours CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES (a run
+# snapshot path): the new snapshot records that file's `value.*` lines instead of
+# the deployment store's current state. replay sets it so its own snapshot stays
+# replayable after the store changes. Snapshots are
+# ${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml (0600, atomic); a name already
+# taken (a run and its immediate replay share a second) gets a -2, -3, ... suffix.
 #
 # body-b64 is base64 so a multi-line shell body survives one line.  Empty fields
 # print as empty (never omitted): a human-gate step has no target and no pkg.
@@ -98,6 +109,50 @@ function _cloudify_runbook_snapshot() {
     for o in ${_order[@]+"${_order[@]}"}; do
         printf 'output.%s: %s\n' "$o" "${_outputs[$o]}"
     done
+}
+
+# _cloudify_runbook_select_snapshot <deployment-id> [<at>] — print the chosen run
+# snapshot path. --at matches an existing file path, a basename, or a timestamp
+# prefix under the deployment's runs dir; without it, the most recently written
+# (mtime, not name: a same-second replay shares the source's timestamp prefix).
+# Dies on none or several matches.
+function _cloudify_runbook_select_snapshot() {
+    local id="$1" at="${2:-}"
+    [[ -n "$id" ]] || die "Usage: _cloudify_runbook_select_snapshot <deployment-id> [<at>]"
+
+    # An explicit path wins over the runs dir (a copied or archived snapshot).
+    if [[ -n "$at" && -f "$at" ]]; then
+        printf '%s\n' "$at"
+        return 0
+    fi
+
+    local runs_dir="$CLOUDIFY_DEPLOYMENTS_DIR/$id/runs"
+    [[ -d "$runs_dir" ]] ||
+        die "deployment replay: no runs for deployment '$id' (expected '$runs_dir')."
+
+    local -a all=()
+    local f
+    # Newest first by mtime: a run and its immediate replay share the timestamp
+    # prefix (the replay's name gets a -2 suffix), so names alone cannot order them.
+    mapfile -t all < <(ls -1t "$runs_dir"/*.yaml 2>/dev/null)
+    [[ ${#all[@]} -gt 0 ]] ||
+        die "deployment replay: no run snapshot for deployment '$id' under '$runs_dir'."
+
+    if [[ -z "$at" ]]; then
+        printf '%s\n' "${all[0]}"
+        return 0
+    fi
+
+    local -a matches=() base
+    for f in "${all[@]}"; do
+        base="${f##*/}"
+        [[ "$base" == "$at"* ]] && matches+=("$f")
+    done
+    [[ ${#matches[@]} -gt 0 ]] ||
+        die "deployment replay: no run snapshot matching '$at' for deployment '$id' under '$runs_dir'."
+    [[ ${#matches[@]} -eq 1 ]] ||
+        die "deployment replay: --at '$at' is ambiguous, ${#matches[@]} runs match:"$'\n'"$(printf '  %s\n' "${matches[@]}")"
+    printf '%s\n' "${matches[0]}"
 }
 
 # _cloudify_runbook_frontmatter <path> — print the front-matter body (the lines
@@ -603,18 +658,31 @@ function cloudify_runbook_execute() {
     chmod 600 "$outputs_file" 2>/dev/null || true
     export CLOUDIFY_OUTPUTS_FILE="$outputs_file"
 
-    # 3. Snapshot the deployment store's raw vars for the record.
+    # 3. Snapshot the deployment store's raw vars for the record. A replay sets
+    # CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES (its source snapshot): the new record then
+    # carries the values the run was seeded with, so it stays replayable even if
+    # the store changed since.
     local -a value_lines=()
     local cfg
-    cfg=$(_cloudify_deployment_config "$deployment")
-    if [[ -f "$cfg" ]]; then
-        local vline vkey
-        while IFS= read -r vline; do
-            [[ -n "$vline" && "$vline" != \#* && "$vline" == *:* ]] || continue
-            vkey="$(_cloudify_vars_trim "${vline%%:*}")"
-            [[ -n "$vkey" ]] || continue
-            value_lines+=("value.$vkey: $(_cloudify_vars_trim "${vline#*:}")")
-        done < "$cfg"
+    if [[ -n "${CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES:-}" ]]; then
+        [[ -f "$CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES" ]] ||
+            die "runbook execute: replayed snapshot '$CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES' not found."
+        local rline
+        while IFS= read -r rline; do
+            [[ "$rline" == value.* ]] || continue
+            value_lines+=("$rline")
+        done < "$CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES"
+    else
+        cfg=$(_cloudify_deployment_config "$deployment")
+        if [[ -f "$cfg" ]]; then
+            local vline vkey
+            while IFS= read -r vline; do
+                [[ -n "$vline" && "$vline" != \#* && "$vline" == *:* ]] || continue
+                vkey="$(_cloudify_vars_trim "${vline%%:*}")"
+                [[ -n "$vkey" ]] || continue
+                value_lines+=("value.$vkey: $(_cloudify_vars_trim "${vline#*:}")")
+            done < "$cfg"
+        fi
     fi
 
     # 4/5. Walk the steps, streaming their output, collecting step outputs.
@@ -698,6 +766,14 @@ function cloudify_runbook_execute() {
     chmod 700 "$runs_dir" 2>/dev/null || true
     local snapshot tmp
     snapshot="$runs_dir/$(_cloudify_runbook_utc).yaml"
+    # A run and its immediate replay land in the same second: never overwrite an
+    # existing snapshot, suffix -2, -3, ... instead (the source run must survive
+    # a replay). `--at` still selects by timestamp prefix.
+    local n=1 base="${snapshot%.yaml}"
+    while [[ -e "$snapshot" ]]; do
+        n=$((n + 1))
+        snapshot="$base-$n.yaml"
+    done
     tmp=$(mktemp "$runs_dir/.run.XXXXXX") || die "runbook execute: cannot create the run snapshot."
     _cloudify_runbook_snapshot "$status" "$started_at" "$finished_at" "$path" \
         target_lines value_lines run_outputs run_output_order > "$tmp"
@@ -713,4 +789,129 @@ function cloudify_runbook_execute() {
     msg "Runbook '$path' $status."
     msg "Snapshot: $snapshot"
     return 0
+}
+
+# cloudify_deployment_replay <id> [--at <run>] [--runbook <path>] [--target name=addr]...
+#                             [--from <id>] [--dry-run] [--yes]
+# Re-run a recorded run. The environment is seeded from a run snapshot before
+# anything executes: every `target.<name>` becomes a binding (a --target on the
+# command line still wins) and every `value.<NAME>` is resolved (a stored
+# @base64:/@backend: reference must be resolved here, or the step would receive
+# the literal) and exported, so the normal ladder forwards exactly the recorded
+# values. The runbook defaults to the snapshot's. Then the same engine as
+# `deployment run` runs (preflight + steps + a new run snapshot). Seeded values
+# are referred to by name only: never printed, never part of argv.
+function cloudify_deployment_replay() {
+    local id="" at="" runbook="" from="" dry=0 yes=0
+    local -a cli_bindings=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --at)
+                shift
+                at="${1:-}"
+                [[ -n "$at" ]] || die "deployment replay: --at needs a run path, basename or timestamp prefix."
+                ;;
+            --runbook)
+                shift
+                runbook="${1:-}"
+                [[ -n "$runbook" ]] || die "deployment replay: --runbook needs a path."
+                ;;
+            --target)
+                shift
+                [[ -n "${1:-}" && "$1" == *=* ]] || die "deployment replay: --target expects name=addr."
+                cli_bindings+=("$1")
+                ;;
+            --from)
+                shift
+                from="${1:-}"
+                [[ -n "$from" ]] || die "deployment replay: --from needs a step id."
+                ;;
+            --dry-run) dry=1 ;;
+            --yes) yes=1 ;;
+            -*) die "deployment replay: unknown flag '$1'." ;;
+            *)
+                [[ -z "$id" ]] || die "deployment replay: unexpected argument '$1'."
+                id="$1"
+                ;;
+        esac
+        shift
+    done
+    [[ -n "$id" ]] ||
+        die "Usage: cloudify deployment replay <id> [--at <run>] [--runbook <path>] [--target name=addr]... [--from <id>] [--dry-run] [--yes]"
+
+    local snapshot
+    # The selector dies with the reason (none/ambiguous); stop here explicitly
+    # rather than relying on errexit, which a caller in a || list disables.
+    if ! snapshot=$(_cloudify_runbook_select_snapshot "$id" "$at"); then
+        exit 1
+    fi
+    grep -q '^runbook:' "$snapshot" ||
+        die "deployment replay: '$snapshot' is not a run snapshot (no 'runbook:' line)."
+
+    # Command-line bindings win over the snapshot's.
+    local -A cli_bound=()
+    local b
+    for b in ${cli_bindings[@]+"${cli_bindings[@]}"}; do
+        cli_bound["${b%%=*}"]="${b#*=}"
+    done
+
+    local line key raw value snap_runbook=""
+    local -a value_names=() target_args=() seeded_targets=()
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -n "$line" && "$line" == *:* ]] || continue
+        key="$(_cloudify_vars_trim "${line%%:*}")"
+        raw="$(_cloudify_vars_trim "${line#*:}")"
+        case "$key" in
+            runbook) snap_runbook="$raw" ;;
+            target.*)
+                key="${key#target.}"
+                [[ -n "$key" ]] || die "deployment replay: '$snapshot': empty target name."
+                [[ -n "${cli_bound[$key]+x}" ]] && continue
+                target_args+=(--target "$key=$raw")
+                seeded_targets+=("$key=$raw")
+                ;;
+            value.*)
+                key="${key#value.}"
+                [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
+                    die "deployment replay: '$snapshot': malformed value name '$key'."
+                _cloudify_vars_reserved "$key" &&
+                    die "deployment replay: '$snapshot' records the framework-owned var '$key' — refusing to seed it."
+                # Resolve before exporting (the env path is a pass-through). The
+                # value stays in this process's environment, never in output.
+                value=$(_cloudify_resolve_var_value "$key" "$raw") ||
+                    die "deployment replay: var $key: cannot resolve the snapshot value — refusing to replay an empty value."
+                export "$key"="$value"
+                value_names+=("$key")
+                ;;
+        esac
+    done < "$snapshot"
+
+    [[ -n "$runbook" ]] || runbook="$snap_runbook"
+    [[ -f "$runbook" ]] ||
+        die "deployment replay: runbook '$runbook' (from $snapshot) not found; pass --runbook <path>."
+
+    local names_str="" targets_str=""
+    [[ ${#value_names[@]} -gt 0 ]] &&
+        names_str=$(IFS=','; printf '%s' "${value_names[*]}")
+    [[ ${#seeded_targets[@]} -gt 0 ]] &&
+        targets_str=$(IFS=','; printf '%s' "${seeded_targets[*]}")
+    msg "Replay: $snapshot"
+    msg "Seeded values (names only): ${names_str:-<none>}"
+    msg "Seeded targets: ${targets_str:-<none>}"
+
+    local -a run_args=()
+    for b in ${cli_bindings[@]+"${cli_bindings[@]}"}; do
+        run_args+=(--target "$b")
+    done
+    for b in ${target_args[@]+"${target_args[@]}"}; do
+        run_args+=("$b")
+    done
+    [[ -n "$from" ]] && run_args+=(--from "$from")
+    [[ "$dry" == "1" ]] && run_args+=(--dry-run)
+    [[ "$yes" == "1" ]] && run_args+=(--yes)
+
+    # The engine records the seeded values (not the store's current state) in the
+    # new snapshot, so a replay stays replayable after the store changes.
+    CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES="$snapshot"
+    cloudify_deployment_run "$id" --runbook "$runbook" ${run_args[@]+"${run_args[@]}"}
 }

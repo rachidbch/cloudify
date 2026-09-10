@@ -57,6 +57,8 @@ Commands:
   vars set <key> <value> [scope] [--stdin|--file <path>]  Set a var (scope: --global|--pkg <n>|--deployment <id>)
   vars show|list [--json]|delete <key> [scope]   Manage vars (masked unless --reveal)
   deployment create|list|use|delete <id>         Manage deployments (ADR-011)
+  deployment run <id> [--dry-run]                Run the deployment's runbook
+  deployment replay <id> [--at <run>]            Re-run a recorded run from its snapshot
   node use <node>             Set the active node (prints the export command)
   packages | pkgs             List installable packages
   packages | pkgs default     List default packages
@@ -229,6 +231,28 @@ Deployment values beat package and global values; the caller env still wins.
 observation record for that id (the node and instance buckets written after an
 install), so no record outlives its deployment.
 
+**Runbooks (`cloudify deployment run`).** A runbook is repo-tracked Markdown
+(`runbooks/<app>/<flavor>.md`, see `runbooks/README.md`): front-matter
+(`deployment`, `targets`) plus fenced `bash step=<type> [target=] [pkg=] [id=]`
+blocks, `<type>` in `launch|install|configure|verify|uninstall|human-gate`.
+`deployment run <id>` binds each target (`--target name=addr` wins, else the
+deployment var `TARGET_<NAME>`), preflights the required vars of every
+pkg-consuming step, then runs the steps in document order, stopping at the first
+failure. A step sees `CLOUDIFY_DEPLOYMENT`, `TARGET_<NAME>`,
+`CLOUDIFY_OUTPUTS_FILE` (append `name=value`; later steps read `OUT_<name>`) and
+`STEP_ID/STEP_TYPE/STEP_TARGET/STEP_PKG`. Every run writes
+`${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml` (0600): `status`, timestamps,
+`runbook`, `target.<name>`, the raw `value.<NAME>` lines and `output.<name>`.
+`--dry-run` prints the plan (seeded value NAMES, never values) and runs nothing.
+
+`cloudify deployment replay <id> [--at <run>]` re-runs a recorded run: it seeds
+the environment from the snapshot (target bindings, and each `value.<NAME>`
+resolved - a stored `@base64:`/`@backend:` reference is decoded here, so a step
+receives the value, never the literal) and then uses the same engine. `--at`
+takes a path, a basename or a timestamp prefix; the default is the most recently
+written snapshot. A replayed value is never printed and never passed on a
+command line, and the replay's own snapshot records the values it replayed.
+
 ### Environment Variables
 
 | Variable | Default | Purpose |
@@ -307,6 +331,7 @@ lib/
   credentials.sh      System credential management: save, load, section-based prompting
   deployments.sh      Deployment-wide store: deployment CRUD (ADR-011)
   registry.sh         Observation registry: per-(deployment, target, package) records
+  runbooks.sh         Runbook engine: parse, target binding, preflight, run, replay
   pkg-config.sh       Sources lib/vars.sh for package-config consumers (reader lives there)
   vars.sh             Five-source var helpers + precedence walker core + resolver
   secrets.sh          Secret-backend loader (sources lib/secrets/*.sh)
@@ -325,6 +350,8 @@ pkg/
   <pkg>/@<tag>        Tag files for filtering
 inventory/
   <host>/@<tag>       Host tag files for grouping
+runbooks/
+  <app>/<flavor>.md   Deployment procedure (front-matter + typed shell steps)
 tests/
   unit/               Unit tests (mocked environment)
   integration/        Integration tests (real package installs via SSH)

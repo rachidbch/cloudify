@@ -185,3 +185,12 @@
 - Design's `cloudify_vars_deployment_file` absent -> used `_cloudify_deployment_config`.
 - Tests: `tests/unit/runbook-exec.bats` 6 cases; `runbooks.bats` non-dry-run case now asserts execution. `task lint` rc 0; driver `~/tmp/t6b/driver.sh` green; focused 73/73; full `task test-unit` 508/508 rc 0 (`1..508`, once on final HEAD).
 - E2E: throwaway `t6b-smoke` runbook (real `verify bats-test` over ssh + an output step) -> rc 0, snapshot 600 with `output.stamp`; deployment deleted after.
+
+## 2026-09-10 - branch 7 T6c (`deployment replay`)
+
+- `cloudify_deployment_replay <id> [--at <run>] [--runbook <path>] [--target ...] [--from <id>] [--dry-run] [--yes]`: `--at` = existing path / basename / timestamp prefix under `deployments/<id>/runs/`, default = most recently written (mtime); none or several -> die listing them. Seed: `target.<name>` -> binding (CLI `--target` wins), `value.<NAME>` -> `_cloudify_resolve_var_value` (reference decoded) + export (steps/ladder read it; the env path is a pass-through), runbook from the snapshot (`--runbook` overrides). Then the `deployment run` engine: preflight + steps + new snapshot. Plan prints target addresses and value names only; values never printed or on argv.
+- `CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES=<snapshot>`: the new snapshot records the replayed `value.*` lines, not the store's current state (unset = old behavior).
+- T6b artifact fixed (found by the E2E): a same-second run/replay overwrote `<utc>.yaml`. Engine now suffixes `-2`, `-3`, ...; the selector's newest is mtime-based; `runbook-exec.bats` newest assertion -> `_newest_snapshot`.
+- Fail closed: framework-owned/malformed value names, a non-snapshot file, a missing snapshot runbook.
+- Tests: `tests/unit/runbook-replay.bats` 11; `task lint` rc 0; driver `~/tmp/t6c/driver.sh` 18/18; focused 163/163; full `task test-unit` 519/519 rc 0 (`1..519`, once on final code HEAD).
+- E2E: `t6c-smoke` run (source `deployment`) -> store var deleted -> plain run fails preflight -> replay rc 0 with source `env`, value absent from the log, second 0600 snapshot with `-2` suffix; throwaway deleted.

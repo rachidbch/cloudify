@@ -41,6 +41,11 @@ function usage() {
         cloudify deployment delete|del <id>            delete a deployment (+ its node/instance records)
         cloudify deployment list|ls                    list deployments
         cloudify deployment use <id>                   print export command
+        cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--yes]
+                                                       run a runbook (--dry-run: plan only)
+        cloudify deployment replay <id> [--at <run>] [--runbook <path>] [--target name=addr]...
+                                                       re-run a recorded run (--at: path, basename or timestamp prefix;
+                                                       default: newest; --dry-run: plan only)
         cloudify node use <node>                       print export command (active node)
         cloudify --no-defaults install <pkg>            install only basics + <pkg> (skip @default)
         cloudify --no-defaults --on <host> install <pkg>  minimal install on remote host
@@ -107,6 +112,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/deployments.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/hosts.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/targets.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/registry.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/runbooks.sh"
 
 #== INITIALIZATION
 function cloudify_init_paths() {
@@ -617,8 +623,16 @@ function main() {
                     [[ -n "${1:-}" ]] || die "Usage: cloudify deployment use <id>"
                     cloudify_deployment_use "$1"
                     ;;
+                run)
+                    shift
+                    cloudify_deployment_run "$@"
+                    ;;
+                replay)
+                    shift
+                    cloudify_deployment_replay "$@"
+                    ;;
                 *)
-                    die "Usage: cloudify deployment <create|delete|list|use> [args]"
+                    die "Usage: cloudify deployment <create|delete|list|use|run|replay> [args]"
                     ;;
             esac
             break

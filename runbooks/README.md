@@ -27,3 +27,28 @@ Policy rules (ivps / Tailscale ACL):
 Validation: the amnesiac test. A fresh agent session, given only the cloudify skill and
 the runbook path, completes the runbook on disposable infra with no human hints. Every
 stumble is a runbook defect, not an agent defect.
+
+## Engine
+
+`cloudify deployment run <id>` executes a runbook (found by front-matter `deployment:`,
+or `--runbook <path>`). Front-matter declares the deployment and its named targets; each
+step is a fence whose info string types it:
+
+    ---
+    deployment: xfce-gui
+    targets: guest, gateway
+    ---
+    ```bash step=install target=guest pkg=xfce id=install-xfce
+    cloudify --on "$TARGET_GUEST" install xfce
+    ```
+
+Types: `launch|install|configure|verify|uninstall|human-gate`. Every step but `human-gate`
+needs `target=`; the four package types need `pkg=` and preflight its required vars.
+Targets bind with `--target name=addr`, else the deployment var `TARGET_<NAME>`.
+`--dry-run` prints the plan and runs nothing.
+
+Each run writes a 0600 snapshot in `${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/` (target
+bindings, raw values by name, step outputs). `cloudify deployment replay <id>
+[--at <run>]` re-runs one: the snapshot's bindings and values are seeded (references
+resolved) and the same engine runs, so a repeated run sees the recorded values even if
+the store changed. Values never appear in the runbook, in output, or on a command line.

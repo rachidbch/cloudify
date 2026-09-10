@@ -170,3 +170,27 @@
 - Branch 7 T8+T9: added ADR-020 (registry=observation, replay=runbook+values, targets/bindings, secrets refs-vs-raw; supersedes ADR-011 pts 3/6/7), annotated ADR-011 status, added lean Security sections to the cloudify-dev and cloudify-pkg-dev skills. Docs only.
 
 - T6 design note written into the plan (runbook = Markdown front-matter + typed shell steps; targets as TARGET_<NAME>; bindings from --target or the deployment store; step outputs via CLOUDIFY_OUTPUTS_FILE; `deployment run` with preflight via `vars declared`; run snapshot under the deployment store; `replay` exports the snapshot). Awaiting approval before implementation.
+
+## 2026-09-10 - branch 7 T6a (runbook parser + preflight + `deployment run --dry-run`)
+
+- New `lib/runbooks.sh` + router source + `deployment run` verb. Contract: `cloudify_runbook_parse` (`type\tid\ttarget\tpkg\tbody-b64`), `cloudify_runbook_meta` (`deployment\ttargets-csv`), `cloudify_runbook_find` (default `${CLOUDIFY_DIR}/runbooks`), `cloudify_runbook_bind_targets` (`name\tnode\tinstance\tssh_host`), `cloudify_runbook_preflight`.
+- Parse validates `bash step=<type> [target=] [pkg=] [id=]`; dies with path + line on unknown type/attribute, missing target/pkg, undeclared target, duplicate id; auto id = position `%02d`. Bindings: `--target` > store `TARGET_<NAME>`; unbound dies listing all. Preflight honours the runbook's deployment store and dies listing every unresolved `pkg: NAME`. `--dry-run` prints the plan (deployment, targets, steps) and exits 0; without it the plan prints then dies for T6b.
+- Ambiguities recorded in the plan T6a note: non-step fences ignored, unknown attribute fails closed, duplicate front-matter targets deduped, `--runbook` deployment must match `<id>`, `--from` validated but unused, `--yes` ignored, pkg need not exist.
+- Tests: `tests/unit/runbooks.bats` 22 cases + fixtures `tests/fixtures/runbooks/{valid,guest-only}.md`; `task lint` rc 0; driver `~/tmp/t6a/driver.sh` green; focused 67/67; full `task test-unit` 502/502 rc 0 (`1..502`, once on final HEAD).
+
+## 2026-09-10 - branch 7 T6b (runbook execution + outputs + human gate + run snapshot)
+
+- `cloudify_runbook_execute <path> [--target ...] [--from <id>] [--yes]`: preflight, run-wide `CLOUDIFY_DEPLOYMENT`/`TARGET_<NAME>`/`CLOUDIFY_OUTPUTS_FILE`, per-step `STEP_*`, `bash -c` body streamed (stop at first non-zero, report step id), outputs file `name=value` -> `OUT_<name>`, `human-gate` body + TTY confirm (or `--yes`). Snapshot `${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml` (0600, atomic) with `status`/`started_at`/`finished_at`/`runbook`/`target.*`/`value.*`/`output.*`; written on failure too.
+- Router: `deployment run` without `--dry-run` dispatches it; `--from`/`--yes` now effective; usage updated.
+- Design's `cloudify_vars_deployment_file` absent -> used `_cloudify_deployment_config`.
+- Tests: `tests/unit/runbook-exec.bats` 6 cases; `runbooks.bats` non-dry-run case now asserts execution. `task lint` rc 0; driver `~/tmp/t6b/driver.sh` green; focused 73/73; full `task test-unit` 508/508 rc 0 (`1..508`, once on final HEAD).
+- E2E: throwaway `t6b-smoke` runbook (real `verify bats-test` over ssh + an output step) -> rc 0, snapshot 600 with `output.stamp`; deployment deleted after.
+
+## 2026-09-10 - branch 7 T6c (`deployment replay`)
+
+- `cloudify_deployment_replay <id> [--at <run>] [--runbook <path>] [--target ...] [--from <id>] [--dry-run] [--yes]`: `--at` = existing path / basename / timestamp prefix under `deployments/<id>/runs/`, default = most recently written (mtime); none or several -> die listing them. Seed: `target.<name>` -> binding (CLI `--target` wins), `value.<NAME>` -> `_cloudify_resolve_var_value` (reference decoded) + export (steps/ladder read it; the env path is a pass-through), runbook from the snapshot (`--runbook` overrides). Then the `deployment run` engine: preflight + steps + new snapshot. Plan prints target addresses and value names only; values never printed or on argv.
+- `CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES=<snapshot>`: the new snapshot records the replayed `value.*` lines, not the store's current state (unset = old behavior).
+- T6b artifact fixed (found by the E2E): a same-second run/replay overwrote `<utc>.yaml`. Engine now suffixes `-2`, `-3`, ...; the selector's newest is mtime-based; `runbook-exec.bats` newest assertion -> `_newest_snapshot`.
+- Fail closed: framework-owned/malformed value names, a non-snapshot file, a missing snapshot runbook.
+- Tests: `tests/unit/runbook-replay.bats` 11; `task lint` rc 0; driver `~/tmp/t6c/driver.sh` 18/18; focused 163/163; full `task test-unit` 519/519 rc 0 (`1..519`, once on final code HEAD).
+- E2E: `t6c-smoke` run (source `deployment`) -> store var deleted -> plain run fails preflight -> replay rc 0 with source `env`, value absent from the log, second 0600 snapshot with `-2` suffix; throwaway deleted.

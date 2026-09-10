@@ -777,3 +777,4 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - The render gate caught RDP auth failure for `gui`: the runbook relied on ambient deployment context, so `CLOUDIFY_DEPLOYMENT` was not set for the xfce install, `CLOUDIFY_XFCE_USER_PASSWORD` was not forwarded, and the recipe generated its own password (which a re-run cannot change, by design). The Guacamole record had the operator password, so auth failed.
 - Fix: the runbook now scopes the deployment explicitly per command (`--deployment xfce-gui` for vars, `CLOUDIFY_DEPLOYMENT=xfce-gui` for install/configure/verify/uninstall) and documents that the xfce password is consumed only at account creation. Recovery on the test guest: set the account password to the operator value.
+- Human gate PASSED after the scoping fix; teardown ran (xfce + guacamole uninstall, unexpose, deployment delete, guest delete, ACL revoke). Branch 6 done.

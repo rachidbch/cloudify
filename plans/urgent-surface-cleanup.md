@@ -775,8 +775,12 @@ Tasks:
   to `pkg/guacamole/verify.sh`.
 - Remaining (ROADMAP non-urgent): no clean node-MagicDNS-FQDN command (`ivps status` prints the
   IP; the runbook takes the tailnet domain as input); bash usage spam during installs.
-- Human gate: the operator must open the exposed UI and confirm the XFCE render; the agent stops
-  there by design.
+- Human gate: PASSED. The first attempt failed RDP auth for `gui` because the runbook relied on
+  ambient deployment context, so `CLOUDIFY_XFCE_USER_PASSWORD` was not forwarded and a password
+  was generated; the runbook now scopes the deployment per command. After recovery, the render
+  and keyboard were confirmed. Teardown ran (uninstall xfce + guacamole, unexpose, delete the
+  deployment, delete the disposable guest, revoke the ACL).
+- Branch 6 done: the amnesiac run completed end to end (agent to the gate, human confirmed).
 
 ## Branch 7 - state registry + `cloudify deployment run` (collapsed)
 

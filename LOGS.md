@@ -131,3 +131,5 @@
 - Run 3 (instances provided, domain given) reached the human gate; runbook rewritten to software-only scope; `cloudify host`/`info` crash fixed; guacd DNS check added.
 
 - Human gate failed on xfce RDP auth: runbook didn't scope the deployment per command, so the xfce password var was not forwarded and a password was generated. Runbook fixed to scope the deployment explicitly; guest account recovered to the operator password.
+
+- Human gate passed (XFCE render + keyboard) after the scoping fix; full teardown done. Branch 6 done.

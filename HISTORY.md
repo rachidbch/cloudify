@@ -772,3 +772,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Amnesiac validation run twice with a fresh agent (only the cloudify skill + the runbook). Run 1: 7 defects, all fixed (missing deployment activation, broken bind derivation, wrong `ivps info`, missing tag-authkey refresh, no reachability check, wrong re-run wording). Run 2: `ivps acl` syntax, bare-name Incus resolution, false loopback assumption (operator yaml sets the bind); runbook fixed to set a loopback bind + `ivps expose-direct`.
 - Blockers recorded as non-urgent ROADMAP entries: no clean node-MagicDNS-FQDN command, `cloudify host`/`info` gaps, tag-to-tag reachability, guacd MagicDNS check. End-to-end pass not yet green.
 - Run 3 with provided instances and the software-only scope reached the human gate; clarity frictions fixed. Code fixed: `cloudify host`/`info` no longer crash, guacd MagicDNS check added to guacamole verify, runbook rewritten to software-only.
+
+### 2026-09-10 - runbook fix from the human gate
+
+- The render gate caught RDP auth failure for `gui`: the runbook relied on ambient deployment context, so `CLOUDIFY_DEPLOYMENT` was not set for the xfce install, `CLOUDIFY_XFCE_USER_PASSWORD` was not forwarded, and the recipe generated its own password (which a re-run cannot change, by design). The Guacamole record had the operator password, so auth failed.
+- Fix: the runbook now scopes the deployment explicitly per command (`--deployment xfce-gui` for vars, `CLOUDIFY_DEPLOYMENT=xfce-gui` for install/configure/verify/uninstall) and documents that the xfce password is consumed only at account creation. Recovery on the test guest: set the account password to the operator value.

@@ -166,3 +166,5 @@
 - `lib/vars.sh` deny-list + `CLOUDIFY_FORCE`, `CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE`, `CLOUDIFY_INSTANCE`; warn+skip unchanged.
 - Tests: `tests/unit/registry-delete.bats` 14 cases (red first: 13 failed), +1 `vars.bats` reserved-name case. `task lint` rc 0; focused 82/82 and 57/57 in `cloudai:cloudify`; full `task test-unit` 480/480 rc 0 (`1..480`, once on the final tree).
 - E2E: two throwaway ids installed on `cloudai:cloudify` -> records under `~/.config/ivps/nodes/cloudai/cloudify/deployments/<id>/pkgs/bats-test/`; `cloudify deployment delete <id>` removed one id's record + store dir and printed it; sibling record, `node.json`, bucket intact; both ids trashed after.
+
+- Branch 7 T8+T9: added ADR-020 (registry=observation, replay=runbook+values, targets/bindings, secrets refs-vs-raw; supersedes ADR-011 pts 3/6/7), annotated ADR-011 status, added lean Security sections to the cloudify-dev and cloudify-pkg-dev skills. Docs only.

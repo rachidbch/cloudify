@@ -135,3 +135,5 @@
 - Human gate passed (XFCE render + keyboard) after the scoping fix; full teardown done. Branch 6 done.
 
 - Branch 7 gate started: read-only description artifact (file:line + repros ~/tmp/b7) + plan recorded; design realigned after review (registry = observation; playable runbook + values = replay; targets/bindings; `--on` grammar; storage under the ivps node dir; `state_read` dropped; registry distribution + IPv6 + inventory adapter filed non-urgent). ivps fix prompt (`local` as a node) in the plan Notes.
+
+- RDP ACL post-mortem received (ivps agent): blanket tag:incus->tag:incus grant + over-broad `acl revoke --ssh` (ivps bug, fixed) broke container SSH ~14h. Encoded the tag-scoped replacement (tag:rdp-client/tag:rdp-server) in the xfce-guacamole runbook + runbooks/README policy rules; annotated the archived plan. Live ssh rule still missing tag:incus; rollback not applied.

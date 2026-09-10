@@ -1052,6 +1052,7 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
 
 ### Branch 7 T4 + T5 outcome (2026-09-10)
 
+- Merged to master as `0d866d1` (--no-ff); branch `feat/state-registry` covers T2-T5.
 - Landed on `feat/state-registry` (not yet merged): `lib/registry.sh` gains
   `cloudify_registry_delete_deployment` + `_cloudify_registry_delete_record_tree`;
   `cloudify_deployment_delete` calls it after trashing the store dir (guarded by

@@ -127,3 +127,5 @@
 ## 2026-09-09 - branch 6 (runbooks a)
 
 - Runbook + rules written; two amnesiac validation runs, defects fixed; end-to-end blocked by recorded tooling gaps (node FQDN, tag-to-tag ACL, guacd DNS).
+
+- Run 3 (instances provided, domain given) reached the human gate; runbook rewritten to software-only scope; `cloudify host`/`info` crash fixed; guacd DNS check added.

@@ -27,6 +27,9 @@ pkg_verify() {
     local base_url="http://${GUACAMOLE_BIND:-127.0.0.1}:${GUACAMOLE_PORT:-8080}"
     curl -fsS -o /dev/null "$base_url/" || return 1
 
+    # guacd resolves the RDP target from inside the compose network (MagicDNS).
+    sudo docker compose -f "$compose_file" exec -T guacd getent hosts "${CLOUDIFY_GUACAMOLE_RDP_HOST}" >/dev/null 2>&1 || return 1
+
     # Administrator can obtain an API token.
     local login token ds id
     login="$(curl -fsS -X POST "$base_url/api/tokens" \

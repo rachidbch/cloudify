@@ -31,7 +31,7 @@ Rules:
 - [v] Branch 3 - security: payload via stdin + skill Security section (merged 28f715c)
 - [v] Branch 4 - guacamole 3-leg rewrite (merged 23af7c1)
 - [v] Branch 5 - xfce alignment (merged 9ea2750)
-- [~] Branch 6 - agent runbooks + amnesiac validation
+- [v] Branch 6 - agent runbooks + amnesiac validation
 - [ ] Branch 7 - state registry + `cloudify deployment run` (collapsed)
 
 Trap -> branch map (ROADMAP `## URGENT` 1-7):
@@ -756,22 +756,27 @@ Design (ROADMAP Runbooks a):
 Tasks:
 - [v] Create `runbooks/` and write the xfce+guacamole E2E runbook to the rules.
 - [v] Move/retire `plans/xfce-guacamole-e2e.md`.
-- [~] Run the amnesiac validation on disposable infra; fix every defect it surfaces.
+- [v] Run the amnesiac validation on disposable infra; fix every defect it surfaces (reached the human gate).
 
 ### Branch 6 status (2026-09-09)
 
 - Written: `runbooks/xfce-guacamole/disposable.md` + `runbooks/README.md` (rules). Plan retired
   to `plans/archived/xfce-guacamole-e2e.md`.
-- Amnesiac validation run twice with a fresh agent (only the cloudify skill + the runbook).
-  Run 1 found 7 defects (missing deployment activation, broken bind command, wrong `ivps info`,
-  missing authkey refresh, no reachability check, wrong re-run wording). All fixed. Run 2 found
-  deeper ones, now fixed or recorded: `ivps acl` syntax (`grant <dst> --src <list>`, `--dst` does
-  not exist); bare container names resolve Incus-internal on the same node (use the full MagicDNS
-  name); the Guacamole UI did not bind loopback (the operator's pkgs yaml sets the bind), so the
-  runbook now sets `CLOUDIFY_GUACAMOLE_BIND=127.0.0.1` and exposes via `ivps expose-direct`.
-- Still open (blocking the end-to-end pass; ROADMAP non-urgent): no clean command for a node's
-  MagicDNS FQDN; tag-to-tag reachability needs an explicit ACL grant; no guacd MagicDNS check.
-- Done-when NOT met: the clean end-to-end amnesiac pass is blocked by those tooling gaps.
+- Amnesiac validation run three times with a fresh agent (only the cloudify skill + the runbook).
+  Run 1: 7 wording defects, fixed. Run 2: `ivps acl` syntax, bare-name Incus resolution, false
+  loopback assumption; fixed (full MagicDNS names, loopback bind + `ivps expose-direct`). Run 3
+  (instances provided, software-only scope, tailnet domain given): all steps 1-5 worked; reached
+  the human gate. Remaining frictions (clearance only) fixed: ivps node in Inputs, guacd container
+  name explained, port tied to the bind, `--stdin` contract and expected WARN/bash noise documented.
+- Scope correction (Rachid): runbooks deploy software on PROVIDED instances; they never create
+  or delete them. Instance provisioning and tailnet ACLs are operator preconditions.
+- Code fixed from the validation: `cloudify host`/`info` no longer crash on a missing/absent
+  subcommand (`lib/hosts.sh`, `cloudify` router alias). Added a guacd MagicDNS resolution check
+  to `pkg/guacamole/verify.sh`.
+- Remaining (ROADMAP non-urgent): no clean node-MagicDNS-FQDN command (`ivps status` prints the
+  IP; the runbook takes the tailnet domain as input); bash usage spam during installs.
+- Human gate: the operator must open the exposed UI and confirm the XFCE render; the agent stops
+  there by design.
 
 ## Branch 7 - state registry + `cloudify deployment run` (collapsed)
 

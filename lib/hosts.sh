@@ -89,13 +89,18 @@ function cloudify_info() {
     # Function allowed to run locally only
     ! $CLOUDIFY_IS_LOCAL && die "Error: Operation \"cloudify_info\" not allowed on remote hosts." 1
 
-    local host="$1"
+    local host="${1:-}"
+    [[ -n "$host" ]] || die "Usage: cloudify info|host <host> [ipv4|ipv6]" 1
     shift
     local ipv4
     local ipv6
+    if [[ -z "${1:-}" ]]; then
+        cloudify_container_ip "$host"
+        return 0
+    fi
     while :; do
-        [[ -z "$1" ]] && break
-        case "$1" in
+        [[ -z "${1:-}" ]] && break
+        case "${1:-}" in
         -h | --help | help)
             usage_info
             break

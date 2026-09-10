@@ -57,6 +57,14 @@ b) Cloudify runbooks (`cloudify deployment run <id>`), after (a). Deployment dec
 
 **Plausible fixes to study:** try `command sudo -n "$@"` first and fall back to the password path; ensure the shadow's `die` message always reaches the log (flush/log before exit); otherwise document that `--on localhost` needs `CLOUDIFY_LOCAL_PWD`.
 
+## bash usage spam during installs (non-urgent)
+
+**What happened:** xfce/guacamole installs emit repeated `bash: - : invalid option` lines plus a full bash usage block, and `comm: file 2 is not in sorted order`; a fresh reader reads them as failures.
+
+**Why:** some command invokes `bash -` (or with a bad flag), and a `comm` runs on unsorted input.
+
+**Plausible fixes to study:** find the caller (likely a shadow or the verify hook) and fix the invocation; sort before `comm`.
+
 ## Node MagicDNS name command gap (non-urgent)
 
 **What happened:** the amnesiac runbook needs the guest's full MagicDNS name (`<node>.<tailnet-domain>`) for cross-host references. `ivps status <remote:name>` prints the Tailscale IP only, `cloudify info` prints the LAN IP, and `cloudify exec <host> 'tailscale ip -4'` output carries the `host: ` prefix. The bare container name resolves to an Incus-internal address on the same node.

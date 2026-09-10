@@ -57,6 +57,10 @@ The `node:instance` target syntax splits on the first colon, which collides with
 
 Target resolution (is X a node? which node hosts instance X?) piggybacks on ivps inventory today. Put it behind a small adapter seam so cloudify can use ivps or another provisioning/inventory tool and keep its own registry root. Decide the adapter API (look up node/instance, list targets, provision) and whether cloudify's registry root is its own (`~/.config/cloudify/...`) or delegated to the provider.
 
+## Mixed local/remote host list dispatch (non-urgent)
+
+`_cloudify_dispatch` picks local vs remote once for the whole run (only when the host list is exactly `localhost`). A list containing `localhost` plus a remote host (`--on localhost cloudai ...`, or a tag expanding to both) sends the whole run down the remote path; the `localhost` leg then receives the package text as one already-joined argument (`cloudify "verify bats-test"`) and dies `Unknown argument`. Reproduced 2026-09-10 with a read-only `verify`. Fix: decide per host, and carry packages as a list, not a string.
+
 ## apt dpkg lock race (non-urgent)
 
 **What happened:** `cloudify uninstall xfce` failed with `E: Could not get lock /var/lib/dpkg/lock-frontend ... held by process (unattended-upgr)`; the recipe's `apt-get purge || die` turned a transient lock into a hard failure. The xfce uninstall leg now passes `-o DPkg::Lock::Timeout=300`, but the shadow `apt-get install`/`update` paths do not, so any install can hit the same race.

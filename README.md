@@ -206,8 +206,10 @@ aborts the run — an empty value is never forwarded. Backends are shell files i
 `lib/secrets/` (the built-in one is `base64`).
 
 **Reserved names.** `CLOUDIFY_REMOTE_USER`, `CLOUDIFY_REMOTE_PWD`, `DEBUG`,
-`CLOUDIFY_BOOTSTRAP_URL` and `CLOUDIFY_UPDATE_DELAY` are framework-owned: a file
-store that tries to set one is warned about and skipped.
+`CLOUDIFY_BOOTSTRAP_URL`, `CLOUDIFY_UPDATE_DELAY`, `CLOUDIFY_FORCE`,
+`CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE` and
+`CLOUDIFY_INSTANCE` are framework-owned: a file store that tries to set one is
+warned about and skipped.
 
 **Deployment-wide vars (ADR-011):** `~/.config/cloudify/deployments/<id>/config.yaml`
 A deployment is an application across nodes (e.g. a k3s cluster). Set the per-shell context and manage vars via the CLI:
@@ -222,6 +224,10 @@ cloudify vars set K3S_TOKEN secret
 
 `cloudify --on <node> install <pkg>` then forwards the deployment vars to the host.
 Deployment values beat package and global values; the caller env still wins.
+
+`cloudify deployment delete <id>` trashes the deployment store dir and every
+observation record for that id (the node and instance buckets written after an
+install), so no record outlives its deployment.
 
 ### Environment Variables
 
@@ -300,6 +306,7 @@ lib/
   containers.sh       Container operations via ivps (launch, delete, IP lookup)
   credentials.sh      System credential management: save, load, section-based prompting
   deployments.sh      Deployment-wide store: deployment CRUD (ADR-011)
+  registry.sh         Observation registry: per-(deployment, target, package) records
   pkg-config.sh       Sources lib/vars.sh for package-config consumers (reader lives there)
   vars.sh             Five-source var helpers + precedence walker core + resolver
   secrets.sh          Secret-backend loader (sources lib/secrets/*.sh)

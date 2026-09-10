@@ -314,6 +314,43 @@ ENV
     grep -q "root@cloudify" "$STUB_DIR/ssh_calls.log"
 }
 
+@test "real router: a remote dispatch writes a registry record for the resolved target" {
+    _create_ssh_stub
+    # ivps stub whose node dir lives inside the test temp dir (no real writes)
+    cat <<STUB > "$STUB_DIR/ivps"
+#!/bin/bash
+case "\${1:-}" in
+    node)
+        [[ "\${3:-}" == "local" || "\${3:-}" == "cloudai" ]] || exit 1
+        echo "$STUB_DIR/nodes/\${3:-}"
+        ;;
+    list)
+        echo "  REMOTE:NAME      STATUS"
+        echo "  cloudai:cloudify Running"
+        ;;
+    *) exit 1 ;;
+esac
+STUB
+    chmod +x "$STUB_DIR/ivps"
+
+    local dep="router-registry-test"
+    PATH="$STUB_DIR:$PATH" run bash -c "
+        export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true
+        export CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-registry-test CLOUDIFY_TMP=/tmp/cf-registry-test-tmp
+        export DEBUG=false CLOUDIFY_HOSTPWD=test CLOUDIFY_REMOTE_PWD=test CLOUDIFY_REMOTE_USER=root
+        export CLOUDIFY_DEPLOYMENT=$dep CLOUDIFY_CREDENTIALS_DIR=$STUB_DIR/creds
+        mkdir -p /tmp/cf-registry-test/pkg /tmp/cf-registry-test/inventory /tmp/cf-registry-test-tmp
+        cd /root/cloudify && bash cloudify --on cloudai:cloudify install bats-test 2>&1
+    "
+
+    [ "$status" -eq 0 ]
+    local record="$STUB_DIR/nodes/cloudai/cloudify/deployments/$dep/pkgs/bats-test/config.yaml"
+    [ -f "$record" ]
+    grep -q "^node: cloudai$" "$record"
+    grep -q "^instance: cloudify$" "$record"
+    grep -q "^status: installed$" "$record"
+}
+
 @test "real router: --on <bad>: dies with the node-not-found message" {
     _create_ivps_target_stub
 

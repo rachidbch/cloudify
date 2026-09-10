@@ -145,3 +145,24 @@
 - E2E smoke of the three forms green over real ssh (`cloudify: OK`, rc 0) after the tailnet policy restore; merged to master as `8989e32`.
 
 - RDP ACL post-mortem received (ivps agent): blanket tag:incus->tag:incus grant + over-broad `acl revoke --ssh` (ivps bug, fixed) broke container SSH ~14h. Encoded the tag-scoped replacement (tag:rdp-client/tag:rdp-server) in the xfce-guacamole runbook + runbooks/README policy rules; annotated the archived plan. Policy restored by the operator; container ssh green.
+
+## 2026-09-10 - branch 7 T2 (registry storage)
+
+- New `lib/registry.sh` + router source: record path under `$(ivps node path <node>)[/<instance>]/deployments/<id>/pkgs/<pkg>/config.yaml`, plain-host fallback under `${CLOUDIFY_CREDENTIALS_DIR:-$HOME/.config/cloudify}/registry/hosts/<ssh_host>/...`; `file`/`put`/`get`/`delete`/`list`, 0700/0600, atomic mktemp+mv, unsafe components rejected.
+- Tests: `tests/unit/registry.bats` 27 cases (red first, then green); driver `~/tmp/t2/driver.sh` green; `task lint` rc 0; `task test-unit` 452/452 rc 0 on final HEAD.
+- Pruning stops below `deployments/<id>`; `list` takes an optional ssh_host (fallback bucket only); both recorded in the module header + the plan's T2 outcome.
+- Next: T3 registry write (operator-side, after a successful dispatch), T5 reserved names.
+
+## 2026-09-10 - branch 7 T3 (registry write)
+
+- `lib/registry.sh`: record builder/apply (`cloudify_registry_record_build`/`_apply`) + `_cloudify_registry_record_bg`; flat schema (`status`, timestamps, deployment/node/instance/package, `version`, `var.<NAME>` raw snapshot); merge keeps earlier timestamps; uninstall = `status: removed` + `removed_at`, record KEPT (supersedes the T4 "uninstall removes the slice" wording; T4 now `deployment delete` only).
+- Router: pid-keyed `_CLOUDIFY_BG_ACTION/_PKGS/_TARGET` + `_cloudify_note_bg`; local triple `local//localhost`, remote triple from `_CLOUDIFY_TARGETS` (no extra ivps call); the wait loop writes a record per package on success only; verify and an unset `CLOUDIFY_DEPLOYMENT` are skipped.
+- Tests: `tests/unit/registry-write.bats` 12 cases + 1 `shell-router.bats` case; `task lint` rc 0; driver `~/tmp/t3/driver.sh` green; full unit suite 465/465 rc 0 (`1..465`, once on final HEAD).
+- E2E: throwaway-deployment install on `cloudai:cloudify` wrote `~/.config/ivps/nodes/cloudai/cloudify/deployments/<id>/pkgs/bats-test/config.yaml` (700/600, correct node/instance/timestamp); re-run kept one valid record; throwaway dir trashed.
+
+## 2026-09-10 - branch 7 T4 + T5 (registry cleanup + reserved names)
+
+- `cloudify_registry_delete_deployment` sweeps `${IVPS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/ivps}/nodes/*` and `${CLOUDIFY_CREDENTIALS_DIR:-$HOME/.config/cloudify}/registry/hosts/*` for `<root>/deployments/<id>` and `<root>/*/deployments/<id>`, removing only dirs with a `pkgs/` subdir (trash-put, rm fallback, prints each removal, rc 0 when none); no `ivps` call. `cloudify_deployment_delete` calls it after the store trash (also for an orphan id), `declare -F`-guarded; router usage updated.
+- `lib/vars.sh` deny-list + `CLOUDIFY_FORCE`, `CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE`, `CLOUDIFY_INSTANCE`; warn+skip unchanged.
+- Tests: `tests/unit/registry-delete.bats` 14 cases (red first: 13 failed), +1 `vars.bats` reserved-name case. `task lint` rc 0; focused 82/82 and 57/57 in `cloudai:cloudify`; full `task test-unit` 480/480 rc 0 (`1..480`, once on the final tree).
+- E2E: two throwaway ids installed on `cloudai:cloudify` -> records under `~/.config/ivps/nodes/cloudai/cloudify/deployments/<id>/pkgs/bats-test/`; `cloudify deployment delete <id>` removed one id's record + store dir and printed it; sibling record, `node.json`, bucket intact; both ids trashed after.

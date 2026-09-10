@@ -60,18 +60,28 @@ cloudify_deployment_create() {
     echo "To use: export CLOUDIFY_DEPLOYMENT=$id"
 }
 
-# cloudify_deployment_delete <id> — trash the deployment dir
+# cloudify_deployment_delete <id> — trash the deployment dir + its registry records
 cloudify_deployment_delete() {
     local id="$1"
     local dir
     dir=$(_cloudify_deployment_dir "$id")
-    [[ -d "$dir" ]] || { log_info "Deployment '$id' does not exist."; return 0; }
-    trash-put "$dir" 2>/dev/null || {
-        # fallback: just rm if trash-cli unavailable
-        rm -rf "$dir"
-        log_warn "trash-put unavailable, removed directly."
-    }
-    log_info "Deployment '$id' deleted."
+    if [[ -d "$dir" ]]; then
+        trash-put "$dir" 2>/dev/null || {
+            # fallback: just rm if trash-cli unavailable
+            rm -rf "$dir"
+            log_warn "trash-put unavailable, removed directly."
+        }
+        log_info "Deployment '$id' deleted."
+    else
+        log_info "Deployment '$id' does not exist."
+    fi
+    # Records live outside the deployment store (lib/registry.sh); clean them too
+    # so a deleted deployment leaves nothing behind. Indexed so the module can be
+    # absent when only lib/deployments.sh is sourced (tests, standalone reuse).
+    if declare -F cloudify_registry_delete_deployment >/dev/null; then
+        cloudify_registry_delete_deployment "$id"
+    fi
+    return 0
 }
 
 # cloudify_deployment_list — list all deployment ids

@@ -240,6 +240,22 @@ EOF
     [ "$CLOUDIFY_UPDATE_DELAY" = "30" ]
 }
 
+@test "new control-channel names from a file store are warned and never forwarded" {
+    rubric "CLOUDIFY_FORCE/NO_VERIFY/DEPLOYMENT/NODE/INSTANCE are framework-owned (T5)"
+    mkdir -p "$CLOUDIFY_DIR/pkg/walk"
+    local name
+    for name in CLOUDIFY_FORCE CLOUDIFY_NO_VERIFY CLOUDIFY_DEPLOYMENT CLOUDIFY_NODE CLOUDIFY_INSTANCE; do
+        subrubric "$name"
+        printf '%s: evil\n' "$name" > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
+        export "$name=good"
+        _cloudify_pkg_remote_vars install walk > "$CLOUDIFY_TMP/names" 2> "$CLOUDIFY_TMP/warn"
+        step "value untouched: $name=${!name}"
+        [ "${!name}" = "good" ]
+        grep -q "$name is framework-owned" "$CLOUDIFY_TMP/warn"
+        ! grep -qx "$name" "$CLOUDIFY_TMP/names"
+    done
+}
+
 # --- precedence walker (R1/R2/R3) ---
 
 make_walker_fixture() {

@@ -792,7 +792,8 @@ Depends on branches 1-6.
 - [x] Description artifact (2026-09-10): "What the code does today" below. Read-only
   subagent + operator re-verification on the live machine. Repro scripts `~/tmp/b7/`
   (A: payload/forwarding, B: node dir, C: resolver, D: control-var injection).
-- [x] Plan + non-breakage argument (below): invariants I7-1..I7-9, decisions D1-D7.
+- [x] Plan + non-breakage argument (below): invariants I7-1..I7-10; realigned to the
+  three-artifact model after design review (2026-09-10).
 - [ ] Explicit consent (Rachid) before any `lib/`/router edit.
 
 ### What the code does today (gate description, read-only)
@@ -875,39 +876,48 @@ Must change: `vars.bats:46-49` ("state_read is a no-op until branch 7" premise).
 current test covers node path / a slice / `deployment run`. `containers.bats:24-56` is
  the ivps-stub model.
 
-### Decisions requiring human consent
+### Aligned design (2026-09-10; supersedes the ROADMAP registry entry and ADR-011 pts 3/6/7)
 
-- **D1 - slice location / identity.** (A) node-dir slice keyed by node, container->node
-  resolved via `ivps list`; (B, recommended) cloudify-owned
-  `~/.config/cloudify/deployments/<id>/instances/<host>/pkgs/<pkg>/config.yaml` where
-  `<host>` is the `--on` value (localhost included); (C) node-dir slice with an instance
-  segment + resolution. B generalizes to containers/bare/localhost and matches ADR-011
-  pt2 (cloudify owns deployments); it deviates from pt3 (ivps node dir) and drops the
-  `ivps node delete` cleanup, so `cloudify uninstall`/`deployment delete` own cleanup.
-  Recommend B, amend ADR-011 pt3 + pt6.
-- **D2 - write timing/owner.** Node dirs are operator-local, so the write MUST be
-  operator-side. Recommend: after a successful background wait (cloudify:678-698, needs a
-  pid->action+pkgs map added), recording the operator-resolved var set. No remote payload
-  change. Remote-side write is impossible without an ssh-sync-back channel.
-- **D3 - replay trigger + precedence.** Recommend: `cloudify_vars_state_read` runs only
-  under an explicit replay flag (set by `deployment run`/replay), never by a normal
-  install; on replay the recorded values seed the strongest rung (last known-good intent)
-  and the live ladder fills gaps.
-- **D4 - secrets in the record.** ROADMAP:23 says refs/hashes; ADR-011 pt7 says plaintext
-  MVP. A hash cannot replay a generated secret (xfce auto-generate). Recommend: store the
-  reference when the source was a reference, else the raw value, 600, never logged; amend
-  ADR-011 pt7 and correct ROADMAP:23.
-- **D5 - cleanup.** Recommend: `cloudify uninstall` removes the instance slice;
-  `cloudify deployment delete` trashes the deployment dir; no dependency on
-  `ivps node delete` (D1-B).
-- **D6 - scope split.** Recommend two merges: 7a (registry write + replay read + cleanup
-  + ADR amendment) and 7b (`deployment run` engine + runbook-as-data + preflight + human
-  gate). 7b needs a report-back channel for step outputs (e.g. a launched guest's tailnet
-  name), which is undesigned; keeping it separate keeps 7a mergeable.
-- **D7 - reserved-name gap.** A slice/ladder reader must not become a control channel:
-  extend the deny-list (vars.sh:21-28) with `CLOUDIFY_FORCE`, `CLOUDIFY_NO_VERIFY`,
-  `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_INSTANCE` (repro D proves all are claimed+forwarded
-  from a file store today). Small hardening, rides 7a.
+The earlier plan conflated three artifacts. Keep them separate:
+
+- **Registry = observation.** Per (deployment, target, package): status, installed/removed
+  timestamps, version, and a value snapshot (a reference where the source was a reference,
+  else raw; 600; never logged; never in git). Answers "what is out there". Never a plan,
+  never a precedence source.
+- **Playable runbook = the plan.** Markdown; front-matter declares `deployment` + `targets`;
+  each fenced shell block is one step, addressing targets by name. Targets and values are
+  bound at run time. Reusable, value-free, git-safe. [FIRST FORM; YAML if it chafes.]
+- **Values = the deployment store + the run snapshot.** Exact inputs.
+- **Replay = runbook + values.** `deployment run <id>` (current values, converge) and
+  `deployment replay <id> --at <t>` (snapshot, reproduce). Reproduction is only as exact as
+  the recipes allow (upstream versions, generate-once guards): promise structural replay +
+  captured values, not bit-exact.
+
+Vocabulary: a deployment has **targets** (named slots, e.g. `guest`); a **target binding**
+resolves one to a concrete node or instance at run time. "Role" is dropped.
+
+Storage (ivps owns the path, cloudify writes inside, ivps stays opaque):
+- node target: `$(ivps node path <node>)/deployments/<id>/pkgs/<pkg>/config.yaml`
+- instance target: `$(ivps node path <node>)/<instance>/deployments/<id>/pkgs/<pkg>/config.yaml`
+- Requires `local` to be a real ivps node: `ivps node path local` fails today
+  (`_get_remote_names` skips `local`, ~ivps:4383; `cmd_node_path` needs node.json,
+  ~ivps:4536). Fix prompt to the ivps repo is in `## Notes`. Localhost is a node like any
+  other, not special (it was only "special" as the removed fallback).
+
+Target addressing (`--on`); each form is a predicate (existence always; kind asserted by
+syntax):
+- `X` -> exists; kind discovered; X both node and instance -> error (fail closed).
+- `X:` -> exists and is a node.
+- `X:Y` -> X is a node, Y an instance on X.
+- `:Y` -> Y is an instance on the active node (else the default node; else error).
+- active = per-shell `CLOUDIFY_NODE`; default = ivps `IVPS_DEFAULT_NODE`. No localhost
+  fallback. Bare/`@tag` names must exist (install never provisions); explicit forms may be
+  provisioned, and only by the runbook `launch` step. `@tag` = tailnet names, any tailnet
+  node; the storage bucket is resolved via the ivps inventory, else a plain-host bucket.
+- IPv6 vs the `:` delimiter: ROADMAP non-urgent.
+
+Dropped from the earlier plan: `cloudify_vars_state_read` as a walker source. Replay never
+passes through the precedence ladder; the stub is removed.
 
 ### Invariants the registry must preserve
 
@@ -916,8 +926,8 @@ current test covers node path / a slice / `deployment run`. `containers.bats:24-
 - I7-2 The precedence ladder stays intent-only; the record is never read by a normal
   install/configure/verify/uninstall (gated behind the replay flag, D3).
 - I7-3 First-write-wins + claim-before-no-clobber unchanged (vars.sh:45-53, 96-101).
-- I7-4 The record stores pre-resolution references where the source was a reference;
-  plaintext only under the 600 trust boundary; never logged (D4).
+- I7-4 The registry stores a reference where the source was a reference; raw only under
+  the 600 trust boundary; never logged; never committed to git (git is not a backup).
 - I7-5 Perms 700/600 enforced by the writer regardless of parent dir perms.
 - I7-6 Write is idempotent + atomic (mktemp+mv, vars.sh:188-191); concurrent writes to
   one slice race -> last writer wins (accepted, document).
@@ -930,46 +940,44 @@ current test covers node path / a slice / `deployment run`. `containers.bats:24-
 
 ### Non-breakage argument
 
-7a is additive and operator-side. It (i) implements `cloudify_vars_state_read` behind a
-flag no existing caller sets (only `vars.bats:46-49` changes: a premise update, documented);
-(ii) writes a slice after a successful dispatch - off the walker path, touching no export,
-no envsubst value, no recipe; (iii) removes the slice on uninstall and on deployment delete;
-(iv) extends the reserved-name deny-list (warn+skip; no existing test supplies those names
-from a file store). It changes none of: `_cloudify_pkg_remote_vars` order, the payload
-template, the envsubst allow-list, the resolver, the deployment-wide reader, or any recipe.
-7b is a new action + engine, no existing path touched. If D1 picks C, the only addition is
-an operator-side guarded `ivps list` call; still no remote impact.
+The registry is additive and operator-side: it writes a record after a successful dispatch
+(off the walker path; no export, envsubst value, resolver, or recipe touched) and removes
+it on uninstall / `deployment delete`. Target addressing is a router-level change with its
+own gate; it preserves today's `X` semantics (must exist, ssh-reachable) and adds `X:`,
+`X:Y`, `:Y`. The only pinned-test change is `vars.bats:46-49` (the `state_read` no-op
+premise), removed with the stub. Runbook execution is a new action + engine; no existing
+path touched. Nothing changes `_cloudify_pkg_remote_vars` order, the payload template, the
+envsubst allow-list, the resolver, the deployment-wide reader, or any recipe.
 
-Pre-gate design (ROADMAP intent; superseded by D1-D7 above once consented):
-- Per-node slices `$(ivps node path <host>)/deployments/<id>/pkgs/<pkg>/config.yaml`,
-  keyed (deployment, instance, package); a REPLAY INPUT, outside the precedence ladder.
-- Resolution stays intent-only (recipe default < global < package < deployment < env);
-  recorded values re-apply only on explicit re-enactment (`deployment run`/replay).
-- Secrets as references/hashes, never plaintext; `ivps delete <host>` cleans the slice.
-- `cloudify deployment run <id>`: roles + typed steps as data (launch/install/configure/
-  verify/uninstall/human-gate), addresses by name; step outputs (e.g. a launched guest's
-  tailnet name) go to the record as replay input, never merged into intent config; later
-  steps consume them live. Preflight validates required vars via `vars declared`. Secrets
-  by name only; per-step security: payload via stdin, no secret in argv, masking.
-- Amend ADR-011 point 6 when this lands (record leaves the ladder).
-
-Tasks:
-- [ ] Implement the install-side slice write keyed (deployment, instance, package).
-- [ ] Implement the replay read (`cloudify_vars_state_read`); explicit re-enactment only.
-- [ ] Ensure `ivps delete <host>` removes the slice; secrets stay references/hashes.
-- [ ] Implement `cloudify deployment run <id>`: typed steps + role declarations + human-gate.
-- [ ] Preflight via `vars declared`; step outputs into the record.
-- [ ] Author the xfce+guacamole deployment runbook as data.
-- [ ] Amend ADR-011 point 6.
+Tasks (ordered; T1 first, it gates storage):
+- [ ] T1 target addressing: `--on` grammar + validation via the ivps inventory; per-shell
+  `CLOUDIFY_NODE` (active) with a `deployment use`-style export helper; no localhost fallback.
+- [ ] T2 registry storage: write under `$(ivps node path <node>)/...`; keep a plain-host
+  bucket fallback until ivps exposes `local`; 700/600; atomic (mktemp+mv).
+- [ ] T3 registry write: after a successful dispatch, record (deployment, target, package,
+  status, timestamps, version, value snapshot); operator-side, pid->action+pkgs map added.
+- [ ] T4 registry cleanup: uninstall removes the target slice; `deployment delete` trashes
+  the deployment dir.
+- [ ] T5 reserved-name hardening: extend vars.sh:21-28 with `CLOUDIFY_FORCE`,
+  `CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE`, `CLOUDIFY_INSTANCE`.
+- [ ] T6 playable runbook + engine: Markdown front-matter (`deployment`, `targets`) + typed
+  shell steps; bindings; step outputs into the registry; preflight via `vars declared`;
+  human-gate step; `deployment run` then `deployment replay`.
+- [ ] T7 author the xfce+guacamole runbook as data.
+- [ ] T8 amend ADR-011 pts 3/6/7 (path, record leaves the ladder, refs-vs-raw).
+- [ ] T9 dev skills `cloudify-dev` + `cloudify-pkg-dev`: few-line Security addition
+  (registry local-only, never git; recipes never persist secrets into the repo).
 
 Tests:
-- [ ] Integration: install writes the slice; replay re-applies only on explicit
-  re-enactment; deletion cleans up.
-- [ ] Integration: the xfce+guacamole app runs from a deployment runbook on disposable
-  infra; generated vs hand-written stays a later (Idea 3) exercise.
+- [ ] Unit: `--on` matrix (`X`, `X:`, `X:Y`, `:Y`, ambiguity error, localhost, missing node).
+- [ ] Unit: registry write/replace/delete, perms, snapshot round-trip, target bucketing.
+- [ ] Unit: reserved-name skip for the new names.
+- [ ] Integration: install writes the record; uninstall/`deployment delete` clean it; no
+  ladder change on a normal install.
+- [ ] Integration: the xfce+guacamole runbook runs via `deployment run` on disposable infra.
 
-Done when: slice lifecycle green, no silent merge into intent config; the deployment
-runbook completes end to end.
+Done when: target grammar + registry lifecycle green; the xfce+guacamole runbook completes
+end to end via `deployment run`; ADR amended; no silent merge into intent config.
 
 ## Notes
 
@@ -977,5 +985,27 @@ runbook completes end to end.
 - Disposable infra still up (optional teardown): `cloudai:xfce-test`, guacamole stack on
   `cloudai:cloudify`, deployment `xfce-gui`.
 - Branch 4 needs branch 2; branch 7 (registry + deployment run) needs branches 1-6.
-- README.md:159/165 corrections ride with branch 1; ADR-011 point 6 amendment rides with
+- README.md:159/165 corrections ride with branch 1; the ADR-011 amendment rides with
   branch 7.
+
+### ivps fix prompt (hand to the ivps repo, /home/rbc/PROJECTS/PROD/ivps)
+
+```
+ivps: make `local` a first-class node
+
+Why: cloudify will store deployment records under `$(ivps node path <node>)/...`, and the
+local incus remote is a real host that runs instances. Today `local` is inconsistent:
+`_resolve_default` (~267) already treats IVPS_DEFAULT_NODE=local as "no prefix", but
+`_get_remote_names` skips it (~4383) so `ivps node list` hides it, and `cmd_node_path`
+(~4536) requires nodes/local/node.json so `ivps node path local` fails.
+
+Done when:
+- `ivps node path local` prints `$NODES_DIR/local` (create it lazily / synthesize node.json).
+- `ivps node list` includes `local` (keep skipping `images`).
+- `ivps node show local` and `ivps node set-default local` work.
+- `ivps node delete local` exits non-zero without touching the dir (cannot destroy the host).
+- cloudai/cloudstation behavior unchanged.
+- comment at ~4533 (`cloudify appends pkgs/<pkg>/deployments/<id>/`) made shape-agnostic:
+  ivps is opaque; cloudify owns the layout (`deployments/<id>/pkgs/<pkg>/`).
+Follow this repo's AGENTS.md (TDD, HISTORY.md, gates).
+```

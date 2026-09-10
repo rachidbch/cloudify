@@ -133,3 +133,5 @@
 - Human gate failed on xfce RDP auth: runbook didn't scope the deployment per command, so the xfce password var was not forwarded and a password was generated. Runbook fixed to scope the deployment explicitly; guest account recovered to the operator password.
 
 - Human gate passed (XFCE render + keyboard) after the scoping fix; full teardown done. Branch 6 done.
+
+- Branch 7 gate started: read-only description artifact (file:line + repros ~/tmp/b7) + plan recorded; design realigned after review (registry = observation; playable runbook + values = replay; targets/bindings; `--on` grammar; storage under the ivps node dir; `state_read` dropped; registry distribution + IPv6 + inventory adapter filed non-urgent). ivps fix prompt (`local` as a node) in the plan Notes.

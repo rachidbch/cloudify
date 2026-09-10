@@ -135,3 +135,11 @@
 - Human gate passed (XFCE render + keyboard) after the scoping fix; full teardown done. Branch 6 done.
 
 - Branch 7 gate started: read-only description artifact (file:line + repros ~/tmp/b7) + plan recorded; design realigned after review (registry = observation; playable runbook + values = replay; targets/bindings; `--on` grammar; storage under the ivps node dir; `state_read` dropped; registry distribution + IPv6 + inventory adapter filed non-urgent). ivps fix prompt (`local` as a node) in the plan Notes.
+
+## 2026-09-10 - branch 7 T1 (`--on` target addressing)
+
+- `lib/targets.sh` resolver (`X`, `X:`, `X:Y`, `:Y`; ambiguity + plain-host fallback; `localhost` = node `local`) + router wiring (`_CLOUDIFY_TARGETS` triples, `cloudify node use`); README/usage updated.
+
+- Tests: `tests/unit/targets.bats` 32 cases + 4 router cases; full unit suite green.
+
+- E2E smoke of the three forms reached the container but only over an incus-exec substitute: the live tailnet ssh policy lost `dst: tag:incus` today (ivps `acl revoke --ssh` strips the dst from every ssh rule). Restore proposed, awaiting consent.

@@ -794,7 +794,7 @@ Depends on branches 1-6.
   (A: payload/forwarding, B: node dir, C: resolver, D: control-var injection).
 - [x] Plan + non-breakage argument (below): invariants I7-1..I7-10; realigned to the
   three-artifact model after design review (2026-09-10).
-- [ ] Explicit consent (Rachid) before any `lib/`/router edit.
+- [x] Explicit consent (Rachid) before any `lib/`/router edit (2026-09-10).
 
 ### What the code does today (gate description, read-only)
 
@@ -950,7 +950,7 @@ path touched. Nothing changes `_cloudify_pkg_remote_vars` order, the payload tem
 envsubst allow-list, the resolver, the deployment-wide reader, or any recipe.
 
 Tasks (ordered; T1 first, it gates storage):
-- [ ] T1 target addressing: `--on` grammar + validation via the ivps inventory; per-shell
+- [x] T1 target addressing: `--on` grammar + validation via the ivps inventory; per-shell
   `CLOUDIFY_NODE` (active) with a `deployment use`-style export helper; no localhost fallback.
 - [ ] T2 registry storage: write under `$(ivps node path <node>)/...`; keep a plain-host
   bucket fallback until ivps exposes `local`; 700/600; atomic (mktemp+mv).

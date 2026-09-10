@@ -106,6 +106,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/packages.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/deployments.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/hosts.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/targets.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/registry.sh"
 
 #== INITIALIZATION
 function cloudify_init_paths() {

@@ -855,9 +855,8 @@ Depends on branches 1-6.
   exist; perms inconsistent (cloudai dir 0755 / node.json 0644).
 - `ivps node delete <name>` -> `rm -rf node_dir` (ivps:4817-4820). The container
   `ivps delete <name>` never touches the tree (ivps:3432-3510); cloudify's `delete` verb
-  calls the container delete (cloudify:614-618, containers.sh:24-30). So the plan line
-  "`ivps delete <host>` removes the slice" is false as written; only `ivps node delete`
-  cleans the tree.
+  calls the container delete (cloudify:614-618, containers.sh:24-30). Only
+  `ivps node delete` cleans the tree; a container delete does not.
 - ivps documents the shape as `pkgs/<pkg>/deployments/<id>/` (ivps:668-669, 4533-4535),
   contradicting ADR-011 pt3 `deployments/<id>/pkgs/<pkg>/`. ivps is opaque to the shape;
   a doc fix is an ivps-side change.
@@ -867,7 +866,8 @@ Depends on branches 1-6.
 `ivps node path cloudify` fails. Cloudify hosts are containers (`cloudify`, `xfce-test`)
 or bare tailnet nodes; localhost is not an ivps node. The proposed key
 `(deployment, instance, package)` has no instance segment in the ADR-011/ROADMAP path.
-There is no ivps command mapping a container to its node. See D1.
+There is no ivps command mapping a container to its node. Resolved by the `--on` grammar
+below (`X:Y` names the node explicitly).
 
 **6. Pinned tests constraining any change.** Must stay unmodified: `deployments.bats`,
 `remote-vars.bats`, `verify-vars.bats`, `install-run-split.bats`, `uninstall.bats`,

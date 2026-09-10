@@ -196,3 +196,5 @@
 - E2E: `t6c-smoke` run (source `deployment`) -> store var deleted -> plain run fails preflight -> replay rc 0 with source `env`, value absent from the log, second 0600 snapshot with `-2` suffix; throwaway deleted.
 
 - T7 runbook authored as data + engine `run` step type + guacamole admin-user declaration fix; 520/520 unit. E2E blocked: invalid tailnet auth key (worked around with --tag incus) and invalid Tailscale API token (401 on tag/acl writes). Guest up; branch unmerged.
+
+- T7 cheap proofs green: dry-run/preflight; xfce installed+verified on cloudai:xfce-test; guacamole installed+configured+verified on cloudai:cloudify (GUI connection to xfce-test...:3389). E2E blocked on the single missing rule rdp-client->rdp-server:3389 (xrdp listens; workstation reaches it; gateway cannot). Applying it needs the API token, 401 today.

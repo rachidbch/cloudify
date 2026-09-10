@@ -876,3 +876,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Declaration drift fixed: `pkg/guacamole/.remote-vars` declared `CLOUDIFY_GUACAMOLE_ADMIN_USER` as required while the recipe defaults it to `guacadmin`; now `=guacadmin`.
 - Unit suite 520/520 rc 0 (`results/t7-unit.tap`).
 - E2E blocked on operator infra: the reusable tailnet auth key is invalid (plain `ivps launch` fails; worked around with `--tag incus`), and the Tailscale API token is invalid (`ivps tag get`/`tag set`/`acl grant` -> HTTP 401). The scoped RDP tags/grant cannot be applied, so the gateway cannot reach the guest on 3389. Disposable guest `cloudai:xfce-test` is up on `tag:incus`; branch `feat/runbook-as-data` is local and unmerged.
+
+### 2026-09-10 - branch 7 T7: cheap proofs green, E2E blocked on one tailnet rule
+
+- Deployment `xfce-gui` created with generated secrets (masked; `--reveal` retrieves them).
+- Cheap proofs all green: `deployment run --dry-run` (parse + bind + preflight, no missing vars); L2 install xfce on `cloudai:xfce-test` and guacamole on `cloudai:cloudify` (cloudify's own logs); L3 `verify` both -> `xfce-test: OK`, `cloudify: OK`. guacamole created the `GUI` connection for `xfce-test.komodo-everest.ts.net:3389`.
+- Isolated blocker: xrdp listens on the guest (`*:3389`), the workstation (`tag:workstation`, allowed to `tag:incus`) connects, the gateway (`tag:incus`) gets TCP-CLOSED. Missing rule: `tag:rdp-client -> tag:rdp-server:3389` (with the two role tags). Applying it needs the Tailscale API token, which returns HTTP 401 today.
+- Token reconciliation: ivps HISTORY records a successful ACL write at 16:28:19Z today, so the token worked then and does not now. Neither ivps nor cloudify records a revocation or rotation; a direct `curl` with the configured `TS_SERVICE_API_KEY` 401s on `/acl` and `/devices` with both Basic and Bearer. Revocation is therefore unproven; expiry or an out-of-band change are the candidates, and the admin key list (expired vs revoked) is the disambiguation.

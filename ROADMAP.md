@@ -47,6 +47,16 @@ b) Cloudify runbooks (`cloudify deployment run <id>`), after (a). Deployment dec
 
 **Experiment:** replicate/publish registry events (NATS/JetStream or equivalent) so records survive an operator loss and several operators can read them. Open question: operator-local append + async replication vs a central broker as the write master. A backup/snapshot step is the cheap first move; replication second.
 
+**Constraint:** the registry holds deployment values and generated outputs, so git is not a valid backup target (it would commit data that must not leave the host). Backups must be secret-aware and local/encrypted.
+
+## IPv6 and the target `:` delimiter (non-urgent)
+
+The `node:instance` target syntax splits on the first colon, which collides with IPv6 literals (`fd42::1`) and `host:port` shaped values. `--on` is name-based today so it does not bite yet, but the delimiter must become unambiguous before targets accept addresses. Options: a distinct separator, bracket-wrapping IPv6 (`[fd42::1]`), or a `--node`/`--instance` flag pair instead of a delimiter.
+
+## Target inventory adapter (non-urgent)
+
+Target resolution (is X a node? which node hosts instance X?) piggybacks on ivps inventory today. Put it behind a small adapter seam so cloudify can use ivps or another provisioning/inventory tool and keep its own registry root. Decide the adapter API (look up node/instance, list targets, provision) and whether cloudify's registry root is its own (`~/.config/cloudify/...`) or delegated to the provider.
+
 ## apt dpkg lock race (non-urgent)
 
 **What happened:** `cloudify uninstall xfce` failed with `E: Could not get lock /var/lib/dpkg/lock-frontend ... held by process (unattended-upgr)`; the recipe's `apt-get purge || die` turned a transient lock into a hard failure. The xfce uninstall leg now passes `-o DPkg::Lock::Timeout=300`, but the shadow `apt-get install`/`update` paths do not, so any install can hit the same race.

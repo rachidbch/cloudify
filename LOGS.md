@@ -168,3 +168,5 @@
 - E2E: two throwaway ids installed on `cloudai:cloudify` -> records under `~/.config/ivps/nodes/cloudai/cloudify/deployments/<id>/pkgs/bats-test/`; `cloudify deployment delete <id>` removed one id's record + store dir and printed it; sibling record, `node.json`, bucket intact; both ids trashed after.
 
 - Branch 7 T8+T9: added ADR-020 (registry=observation, replay=runbook+values, targets/bindings, secrets refs-vs-raw; supersedes ADR-011 pts 3/6/7), annotated ADR-011 status, added lean Security sections to the cloudify-dev and cloudify-pkg-dev skills. Docs only.
+
+- T6 design note written into the plan (runbook = Markdown front-matter + typed shell steps; targets as TARGET_<NAME>; bindings from --target or the deployment store; step outputs via CLOUDIFY_OUTPUTS_FILE; `deployment run` with preflight via `vars declared`; run snapshot under the deployment store; `replay` exports the snapshot). Awaiting approval before implementation.

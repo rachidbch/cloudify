@@ -919,6 +919,63 @@ syntax):
 Dropped from the earlier plan: `cloudify_vars_state_read` as a walker source. Replay never
 passes through the precedence ladder; the stub is removed.
 
+### T6 design note (proposed 2026-09-10; implement after approval)
+
+Scope: playable runbooks + `cloudify deployment run`. Values, targets and secrets keep the
+T1-T5 model (ADR-020).
+
+A runbook is Markdown, repo-tracked, git-safe (structure + names only):
+
+````
+---
+deployment: xfce-gui
+targets: guest, gateway
+---
+## Desktop
+```bash step=install target=guest pkg=xfce
+cloudify --on "$TARGET_GUEST" install xfce
+```
+```bash step=verify target=guest pkg=xfce
+cloudify --on "$TARGET_GUEST" verify xfce
+```
+```bash step=human-gate
+Open the URL and confirm the desktop renders.
+```
+````
+
+- Steps run in document order. The info string carries the step type
+  (`launch|install|configure|verify|uninstall|human-gate`) for preflight and reporting;
+  the body stays plain shell, so the runbook is still runnable by a human or agent.
+- A target named `guest` is exported as `TARGET_GUEST`. Bindings come from
+  `--target guest=<node[:instance]>`, else the deployment-store var `TARGET_GUEST`; an
+  unbound target is an error listing the needed bindings.
+- Values: each step calls `cloudify`, which loads them through the normal ladder (the
+  deployment store included). The engine adds nothing for values in `run` mode.
+- Step outputs: the engine sets `CLOUDIFY_OUTPUTS_FILE`; a step appends `name=value`;
+  later steps see `OUT_<name>`; the engine records them.
+- `human-gate` pauses for explicit confirmation; non-interactive without `--yes` fails.
+
+Commands:
+- `cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <step>]
+  [--dry-run] [--yes]`
+  - finds the runbook by scanning `runbooks/**/*.md` for matching front-matter
+    `deployment:` (or uses `--runbook`);
+  - preflight before any execution: resolve every target; for each
+    `install|configure|verify|uninstall` step check that the package's `vars declared`
+    required names resolve; fail listing what is missing;
+  - runs steps in order, stopping at the first non-zero;
+  - writes the run snapshot `${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml` (target
+    bindings, values used, outputs), 600.
+- `cloudify deployment replay <id> [--at <run>]` = `run` with the snapshot's values
+  exported into the environment, so the ladder forwards exactly the recorded ones.
+
+Preflight uses `vars declared`; secrets stay by name; per-step security unchanged (payload
+stdin, masking). Reproduction stays structural + captured values (recipe defaults, upstream
+versions and generate-once guards limit the rest).
+
+Staging: T6a parser + preflight + `--dry-run`; T6b execution + outputs + human gate; T6c
+replay. T7 authors the xfce+guacamole runbook and runs it E2E on disposable infra.
+
 ### Invariants the registry must preserve
 
 - I7-1 Exports are the value channel; readers stay redirect-invoked, never `$()`

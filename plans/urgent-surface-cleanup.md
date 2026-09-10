@@ -31,9 +31,8 @@ Rules:
 - [v] Branch 3 - security: payload via stdin + skill Security section (merged 28f715c)
 - [v] Branch 4 - guacamole 3-leg rewrite (merged 23af7c1)
 - [v] Branch 5 - xfce alignment (merged 9ea2750)
-- [ ] Branch 6 - runbooks a
-- [ ] Branch 7 - state registry
-- [ ] Branch 8 - runbooks b
+- [ ] Branch 6 - agent runbooks + amnesiac validation
+- [ ] Branch 7 - state registry + `cloudify deployment run` (collapsed)
 
 Trap -> branch map (ROADMAP `## URGENT` 1-7):
 trap 1 -> 1b (flag-scoped vars CLI); trap 2 -> 1b (declaration = doc mirror);
@@ -761,59 +760,47 @@ Tasks:
 
 Done when: the amnesiac run completes end to end.
 
-## Branch 7 - state registry (prerequisite for runbooks b)
+## Branch 7 - state registry + `cloudify deployment run` (collapsed)
 
 Gate: lib (write path + replay read), CRITICAL GATE.
+Depends on branches 1-6.
+
 Design (ROADMAP; supersedes ADR-011 point 6):
 - Per-node slices `$(ivps node path <host>)/deployments/<id>/pkgs/<pkg>/config.yaml`,
   keyed (deployment, instance, package); a REPLAY INPUT, outside the precedence ladder.
 - Resolution stays intent-only (recipe default < global < package < deployment < env);
   recorded values re-apply only on explicit re-enactment (`deployment run`/replay).
 - Secrets as references/hashes, never plaintext; `ivps delete <host>` cleans the slice.
+- `cloudify deployment run <id>`: roles + typed steps as data (launch/install/configure/
+  verify/uninstall/human-gate), addresses by name; step outputs (e.g. a launched guest's
+  tailnet name) go to the record as replay input, never merged into intent config; later
+  steps consume them live. Preflight validates required vars via `vars declared`. Secrets
+  by name only; per-step security: payload via stdin, no secret in argv, masking.
 - Amend ADR-011 point 6 when this lands (record leaves the ladder).
 
 Tasks:
 - [ ] Implement the install-side slice write keyed (deployment, instance, package).
 - [ ] Implement the replay read (`cloudify_vars_state_read`); explicit re-enactment only.
 - [ ] Ensure `ivps delete <host>` removes the slice; secrets stay references/hashes.
+- [ ] Implement `cloudify deployment run <id>`: typed steps + role declarations + human-gate.
+- [ ] Preflight via `vars declared`; step outputs into the record.
+- [ ] Author the xfce+guacamole deployment runbook as data.
 - [ ] Amend ADR-011 point 6.
 
 Tests:
 - [ ] Integration: install writes the slice; replay re-applies only on explicit
   re-enactment; deletion cleans up.
-
-Done when: slice lifecycle green, no silent merge into intent config.
-
-## Branch 8 - runbooks (b): `cloudify deployment run`
-
-Depends on branches 1-7.
-
-Design (ROADMAP Runbooks b; Idea 3 stays non-urgent):
-- Deployment declares roles + typed steps as data (launch/install/configure/verify/
-  uninstall/human-gate); addresses by name.
-- Step outputs (e.g. the launched guest's tailnet name) go to the state record as replay
-  input, never merged into intent config; later steps consume them live.
-- Preflight validates required vars via `vars declared` before launching anything.
-- Secrets by name only (five-source walker; optional vault on either end); per-step
-  security rules: payload via stdin, no secret in argv, masking.
-
-Tasks:
-- [ ] Design + implement `cloudify deployment run <id>` on the fixed surface.
-- [ ] Typed steps + role declarations + human-gate step.
-- [ ] Preflight via `vars declared`; step outputs into the state record.
-- [ ] Author the xfce+guacamole deployment runbook as data.
-
-Tests:
 - [ ] Integration: the xfce+guacamole app runs from a deployment runbook on disposable
   infra; generated vs hand-written stays a later (Idea 3) exercise.
 
-Done when: the deployment runbook completes end to end.
+Done when: slice lifecycle green, no silent merge into intent config; the deployment
+runbook completes end to end.
 
 ## Notes
 
 - PLAN.md points at this plan while the cleanup runs.
 - Disposable infra still up (optional teardown): `cloudai:xfce-test`, guacamole stack on
   `cloudai:cloudify`, deployment `xfce-gui`.
-- Branch 4 needs branch 2; branch 8 needs branches 1-7.
+- Branch 4 needs branch 2; branch 7 (registry + deployment run) needs branches 1-6.
 - README.md:159/165 corrections ride with branch 1; ADR-011 point 6 amendment rides with
   branch 7.

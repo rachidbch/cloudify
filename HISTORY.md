@@ -761,3 +761,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ### 2026-09-09 - roadmap: two failure modes to study
 
 - Added non-urgent ROADMAP entries: apt dpkg lock race (shadow install/update lack a lock wait) and shadow sudo requiring a password even as root (silent die).
+
+### 2026-09-09 - plan: branches 7+8 collapsed
+
+- Branch 7 is now "state registry + `cloudify deployment run`" (was two branches); Branch 8 removed. Branch 6 stays agent runbooks + amnesiac validation.

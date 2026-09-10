@@ -32,7 +32,7 @@ Rules:
 - [v] Branch 4 - guacamole 3-leg rewrite (merged 23af7c1)
 - [v] Branch 5 - xfce alignment (merged 9ea2750)
 - [v] Branch 6 - agent runbooks + amnesiac validation
-- [ ] Branch 7 - state registry + `cloudify deployment run` (collapsed)
+- [~] Branch 7 - state registry + `cloudify deployment run` (T1-T5, T8, T9 done; T6 engine + T7 runbook left)
 
 Trap -> branch map (ROADMAP `## URGENT` 1-7):
 trap 1 -> 1b (flag-scoped vars CLI); trap 2 -> 1b (declaration = doc mirror);

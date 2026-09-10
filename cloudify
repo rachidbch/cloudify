@@ -167,6 +167,16 @@ function cloudify_init_paths() {
     fi
 }
 
+# Record which action/packages/target a backgrounded dispatch carries, so the
+# final wait loop can write a registry record for each package on success.
+# Pid-keyed, parallel to _CLOUDIFY_BG_HOSTS (both live in main()'s scope).
+function _cloudify_note_bg() {
+    local pid="$1" action="$2" pkg_list="$3" target="$4"
+    _CLOUDIFY_BG_ACTION[$pid]="$action"
+    _CLOUDIFY_BG_PKGS[$pid]="$pkg_list"
+    _CLOUDIFY_BG_TARGET[$pid]="$target"
+}
+
 # Guard: ensure remote credentials are set before remote operations
 function _cloudify_require_remote_creds() {
     if [[ -z "${CLOUDIFY_REMOTE_PWD+x}" ]]; then
@@ -247,12 +257,14 @@ function _cloudify_execute_package_action() {
         (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; _cloudify_pkg_remote_vars install "${pkgs[@]}" > /dev/null; cloudify_install_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
+        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}"
         is_setup_in_progress=true
     elif [[ "$action" == "configure" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_configure_package ${pkgs[*]}${RESET}"
         ( _cloudify_pkg_remote_vars configure "${pkgs[@]}" > /dev/null; cloudify_configure_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
+        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}"
         is_setup_in_progress=true
     elif [[ "$action" == "uninstall" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs[*]}${RESET}"
@@ -260,6 +272,7 @@ function _cloudify_execute_package_action() {
         ( _cloudify_pkg_remote_vars uninstall "${pkgs[@]}" > /dev/null; cloudify_uninstall_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
+        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}"
         is_setup_in_progress=true
     elif [[ "$action" == "verify" ]]; then
         PKG_DEBUG "${YELLOW}cloudify verify ${pkgs[*]}${RESET}"
@@ -273,6 +286,7 @@ function _cloudify_execute_package_action() {
         ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
+        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}"
         is_setup_in_progress=true
     else
         die "Unexpected package action: $action"
@@ -287,6 +301,15 @@ function _cloudify_dispatch() {
 
     [[ "$packages" == *--install || "$packages" == *--configure || "$packages" == *--uninstall ]] && die "Cloudify usage error: Empty package section."
     [[ "$hosts" != "localhost" ]] && _cloudify_require_remote_creds
+
+    # Map each ssh host back to the target triple the resolver produced for it
+    # (T1 stored them in _CLOUDIFY_TARGETS, same order as the hosts list). No
+    # ivps call here; a target with no triple (should not happen) records nothing.
+    local -A _target_of_host=()
+    local _t
+    for _t in ${_CLOUDIFY_TARGETS[@]+"${_CLOUDIFY_TARGETS[@]}"}; do
+        _target_of_host["${_t##*$'\t'}"]="$_t"
+    done
 
     # Verify path: the `verify` action, or the `--verify install` alias.
     if [[ "$action" == "verify" || "${CLOUDIFY_VERIFY_ONLY:-}" == "true" ]]; then
@@ -311,6 +334,8 @@ function _cloudify_dispatch() {
     for host in $hosts; do
         rm -f "$CLOUDIFY_TMP/${host}.exit"
         if [[ "$hosts" == "localhost" ]]; then
+            # The local target triple, for the registry record (T3)
+            _CLOUDIFY_CUR_TARGET="${_target_of_host[localhost]:-$'local\t\tlocalhost'}"
             local pkgs_str="${packages/--$action/}"
             pkgs_str="${pkgs_str# }"
             local -a pkgs_array
@@ -325,6 +350,11 @@ function _cloudify_dispatch() {
             [[ "$action" == "install" ]] && export CLOUDIFY_FORCE=true
             # --clear-data implies CLOUDIFY_FORCE (already set above if --clear-data)
             cloudify_remote "$host" "$packages" && is_setup_in_progress=true
+            # $! is the pid cloudify_remote just backgrounded; attach the metadata
+            # the final wait loop needs for the registry record (T3).
+            local _dispatch_pkgs="${packages#--"$action"}"
+            _dispatch_pkgs="${_dispatch_pkgs# }"
+            _cloudify_note_bg "$!" "$action" "$_dispatch_pkgs" "${_target_of_host[$host]:-$'\t\t'"$host"}"
         fi
     done
 }
@@ -354,6 +384,11 @@ function main() {
     local is_setup_in_progress=false
     local -a _CLOUDIFY_BG_PIDS=()
     local -A _CLOUDIFY_BG_HOSTS=()
+    # Per-dispatch metadata for the registry record (T3), keyed by pid
+    local -A _CLOUDIFY_BG_ACTION=()
+    local -A _CLOUDIFY_BG_PKGS=()
+    local -A _CLOUDIFY_BG_TARGET=()
+    local _CLOUDIFY_CUR_TARGET=""
     # Resolved --on targets: one "<node>\t<instance>\t<ssh_host>" triple per target
     local -a _CLOUDIFY_TARGETS=()
 
@@ -729,6 +764,7 @@ function main() {
             wait "$_bg_pid" && _bg_rc=0 || _bg_rc=$?
             if [[ "$_bg_rc" -eq 0 ]]; then
                 msg "  ${GREEN}${_bg_host}: OK${RESET}"
+                _cloudify_registry_record_bg "$_bg_pid"
             else
                 msg "  ${RED}${_bg_host}: FAILED (exit ${_bg_rc})${RESET}"
                 had_failures=true

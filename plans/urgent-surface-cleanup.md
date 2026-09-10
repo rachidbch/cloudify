@@ -954,10 +954,11 @@ Tasks (ordered; T1 first, it gates storage):
   `CLOUDIFY_NODE` (active) with a `deployment use`-style export helper; no localhost fallback.
 - [v] T2 registry storage: write under `$(ivps node path <node>)/...`; keep a plain-host
   bucket fallback until ivps exposes `local`; 700/600; atomic (mktemp+mv).
-- [ ] T3 registry write: after a successful dispatch, record (deployment, target, package,
+- [v] T3 registry write: after a successful dispatch, record (deployment, target, package,
   status, timestamps, version, value snapshot); operator-side, pid->action+pkgs map added.
-- [ ] T4 registry cleanup: uninstall removes the target slice; `deployment delete` trashes
-  the deployment dir.
+- [ ] T4 registry cleanup: `deployment delete` trashes the deployment dir (T3 settled
+  uninstall: it is a `removed_at` timestamp, the record is KEPT — observation, not intent;
+  reuse `cloudify_registry_delete` only for an explicit erase, never on uninstall).
 - [ ] T5 reserved-name hardening: extend vars.sh:21-28 with `CLOUDIFY_FORCE`,
   `CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE`, `CLOUDIFY_INSTANCE`.
 - [ ] T6 playable runbook + engine: Markdown front-matter (`deployment`, `targets`) + typed
@@ -1013,6 +1014,37 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
 - Unproven: no real `ivps node path` write against a live node dir (unit stub only);
   `local` still needs the upstream ivps fix before the fallback can retire.
 - Next: T3 registry write (operator-side, after a successful dispatch) + T5 reserved names.
+
+### Branch 7 T3 outcome (2026-09-10)
+
+- Landed on `feat/state-registry` (not yet merged): `lib/registry.sh` gains the record
+  builder/apply (`cloudify_registry_record_build` / `_apply` / `_cloudify_registry_record_bg`)
+  and the router gains the pid-keyed dispatch plumbing (`_CLOUDIFY_BG_ACTION`,
+  `_CLOUDIFY_BG_PKGS`, `_CLOUDIFY_BG_TARGET`, `_cloudify_note_bg`) plus the wait-loop hook.
+  Additive and operator-side: no walker/payload/envsubst/shadow/recipe change.
+- Schema: first line `#` comment, then `status`, `installed_at`, `configured_at`, `removed_at`,
+  `deployment`, `node`, `instance`, `package`, `version`, `var.<NAME>`. Empty fields print as
+  `key:`; `var.<NAME>` is the RAW value from env > deployment > package > global (a stored
+  reference stays a reference); a multi-line raw value is stored as `@base64:`; undeclared /
+  unresolved names are skipped; `version` stays empty (no source).
+- Merge: the builder reads the existing record and carries timestamps + version over; install /
+  configure / uninstall set only their own timestamp and status, so `install -> configure`
+  keeps `installed_at`.
+- **Design decision that supersedes the earlier T4 wording**: uninstall writes
+  `status: removed` + `removed_at` and KEEPS the record (observation; teardown is a timestamp,
+  not a delete). T4 is now `deployment delete` only (plan task text corrected).
+- Evidence: new `tests/unit/registry-write.bats` 12 cases + 1 real-router case in
+  `tests/unit/shell-router.bats` (stub ssh/ivps, the record lands under the resolver's node
+  dir); focused run 12/12 then 22/22; L0 `bash -n` + `task lint` rc 0; driver
+  `~/tmp/t3/driver.sh` green; `task test-unit` (final HEAD) recorded in HISTORY/LOGS.
+- E2E smoke (real ssh, throwaway id): `CLOUDIFY_DEPLOYMENT=t3-smoke-... bash cloudify --on
+  cloudai:cloudify install bats-test` ->
+  `~/.config/ivps/nodes/cloudai/cloudify/deployments/<id>/pkgs/bats-test/config.yaml`, 700/600,
+  correct node/instance/timestamp; re-run kept one file and a valid schema. Throwaway record
+  dir trashed afterwards.
+- Unproven: no E2E for configure/uninstall merge (bats-test has no configure/uninstall leg);
+  the merge/uninstall record paths are unit-only. Local-path record bucketing still rides the
+  `ivps node path local` fallback (upstream ivps fix pending).
 
 ## Notes
 

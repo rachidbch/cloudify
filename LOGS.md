@@ -152,3 +152,10 @@
 - Tests: `tests/unit/registry.bats` 27 cases (red first, then green); driver `~/tmp/t2/driver.sh` green; `task lint` rc 0; `task test-unit` 452/452 rc 0 on final HEAD.
 - Pruning stops below `deployments/<id>`; `list` takes an optional ssh_host (fallback bucket only); both recorded in the module header + the plan's T2 outcome.
 - Next: T3 registry write (operator-side, after a successful dispatch), T5 reserved names.
+
+## 2026-09-10 - branch 7 T3 (registry write)
+
+- `lib/registry.sh`: record builder/apply (`cloudify_registry_record_build`/`_apply`) + `_cloudify_registry_record_bg`; flat schema (`status`, timestamps, deployment/node/instance/package, `version`, `var.<NAME>` raw snapshot); merge keeps earlier timestamps; uninstall = `status: removed` + `removed_at`, record KEPT (supersedes the T4 "uninstall removes the slice" wording; T4 now `deployment delete` only).
+- Router: pid-keyed `_CLOUDIFY_BG_ACTION/_PKGS/_TARGET` + `_cloudify_note_bg`; local triple `local//localhost`, remote triple from `_CLOUDIFY_TARGETS` (no extra ivps call); the wait loop writes a record per package on success only; verify and an unset `CLOUDIFY_DEPLOYMENT` are skipped.
+- Tests: `tests/unit/registry-write.bats` 12 cases + 1 `shell-router.bats` case; `task lint` rc 0; driver `~/tmp/t3/driver.sh` green; full unit suite 465/465 rc 0 (`1..465`, once on final HEAD).
+- E2E: throwaway-deployment install on `cloudai:cloudify` wrote `~/.config/ivps/nodes/cloudai/cloudify/deployments/<id>/pkgs/bats-test/config.yaml` (700/600, correct node/instance/timestamp); re-run kept one valid record; throwaway dir trashed.

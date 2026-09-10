@@ -944,7 +944,7 @@ Open the URL and confirm the desktop renders.
 ````
 
 - Steps run in document order. The info string carries the step type
-  (`launch|install|configure|verify|uninstall|human-gate`) for preflight and reporting;
+  (`launch|install|configure|verify|uninstall|run|human-gate`) for preflight and reporting;
   the body stays plain shell, so the runbook is still runnable by a human or agent.
 - A target named `guest` is exported as `TARGET_GUEST`. Bindings come from
   `--target guest=<node[:instance]>`, else the deployment-store var `TARGET_GUEST`; an
@@ -1171,7 +1171,7 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
   `cloudify_runbook_bind_targets <path> [--target name=addr]...` ->
   `name\tnode\tinstance\tssh_host`; `cloudify_runbook_preflight <path> [--target ...]...`.
 - Step info string: `bash step=<type> [target=] [pkg=] [id=]`; types
-  `launch|install|configure|verify|uninstall|human-gate`. Rejections (path + line): unknown
+  `launch|install|configure|verify|uninstall|run|human-gate`. Rejections (path + line): unknown
   type/attribute, missing target (non-human-gate), missing pkg (install/configure/verify/
   uninstall), target not in front-matter, duplicate id. Auto id = step position (`%02d`).
 - Binding: CLI `--target` wins, else the deployment-store var `TARGET_<NAME>` (uppercased);

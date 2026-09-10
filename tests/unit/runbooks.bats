@@ -146,6 +146,29 @@ _declare() {
     [ "$(printf '%s' "$(_field "${lines[2]}" 4)" | base64 -d)" = "Open the URL and confirm the desktop renders." ]
 }
 
+@test "parse accepts a generic run step (no target, no pkg)" {
+    rubric "run is a passthrough: target and pkg optional"
+    local f="$CLOUDIFY_TMP/run.md"
+    _make_runbook "$f" <<'EOF'
+---
+deployment: demo
+targets: guest
+---
+```bash step=run
+ivps expose-direct localhost 8080
+```
+```bash step=run target=guest
+echo "$TARGET_GUEST"
+```
+EOF
+    run cloudify_runbook_parse "$f"
+    [ "$status" -eq 0 ]
+    [ "${#lines[@]}" -eq 2 ]
+    [ "$(_field "${lines[0]}" 0)" = "run" ]
+    [ -z "$(_field "${lines[0]}" 2)" ]
+    [ "$(_field "${lines[1]}" 2)" = "guest" ]
+}
+
 # ---------------------------------------------------------------
 # Parse: rejections (runbook path + line/step in the message)
 # ---------------------------------------------------------------

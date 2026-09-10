@@ -194,3 +194,5 @@
 - Fail closed: framework-owned/malformed value names, a non-snapshot file, a missing snapshot runbook.
 - Tests: `tests/unit/runbook-replay.bats` 11; `task lint` rc 0; driver `~/tmp/t6c/driver.sh` 18/18; focused 163/163; full `task test-unit` 519/519 rc 0 (`1..519`, once on final code HEAD).
 - E2E: `t6c-smoke` run (source `deployment`) -> store var deleted -> plain run fails preflight -> replay rc 0 with source `env`, value absent from the log, second 0600 snapshot with `-2` suffix; throwaway deleted.
+
+- T7 runbook authored as data + engine `run` step type + guacamole admin-user declaration fix; 520/520 unit. E2E blocked: invalid tailnet auth key (worked around with --tag incus) and invalid Tailscale API token (401 on tag/acl writes). Guest up; branch unmerged.

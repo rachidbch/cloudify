@@ -42,8 +42,9 @@ step is a fence whose info string types it:
     cloudify --on "$TARGET_GUEST" install xfce
     ```
 
-Types: `launch|install|configure|verify|uninstall|human-gate`. Every step but `human-gate`
-needs `target=`; the four package types need `pkg=` and preflight its required vars.
+Types: `launch|install|configure|verify|uninstall|run|human-gate`. Every step but `human-gate`
+and `run` needs `target=`; the four package types need `pkg=` and preflight its required
+vars. `run` is a generic passthrough (arbitrary operator shell, e.g. `ivps expose-direct`).
 Targets bind with `--target name=addr`, else the deployment var `TARGET_<NAME>`.
 `--dry-run` prints the plan and runs nothing.
 

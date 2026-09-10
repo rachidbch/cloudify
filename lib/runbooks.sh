@@ -38,7 +38,7 @@ set -Eeuo pipefail
 [[ -n "${_CLOUDIFY_RUNBOOKS_LOADED:-}" ]] && return 0
 _CLOUDIFY_RUNBOOKS_LOADED=1
 
-_CLOUDIFY_RUNBOOK_TYPES=(launch install configure verify uninstall human-gate)
+_CLOUDIFY_RUNBOOK_TYPES=(launch install configure verify uninstall run human-gate)
 # Step types that consume a package (and so declare required vars)
 _CLOUDIFY_RUNBOOK_PKG_TYPES=(install configure verify uninstall)
 
@@ -254,8 +254,9 @@ function _cloudify_runbook_emit_step() {
         esac
     done
 
-    # A human gate is prose; every other step addresses a target.
-    if [[ "$type" != "human-gate" && -z "$target" ]]; then
+    # A human gate is prose and `run` is a generic passthrough; every other step
+    # addresses a target.
+    if [[ "$type" != "human-gate" && "$type" != "run" && -z "$target" ]]; then
         die "Runbook '$path': line $line: step '$type' is missing 'target='."
     fi
     if _cloudify_runbook_pkg_type "$type" && [[ -z "$pkg" ]]; then

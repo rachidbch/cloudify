@@ -234,7 +234,7 @@ install), so no record outlives its deployment.
 **Runbooks (`cloudify deployment run`).** A runbook is repo-tracked Markdown
 (`runbooks/<app>/<flavor>.md`, see `runbooks/README.md`): front-matter
 (`deployment`, `targets`) plus fenced `bash step=<type> [target=] [pkg=] [id=]`
-blocks, `<type>` in `launch|install|configure|verify|uninstall|human-gate`.
+blocks, `<type>` in `launch|install|configure|verify|uninstall|run|human-gate`.
 `deployment run <id>` binds each target (`--target name=addr` wins, else the
 deployment var `TARGET_<NAME>`), preflights the required vars of every
 pkg-consuming step, then runs the steps in document order, stopping at the first

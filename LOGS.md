@@ -200,3 +200,5 @@
 - T7 cheap proofs green: dry-run/preflight; xfce installed+verified on cloudai:xfce-test; guacamole installed+configured+verified on cloudai:cloudify (GUI connection to xfce-test...:3389). E2E blocked on the single missing rule rdp-client->rdp-server:3389 (xrdp listens; workstation reaches it; gateway cannot). Applying it needs the API token, 401 today.
 
 - Tailscale API token deep diagnosis: client-side clean, single well-formed token, 401 on both schemes/endpoints and on tailnet/-; worked at 16:28Z today; no revocation logged in either repo. Cause = expired or revoked (console-only disambiguation). Rule creation blocked until a valid token exists.
+
+- Tailscale API 401 root-caused: the token is well-formed and correctly read; it worked at 16:28Z today; no revocation logged. Provisioned 2026-06-12 (expose-service) = exactly 90 days today -> default API-key expiry. Also found: `ivps init` asks for `tskey-client-...` while the code uses the value directly as an API token (`tskey-api-...`). Console confirms expired vs revoked.

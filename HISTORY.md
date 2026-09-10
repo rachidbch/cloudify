@@ -892,3 +892,12 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Ruled out the tool: `ivps tag get` 401s with the same token, so it is not my curl approach.
 - Timeline: the same token succeeded at 16:28:19Z today (ivps HISTORY: the "dropped the blanket grant" ACL write). Neither ivps nor cloudify records a revocation or rotation.
 - Conclusion: the credential was invalidated between 16:28Z and now; the API gives the same message for expired and revoked, and the Tailscale admin key list (owner-only) is the only disambiguation. The rule cannot be created without a valid token.
+
+### 2026-09-10 - Tailscale API token 401: root cause is expiry, not revocation
+
+- Facts: the stored `TS_SERVICE_API_KEY` is well-formed (60 chars, all `[A-Za-z0-9-]`, ASCII, no CR), is the only `tskey-api-` credential on disk (no backups, not exported into the shell), and `ivps` reads it correctly (`_parse_config_env`/`read_config_value`, quotes stripped; `_require_ts_api_key` and the device/ACL calls use it as Bearer/Basic). No proxy vars, direct IPv4+IPv6 reachability to `api.tailscale.com`, clock sane.
+- Tailscale rejects it: 401 `{"message":"API token invalid"}` on `/tailnet/<d>/acl` and `/devices`, Basic and Bearer. The same body is returned for no-auth and for a garbage token, so the message is generic and does not itself prove revocation.
+- It worked earlier today: ivps HISTORY records a successful ACL write at 16:28:19Z. Neither ivps nor cloudify records a revocation or rotation.
+- Root cause (high confidence): expiry. The credential was provisioned with the expose-service feature on 2026-06-12 (ivps HISTORY, "config.env: new TS_SERVICE_API_KEY key"), exactly 90 days before today, matching Tailscale's default API-key expiry. That explains working this afternoon, failing tonight, and no revocation anywhere.
+- Secondary finding: `ivps init` prompts for a `tskey-client-...` (OAuth client secret) but every code path uses the stored value directly as a Bearer/Basic credential; the credential that actually works is a Tailscale API access token (`tskey-api-...`) with device + ACL (+ services) scopes. Prompt text or an OAuth token-exchange is wrong/missing - an ivps-side fix.
+- Disambiguation left to the admin console: the key list shows Expired vs Revoked and the expiry date; the arithmetic predicts "expired 2026-09-10".

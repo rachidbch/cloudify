@@ -32,7 +32,7 @@ Rules:
 - [v] Branch 4 - guacamole 3-leg rewrite (merged 23af7c1)
 - [v] Branch 5 - xfce alignment (merged 9ea2750)
 - [v] Branch 6 - agent runbooks + amnesiac validation
-- [~] Branch 7 - state registry + `cloudify deployment run` (T1-T5, T8, T9 done; T6 engine + T7 runbook left)
+- [~] Branch 7 - state registry + `cloudify deployment run` (T1-T5, T8, T9, T6b done; T6c replay + T7 runbook left)
 
 Trap -> branch map (ROADMAP `## URGENT` 1-7):
 trap 1 -> 1b (flag-scoped vars CLI); trap 2 -> 1b (declaration = doc mirror);
@@ -1022,8 +1022,8 @@ Tasks (ordered; T1 first, it gates storage):
   `cloudify_registry_delete` stays the explicit per-slice erase, never on uninstall.
 - [v] T5 reserved-name hardening: extend vars.sh:21-28 with `CLOUDIFY_FORCE`,
   `CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE`, `CLOUDIFY_INSTANCE`.
-- [~] T6 playable runbook + engine (T6a: parser + discovery + bindings + preflight +
-  `--dry-run` done 2026-09-10; T6b execution/outputs/human-gate + T6c replay left):
+- [~] T6 playable runbook + engine (T6a parser + binding + preflight + `--dry-run`, T6b
+  execution + outputs + human-gate done 2026-09-10; T6c replay left):
   Markdown front-matter (`deployment`, `targets`) + typed shell steps; bindings; step outputs
   into the registry; preflight via `vars declared`; human-gate step; `deployment run` then
   `deployment replay`.
@@ -1190,6 +1190,37 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
 - Unproven: no real-ssh run (nothing executes in T6a); the non-dry-run branch is a deliberate
   `die` (T6b); `--from`/`--yes` semantics land in T6b; no runbook in the repo yet uses the
   typed format (T7 authors it).
+
+### Branch 7 T6b outcome (2026-09-10)
+
+- Landed on `feat/deployment-run` (not yet merged): `cloudify_runbook_execute <path>
+  [--target name=addr]... [--from <id>] [--yes]` in `lib/runbooks.sh` + router dispatch
+  (`deployment run` without `--dry-run` now executes; `--from`/`--yes` take effect).
+  Additive: no walker/payload/envsubst/shadow/recipe change.
+- Contract: preflight first; run-wide exports `CLOUDIFY_DEPLOYMENT`, `TARGET_<NAME>` (the
+  resolved address `node:instance`/`node`/plain ssh host, so a body can pass it to `--on`)
+  and `CLOUDIFY_OUTPUTS_FILE`; per step `STEP_ID/STEP_TYPE/STEP_TARGET/STEP_PKG`. A step
+  body runs via `bash -c` in the run env, streamed, stopping at the first non-zero (reports
+  the step id). A step appends `name=value` to the outputs file; later steps see `OUT_<name>`.
+  `human-gate` prints its body and needs a TTY confirm, or `--yes`. Snapshot
+  `${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml`, 0600 atomic: `status:
+  succeeded|failed`, `started_at`/`finished_at`, `runbook`, `target.<name>`, `value.<NAME>`
+  (raw deployment-store lines), `output.<name>`. Written on failure too; temp outputs file
+  removed. The snapshot is not a registry record (separate tree).
+- Ambiguities resolved: the design's `cloudify_vars_deployment_file <id>` does not exist -
+  used `_cloudify_deployment_config <id>` (the real store path); step output values are kept
+  verbatim (no trimming); a failing step's outputs are still recorded; a `human-gate` refusal
+  writes `status: failed` before dying.
+- Evidence: `tests/unit/runbook-exec.bats` 6 cases; `runbooks.bats` non-dry-run case now
+  asserts execution (28 runbook cases total); L0 `bash -n` + `task lint` rc 0; driver
+  `~/tmp/t6b/driver.sh` green; focused `runbook-exec + runbooks + deployments + shell-router`
+  73/73 in `cloudai:cloudify`; full `task test-unit` 508/508 rc 0 (`1..508`, once on final
+  HEAD; 480 + 28).
+- E2E: throwaway `t6b-smoke` runbook (`verify bats-test` via `--on cloudai:cloudify` + one
+  output-emitting step) run for real over ssh; plan, step output and snapshot shown (600
+  perms); deployment deleted after (snapshot removed with it).
+- Unproven: the interactive human-gate "yes" path (only `--yes` and the no-TTY refusal are
+  tested); a `human-gate` mid-run followed by more steps over a real TTY; replay (T6c).
 
 ## Notes
 

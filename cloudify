@@ -41,8 +41,8 @@ function usage() {
         cloudify deployment delete|del <id>            delete a deployment (+ its node/instance records)
         cloudify deployment list|ls                    list deployments
         cloudify deployment use <id>                   print export command
-        cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--dry-run]
-                                                       run a runbook (T6a: plan only)
+        cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--yes]
+                                                       run a runbook (--dry-run: plan only)
         cloudify node use <node>                       print export command (active node)
         cloudify --no-defaults install <pkg>            install only basics + <pkg> (skip @default)
         cloudify --no-defaults --on <host> install <pkg>  minimal install on remote host

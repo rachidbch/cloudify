@@ -177,3 +177,11 @@
 - Parse validates `bash step=<type> [target=] [pkg=] [id=]`; dies with path + line on unknown type/attribute, missing target/pkg, undeclared target, duplicate id; auto id = position `%02d`. Bindings: `--target` > store `TARGET_<NAME>`; unbound dies listing all. Preflight honours the runbook's deployment store and dies listing every unresolved `pkg: NAME`. `--dry-run` prints the plan (deployment, targets, steps) and exits 0; without it the plan prints then dies for T6b.
 - Ambiguities recorded in the plan T6a note: non-step fences ignored, unknown attribute fails closed, duplicate front-matter targets deduped, `--runbook` deployment must match `<id>`, `--from` validated but unused, `--yes` ignored, pkg need not exist.
 - Tests: `tests/unit/runbooks.bats` 22 cases + fixtures `tests/fixtures/runbooks/{valid,guest-only}.md`; `task lint` rc 0; driver `~/tmp/t6a/driver.sh` green; focused 67/67; full `task test-unit` 502/502 rc 0 (`1..502`, once on final HEAD).
+
+## 2026-09-10 - branch 7 T6b (runbook execution + outputs + human gate + run snapshot)
+
+- `cloudify_runbook_execute <path> [--target ...] [--from <id>] [--yes]`: preflight, run-wide `CLOUDIFY_DEPLOYMENT`/`TARGET_<NAME>`/`CLOUDIFY_OUTPUTS_FILE`, per-step `STEP_*`, `bash -c` body streamed (stop at first non-zero, report step id), outputs file `name=value` -> `OUT_<name>`, `human-gate` body + TTY confirm (or `--yes`). Snapshot `${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml` (0600, atomic) with `status`/`started_at`/`finished_at`/`runbook`/`target.*`/`value.*`/`output.*`; written on failure too.
+- Router: `deployment run` without `--dry-run` dispatches it; `--from`/`--yes` now effective; usage updated.
+- Design's `cloudify_vars_deployment_file` absent -> used `_cloudify_deployment_config`.
+- Tests: `tests/unit/runbook-exec.bats` 6 cases; `runbooks.bats` non-dry-run case now asserts execution. `task lint` rc 0; driver `~/tmp/t6b/driver.sh` green; focused 73/73; full `task test-unit` 508/508 rc 0 (`1..508`, once on final HEAD).
+- E2E: throwaway `t6b-smoke` runbook (real `verify bats-test` over ssh + an output step) -> rc 0, snapshot 600 with `output.stamp`; deployment deleted after.

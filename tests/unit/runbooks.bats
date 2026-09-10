@@ -436,21 +436,33 @@ EOF
     [[ "$output" == *"human-gate"* ]]
 }
 
-@test "real router: deployment run without --dry-run refuses until T6b" {
-    rubric "plan prints, then die: no step execution in T6a"
+@test "real router: deployment run executes the steps after the plan" {
+    rubric "router path -> find/parse/bind/preflight/plan then execute, snapshot written"
     _create_ivps_stub
-    local cf="$CLOUDIFY_TMP/router-nodry"
+    local cf="$CLOUDIFY_TMP/router-exec"
     mkdir -p "$cf/pkg" "$cf/inventory" "$cf/tmp" "$cf/creds"
+    local rb="$CLOUDIFY_TMP/exec-runbook.md"
+    _make_runbook "$rb" <<EOF
+---
+deployment: demo
+targets: guest
+---
+\`\`\`bash step=install target=guest pkg=demo-pkg id=one
+echo ran >> "$cf/tmp/exec-marker"
+\`\`\`
+EOF
 
     PATH="$STUB_DIR:$PATH" run bash -c "
         export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true
         export CLOUDIFY_DIR='$cf' CLOUDIFY_TMP='$cf/tmp' CLOUDIFY_CREDENTIALS_DIR='$cf/creds'
         export CLOUDIFY_REMOTE_USER=root CLOUDIFY_REMOTE_PWD=test
         cd '$PWD' && bash cloudify deployment run demo \
-            --runbook '$RUNBOOKS/valid.md' \
-            --target guest=cloudai:xfce-test --target gateway=cloudai:guac 2>&1
+            --runbook '$rb' \
+            --target guest=cloudai:xfce-test --yes 2>&1
     "
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"T6b"* ]]
+    [ "$status" -eq 0 ]
     [[ "$output" == *"Deployment: demo"* ]]
+    [[ "$output" == *"succeeded"* ]]
+    [ -f "$cf/tmp/exec-marker" ]
+    [ -n "$(ls "$cf/creds/deployments/demo/runs/"*.yaml 2>/dev/null)" ]
 }

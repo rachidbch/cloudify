@@ -4,8 +4,9 @@
 # A runbook is repo-tracked Markdown: structure + names only, never values.
 # Front-matter declares the deployment and its named targets; each fenced
 # ```bash step=<type> ...``` block is one step. T6a parses, discovers, binds
-# targets, preflights required vars and previews (`--dry-run`). Step execution,
-# outputs and the human gate land in T6b; replay in T6c.
+# targets, preflights required vars and previews (`--dry-run`). T6b executes the
+# steps (`cloudify_runbook_execute`): run-wide exports, step outputs, the human
+# gate and the run snapshot; replay is T6c.
 #
 # Machine contract (tab-separated, stable):
 #   cloudify_runbook_parse <path>            one line per step:
@@ -15,6 +16,7 @@
 #   cloudify_runbook_bind_targets <path> [--target name=addr]...
 #                                            name \t node \t instance \t ssh_host
 #   cloudify_runbook_preflight <path> [--target name=addr]...
+#   cloudify_runbook_execute <path> [--target name=addr]... [--from <id>] [--yes]
 #   cloudify_deployment_run <id> [--runbook <path>] [--target name=addr]...
 #                               [--from <id>] [--dry-run] [--yes]
 #
@@ -53,6 +55,49 @@ function _cloudify_runbook_pkg_type() {
         [[ "$type" == "$k" ]] && return 0
     done
     return 1
+}
+
+# _cloudify_runbook_now — UTC ISO8601, second precision (snapshot timestamps)
+function _cloudify_runbook_now() {
+    date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+# _cloudify_runbook_utc — UTC, filename-safe (run snapshot name)
+function _cloudify_runbook_utc() {
+    date -u +%Y%m%dT%H%M%SZ
+}
+
+# _cloudify_runbook_target_addr <node> <instance> <ssh_host>
+# Reconstruct the address `--on` accepts from a resolved binding: "node:instance",
+# "node", or the plain ssh host when there is no node. This is what a step sees
+# as TARGET_<NAME> and what the snapshot records as target.<name>.
+function _cloudify_runbook_target_addr() {
+    local node="${1:-}" instance="${2:-}" ssh_host="${3:-}" addr
+    addr="${node:-$ssh_host}"
+    [[ -n "$instance" ]] && addr="$addr:$instance"
+    printf '%s' "$addr"
+}
+
+# _cloudify_runbook_snapshot <status> <started> <finished> <runbook> \
+#                              <targets-var> <values-var> <outputs-var> \
+#                              <output-order-var>
+# Print the flat run snapshot on stdout. Arrays are passed by name.
+function _cloudify_runbook_snapshot() {
+    local status="$1" started="$2" finished="$3" runbook="$4"
+    local -n _targets="$5"
+    local -n _values="$6"
+    local -n _outputs="$7"
+    local -n _order="$8"
+    printf 'status: %s\n' "$status"
+    printf 'started_at: %s\n' "$started"
+    printf 'finished_at: %s\n' "$finished"
+    printf 'runbook: %s\n' "$runbook"
+    local l o
+    for l in ${_targets[@]+"${_targets[@]}"}; do printf '%s\n' "$l"; done
+    for l in ${_values[@]+"${_values[@]}"}; do printf '%s\n' "$l"; done
+    for o in ${_order[@]+"${_order[@]}"}; do
+        printf 'output.%s: %s\n' "$o" "${_outputs[$o]}"
+    done
 }
 
 # _cloudify_runbook_frontmatter <path> — print the front-matter body (the lines
@@ -378,9 +423,10 @@ function cloudify_runbook_preflight() {
 
 # cloudify_deployment_run <id> [--runbook <path>] [--target name=addr]...
 #                           [--from <id>] [--dry-run] [--yes]
-# T6a: find + parse + bind + preflight + print the plan. Execution is T6b.
+# T6a find + parse + bind + preflight + print the plan; without --dry-run it then
+# dispatches cloudify_runbook_execute.
 function cloudify_deployment_run() {
-    local id="" runbook="" from="" dry=0
+    local id="" runbook="" from="" dry=0 yes=0
     local -a target_bindings=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -400,7 +446,7 @@ function cloudify_deployment_run() {
                 [[ -n "$from" ]] || die "deployment run: --from needs a step id."
                 ;;
             --dry-run) dry=1 ;;
-            --yes) ;; # T6b: non-interactive human-gate confirmation
+            --yes) yes=1 ;; # non-interactive human-gate confirmation
             -*) die "deployment run: unknown flag '$1'." ;;
             *)
                 [[ -z "$id" ]] || die "deployment run: unexpected argument '$1'."
@@ -472,5 +518,199 @@ function cloudify_deployment_run() {
     if [[ "$dry" == "1" ]]; then
         return 0
     fi
-    die "Runbook step execution lands in T6b; nothing was executed. Re-run with --dry-run to preview the plan."
+
+    local -a exec_args=()
+    for b in ${target_bindings[@]+"${target_bindings[@]}"}; do
+        exec_args+=(--target "$b")
+    done
+    [[ -n "$from" ]] && exec_args+=(--from "$from")
+    [[ "$yes" == "1" ]] && exec_args+=(--yes)
+    cloudify_runbook_execute "$runbook" ${exec_args[@]+"${exec_args[@]}"}
+}
+
+# cloudify_runbook_execute <path> [--target name=addr]... [--from <id>] [--yes]
+# Execute a runbook's steps in document order. Exports CLOUDIFY_DEPLOYMENT,
+# TARGET_<NAME> and CLOUDIFY_OUTPUTS_FILE for the whole run; each step gets
+# STEP_ID/STEP_TYPE/STEP_TARGET/STEP_PKG. A step appends `name=value` to the
+# outputs file and later steps see it as OUT_<name>. Stops at the first failure
+# and always writes the run snapshot.
+function cloudify_runbook_execute() {
+    local path="${1:-}"
+    [[ -n "$path" ]] ||
+        die "Usage: cloudify_runbook_execute <path> [--target name=addr]... [--from <id>] [--yes]"
+    shift || true
+
+    local from="" yes=0
+    local -a target_bindings=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --target)
+                shift
+                [[ -n "${1:-}" && "$1" == *=* ]] || die "runbook execute: --target expects name=addr."
+                target_bindings+=("$1")
+                ;;
+            --from)
+                shift
+                [[ -n "${1:-}" ]] || die "runbook execute: --from needs a step id."
+                from="$1"
+                ;;
+            --yes) yes=1 ;;
+            *) die "runbook execute: unknown argument '$1'." ;;
+        esac
+        shift
+    done
+    [[ -f "$path" ]] || die "Runbook '$path': file not found."
+
+    local -a bind_args=()
+    local b
+    for b in ${target_bindings[@]+"${target_bindings[@]}"}; do
+        bind_args+=(--target "$b")
+    done
+
+    # 1. Fail before executing anything: targets resolvable, required vars present.
+    cloudify_runbook_preflight "$path" ${bind_args[@]+"${bind_args[@]}"}
+
+    local meta deployment bound parse_out
+    meta=$(_cloudify_runbook_meta_parse "$path")
+    deployment="${meta%%$'\t'*}"
+    bound=$(cloudify_runbook_bind_targets "$path" ${bind_args[@]+"${bind_args[@]}"})
+    parse_out=$(cloudify_runbook_parse "$path")
+
+    if [[ -n "$from" ]] &&
+        ! awk -F'\t' -v want="$from" '$2 == want { found = 1 } END { exit !found }' <<< "$parse_out"; then
+        die "runbook execute: no step with id '$from' (--from)."
+    fi
+
+    # 2. Run-wide exports: the deployment, every bound target, the outputs channel.
+    export CLOUDIFY_DEPLOYMENT="$deployment"
+    local line rest name node instance ssh_host addr
+    local -a target_lines=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        name="${line%%$'\t'*}"
+        rest="${line#*$'\t'}"
+        node="${rest%%$'\t'*}"
+        rest="${rest#*$'\t'}"
+        instance="${rest%%$'\t'*}"
+        ssh_host="${rest#*$'\t'}"
+        addr=$(_cloudify_runbook_target_addr "$node" "$instance" "$ssh_host")
+        export "TARGET_${name^^}=$addr"
+        target_lines+=("target.$name: $addr")
+    done <<< "$bound"
+
+    local outputs_file
+    outputs_file=$(mktemp) || die "runbook execute: cannot create the outputs file."
+    chmod 600 "$outputs_file" 2>/dev/null || true
+    export CLOUDIFY_OUTPUTS_FILE="$outputs_file"
+
+    # 3. Snapshot the deployment store's raw vars for the record.
+    local -a value_lines=()
+    local cfg
+    cfg=$(_cloudify_deployment_config "$deployment")
+    if [[ -f "$cfg" ]]; then
+        local vline vkey
+        while IFS= read -r vline; do
+            [[ -n "$vline" && "$vline" != \#* && "$vline" == *:* ]] || continue
+            vkey="$(_cloudify_vars_trim "${vline%%:*}")"
+            [[ -n "$vkey" ]] || continue
+            value_lines+=("value.$vkey: $(_cloudify_vars_trim "${vline#*:}")")
+        done < "$cfg"
+    fi
+
+    # 4/5. Walk the steps, streaming their output, collecting step outputs.
+    local status="succeeded" fail_msg="" started_at finished_at
+    started_at=$(_cloudify_runbook_now)
+    local -A run_outputs=()
+    local -a run_output_order=()
+    local outputs_consumed=0
+    local type sid tgt pkg body body_b64 started=0
+    [[ -z "$from" ]] && started=1
+
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        type="${line%%$'\t'*}"
+        rest="${line#*$'\t'}"
+        sid="${rest%%$'\t'*}"
+        rest="${rest#*$'\t'}"
+        tgt="${rest%%$'\t'*}"
+        rest="${rest#*$'\t'}"
+        pkg="${rest%%$'\t'*}"
+        body_b64="${rest#*$'\t'}"
+        body=$(printf '%s' "$body_b64" | base64 -d)
+
+        if [[ "$started" == "0" ]]; then
+            [[ "$sid" == "$from" ]] || continue
+            started=1
+        fi
+
+        export STEP_ID="$sid" STEP_TYPE="$type" STEP_TARGET="$tgt" STEP_PKG="$pkg"
+
+        if [[ "$type" == "human-gate" ]]; then
+            msg "human-gate [$sid]"
+            msg "$body"
+            if [[ "$yes" != "1" ]]; then
+                if [[ ! -t 0 ]]; then
+                    status="failed"
+                    fail_msg="Runbook step '$sid' (human-gate): no TTY to confirm; re-run with --yes."
+                    break
+                fi
+                local reply=""
+                if ! read -r -p "Confirm step '$sid'? [y/N] " reply || [[ ! "$reply" =~ ^[Yy] ]]; then
+                    status="failed"
+                    fail_msg="Runbook step '$sid' (human-gate): not confirmed."
+                    break
+                fi
+            fi
+            continue
+        fi
+
+        local rc=0
+        bash -c "$body" || rc=$?
+        if [[ "$rc" -ne 0 ]]; then
+            status="failed"
+            fail_msg="Runbook step '$sid' failed (exit $rc)."
+        fi
+
+        # Ingest outputs appended by this step (also on failure: keep the record).
+        local oline oname oval new_count=0
+        while IFS= read -r oline; do
+            new_count=$((new_count + 1))
+            [[ -n "$oline" && "$oline" != \#* && "$oline" == *=* ]] || continue
+            oname="${oline%%=*}"
+            oval="${oline#*=}"
+            [[ "$oname" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+            export "OUT_$oname=$oval"
+            if [[ -z "${run_outputs[$oname]+x}" ]]; then
+                run_output_order+=("$oname")
+            fi
+            run_outputs["$oname"]="$oval"
+        done < <(tail -n +$((outputs_consumed + 1)) "$outputs_file")
+        outputs_consumed=$((outputs_consumed + new_count))
+
+        [[ "$status" == "failed" ]] && break
+    done <<< "$parse_out"
+
+    finished_at=$(_cloudify_runbook_now)
+
+    # 6. Write the run snapshot (always, success or failure).
+    local runs_dir="$CLOUDIFY_DEPLOYMENTS_DIR/$deployment/runs"
+    (umask 077; mkdir -p "$runs_dir")
+    chmod 700 "$runs_dir" 2>/dev/null || true
+    local snapshot tmp
+    snapshot="$runs_dir/$(_cloudify_runbook_utc).yaml"
+    tmp=$(mktemp "$runs_dir/.run.XXXXXX") || die "runbook execute: cannot create the run snapshot."
+    _cloudify_runbook_snapshot "$status" "$started_at" "$finished_at" "$path" \
+        target_lines value_lines run_outputs run_output_order > "$tmp"
+    chmod 600 "$tmp" 2>/dev/null || true
+    mv "$tmp" "$snapshot"
+
+    rm -f "$outputs_file"
+    unset CLOUDIFY_OUTPUTS_FILE STEP_ID STEP_TYPE STEP_TARGET STEP_PKG
+
+    if [[ "$status" == "failed" ]]; then
+        die "$fail_msg"
+    fi
+    msg "Runbook '$path' $status."
+    msg "Snapshot: $snapshot"
+    return 0
 }

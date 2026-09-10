@@ -969,8 +969,9 @@ Tasks (ordered; T1 first, it gates storage):
   shell steps; bindings; step outputs into the registry; preflight via `vars declared`;
   human-gate step; `deployment run` then `deployment replay`.
 - [ ] T7 author the xfce+guacamole runbook as data.
-- [ ] T8 amend ADR-011 pts 3/6/7 (path, record leaves the ladder, refs-vs-raw).
-- [ ] T9 dev skills `cloudify-dev` + `cloudify-pkg-dev`: few-line Security addition
+- [v] T8 amend ADR-011 pts 3/6/7 (path, record leaves the ladder, refs-vs-raw);
+  superseded by ADR-020 (never edit a past ADR body).
+- [v] T9 dev skills `cloudify-dev` + `cloudify-pkg-dev`: few-line Security addition
   (registry local-only, never git; recipes never persist secrets into the repo).
 
 Tests:
@@ -1086,6 +1087,17 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
 - Unproven: `trash-put` vs the `rm -rf` fallback is not exercised against a missing
   `trash-cli` (unit tests take whichever is installed); no E2E of the fallback bucket
   (plain host) cleanup, unit-only.
+
+### Branch 7 T8 + T9 outcome (2026-09-10)
+
+- ADR-020 added (registry = observation; replay = runbook + values; targets are named
+  slots bound to a node/instance/plain host; secrets refs-vs-raw, never git). ADR-011's
+  status line annotated that points 3/6/7 are superseded; the body is untouched
+  (ADR bodies are append-only).
+- Dev skills: `cloudify-dev` gains a Security section (registry local, 0600, never git;
+  runbooks carry structure + names only; control-name deny-list); `cloudify-pkg-dev`
+  gains one (a recipe persists plaintext only in its own 0600 state files; cloudify
+  state carries a reference, not plaintext). No code change.
 
 ## Notes
 

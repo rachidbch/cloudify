@@ -86,7 +86,7 @@ Never edit a past body; supersede via a new ADR. One-liner per decision lives in
 
 ## ADR-011: Deployments are applications — cloudify-owned, deployment-first state shape
 
-**Status:** Accepted (to implement)
+**Status:** Accepted (to implement); points 3, 6 and 7 superseded by ADR-020.
 **Context:** Two prior threads converge. First, the node-keyed registry (ADR-006) keyed state as `nodes/<node>/pkgs/<pkg>/deployments/<id>/config.yaml` — packages-first, answering "what landed on this node". Second, the k3s cluster choreography needs a state layer for a unit that spans nodes (a cluster is more than one node's inventory). A deployment is the missing first-class unit: an application, distributed across nodes or not. A k3s cluster is an application and therefore a deployment. The packages-first shape asks the wrong question ("inventory") and scopes the deployment id inside (node, pkg), which forbids the real use case: one application spanning many nodes.
 **Decision:**
 1. A deployment is a first-class, cloud-global entity: an application composed of interrelated packages across nodes. A k3s cluster is a deployment (first tenant). Deployment ids are globally unique on the cloud; membership is derived by scanning node trees — there is no central index file (a shared index would reintroduce the parallel-write race).
@@ -191,3 +191,38 @@ Consequences: any future GUI deployment = same runbook with new targets; a
 cloudify "runbook" concept does not exist yet (deployment is config-only) -
 the runbook is a plain documented sequence until repetition justifies a
 feature.
+
+## ADR-020: Deployment state is observation; replay is runbook + values; targets are named
+
+Status: accepted 2026-09-10 (supersedes ADR-011 points 3, 6, 7).
+Context: ADR-011 put the per-node record inside the precedence ladder as a value
+source (point 6), keyed the path by node only (point 3), and left secrets
+plaintext (point 7). Implementation and design review showed three concerns were
+conflated - what landed (observation), what to do (a plan), and which values to
+use (data) - and that a host is not a node: `--on` targets can be a node, an
+instance on a node, or a plain host, and the local host is a node too.
+Decision:
+1. Registry = observation. One record per (deployment, target, package): status,
+   installed/configured/removed timestamps, version, and a value snapshot. Storage
+   under the ivps node dir: `$(ivps node path <node>)/[<instance>/]deployments/<id>/pkgs/<pkg>/config.yaml`,
+   with a cloudify-owned fallback bucket when no node resolves. Dirs 700, file
+   600, atomic writes. Never a plan, never a source in the precedence ladder.
+2. Replay = runbook + values. A playable runbook (the plan) declares the
+   deployment and its targets; each step addresses targets by name; values come
+   from the deployment store plus the run snapshot. `deployment run` converges
+   from current values, `deployment replay` reproduces a snapshot. Reproduction
+   never passes through the precedence ladder; only recipe defaults, upstream
+   versions and generate-once guards limit exactness.
+3. Targets are named slots bound at run time to a node, an instance on a node, or
+   a plain host. `--on` grammar: `X` (must exist; kind discovered; node+instance
+   collision is an error), `X:` (node), `X:Y` (instance on X), `:Y` (instance on
+   the active node, else the ivps default). Active node = per-shell
+   `CLOUDIFY_NODE`. No localhost fallback; localhost is a node like any other.
+   Commands never provision; only explicit runbook `launch` steps do.
+4. Secrets in the record: a reference where the source was a reference, else the
+   raw value, 600, never logged, never committed to git (git is not a backup).
+Consequences: `CLOUDIFY_DEPLOYMENT` stays a per-shell env var; deployment-wide
+state stays under `~/.config/cloudify/deployments/<id>/`. `cloudify deployment
+delete` sweeps the record dirs; uninstall marks `removed` (the record is kept for
+observation). Registry distribution/backup (secret-aware, never git) is ROADMAP
+non-urgent. Target addressing landed in branch 7 T1; the registry in T2-T5.

@@ -765,3 +765,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ### 2026-09-09 - plan: branches 7+8 collapsed
 
 - Branch 7 is now "state registry + `cloudify deployment run`" (was two branches); Branch 8 removed. Branch 6 stays agent runbooks + amnesiac validation.
+
+### 2026-09-09 - branch 6: agent runbook + amnesiac validation (blocked)
+
+- Wrote `runbooks/xfce-guacamole/disposable.md` + `runbooks/README.md`; retired `plans/xfce-guacamole-e2e.md` to `plans/archived/`.
+- Amnesiac validation run twice with a fresh agent (only the cloudify skill + the runbook). Run 1: 7 defects, all fixed (missing deployment activation, broken bind derivation, wrong `ivps info`, missing tag-authkey refresh, no reachability check, wrong re-run wording). Run 2: `ivps acl` syntax, bare-name Incus resolution, false loopback assumption (operator yaml sets the bind); runbook fixed to set a loopback bind + `ivps expose-direct`.
+- Blockers recorded as non-urgent ROADMAP entries: no clean node-MagicDNS-FQDN command, `cloudify host`/`info` gaps, tag-to-tag reachability, guacd MagicDNS check. End-to-end pass not yet green.

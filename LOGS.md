@@ -123,3 +123,7 @@
 ## 2026-09-09 - branch 5 (xfce alignment)
 
 - Three-kind declaration, new uninstall leg (explicit account removal, home preserved), README, bats to the report standard, 7/7. Purge waits on the dpkg lock; shadow untouched.
+
+## 2026-09-09 - branch 6 (runbooks a)
+
+- Runbook + rules written; two amnesiac validation runs, defects fixed; end-to-end blocked by recorded tooling gaps (node FQDN, tag-to-tag ACL, guacd DNS).

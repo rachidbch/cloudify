@@ -57,6 +57,36 @@ b) Cloudify runbooks (`cloudify deployment run <id>`), after (a). Deployment dec
 
 **Plausible fixes to study:** try `command sudo -n "$@"` first and fall back to the password path; ensure the shadow's `die` message always reaches the log (flush/log before exit); otherwise document that `--on localhost` needs `CLOUDIFY_LOCAL_PWD`.
 
+## Node MagicDNS name command gap (non-urgent)
+
+**What happened:** the amnesiac runbook needs the guest's full MagicDNS name (`<node>.<tailnet-domain>`) for cross-host references. `ivps status <remote:name>` prints the Tailscale IP only, `cloudify info` prints the LAN IP, and `cloudify exec <host> 'tailscale ip -4'` output carries the `host: ` prefix. The bare container name resolves to an Incus-internal address on the same node.
+
+**Why:** no command returns a node's MagicDNS FQDN cleanly, so runbooks cannot derive it as the rules require (MagicDNS names, never IPs).
+
+**Plausible fixes to study:** `ivps status`/`ivps info` gains a MagicDNS field (or `--json`); or `cloudify info <host> magicdns`.
+
+## cloudify host/info subcommand gaps (non-urgent)
+
+**What happened:** the cloudify skill documents `cloudify host <host>` and `cloudify info <host> [ipv4|ipv6]`. `cloudify host cloudify` fails with `Error: Unknown argument 'host'`; `cloudify info cloudify` (non-inventory host) fails with `lib/hosts.sh: line 97: $1: unbound variable`.
+
+**Why:** the router has no `host` subcommand, and `cloudify_info` reads `$1` without a guard.
+
+**Plausible fixes to study:** add the `host` subcommand or remove it from the skill; guard `cloudify_info` for a missing/unknown host with a clear error.
+
+## Tag-to-tag tailnet reachability (non-urgent)
+
+**What happened:** the runbook's guacamole host and guest are both `tag:incus`; Tailscale denies tag-to-tag by default, so the guest was unreachable until an explicit grant. The correct form is `ivps acl grant <guest> --src tag:incus --port 3389` (dst positional, `--src` required).
+
+**Why:** the default ACL covers `autogroup:member` and `tag:node`, not `tag:incus` to `tag:incus`.
+
+**Plausible fixes to study:** document the pattern in the ivps/runbook docs; or a runbook helper that derives and grants the required reachability.
+
+## guacd MagicDNS resolution check (non-urgent)
+
+**What happened:** the runbook sends the guest's MagicDNS name as the Guacamole RDP host, but nothing proves guacd resolves MagicDNS from inside its compose network except the human render gate.
+
+**Plausible fixes to study:** a check (a compose healthcheck or a `verify.sh` step) that resolves the name from inside the guacd container.
+
 ## Resolution precedes every phase (non-urgent)
 
 Today install/configure/uninstall resolve vars through the walker, and verify fills unset names from the package yaml (verify-only has no walker). Cleaner: make resolution a step that always precedes a phase, verify-only included, then remove the source read from verify. Effect: verify never re-reads a source, so there is no precedence question inside verify. Cost: verify-only would apply the full five-source ladder instead of the package yaml alone, and remote verify-only forwarding would need a decision. Not needed for the parent-override fix already shipped.

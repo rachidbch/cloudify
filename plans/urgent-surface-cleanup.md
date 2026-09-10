@@ -31,7 +31,7 @@ Rules:
 - [v] Branch 3 - security: payload via stdin + skill Security section (merged 28f715c)
 - [v] Branch 4 - guacamole 3-leg rewrite (merged 23af7c1)
 - [v] Branch 5 - xfce alignment (merged 9ea2750)
-- [ ] Branch 6 - agent runbooks + amnesiac validation
+- [~] Branch 6 - agent runbooks + amnesiac validation
 - [ ] Branch 7 - state registry + `cloudify deployment run` (collapsed)
 
 Trap -> branch map (ROADMAP `## URGENT` 1-7):
@@ -754,11 +754,24 @@ Design (ROADMAP Runbooks a):
   stumble is a runbook defect.
 
 Tasks:
-- [ ] Create `runbooks/` and write the xfce+guacamole E2E runbook to the rules.
-- [ ] Move/retire `plans/xfce-guacamole-e2e.md`.
-- [ ] Run the amnesiac validation on disposable infra; fix every defect it surfaces.
+- [v] Create `runbooks/` and write the xfce+guacamole E2E runbook to the rules.
+- [v] Move/retire `plans/xfce-guacamole-e2e.md`.
+- [~] Run the amnesiac validation on disposable infra; fix every defect it surfaces.
 
-Done when: the amnesiac run completes end to end.
+### Branch 6 status (2026-09-09)
+
+- Written: `runbooks/xfce-guacamole/disposable.md` + `runbooks/README.md` (rules). Plan retired
+  to `plans/archived/xfce-guacamole-e2e.md`.
+- Amnesiac validation run twice with a fresh agent (only the cloudify skill + the runbook).
+  Run 1 found 7 defects (missing deployment activation, broken bind command, wrong `ivps info`,
+  missing authkey refresh, no reachability check, wrong re-run wording). All fixed. Run 2 found
+  deeper ones, now fixed or recorded: `ivps acl` syntax (`grant <dst> --src <list>`, `--dst` does
+  not exist); bare container names resolve Incus-internal on the same node (use the full MagicDNS
+  name); the Guacamole UI did not bind loopback (the operator's pkgs yaml sets the bind), so the
+  runbook now sets `CLOUDIFY_GUACAMOLE_BIND=127.0.0.1` and exposes via `ivps expose-direct`.
+- Still open (blocking the end-to-end pass; ROADMAP non-urgent): no clean command for a node's
+  MagicDNS FQDN; tag-to-tag reachability needs an explicit ACL grant; no guacd MagicDNS check.
+- Done-when NOT met: the clean end-to-end amnesiac pass is blocked by those tooling gaps.
 
 ## Branch 7 - state registry + `cloudify deployment run` (collapsed)
 

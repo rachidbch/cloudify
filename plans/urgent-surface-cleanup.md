@@ -794,7 +794,7 @@ Depends on branches 1-6.
   (A: payload/forwarding, B: node dir, C: resolver, D: control-var injection).
 - [x] Plan + non-breakage argument (below): invariants I7-1..I7-10; realigned to the
   three-artifact model after design review (2026-09-10).
-- [ ] Explicit consent (Rachid) before any `lib/`/router edit.
+- [x] Explicit consent (Rachid) before any `lib/`/router edit (2026-09-10).
 
 ### What the code does today (gate description, read-only)
 
@@ -950,7 +950,7 @@ path touched. Nothing changes `_cloudify_pkg_remote_vars` order, the payload tem
 envsubst allow-list, the resolver, the deployment-wide reader, or any recipe.
 
 Tasks (ordered; T1 first, it gates storage):
-- [ ] T1 target addressing: `--on` grammar + validation via the ivps inventory; per-shell
+- [v] T1 target addressing: `--on` grammar + validation via the ivps inventory; per-shell
   `CLOUDIFY_NODE` (active) with a `deployment use`-style export helper; no localhost fallback.
 - [ ] T2 registry storage: write under `$(ivps node path <node>)/...`; keep a plain-host
   bucket fallback until ivps exposes `local`; 700/600; atomic (mktemp+mv).
@@ -978,6 +978,17 @@ Tests:
 
 Done when: target grammar + registry lifecycle green; the xfce+guacamole runbook completes
 end to end via `deployment run`; ADR amended; no silent merge into intent config.
+
+### Branch 7 T1 outcome (2026-09-10)
+
+- Landed: `lib/targets.sh` resolver (`X` / `X:` / `X:Y` / `:Y`, ivps-backed, fail-closed,
+  no provisioning), router resolution before dispatch + `_CLOUDIFY_TARGETS`, `cloudify node use`.
+- Evidence: `task test-unit` 425/425 rc 0 on final HEAD; real-ssh smoke of all three forms
+  (`cloudai:cloudify`, `CLOUDIFY_NODE=cloudai :cloudify`, bare `cloudify`) each `cloudify: OK`
+  rc 0 on `cloudai:cloudify`.
+- Blocked-then-cleared: container ssh was down ~14h from the branch-6 ACL damage (see
+  HISTORY 2026-09-10 RDP post-mortem); policy restored, smoke re-run green.
+- Next: T2 registry storage + T3 registry write (ivps `local` node still pending upstream).
 
 ## Notes
 

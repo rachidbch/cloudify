@@ -26,6 +26,25 @@ STUB
     : > "$STUB_DIR/ssh_calls.log"
 }
 
+# Create an ivps stub: node `cloudai` exists and hosts instance `cloudify`
+_create_ivps_target_stub() {
+    cat <<'STUB' > "$STUB_DIR/ivps"
+#!/bin/bash
+case "${1:-}" in
+    node)
+        [[ "${3:-}" == "local" || "${3:-}" == "cloudai" ]] || exit 1
+        echo "/ivps/nodes/${3:-}"
+        ;;
+    list)
+        echo "  REMOTE:NAME      STATUS"
+        echo "  cloudai:cloudify Running"
+        ;;
+    *) exit 1 ;;
+esac
+STUB
+    chmod +x "$STUB_DIR/ivps"
+}
+
 # Run the shell case logic matching the router code
 _run_shell_case() {
     source lib/colors.sh && cloudify_setup_colors
@@ -268,6 +287,65 @@ EOF
         CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-router-test CLOUDIFY_TMP=/tmp/cf-router-test-tmp \
         DEBUG=false PKG_VERIFY_TIMEOUT=1 bash cloudify verify failvpkg 2>&1"
     [ "$status" -ne 0 ]
+}
+
+# ---------------------------------------------------------------
+# Real router: --on target grammar
+# ---------------------------------------------------------------
+
+_router_env() {
+    cat <<'ENV'
+        export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true
+        export CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-target-test CLOUDIFY_TMP=/tmp/cf-target-test-tmp
+        export DEBUG=false CLOUDIFY_HOSTPWD=test CLOUDIFY_REMOTE_PWD=test CLOUDIFY_REMOTE_USER=root
+        mkdir -p /tmp/cf-target-test/pkg /tmp/cf-target-test/inventory /tmp/cf-target-test-tmp
+ENV
+}
+
+@test "real router: --on X:Y resolves to the instance ssh host" {
+    _create_ssh_stub
+    _create_ivps_target_stub
+
+    PATH="$STUB_DIR:$PATH" run bash -c "$(_router_env)
+        cd /root/cloudify && bash cloudify --on cloudai:cloudify install bats-test 2>&1
+    "
+
+    [ "$status" -eq 0 ]
+    grep -q "root@cloudify" "$STUB_DIR/ssh_calls.log"
+}
+
+@test "real router: --on <bad>: dies with the node-not-found message" {
+    _create_ivps_target_stub
+
+    PATH="$STUB_DIR:$PATH" run bash -c "$(_router_env)
+        cd /root/cloudify && bash cloudify --on nosuchnode: install bats-test 2>&1
+    "
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"node 'nosuchnode' not found"* ]]
+}
+
+@test "real router: --on <plain host> stays a plain host" {
+    _create_ssh_stub
+    _create_ivps_target_stub
+
+    PATH="$STUB_DIR:$PATH" run bash -c "$(_router_env)
+        cd /root/cloudify && bash cloudify --on myserver install bats-test 2>&1
+    "
+
+    [ "$status" -eq 0 ]
+    grep -q "root@myserver" "$STUB_DIR/ssh_calls.log"
+}
+
+@test "real router: cloudify node use prints the export" {
+    _create_ivps_target_stub
+
+    PATH="$STUB_DIR:$PATH" run bash -c "$(_router_env)
+        cd /root/cloudify && bash cloudify node use cloudai 2>&1
+    "
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"export CLOUDIFY_NODE=cloudai"* ]]
 }
 
 @test "verify subcommand errors with usage when no package given" {

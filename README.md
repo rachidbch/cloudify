@@ -57,6 +57,7 @@ Commands:
   vars set <key> <value> [scope] [--stdin|--file <path>]  Set a var (scope: --global|--pkg <n>|--deployment <id>)
   vars show|list [--json]|delete <key> [scope]   Manage vars (masked unless --reveal)
   deployment create|list|use|delete <id>         Manage deployments (ADR-011)
+  node use <node>             Set the active node (prints the export command)
   packages | pkgs             List installable packages
   packages | pkgs default     List default packages
   launch | run [remote:]<name> [image]  Launch container (default image: ubuntu/24.04/cloud)
@@ -90,6 +91,32 @@ cloudify --on @web install nginx
 ```
 
 Remote execution flow: cloudify SSHes into the target host, runs the bootstrap gist which clones/pulls `~/cloudify` from GitHub, then executes the package recipe. Credentials are injected into the payload via `envsubst` with an explicit allow-list. All remote SSH output is captured to a timestamped log file. If any host fails, the final status message reports the log path for debugging.
+
+### Targets (`--on`)
+
+`--on` takes a target, not just an ssh name. The resolver is operator-side and
+validation-only: it never provisions a node or an instance to satisfy a target,
+and every form must exist in the ivps inventory.
+
+```bash
+cloudify --on cloudai install bat           # X   discover: node, instance, or plain host
+cloudify --on cloudai: install bat          # X:  X must be a node
+cloudify --on cloudai:cloudify install bat  # X:Y X is a node, Y an instance on X
+CLOUDIFY_NODE=cloudai cloudify --on :web install bat   # :Y  Y on the active node
+```
+
+Bare form, kind discovered: a name that is only an ivps node is a node target; a
+name that is only an instance is an instance target (its node is discovered);
+both at once is an error (fail closed). A name ivps does not know stays a plain
+host and ssh validates reachability. `localhost` is the node `local`. `@tag`
+expands first and each expanded name goes through the same resolver.
+
+`:Y` uses the active node from `CLOUDIFY_NODE`, else the ivps default
+(`IVPS_DEFAULT_NODE`), else it errors with the fix:
+
+```bash
+eval "$(cloudify node use cloudai)"   # sets CLOUDIFY_NODE in this shell
+```
 
 ## Package List
 

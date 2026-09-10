@@ -22,6 +22,8 @@ function usage() {
         cloudify add | a <pkg>                          install package on local machine
         cloudify add | a  default                       install default packages on local machine
         cloudify --on <host> install <pkg>              install package on remote host
+        cloudify --on <node>:<instance> install <pkg>   install on an ivps instance
+                           target grammar: X (discover) | X: (node) | X:Y (instance on X) | :Y (instance on the active node)
         cloudify --on <host> configure <pkg>            configure-only on remote host (split pkgs)
         cloudify configure <pkg>                        configure-only, local (split pkgs: rewrite unit, restart, resolve secrets)
         cloudify --no-verify --on <host> install <pkg>  install on remote host, skip verification
@@ -39,6 +41,7 @@ function usage() {
         cloudify deployment delete|del <id>            delete a deployment
         cloudify deployment list|ls                    list deployments
         cloudify deployment use <id>                   print export command
+        cloudify node use <node>                       print export command (active node)
         cloudify --no-defaults install <pkg>            install only basics + <pkg> (skip @default)
         cloudify --no-defaults --on <host> install <pkg>  minimal install on remote host
         cloudify uninstall|remove|rem|r <pkg>          uninstall package (needs pkg uninstall.sh)
@@ -102,6 +105,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/remote.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/packages.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/deployments.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/hosts.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/targets.sh"
 
 #== INITIALIZATION
 function cloudify_init_paths() {
@@ -349,6 +353,8 @@ function main() {
     local is_setup_in_progress=false
     local -a _CLOUDIFY_BG_PIDS=()
     local -A _CLOUDIFY_BG_HOSTS=()
+    # Resolved --on targets: one "<node>\t<instance>\t<ssh_host>" triple per target
+    local -a _CLOUDIFY_TARGETS=()
 
     # No arguments given, show usage
     [[ "$#" == 0 ]] && usage && exit 0
@@ -581,6 +587,20 @@ function main() {
             esac
             break
             ;;
+        node)
+            shift
+            case "${1:-}" in
+                use)
+                    shift
+                    [[ -n "${1:-}" ]] || die "Usage: cloudify node use <node>"
+                    cloudify_node_use "$1"
+                    ;;
+                *)
+                    die "Usage: cloudify node <use> [args]"
+                    ;;
+            esac
+            break
+            ;;
         --no-verify)
             export CLOUDIFY_NO_VERIFY=true
             ;;
@@ -615,18 +635,39 @@ function main() {
                 local hosts_to_add="${2:-}"
                 [[ "${2:-}" == @* ]] && hosts_to_add=$(cloudify_list_hosts_by_tags "$2")
 
-                if [[ -z "$hosts" ]]; then
-                    hosts="$hosts_to_add"
-                else
-                    hosts="$hosts $hosts_to_add"
-                fi
+                # Resolve each token (tag-expanded) into a target: node, instance,
+                # ssh host. The ssh host is what the transport uses; the triple is
+                # kept for the state registry.
+                # Parsed by hand: a tab is IFS-whitespace, so `read` would collapse
+                # the empty leading fields of a plain host ("\t\tmyserver").
+                local _target_file _target_token _target_line _t_rest _t_node _t_instance _t_ssh_host
+                _target_file=$(mktemp "$CLOUDIFY_TMP/target-XXXXXX")
+                for _target_token in $hosts_to_add; do
+                    # Not in $(): resolution dies in THIS shell on a bad target
+                    _cloudify_target_resolve "$_target_token" > "$_target_file"
+                    IFS= read -r _target_line < "$_target_file"
+                    _t_node="${_target_line%%$'\t'*}"
+                    _t_rest="${_target_line#*$'\t'}"
+                    _t_instance="${_t_rest%%$'\t'*}"
+                    _t_ssh_host="${_t_rest#*$'\t'}"
+                    _CLOUDIFY_TARGETS+=("$_t_node"$'\t'"$_t_instance"$'\t'"$_t_ssh_host")
+                    if [[ -z "$hosts" ]]; then
+                        hosts="$_t_ssh_host"
+                    else
+                        hosts="$hosts $_t_ssh_host"
+                    fi
+                done
+                rm -f "$_target_file"
                 shift
             done
             [[ -z "${2:-}" ]] && die "No packages found for hosts: $hosts"
             ;;
         --install | install | inst | i | --uninstall | uninstall | u | --configure | configure | verify | remove | rem | r)
             [[ $is_parsing_hosts == "started" ]] && die "Cloudify usage error: unexpected action '$1'"
-            [[ -z "$hosts" ]] && hosts="localhost"
+            if [[ -z "$hosts" ]]; then
+                hosts="localhost"
+                _CLOUDIFY_TARGETS+=("$(_cloudify_target_resolve localhost)")
+            fi
             is_parsing_packages="started"
 
             local action=''

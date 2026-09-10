@@ -142,4 +142,6 @@
 
 - Tests: `tests/unit/targets.bats` 32 cases + 4 router cases; full unit suite green.
 
-- E2E smoke of the three forms reached the container but only over an incus-exec substitute: the live tailnet ssh policy lost `dst: tag:incus` today (ivps `acl revoke --ssh` strips the dst from every ssh rule). Restore proposed, awaiting consent.
+- E2E smoke of the three forms green over real ssh (`cloudify: OK`, rc 0) after the tailnet policy restore; merged to master as `8989e32`.
+
+- RDP ACL post-mortem received (ivps agent): blanket tag:incus->tag:incus grant + over-broad `acl revoke --ssh` (ivps bug, fixed) broke container SSH ~14h. Encoded the tag-scoped replacement (tag:rdp-client/tag:rdp-server) in the xfce-guacamole runbook + runbooks/README policy rules; annotated the archived plan. Policy restored by the operator; container ssh green.

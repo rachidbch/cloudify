@@ -1,5 +1,10 @@
 # Runbook: XFCE guest + Guacamole gateway E2E (disposable)
 
+> CORRECTED 2026-09-10 (post-mortem): the syntax `ivps acl grant <host> --dst <host>
+> --port 3389` below is invented; the destination is the positional first argument. And
+> `ivps launch ... --tag incus` is wrong: `--tag` is not additive and drops `tag:incus`.
+> Use the tag-scoped RDP grant in `runbooks/xfce-guacamole/disposable.md`.
+
 Status: acceptance gate for pkg/xfce + pkg/guacamole (both integration-green).
 Pure commands only: ivps + cloudify + one orchestrator-side password generation.
 No custom scripts, no ad-hoc host commands. Data flows through command output

@@ -22,11 +22,23 @@ verify/uninstall). Do not rely on ambient shell state.
 ## Preconditions (must already hold)
 
 - Both hosts are reachable by cloudify (`cloudify --on <host> verify`-able).
-- The guest is a tailnet node, so `<guest>.<tailnet-domain>` resolves.
+- The guest is a tailnet device, so `<guest>.<tailnet-domain>` resolves.
 - The Guacamole host runs docker.
-- Tailnet policy lets the Guacamole host reach the guest on port 3389. If not, the operator
-  grants it (infrastructure, outside this runbook):
-  `ivps acl grant tag:incus --src tag:incus --port 3389`.
+- Tailnet RDP reachability: the Guacamole host may open the guest's RDP port. Tailscale
+  policy selects devices by tag only, so name the two roles instead of granting the default
+  container tag to itself:
+  ```bash
+  ivps tag create rdp-client
+  ivps tag create rdp-server
+  # tag set REPLACES the device's whole list: containers must keep tag:incus (the ssh rule
+  # and the lighthouse/hermes grants reference it).
+  ivps tag set <guest>          tag:incus tag:rdp-server
+  ivps tag set <guacamole-host> tag:incus tag:rdp-client
+  ivps acl grant tag:rdp-server --src tag:rdp-client --port 3389
+  ```
+  Verify before proceeding: `ivps acl show --section grants` lists exactly that one row and
+  `ivps acl show --section ssh` is unchanged. Record the snapshot path ivps prints. Never
+  grant `tag:incus` to `tag:incus` (any-to-any; the branch-6 defect).
 
 ## Steps
 
@@ -87,6 +99,17 @@ verify/uninstall). Do not rely on ambient shell state.
    ivps unexpose cloudai:<guacamole-host> --direct
    cloudify deployment delete xfce-gui
    ```
+
+7. Operator policy teardown (reverses the precondition; policy outlives the instances):
+   ```bash
+   ivps acl revoke tag:rdp-server --src tag:rdp-client --port 3389   # grants only; never --ssh
+   ivps tag set <guest>          tag:incus
+   ivps tag set <guacamole-host> tag:incus
+   ivps tag delete rdp-client
+   ivps tag delete rdp-server
+   ```
+   Prove it: `ivps acl show --section grants` no longer lists the row. Deleting the
+   containers is not enough.
 
 ## Notes
 

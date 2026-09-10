@@ -883,3 +883,12 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Cheap proofs all green: `deployment run --dry-run` (parse + bind + preflight, no missing vars); L2 install xfce on `cloudai:xfce-test` and guacamole on `cloudai:cloudify` (cloudify's own logs); L3 `verify` both -> `xfce-test: OK`, `cloudify: OK`. guacamole created the `GUI` connection for `xfce-test.komodo-everest.ts.net:3389`.
 - Isolated blocker: xrdp listens on the guest (`*:3389`), the workstation (`tag:workstation`, allowed to `tag:incus`) connects, the gateway (`tag:incus`) gets TCP-CLOSED. Missing rule: `tag:rdp-client -> tag:rdp-server:3389` (with the two role tags). Applying it needs the Tailscale API token, which returns HTTP 401 today.
 - Token reconciliation: ivps HISTORY records a successful ACL write at 16:28:19Z today, so the token worked then and does not now. Neither ivps nor cloudify records a revocation or rotation; a direct `curl` with the configured `TS_SERVICE_API_KEY` 401s on `/acl` and `/devices` with both Basic and Bearer. Revocation is therefore unproven; expiry or an out-of-band change are the candidates, and the admin key list (expired vs revoked) is the disambiguation.
+
+### 2026-09-10 - Tailscale API token: deep diagnosis (blocker before the T7 E2E)
+
+- Ruled out client-side: DNS resolves to Tailscale controlplane, TLS cert is genuine `api.tailscale.com` (LE, valid Aug 3-Nov 1), no `/etc/hosts` override, no proxy env, clock within 2s of the API's `Date`.
+- Ruled out the stored value: exactly one token on disk (`~/.config/ivps/config.env`), 60 chars, charset `[A-Za-z0-9-]`, no CR; no copy in shell history; `tskey-api` appears in no other file. `TS_API_KEY` == `TS_SERVICE_API_KEY`.
+- Ruled out auth form and path: 401 (`{"message":"API token invalid"}`) with Basic and Bearer, on `/acl` and `/devices`, for both `tailnet/<domain>` and `tailnet/-` (the key's own tailnet).
+- Ruled out the tool: `ivps tag get` 401s with the same token, so it is not my curl approach.
+- Timeline: the same token succeeded at 16:28:19Z today (ivps HISTORY: the "dropped the blanket grant" ACL write). Neither ivps nor cloudify records a revocation or rotation.
+- Conclusion: the credential was invalidated between 16:28Z and now; the API gives the same message for expired and revoked, and the Tailscale admin key list (owner-only) is the only disambiguation. The rule cannot be created without a valid token.

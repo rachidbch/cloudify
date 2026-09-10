@@ -1226,6 +1226,7 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
 
 ### Branch 7 T6c outcome (2026-09-10)
 
+- Merged to master as `2d552d3` (--no-ff); branch `feat/deployment-run` covers T6a-c.
 - Landed on `feat/deployment-run` (not yet merged): `cloudify_deployment_replay <id>
   [--at <run>] [--runbook <path>] [--target name=addr]... [--from <id>] [--dry-run]
   [--yes]` in `lib/runbooks.sh` + the router `deployment replay` dispatch and usage line.

@@ -981,6 +981,7 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
 
 ### Branch 7 T1 outcome (2026-09-10)
 
+- Merged to master as `8989e32` (--no-ff).
 - Landed: `lib/targets.sh` resolver (`X` / `X:` / `X:Y` / `:Y`, ivps-backed, fail-closed,
   no provisioning), router resolution before dispatch + `_CLOUDIFY_TARGETS`, `cloudify node use`.
 - Evidence: `task test-unit` 425/425 rc 0 on final HEAD; real-ssh smoke of all three forms

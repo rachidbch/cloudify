@@ -485,7 +485,7 @@ function main() {
             esac
             break
             ;;
-        info)
+        info | host)
             shift && cloudify_info "$@"
             break
             ;;

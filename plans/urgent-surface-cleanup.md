@@ -956,10 +956,14 @@ Tasks (ordered; T1 first, it gates storage):
   bucket fallback until ivps exposes `local`; 700/600; atomic (mktemp+mv).
 - [v] T3 registry write: after a successful dispatch, record (deployment, target, package,
   status, timestamps, version, value snapshot); operator-side, pid->action+pkgs map added.
-- [ ] T4 registry cleanup: `deployment delete` trashes the deployment dir (T3 settled
-  uninstall: it is a `removed_at` timestamp, the record is KEPT — observation, not intent;
-  reuse `cloudify_registry_delete` only for an explicit erase, never on uninstall).
-- [ ] T5 reserved-name hardening: extend vars.sh:21-28 with `CLOUDIFY_FORCE`,
+- [v] T4 registry cleanup: `cloudify_registry_delete_deployment <id>` sweeps every
+  candidate bucket root (`<ivps nodes dir>/*` + `<creds>/registry/hosts/*`) for
+  `<root>/deployments/<id>` (node target) and `<root>/*/deployments/<id>` (instance
+  target), removing only dirs holding a `pkgs/` subdir; `cloudify_deployment_delete`
+  calls it after trashing the store dir (also for an orphan id). T3 settled uninstall:
+  it is a `removed_at` timestamp, the record is KEPT — observation, not intent;
+  `cloudify_registry_delete` stays the explicit per-slice erase, never on uninstall.
+- [v] T5 reserved-name hardening: extend vars.sh:21-28 with `CLOUDIFY_FORCE`,
   `CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE`, `CLOUDIFY_INSTANCE`.
 - [ ] T6 playable runbook + engine: Markdown front-matter (`deployment`, `targets`) + typed
   shell steps; bindings; step outputs into the registry; preflight via `vars declared`;
@@ -972,7 +976,7 @@ Tasks (ordered; T1 first, it gates storage):
 Tests:
 - [ ] Unit: `--on` matrix (`X`, `X:`, `X:Y`, `:Y`, ambiguity error, localhost, missing node).
 - [ ] Unit: registry write/replace/delete, perms, snapshot round-trip, target bucketing.
-- [ ] Unit: reserved-name skip for the new names.
+- [v] Unit: reserved-name skip for the new names.
 - [ ] Integration: install writes the record; uninstall/`deployment delete` clean it; no
   ladder change on a normal install.
 - [ ] Integration: the xfce+guacamole runbook runs via `deployment run` on disposable infra.
@@ -1045,6 +1049,42 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
 - Unproven: no E2E for configure/uninstall merge (bats-test has no configure/uninstall leg);
   the merge/uninstall record paths are unit-only. Local-path record bucketing still rides the
   `ivps node path local` fallback (upstream ivps fix pending).
+
+### Branch 7 T4 + T5 outcome (2026-09-10)
+
+- Landed on `feat/state-registry` (not yet merged): `lib/registry.sh` gains
+  `cloudify_registry_delete_deployment` + `_cloudify_registry_delete_record_tree`;
+  `cloudify_deployment_delete` calls it after trashing the store dir (guarded by
+  `declare -F` so `lib/deployments.sh` stays usable standalone); router usage line;
+  `lib/vars.sh` reserved list + 5 control-channel names.
+- Scope of the sweep: roots = every dir under `${IVPS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/ivps}/nodes`
+  and every dir under `${CLOUDIFY_CREDENTIALS_DIR:-$HOME/.config/cloudify}/registry/hosts`;
+  per root, `<root>/deployments/<id>` and `<root>/*/deployments/<id>` are removed only
+  when they hold a `pkgs/` subdir; `trash-put` with an `rm -rf` fallback; each removal
+  is printed (`Registry: removed record dir <path>`); rc 0 when nothing matches; no
+  `ivps` process is ever invoked (globs only).
+- Ambiguity resolved: the literal spec said `$IVPS_CONFIG_DIR:-$HOME/.config/ivps`, but
+  ivps itself resolves `CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ivps"`. The sweep
+  honours `IVPS_CONFIG_DIR` (test override) then replicates ivps' XDG default, so it
+  finds the real node dirs when `XDG_CONFIG_HOME` is non-default.
+- T5: the deny-list gains `CLOUDIFY_FORCE`, `CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`,
+  `CLOUDIFY_NODE`, `CLOUDIFY_INSTANCE`; warn+skip path and message unchanged, no other
+  walker change. `CLOUDIFY_FORCE`/`CLOUDIFY_NO_VERIFY` still reach the remote payload via
+  the envsubst allow-list (that is the operator env, not a file store).
+- Tests: new `tests/unit/registry-delete.bats` 14 cases (red first: 13 failed before the
+  lib change) + 1 case added to the reserved-name section of `tests/unit/vars.bats`
+  (existing assertions untouched). L0 `bash -n` + `task lint` rc 0; focused
+  `registry.bats + registry-delete.bats + vars.bats` 82/82 and
+  `deployments.bats + registry-write.bats + shell-router.bats` 57/57 in
+  `cloudai:cloudify`; `task test-unit` count recorded in HISTORY/LOGS.
+- E2E smoke (real ssh, two throwaway ids): `install bats-test` on `cloudai:cloudify` wrote
+  records for both ids under `~/.config/ivps/nodes/cloudai/cloudify/deployments/<id>/pkgs/bats-test/`;
+  `cloudify deployment delete <id>` removed that id's record dir + store dir, kept the
+  sibling id's record, `node.json` and the bucket; the `Registry: removed record dir` line
+  was printed. Both throwaway ids trashed afterwards.
+- Unproven: `trash-put` vs the `rm -rf` fallback is not exercised against a missing
+  `trash-cli` (unit tests take whichever is installed); no E2E of the fallback bucket
+  (plain host) cleanup, unit-only.
 
 ## Notes
 

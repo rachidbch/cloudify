@@ -23,13 +23,19 @@ if [[ -z "${_CLOUDIFY_SECRETS_LOADED:-}" ]]; then
 fi
 
 # Framework-owned names a file store must never set (L5): a rogue
-# `DEBUG: true` or `CLOUDIFY_REMOTE_USER: evil` would retarget execution.
+# `DEBUG: true`, `CLOUDIFY_REMOTE_USER: evil` or `CLOUDIFY_FORCE: true` would
+# retarget execution or flip the control channel (dispatch flags, target id).
 _CLOUDIFY_VARS_RESERVED=(
     CLOUDIFY_REMOTE_USER
     CLOUDIFY_REMOTE_PWD
     DEBUG
     CLOUDIFY_BOOTSTRAP_URL
     CLOUDIFY_UPDATE_DELAY
+    CLOUDIFY_FORCE
+    CLOUDIFY_NO_VERIFY
+    CLOUDIFY_DEPLOYMENT
+    CLOUDIFY_NODE
+    CLOUDIFY_INSTANCE
 )
 
 _cloudify_vars_reserved() {

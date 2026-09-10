@@ -38,7 +38,7 @@ function usage() {
         cloudify vars list|ls [--json] [scope] [--reveal]        list vars (masked unless --reveal)
         cloudify vars declared <pkg> [--sources] [--reveal]      show a package's declared vars
         cloudify deployment create|new <id>            create a deployment
-        cloudify deployment delete|del <id>            delete a deployment
+        cloudify deployment delete|del <id>            delete a deployment (+ its node/instance records)
         cloudify deployment list|ls                    list deployments
         cloudify deployment use <id>                   print export command
         cloudify node use <node>                       print export command (active node)

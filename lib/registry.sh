@@ -155,6 +155,53 @@ function cloudify_registry_list() {
     return 0
 }
 
+# _cloudify_registry_delete_record_tree <dir> — trash a record dir.
+# Only a dir holding a `pkgs/` subdir is a registry record dir: the guard keeps
+# `deployment delete` away from an unrelated same-named directory. rc 1 (no
+# side effect) when the dir is absent or not a record dir.
+function _cloudify_registry_delete_record_tree() {
+    local dir="${1:-}"
+    [[ -d "$dir/pkgs" ]] || return 1
+    if trash-put "$dir" 2>/dev/null; then
+        log_info "Registry: removed record dir $dir"
+    else
+        rm -rf "$dir"
+        log_warn "Registry: trash-put unavailable, removed $dir directly."
+    fi
+}
+
+# cloudify_registry_delete_deployment <deployment>
+# Remove every registry record dir for a deployment. Records live OUTSIDE the
+# deployment store, so `cloudify deployment delete` calls this (T4).
+#
+# Candidate bucket roots (globbed, never shelling out to ivps):
+#   - every node dir under ${IVPS_CONFIG_DIR:-<xdg>/ivps}/nodes
+#   - every host dir under ${CLOUDIFY_CREDENTIALS_DIR:-$HOME/.config/cloudify}/registry/hosts
+# In each root both target layouts are checked:
+#   node target      <root>/deployments/<id>
+#   instance target  <root>/<instance>/deployments/<id>
+# Only dirs holding a `pkgs/` subdir are removed. rc 0 when nothing matches.
+# A record dir emptied by cloudify_registry_delete (no `pkgs/` left) is left in
+# place: without the guard the sole safety net is the name, which is not enough.
+function cloudify_registry_delete_deployment() {
+    local deployment="${1:-}"
+    _cloudify_registry_check "deployment" "$deployment" 1
+    local base root target
+    for base in \
+        "${IVPS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/ivps}/nodes" \
+        "$(_cloudify_registry_fallback_root)"; do
+        [[ -d "$base" ]] || continue
+        for root in "$base"/*/; do
+            [[ -d "$root" ]] || continue
+            root="${root%/}"
+            for target in "$root/deployments/$deployment" "$root"/*/deployments/"$deployment"; do
+                _cloudify_registry_delete_record_tree "$target" || continue
+            done
+        done
+    done
+    return 0
+}
+
 #== Record schema + writer (T3) ==
 #
 # A record is a flat `key: value` file (house style), first line a comment,

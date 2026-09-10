@@ -159,3 +159,10 @@
 - Router: pid-keyed `_CLOUDIFY_BG_ACTION/_PKGS/_TARGET` + `_cloudify_note_bg`; local triple `local//localhost`, remote triple from `_CLOUDIFY_TARGETS` (no extra ivps call); the wait loop writes a record per package on success only; verify and an unset `CLOUDIFY_DEPLOYMENT` are skipped.
 - Tests: `tests/unit/registry-write.bats` 12 cases + 1 `shell-router.bats` case; `task lint` rc 0; driver `~/tmp/t3/driver.sh` green; full unit suite 465/465 rc 0 (`1..465`, once on final HEAD).
 - E2E: throwaway-deployment install on `cloudai:cloudify` wrote `~/.config/ivps/nodes/cloudai/cloudify/deployments/<id>/pkgs/bats-test/config.yaml` (700/600, correct node/instance/timestamp); re-run kept one valid record; throwaway dir trashed.
+
+## 2026-09-10 - branch 7 T4 + T5 (registry cleanup + reserved names)
+
+- `cloudify_registry_delete_deployment` sweeps `${IVPS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/ivps}/nodes/*` and `${CLOUDIFY_CREDENTIALS_DIR:-$HOME/.config/cloudify}/registry/hosts/*` for `<root>/deployments/<id>` and `<root>/*/deployments/<id>`, removing only dirs with a `pkgs/` subdir (trash-put, rm fallback, prints each removal, rc 0 when none); no `ivps` call. `cloudify_deployment_delete` calls it after the store trash (also for an orphan id), `declare -F`-guarded; router usage updated.
+- `lib/vars.sh` deny-list + `CLOUDIFY_FORCE`, `CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE`, `CLOUDIFY_INSTANCE`; warn+skip unchanged.
+- Tests: `tests/unit/registry-delete.bats` 14 cases (red first: 13 failed), +1 `vars.bats` reserved-name case. `task lint` rc 0; focused 82/82 and 57/57 in `cloudai:cloudify`; full `task test-unit` 480/480 rc 0 (`1..480`, once on the final tree).
+- E2E: two throwaway ids installed on `cloudai:cloudify` -> records under `~/.config/ivps/nodes/cloudai/cloudify/deployments/<id>/pkgs/bats-test/`; `cloudify deployment delete <id>` removed one id's record + store dir and printed it; sibling record, `node.json`, bucket intact; both ids trashed after.

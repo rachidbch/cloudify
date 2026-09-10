@@ -787,7 +787,160 @@ Tasks:
 Gate: lib (write path + replay read), CRITICAL GATE.
 Depends on branches 1-6.
 
-Design (ROADMAP; supersedes ADR-011 point 6):
+### Gate tasks
+
+- [x] Description artifact (2026-09-10): "What the code does today" below. Read-only
+  subagent + operator re-verification on the live machine. Repro scripts `~/tmp/b7/`
+  (A: payload/forwarding, B: node dir, C: resolver, D: control-var injection).
+- [x] Plan + non-breakage argument (below): invariants I7-1..I7-9, decisions D1-D7.
+- [ ] Explicit consent (Rachid) before any `lib/`/router edit.
+
+### What the code does today (gate description, read-only)
+
+**1. Install write path - there is no registry today.**
+- Single local choke point: `_cloudify_execute_package_action` (cloudify:207-276) for
+  all four actions; the remote re-enters the same function in a fresh process via the
+  payload's `; cloudify $* </dev/null` (remote.sh:246). Install `@default` sync at
+  cloudify:230, requested pkgs backgrounded at cloudify:242 (`CLOUDIFY_FORCE=true`);
+  configure cloudify:248; uninstall cloudify:255; verify cloudify:261-271.
+- Phases: `pkg_depends` (package-api.sh:397-473) + `_cloudify_source_pkg_phases`
+  (package-api.sh:383-395); configure `cloudify_configure_package`
+  (packages.sh:187-218); uninstall `cloudify_uninstall_package` (packages.sh:290-319);
+  verify `_cloudify_run_verify` (package-api.sh:335-380).
+- Persistent state today: NONE per node/package. Only the deployment-wide store via
+  `cloudify_vars_deployment_write` (vars.sh:275-281) from `cloudify vars set`
+  (cloudify:487-520) and `_cloudify_deployment_ensure` (deployments.sh:35-46). No
+  recipe writes a node/config dir; `pkg_backup` writes `$CLOUDIFY_TMP/backup`
+  (package-api.sh:77-142) wiped by the exit trap (utils.sh:74-86).
+- `ivps` is never called for node state - only container ops (lib/containers.sh:16-43);
+  no `ivps node path` call site exists.
+- ADR-018: recipes are sourced with errexit suspended (package-api.sh:416,423), so a
+  write placed inside a recipe is unchecked. The checked path is the operator side.
+
+**2. Var machinery (branch 1/1b as landed).**
+- Helpers: `cloudify_vars_global_read [file]` vars.sh:194-199, `_write` 201-203;
+  `cloudify_vars_pkg_read <pkg>` 211-243, `_write` 245-249; `cloudify_vars_deployment_read
+  [id]` 253-273, `_write` 275-281, `_delete` 283-288, `_list` 290-296, `_show` 298-303;
+  `cloudify_vars_env_read` 308-320; `cloudify_vars_state_read` 498-500 (no-op, zero call
+  sites outside `vars.bats:37/47`).
+- Walker `_cloudify_pkg_remote_vars` (remote.sh:93-186), invoked with a redirect, never
+  `$()` (remote.sh:218). Order for install/configure/uninstall: deployment
+  (remote.sh:127-129) -> packages rightmost-first + dep recursion (remote.sh:131-157) ->
+  global (remote.sh:159) -> caller env restricted to declared names (remote.sh:161-176).
+  Verify-only/exec forwards global only (remote.sh:180-182; pinned vars.bats:337-347).
+- First-write-wins via `_cloudify_vars_claim` (vars.sh:45-53) + claim-before-no-clobber
+  in `_cloudify_vars_emit` (vars.sh:96-101). There is NO snapshot/restore in current
+  code (that was pre-refactor; grep returns none).
+- Declaration `.remote-vars` three kinds parsed vars.sh:220-234 into `name\tpkg\tkind`
+  (vars.sh:230-232); read by two loops remote.sh:163-167 and 171-176.
+- Resolver `_cloudify_resolve_var_value` vars.sh:68-86, called from `_cloudify_vars_emit`
+  vars.sh:104; backends lib/secrets.sh:20-44 + lib/secrets/base64.sh; multi-line written
+  as `@base64:` (vars.sh:185-187). Reserved guard vars.sh:21-28, warn+skip vars.sh:92-95;
+  masking heuristic vars.sh:331-333.
+
+**3. CLOUDIFY_DEPLOYMENT plumbing.**
+- Per-shell env, no context file (deployments.sh:4; ADR-011 pt4); `deployment use` prints
+  the export (deployments.sh:98-101). Readers: vars.sh:254,276,284,293,299,397,445;
+  remote.sh:127. Unset is a clean no-op (vars.sh:254-255; walker skips remote.sh:127).
+- NOT in the envsubst allow-list (remote.sh:242) nor the payload template
+  (remote.sh:16-75): during a remote install the deployment id is UNSET on the host
+  (repro A). The `--on <host>` identity is known only operator-side (cloudify:290/311;
+  remote.sh:196) and is not forwarded either.
+
+**4. ivps node-directory layout.**
+- `ivps node path <name>` -> `$NODES_DIR/<name>` = `~/.config/ivps/nodes/<name>`
+  (ivps:4536-4545; `node_dir` ivps:691-692), requires `node.json`, fails rc1 otherwise
+  (repro B: `cloudify` is not a node). Today only `cloudai`/`cloudstation` node dirs
+  exist; perms inconsistent (cloudai dir 0755 / node.json 0644).
+- `ivps node delete <name>` -> `rm -rf node_dir` (ivps:4817-4820). The container
+  `ivps delete <name>` never touches the tree (ivps:3432-3510); cloudify's `delete` verb
+  calls the container delete (cloudify:614-618, containers.sh:24-30). So the plan line
+  "`ivps delete <host>` removes the slice" is false as written; only `ivps node delete`
+  cleans the tree.
+- ivps documents the shape as `pkgs/<pkg>/deployments/<id>/` (ivps:668-669, 4533-4535),
+  contradicting ADR-011 pt3 `deployments/<id>/pkgs/<pkg>/`. ivps is opaque to the shape;
+  a doc fix is an ivps-side change.
+- cloudify reads/writes nothing under the node dir today.
+
+**5. Identity gap (largest risk).** `--on cloudify` is a CONTAINER on node `cloudai`;
+`ivps node path cloudify` fails. Cloudify hosts are containers (`cloudify`, `xfce-test`)
+or bare tailnet nodes; localhost is not an ivps node. The proposed key
+`(deployment, instance, package)` has no instance segment in the ADR-011/ROADMAP path.
+There is no ivps command mapping a container to its node. See D1.
+
+**6. Pinned tests constraining any change.** Must stay unmodified: `deployments.bats`,
+`remote-vars.bats`, `verify-vars.bats`, `install-run-split.bats`, `uninstall.bats`,
+`integration/package-install-run-split.bats`, `integration/package-uninstall.bats`.
+Must change: `vars.bats:46-49` ("state_read is a no-op until branch 7" premise). No
+current test covers node path / a slice / `deployment run`. `containers.bats:24-56` is
+ the ivps-stub model.
+
+### Decisions requiring human consent
+
+- **D1 - slice location / identity.** (A) node-dir slice keyed by node, container->node
+  resolved via `ivps list`; (B, recommended) cloudify-owned
+  `~/.config/cloudify/deployments/<id>/instances/<host>/pkgs/<pkg>/config.yaml` where
+  `<host>` is the `--on` value (localhost included); (C) node-dir slice with an instance
+  segment + resolution. B generalizes to containers/bare/localhost and matches ADR-011
+  pt2 (cloudify owns deployments); it deviates from pt3 (ivps node dir) and drops the
+  `ivps node delete` cleanup, so `cloudify uninstall`/`deployment delete` own cleanup.
+  Recommend B, amend ADR-011 pt3 + pt6.
+- **D2 - write timing/owner.** Node dirs are operator-local, so the write MUST be
+  operator-side. Recommend: after a successful background wait (cloudify:678-698, needs a
+  pid->action+pkgs map added), recording the operator-resolved var set. No remote payload
+  change. Remote-side write is impossible without an ssh-sync-back channel.
+- **D3 - replay trigger + precedence.** Recommend: `cloudify_vars_state_read` runs only
+  under an explicit replay flag (set by `deployment run`/replay), never by a normal
+  install; on replay the recorded values seed the strongest rung (last known-good intent)
+  and the live ladder fills gaps.
+- **D4 - secrets in the record.** ROADMAP:23 says refs/hashes; ADR-011 pt7 says plaintext
+  MVP. A hash cannot replay a generated secret (xfce auto-generate). Recommend: store the
+  reference when the source was a reference, else the raw value, 600, never logged; amend
+  ADR-011 pt7 and correct ROADMAP:23.
+- **D5 - cleanup.** Recommend: `cloudify uninstall` removes the instance slice;
+  `cloudify deployment delete` trashes the deployment dir; no dependency on
+  `ivps node delete` (D1-B).
+- **D6 - scope split.** Recommend two merges: 7a (registry write + replay read + cleanup
+  + ADR amendment) and 7b (`deployment run` engine + runbook-as-data + preflight + human
+  gate). 7b needs a report-back channel for step outputs (e.g. a launched guest's tailnet
+  name), which is undesigned; keeping it separate keeps 7a mergeable.
+- **D7 - reserved-name gap.** A slice/ladder reader must not become a control channel:
+  extend the deny-list (vars.sh:21-28) with `CLOUDIFY_FORCE`, `CLOUDIFY_NO_VERIFY`,
+  `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_INSTANCE` (repro D proves all are claimed+forwarded
+  from a file store today). Small hardening, rides 7a.
+
+### Invariants the registry must preserve
+
+- I7-1 Exports are the value channel; readers stay redirect-invoked, never `$()`
+  (vars.sh:8-12, remote.sh:218).
+- I7-2 The precedence ladder stays intent-only; the record is never read by a normal
+  install/configure/verify/uninstall (gated behind the replay flag, D3).
+- I7-3 First-write-wins + claim-before-no-clobber unchanged (vars.sh:45-53, 96-101).
+- I7-4 The record stores pre-resolution references where the source was a reference;
+  plaintext only under the 600 trust boundary; never logged (D4).
+- I7-5 Perms 700/600 enforced by the writer regardless of parent dir perms.
+- I7-6 Write is idempotent + atomic (mktemp+mv, vars.sh:188-191); concurrent writes to
+  one slice race -> last writer wins (accepted, document).
+- I7-7 No change to walker order, payload template, envsubst allow-list, resolver, or
+  recipes; all pinned tests stay green except vars.bats:46-49.
+- I7-8 Degrade gracefully: no deployment id, localhost, or a host with no resolvable
+  node -> skip with a warn, never abort the install.
+- I7-9 The record is a replay input only; step outputs from 7b never merge into intent
+  config.
+
+### Non-breakage argument
+
+7a is additive and operator-side. It (i) implements `cloudify_vars_state_read` behind a
+flag no existing caller sets (only `vars.bats:46-49` changes: a premise update, documented);
+(ii) writes a slice after a successful dispatch - off the walker path, touching no export,
+no envsubst value, no recipe; (iii) removes the slice on uninstall and on deployment delete;
+(iv) extends the reserved-name deny-list (warn+skip; no existing test supplies those names
+from a file store). It changes none of: `_cloudify_pkg_remote_vars` order, the payload
+template, the envsubst allow-list, the resolver, the deployment-wide reader, or any recipe.
+7b is a new action + engine, no existing path touched. If D1 picks C, the only addition is
+an operator-side guarded `ivps list` call; still no remote impact.
+
+Pre-gate design (ROADMAP intent; superseded by D1-D7 above once consented):
 - Per-node slices `$(ivps node path <host>)/deployments/<id>/pkgs/<pkg>/config.yaml`,
   keyed (deployment, instance, package); a REPLAY INPUT, outside the precedence ladder.
 - Resolution stays intent-only (recipe default < global < package < deployment < env);

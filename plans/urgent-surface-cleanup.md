@@ -1027,7 +1027,7 @@ Tasks (ordered; T1 first, it gates storage):
   Markdown front-matter (`deployment`, `targets`) + typed shell steps; bindings; step outputs
   into the registry; preflight via `vars declared`; human-gate step; `deployment run` then
   `deployment replay`.
-- [ ] T7 author the xfce+guacamole runbook as data.
+- [~] T7 author the xfce+guacamole runbook as data (authored + parse/bind/preflight proven; E2E blocked on an invalid Tailscale API token, see T7 note).
 - [v] T8 amend ADR-011 pts 3/6/7 (path, record leaves the ladder, refs-vs-raw);
   superseded by ADR-020 (never edit a past ADR body).
 - [v] T9 dev skills `cloudify-dev` + `cloudify-pkg-dev`: few-line Security addition

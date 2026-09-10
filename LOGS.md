@@ -170,3 +170,10 @@
 - Branch 7 T8+T9: added ADR-020 (registry=observation, replay=runbook+values, targets/bindings, secrets refs-vs-raw; supersedes ADR-011 pts 3/6/7), annotated ADR-011 status, added lean Security sections to the cloudify-dev and cloudify-pkg-dev skills. Docs only.
 
 - T6 design note written into the plan (runbook = Markdown front-matter + typed shell steps; targets as TARGET_<NAME>; bindings from --target or the deployment store; step outputs via CLOUDIFY_OUTPUTS_FILE; `deployment run` with preflight via `vars declared`; run snapshot under the deployment store; `replay` exports the snapshot). Awaiting approval before implementation.
+
+## 2026-09-10 - branch 7 T6a (runbook parser + preflight + `deployment run --dry-run`)
+
+- New `lib/runbooks.sh` + router source + `deployment run` verb. Contract: `cloudify_runbook_parse` (`type\tid\ttarget\tpkg\tbody-b64`), `cloudify_runbook_meta` (`deployment\ttargets-csv`), `cloudify_runbook_find` (default `${CLOUDIFY_DIR}/runbooks`), `cloudify_runbook_bind_targets` (`name\tnode\tinstance\tssh_host`), `cloudify_runbook_preflight`.
+- Parse validates `bash step=<type> [target=] [pkg=] [id=]`; dies with path + line on unknown type/attribute, missing target/pkg, undeclared target, duplicate id; auto id = position `%02d`. Bindings: `--target` > store `TARGET_<NAME>`; unbound dies listing all. Preflight honours the runbook's deployment store and dies listing every unresolved `pkg: NAME`. `--dry-run` prints the plan (deployment, targets, steps) and exits 0; without it the plan prints then dies for T6b.
+- Ambiguities recorded in the plan T6a note: non-step fences ignored, unknown attribute fails closed, duplicate front-matter targets deduped, `--runbook` deployment must match `<id>`, `--from` validated but unused, `--yes` ignored, pkg need not exist.
+- Tests: `tests/unit/runbooks.bats` 22 cases + fixtures `tests/fixtures/runbooks/{valid,guest-only}.md`; `task lint` rc 0; driver `~/tmp/t6a/driver.sh` green; focused 67/67; full `task test-unit` 502/502 rc 0 (`1..502`, once on final HEAD).

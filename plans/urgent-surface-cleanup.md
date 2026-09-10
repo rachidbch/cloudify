@@ -1022,9 +1022,11 @@ Tasks (ordered; T1 first, it gates storage):
   `cloudify_registry_delete` stays the explicit per-slice erase, never on uninstall.
 - [v] T5 reserved-name hardening: extend vars.sh:21-28 with `CLOUDIFY_FORCE`,
   `CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE`, `CLOUDIFY_INSTANCE`.
-- [ ] T6 playable runbook + engine: Markdown front-matter (`deployment`, `targets`) + typed
-  shell steps; bindings; step outputs into the registry; preflight via `vars declared`;
-  human-gate step; `deployment run` then `deployment replay`.
+- [~] T6 playable runbook + engine (T6a: parser + discovery + bindings + preflight +
+  `--dry-run` done 2026-09-10; T6b execution/outputs/human-gate + T6c replay left):
+  Markdown front-matter (`deployment`, `targets`) + typed shell steps; bindings; step outputs
+  into the registry; preflight via `vars declared`; human-gate step; `deployment run` then
+  `deployment replay`.
 - [ ] T7 author the xfce+guacamole runbook as data.
 - [v] T8 amend ADR-011 pts 3/6/7 (path, record leaves the ladder, refs-vs-raw);
   superseded by ADR-020 (never edit a past ADR body).
@@ -1155,6 +1157,39 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
   runbooks carry structure + names only; control-name deny-list); `cloudify-pkg-dev`
   gains one (a recipe persists plaintext only in its own 0600 state files; cloudify
   state carries a reference, not plaintext). No code change.
+
+### Branch 7 T6a outcome (2026-09-10)
+
+- Landed on `feat/deployment-run` (not yet merged): new `lib/runbooks.sh` (guard
+  `_CLOUDIFY_RUNBOOKS_LOADED`) + router source line + `deployment run` dispatch. Additive:
+  no walker/payload/envsubst/shadow/recipe change; T6b/T6c untouched.
+- Contract (tab-separated): `cloudify_runbook_parse <path>` -> `type\tid\ttarget\tpkg\tbody-b64`
+  (body base64, empty fields kept); `cloudify_runbook_meta <path>` -> `deployment\ttargets-csv`;
+  `cloudify_runbook_find <id> [root]` (default `${CLOUDIFY_DIR}/runbooks`, like `pkg/`);
+  `cloudify_runbook_bind_targets <path> [--target name=addr]...` ->
+  `name\tnode\tinstance\tssh_host`; `cloudify_runbook_preflight <path> [--target ...]...`.
+- Step info string: `bash step=<type> [target=] [pkg=] [id=]`; types
+  `launch|install|configure|verify|uninstall|human-gate`. Rejections (path + line): unknown
+  type/attribute, missing target (non-human-gate), missing pkg (install/configure/verify/
+  uninstall), target not in front-matter, duplicate id. Auto id = step position (`%02d`).
+- Binding: CLI `--target` wins, else the deployment-store var `TARGET_<NAME>` (uppercased);
+  each address validated by `_cloudify_target_resolve`; unbound targets die listing them; a
+  binding for an undeclared target dies. Preflight exports the runbook's deployment so
+  `_cloudify_vars_source_of` sees its store, then dies listing every `pkg: NAME` whose only
+  source is `recipe-default`.
+- Ambiguities resolved: a `bash step=...` fence is detected after whitespace-tokenizing the
+  info string (a non-step fence is ignored); an unknown attribute dies (fail closed);
+  front-matter duplicates are deduped; `--runbook` must declare `deployment:` equal to the
+  `<id>` argument; `--from` is validated against step ids but unused (T6b); `--yes` accepted
+  and ignored (T6b). A step's `pkg` need not exist for T6a (no `.remote-vars` = no required
+  names).
+- Evidence: `tests/unit/runbooks.bats` 22 cases (fixtures `tests/fixtures/runbooks/`);
+  L0 `bash -n` + `task lint` rc 0; driver `~/tmp/t6a/driver.sh` green; focused
+  `runbooks.bats + shell-router.bats + deployments.bats` 67/67 in `cloudai:cloudify`;
+  full `task test-unit` 502/502 rc 0 (`1..502`, once on final HEAD; 480 + 22).
+- Unproven: no real-ssh run (nothing executes in T6a); the non-dry-run branch is a deliberate
+  `die` (T6b); `--from`/`--yes` semantics land in T6b; no runbook in the repo yet uses the
+  typed format (T7 authors it).
 
 ## Notes
 

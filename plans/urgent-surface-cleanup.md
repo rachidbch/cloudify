@@ -952,7 +952,7 @@ envsubst allow-list, the resolver, the deployment-wide reader, or any recipe.
 Tasks (ordered; T1 first, it gates storage):
 - [v] T1 target addressing: `--on` grammar + validation via the ivps inventory; per-shell
   `CLOUDIFY_NODE` (active) with a `deployment use`-style export helper; no localhost fallback.
-- [ ] T2 registry storage: write under `$(ivps node path <node>)/...`; keep a plain-host
+- [v] T2 registry storage: write under `$(ivps node path <node>)/...`; keep a plain-host
   bucket fallback until ivps exposes `local`; 700/600; atomic (mktemp+mv).
 - [ ] T3 registry write: after a successful dispatch, record (deployment, target, package,
   status, timestamps, version, value snapshot); operator-side, pid->action+pkgs map added.
@@ -990,6 +990,29 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
 - Blocked-then-cleared: container ssh was down ~14h from the branch-6 ACL damage (see
   HISTORY 2026-09-10 RDP post-mortem); policy restored, smoke re-run green.
 - Next: T2 registry storage + T3 registry write (ivps `local` node still pending upstream).
+
+### Branch 7 T2 outcome (2026-09-10)
+
+- Landed on `feat/state-registry` (not yet merged): `lib/registry.sh` (guard
+  `_CLOUDIFY_REGISTRY_LOADED`) + router source line. Storage primitives only; no install
+  wiring (T3), no record schema (T3), no walker/payload/envsubst/shadow/recipe change.
+- API (all take `<deployment> <node> <instance> <ssh_host> [<pkg>]`):
+  `cloudify_registry_file` (pure path), `_put` (stdin, atomic, 0700/0600), `_get`
+  (rc 1 + empty when absent), `_delete` (prunes `<pkg>` + `pkgs`, spares
+  `deployments/<id>`; rc 0 when absent), `_list` (`<deployment> <node> <instance>
+  [<ssh_host>]`, ssh_host needed only for the fallback bucket). Bucket =
+  `$(ivps node path <node>)[/<instance>]`, else
+  `${CLOUDIFY_CREDENTIALS_DIR:-$HOME/.config/cloudify}/registry/hosts/<ssh_host>[/<instance>]`
+  (resolved at call time; never fails the caller when ivps is absent/fails).
+- Spec ambiguities resolved: list takes an optional ssh_host; an unaddressable bucket
+  (no node dir + no ssh host) dies for `file`/`put`/`get`/`delete` and lists nothing;
+  pruning stops below `deployments/<id>` (see the test name + code comment).
+- Evidence: `tests/unit/registry.bats` 27 cases (red first: all 27 failed on the missing
+  module), plain driver `~/tmp/t2/driver.sh` all green on bash 5.x, `task lint` rc 0,
+  `task test-unit` 452/452 rc 0 on final HEAD (425 + 27; `task test-unit` run once).
+- Unproven: no real `ivps node path` write against a live node dir (unit stub only);
+  `local` still needs the upstream ivps fix before the fallback can retire.
+- Next: T3 registry write (operator-side, after a successful dispatch) + T5 reserved names.
 
 ## Notes
 

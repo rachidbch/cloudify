@@ -145,3 +145,10 @@
 - E2E smoke of the three forms green over real ssh (`cloudify: OK`, rc 0) after the tailnet policy restore; merged to master as `8989e32`.
 
 - RDP ACL post-mortem received (ivps agent): blanket tag:incus->tag:incus grant + over-broad `acl revoke --ssh` (ivps bug, fixed) broke container SSH ~14h. Encoded the tag-scoped replacement (tag:rdp-client/tag:rdp-server) in the xfce-guacamole runbook + runbooks/README policy rules; annotated the archived plan. Policy restored by the operator; container ssh green.
+
+## 2026-09-10 - branch 7 T2 (registry storage)
+
+- New `lib/registry.sh` + router source: record path under `$(ivps node path <node>)[/<instance>]/deployments/<id>/pkgs/<pkg>/config.yaml`, plain-host fallback under `${CLOUDIFY_CREDENTIALS_DIR:-$HOME/.config/cloudify}/registry/hosts/<ssh_host>/...`; `file`/`put`/`get`/`delete`/`list`, 0700/0600, atomic mktemp+mv, unsafe components rejected.
+- Tests: `tests/unit/registry.bats` 27 cases (red first, then green); driver `~/tmp/t2/driver.sh` green; `task lint` rc 0; `task test-unit` 452/452 rc 0 on final HEAD.
+- Pruning stops below `deployments/<id>`; `list` takes an optional ssh_host (fallback bucket only); both recorded in the module header + the plan's T2 outcome.
+- Next: T3 registry write (operator-side, after a successful dispatch), T5 reserved names.

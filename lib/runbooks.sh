@@ -38,7 +38,7 @@ set -Eeuo pipefail
 [[ -n "${_CLOUDIFY_RUNBOOKS_LOADED:-}" ]] && return 0
 _CLOUDIFY_RUNBOOKS_LOADED=1
 
-_CLOUDIFY_RUNBOOK_TYPES=(launch install configure verify uninstall human-gate)
+_CLOUDIFY_RUNBOOK_TYPES=(launch install configure verify uninstall run human-gate)
 # Step types that consume a package (and so declare required vars)
 _CLOUDIFY_RUNBOOK_PKG_TYPES=(install configure verify uninstall)
 
@@ -254,8 +254,9 @@ function _cloudify_runbook_emit_step() {
         esac
     done
 
-    # A human gate is prose; every other step addresses a target.
-    if [[ "$type" != "human-gate" && -z "$target" ]]; then
+    # A human gate is prose and `run` is a generic passthrough; every other step
+    # addresses a target.
+    if [[ "$type" != "human-gate" && "$type" != "run" && -z "$target" ]]; then
         die "Runbook '$path': line $line: step '$type' is missing 'target='."
     fi
     if _cloudify_runbook_pkg_type "$type" && [[ -z "$pkg" ]]; then
@@ -692,9 +693,16 @@ function cloudify_runbook_execute() {
     local -a run_output_order=()
     local outputs_consumed=0
     local type sid tgt pkg body body_b64 started=0
+    local -a step_lines=()
+    local line
     [[ -z "$from" ]] && started=1
 
-    while IFS= read -r line; do
+    # Read the step list into an array first: a step body must not be able to
+    # steal the remaining steps. They used to be fed through the loop's stdin
+    # (a here-string), so any `read`/`cat` inside a body consumed the rest -
+    # the run truncated, reported success, and skipped the gate and teardown.
+    while IFS= read -r line; do step_lines+=("$line"); done <<< "$parse_out"
+    for line in "${step_lines[@]}"; do
         [[ -n "$line" ]] || continue
         type="${line%%$'\t'*}"
         rest="${line#*$'\t'}"
@@ -733,7 +741,7 @@ function cloudify_runbook_execute() {
         fi
 
         local rc=0
-        bash -c "$body" || rc=$?
+        bash -c "$body" </dev/null || rc=$?
         if [[ "$rc" -ne 0 ]]; then
             status="failed"
             fail_msg="Runbook step '$sid' failed (exit $rc)."
@@ -756,7 +764,7 @@ function cloudify_runbook_execute() {
         outputs_consumed=$((outputs_consumed + new_count))
 
         [[ "$status" == "failed" ]] && break
-    done <<< "$parse_out"
+    done
 
     finished_at=$(_cloudify_runbook_now)
 

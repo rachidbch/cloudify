@@ -868,3 +868,57 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - E2E (real, in `cloudai:cloudify`, isolated store/home): runbook `t6c-smoke` step `verify pkg=smoke-pkg` whose body prints `cloudify vars declared smoke-pkg --sources`; `deployment run` -> source `deployment`; store var deleted -> plain re-run fails preflight (`smoke-pkg: SMOKE_VALUE`); `deployment replay t6c-smoke --yes` -> rc 0, source `env` (the seed wins as the strongest ladder source), resolved value absent from the replay log, second 0600 snapshot recording `value.SMOKE_VALUE` (same second as its source -> `-2` suffix, the fix proven live); throwaway deployment + dir deleted after.
 - Ambiguities/edges: the recorded `target.<name>` is the resolved `--on` token, so replay re-resolves it through target discovery (a `localhost` binding records `local`: node `local` when the inventory knows it, else a plain ssh host). Replay resolves values in `--dry-run` too (an unresolvable reference fails the plan, not a step). `--from`/`--yes` pass through to the engine.
 - Unproven: a non-base64 `@backend:` secret in replay (only the built-in `@base64:` end to end); a snapshot that predates a runbook edit the new runbook rejects (dies in preflight, untested); concurrent same-second replays of one deployment still race on the name. Branch 7 T6 is now complete; T7 (the xfce+guacamole runbook) is the only task left. On branch `feat/deployment-run`, not merged.
+
+### 2026-09-10 - branch 7 T7: xfce+guacamole runbook authored as data (E2E blocked)
+
+- The runbook is now playable: front-matter (`deployment: xfce-gui`, `targets: guest, gateway`) + typed steps (install/verify xfce, install/verify guacamole, `run` for `ivps expose-direct`/`unexpose`, human-gate). Validated with `deployment run --dry-run`: parse + target binding + preflight all work.
+- Engine gap found by real use: no generic step type, so a runbook could not express `ivps expose-direct`. Added `run` (target and pkg optional, body executed, no preflight); docs updated; one unit test.
+- Declaration drift fixed: `pkg/guacamole/.remote-vars` declared `CLOUDIFY_GUACAMOLE_ADMIN_USER` as required while the recipe defaults it to `guacadmin`; now `=guacadmin`.
+- Unit suite 520/520 rc 0 (`results/t7-unit.tap`).
+- E2E blocked on operator infra: the reusable tailnet auth key is invalid (plain `ivps launch` fails; worked around with `--tag incus`), and the Tailscale API token is invalid (`ivps tag get`/`tag set`/`acl grant` -> HTTP 401). The scoped RDP tags/grant cannot be applied, so the gateway cannot reach the guest on 3389. Disposable guest `cloudai:xfce-test` is up on `tag:incus`; branch `feat/runbook-as-data` is local and unmerged.
+
+### 2026-09-10 - branch 7 T7: cheap proofs green, E2E blocked on one tailnet rule
+
+- Deployment `xfce-gui` created with generated secrets (masked; `--reveal` retrieves them).
+- Cheap proofs all green: `deployment run --dry-run` (parse + bind + preflight, no missing vars); L2 install xfce on `cloudai:xfce-test` and guacamole on `cloudai:cloudify` (cloudify's own logs); L3 `verify` both -> `xfce-test: OK`, `cloudify: OK`. guacamole created the `GUI` connection for `xfce-test.komodo-everest.ts.net:3389`.
+- Isolated blocker: xrdp listens on the guest (`*:3389`), the workstation (`tag:workstation`, allowed to `tag:incus`) connects, the gateway (`tag:incus`) gets TCP-CLOSED. Missing rule: `tag:rdp-client -> tag:rdp-server:3389` (with the two role tags). Applying it needs the Tailscale API token, which returns HTTP 401 today.
+- Token reconciliation: ivps HISTORY records a successful ACL write at 16:28:19Z today, so the token worked then and does not now. Neither ivps nor cloudify records a revocation or rotation; a direct `curl` with the configured `TS_SERVICE_API_KEY` 401s on `/acl` and `/devices` with both Basic and Bearer. Revocation is therefore unproven; expiry or an out-of-band change are the candidates, and the admin key list (expired vs revoked) is the disambiguation.
+
+### 2026-09-10 - Tailscale API token: deep diagnosis (blocker before the T7 E2E)
+
+- Ruled out client-side: DNS resolves to Tailscale controlplane, TLS cert is genuine `api.tailscale.com` (LE, valid Aug 3-Nov 1), no `/etc/hosts` override, no proxy env, clock within 2s of the API's `Date`.
+- Ruled out the stored value: exactly one token on disk (`~/.config/ivps/config.env`), 60 chars, charset `[A-Za-z0-9-]`, no CR; no copy in shell history; `tskey-api` appears in no other file. `TS_API_KEY` == `TS_SERVICE_API_KEY`.
+- Ruled out auth form and path: 401 (`{"message":"API token invalid"}`) with Basic and Bearer, on `/acl` and `/devices`, for both `tailnet/<domain>` and `tailnet/-` (the key's own tailnet).
+- Ruled out the tool: `ivps tag get` 401s with the same token, so it is not my curl approach.
+- Timeline: the same token succeeded at 16:28:19Z today (ivps HISTORY: the "dropped the blanket grant" ACL write). Neither ivps nor cloudify records a revocation or rotation.
+- Conclusion: the credential was invalidated between 16:28Z and now; the API gives the same message for expired and revoked, and the Tailscale admin key list (owner-only) is the only disambiguation. The rule cannot be created without a valid token.
+
+### 2026-09-10 - Tailscale API token 401: root cause is expiry, not revocation
+
+- Facts: the stored `TS_SERVICE_API_KEY` is well-formed (60 chars, all `[A-Za-z0-9-]`, ASCII, no CR), is the only `tskey-api-` credential on disk (no backups, not exported into the shell), and `ivps` reads it correctly (`_parse_config_env`/`read_config_value`, quotes stripped; `_require_ts_api_key` and the device/ACL calls use it as Bearer/Basic). No proxy vars, direct IPv4+IPv6 reachability to `api.tailscale.com`, clock sane.
+- Tailscale rejects it: 401 `{"message":"API token invalid"}` on `/tailnet/<d>/acl` and `/devices`, Basic and Bearer. The same body is returned for no-auth and for a garbage token, so the message is generic and does not itself prove revocation.
+- It worked earlier today: ivps HISTORY records a successful ACL write at 16:28:19Z. Neither ivps nor cloudify records a revocation or rotation.
+- Root cause (high confidence): expiry. The credential was provisioned with the expose-service feature on 2026-06-12 (ivps HISTORY, "config.env: new TS_SERVICE_API_KEY key"), exactly 90 days before today, matching Tailscale's default API-key expiry. That explains working this afternoon, failing tonight, and no revocation anywhere.
+- Secondary finding: `ivps init` prompts for a `tskey-client-...` (OAuth client secret) but every code path uses the stored value directly as a Bearer/Basic credential; the credential that actually works is a Tailscale API access token (`tskey-api-...`) with device + ACL (+ services) scopes. Prompt text or an OAuth token-exchange is wrong/missing - an ivps-side fix.
+- Disambiguation left to the admin console: the key list shows Expired vs Revoked and the expiry date; the arithmetic predicts "expired 2026-09-10".
+
+### 2026-09-11 - branch 7 T7: scoped RDP rule created and verified
+
+- Identity: `ivps tag create rdp-client` / `rdp-server`; devices `xfce-test` -> `tag:incus,tag:rdp-server` and `cloudify` -> `tag:incus,tag:rdp-client` (`ivps tag set` replaces the list, so `tag:incus` was kept; container ssh re-verified intact).
+- Policy: `ivps acl grant tag:rdp-server --src tag:rdp-client --port 3389`; snapshot `acl-20260911T001954.809441151Z.json`, rollback command printed by ivps; the ssh section is unchanged.
+- Verified: `ivps acl show --section grants` lists `accept | tag:rdp-client | tag:rdp-server | 3389`; gateway -> guest probe on 3389 is `TCP-OPEN` (was `TCP-CLOSED`).
+- Next: the E2E exit gate `cloudify deployment run xfce-gui`, awaiting the operator's go.
+
+### 2026-09-11 - branch 7 T7: runbook engine bug found by the E2E (step bodies stole the step list)
+
+- The first `cloudify deployment run xfce-gui` reported `status: succeeded` in 64s having run only the 4 install/verify steps; the expose step, the human gate and the teardown never ran.
+- Root cause: `cloudify_runbook_execute` fed the parsed step list to its loop through stdin (`while ... done <<< "$parse_out"`), and step bodies were run with `bash -c "$body"` inheriting that stdin. Any body that reads stdin consumed the remaining steps, so the loop ended early and the run falsely succeeded. Minimal repro: a 3-step runbook whose first body is `cat >/dev/null` executed only step 1 and reported success.
+- Fix: read the step list into an array before the loop (no stdin coupling) and run each body with `</dev/null>` so a body can neither steal the list nor block. Red test added: `tests/unit/runbook-exec.bats` "a step body reading stdin does not truncate the remaining steps".
+- Focused suites green (runbook-exec + runbooks + runbook-replay 41/41, exit 0); lint clean.
+
+### 2026-09-11 - branch 7 T7: E2E passed, teardown done, docs synced
+
+- Human gate PASSED on `https://cloudify.komodo-everest.ts.net` (guacadmin; the stored password retrieved with `--reveal`). The E2E run walked the whole plan and stopped at the gate (no TTY) - the intended non-interactive behaviour.
+- Teardown: runbook legs (uninstall xfce on `cloudai:xfce-test`, uninstall guacamole + unexpose on `cloudai:cloudify`), `cloudify deployment delete xfce-gui` (registry records swept), disposable guest deleted. The permanent `cloudstation:guac-gui` untouched. The scoped RDP rule and the role tags were KEPT on purpose (they are needed for future guarded RDP provisioning); the ssh rules are untouched.
+- Docs synced for Branch 7's UX/API/behaviour changes: README (targets, runbooks, registry, reserved names), CLAUDE.md/AGENTS.md (target grammar + `lib/targets.sh`/`lib/registry.sh`/`lib/runbooks.sh`), the `cloudify` skill (target grammar, `node use`, `deployment run`/`replay`, deployments+runbooks), the `cloudify-dev` skill (new modules + the registry-is-not-a-source invariant), `runbooks/README.md`, `pkg/guacamole/README.md`. Checked and left alone (unaffected): `TASKS.md`, `ROADBLOCK.md`, `OPTIMIZATIONS.md`.
+- The urgent-surface-cleanup plan is complete (branches 0-7 all `[v]`); moved to `plans/archived/`, `PLAN.md` repointed.

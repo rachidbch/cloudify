@@ -32,7 +32,7 @@ Rules:
 - [v] Branch 4 - guacamole 3-leg rewrite (merged 23af7c1)
 - [v] Branch 5 - xfce alignment (merged 9ea2750)
 - [v] Branch 6 - agent runbooks + amnesiac validation
-- [~] Branch 7 - state registry + `cloudify deployment run` (T1-T6, T8, T9 done; T7 runbook left)
+- [v] Branch 7 - state registry + `cloudify deployment run` (T1-T9 done; E2E passed on disposable infra 2026-09-11)
 
 Trap -> branch map (ROADMAP `## URGENT` 1-7):
 trap 1 -> 1b (flag-scoped vars CLI); trap 2 -> 1b (declaration = doc mirror);
@@ -944,7 +944,7 @@ Open the URL and confirm the desktop renders.
 ````
 
 - Steps run in document order. The info string carries the step type
-  (`launch|install|configure|verify|uninstall|human-gate`) for preflight and reporting;
+  (`launch|install|configure|verify|uninstall|run|human-gate`) for preflight and reporting;
   the body stays plain shell, so the runbook is still runnable by a human or agent.
 - A target named `guest` is exported as `TARGET_GUEST`. Bindings come from
   `--target guest=<node[:instance]>`, else the deployment-store var `TARGET_GUEST`; an
@@ -1027,7 +1027,7 @@ Tasks (ordered; T1 first, it gates storage):
   Markdown front-matter (`deployment`, `targets`) + typed shell steps; bindings; step outputs
   into the registry; preflight via `vars declared`; human-gate step; `deployment run` then
   `deployment replay`.
-- [ ] T7 author the xfce+guacamole runbook as data.
+- [v] T7 author the xfce+guacamole runbook as data (authored; E2E passed on disposable infra 2026-09-11; see the T7 outcome).
 - [v] T8 amend ADR-011 pts 3/6/7 (path, record leaves the ladder, refs-vs-raw);
   superseded by ADR-020 (never edit a past ADR body).
 - [v] T9 dev skills `cloudify-dev` + `cloudify-pkg-dev`: few-line Security addition
@@ -1171,7 +1171,7 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
   `cloudify_runbook_bind_targets <path> [--target name=addr]...` ->
   `name\tnode\tinstance\tssh_host`; `cloudify_runbook_preflight <path> [--target ...]...`.
 - Step info string: `bash step=<type> [target=] [pkg=] [id=]`; types
-  `launch|install|configure|verify|uninstall|human-gate`. Rejections (path + line): unknown
+  `launch|install|configure|verify|uninstall|run|human-gate`. Rejections (path + line): unknown
   type/attribute, missing target (non-human-gate), missing pkg (install/configure/verify/
   uninstall), target not in front-matter, duplicate id. Auto id = step position (`%02d`).
 - Binding: CLI `--target` wins, else the deployment-store var `TARGET_<NAME>` (uppercased);
@@ -1279,6 +1279,34 @@ end to end via `deployment run`; ADR amended; no silent merge into intent config
   built-in `@base64:`, plus the resolver's unit coverage); a replay whose snapshot predates
   a runbook edit and now names a step attribute the new runbook rejects (dies in preflight,
   not tested); concurrent replays of one deployment (same-second naming still races).
+
+### Branch 7 T7 outcome (2026-09-11)
+
+- `runbooks/xfce-guacamole/disposable.md` is in the playable format: front-matter
+  `deployment: xfce-gui` + `targets: guest, gateway`; typed steps (install/verify xfce,
+  install/verify guacamole, `run` for expose/unexpose, `human-gate`).
+- Engine gap found by real use: no generic step type for `ivps expose-direct`; added `run`
+  (target/pkg optional). Declaration drift fixed: `pkg/guacamole/.remote-vars` now
+  `CLOUDIFY_GUACAMOLE_ADMIN_USER=guacadmin` (recipe defaulted it while the declaration said required).
+- Cheap proofs: dry-run/bind/preflight; xfce installed+verified on `cloudai:xfce-test`;
+  guacamole installed+configured+verified on `cloudai:cloudify` (connection `GUI` ->
+  `xfce-test.komodo-everest.ts.net:3389`).
+- Blockers cleared: the Tailscale API token had expired (90-day, provisioned 2026-06-12),
+  refreshed by the operator; the ivps prompt/401 bug is fixed upstream (ROADMAP item 8a,
+  `6e9d664`) with the permanent OAuth fix roadmapped (8b).
+- Scoped RDP rule created: `tag:rdp-client` (`cloudify`) -> `tag:rdp-server` (`xfce-test`),
+  port 3389, probe TCP-OPEN. Deliberately KEPT after teardown (needed for future guarded
+  RDP provisioning); the ssh section is untouched.
+- E2E: `cloudify deployment run xfce-gui` walked the whole plan and stopped at the human gate
+  (no TTY); the render gate PASSED; teardown ran (uninstall xfce + guacamole, unexpose,
+  deployment delete, disposable guest delete). Test gateway was `cloudai:cloudify`; the
+  permanent `cloudstation:guac-gui` was never touched.
+- Engine bug found by the E2E and fixed (`0b4944c`): step bodies inherited the loop's stdin
+  and could steal the remaining steps (silent truncation + false success). Red test added;
+  the step list is now array-fed and bodies run with `</dev/null>`.
+- Docs updated: README (targets, runbooks, registry, reserved names), CLAUDE.md/AGENTS.md
+  (target grammar, the three new modules), the `cloudify` and `cloudify-dev` skills,
+  `runbooks/README.md`, `pkg/guacamole/README.md`.
 
 ## Notes
 

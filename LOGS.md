@@ -194,3 +194,17 @@
 - Fail closed: framework-owned/malformed value names, a non-snapshot file, a missing snapshot runbook.
 - Tests: `tests/unit/runbook-replay.bats` 11; `task lint` rc 0; driver `~/tmp/t6c/driver.sh` 18/18; focused 163/163; full `task test-unit` 519/519 rc 0 (`1..519`, once on final code HEAD).
 - E2E: `t6c-smoke` run (source `deployment`) -> store var deleted -> plain run fails preflight -> replay rc 0 with source `env`, value absent from the log, second 0600 snapshot with `-2` suffix; throwaway deleted.
+
+- T7 runbook authored as data + engine `run` step type + guacamole admin-user declaration fix; 520/520 unit. E2E blocked: invalid tailnet auth key (worked around with --tag incus) and invalid Tailscale API token (401 on tag/acl writes). Guest up; branch unmerged.
+
+- T7 cheap proofs green: dry-run/preflight; xfce installed+verified on cloudai:xfce-test; guacamole installed+configured+verified on cloudai:cloudify (GUI connection to xfce-test...:3389). E2E blocked on the single missing rule rdp-client->rdp-server:3389 (xrdp listens; workstation reaches it; gateway cannot). Applying it needs the API token, 401 today.
+
+- Tailscale API token deep diagnosis: client-side clean, single well-formed token, 401 on both schemes/endpoints and on tailnet/-; worked at 16:28Z today; no revocation logged in either repo. Cause = expired or revoked (console-only disambiguation). Rule creation blocked until a valid token exists.
+
+- Tailscale API 401 root-caused: the token is well-formed and correctly read; it worked at 16:28Z today; no revocation logged. Provisioned 2026-06-12 (expose-service) = exactly 90 days today -> default API-key expiry. Also found: `ivps init` asks for `tskey-client-...` while the code uses the value directly as an API token (`tskey-api-...`). Console confirms expired vs revoked.
+
+- Scoped RDP rule created + verified: tags rdp-client (cloudify) / rdp-server (xfce-test), grant 3389; gateway->guest probe TCP-OPEN. E2E awaiting go-ahead.
+
+- E2E #1 surfaced a runbook-engine bug: step bodies inherited the loop's stdin and stole the remaining steps -> truncated run reported success. Fixed (array-fed loop + `</dev/null>` bodies), red test added, focused suites green.
+
+- Branch 7 T7 done: E2E walked the plan to the human gate, gate PASSED, teardown done (test stack only; rdp rule + tags kept, permanent guac untouched). Docs synced: README/AGENTS/CLAUDE, cloudify + cloudify-dev skills, runbooks/README, pkg/guacamole/README. Plan archived.

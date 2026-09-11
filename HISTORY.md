@@ -922,3 +922,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Teardown: runbook legs (uninstall xfce on `cloudai:xfce-test`, uninstall guacamole + unexpose on `cloudai:cloudify`), `cloudify deployment delete xfce-gui` (registry records swept), disposable guest deleted. The permanent `cloudstation:guac-gui` untouched. The scoped RDP rule and the role tags were KEPT on purpose (they are needed for future guarded RDP provisioning); the ssh rules are untouched.
 - Docs synced for Branch 7's UX/API/behaviour changes: README (targets, runbooks, registry, reserved names), CLAUDE.md/AGENTS.md (target grammar + `lib/targets.sh`/`lib/registry.sh`/`lib/runbooks.sh`), the `cloudify` skill (target grammar, `node use`, `deployment run`/`replay`, deployments+runbooks), the `cloudify-dev` skill (new modules + the registry-is-not-a-source invariant), `runbooks/README.md`, `pkg/guacamole/README.md`. Checked and left alone (unaffected): `TASKS.md`, `ROADBLOCK.md`, `OPTIMIZATIONS.md`.
 - The urgent-surface-cleanup plan is complete (branches 0-7 all `[v]`); moved to `plans/archived/`, `PLAN.md` repointed.
+
+### 2026-09-11 - runbook teardown contract (Layer 1, docs)
+
+- The teardown ORDER was implicit, and a teardown section placed after a `human-gate` was reachable by `deployment run --yes`: the engine auto-confirms the gate and then tears the deployment down. Only operator discipline (`--from <id>`) guarded it, and that lived nowhere in the artifact.
+- Added a "Teardown contract" to `runbooks/README.md`: fixed order (software legs -> deployment delete -> policy revoke -> identity/tag delete -> instances), why each step is ordered, "never in the forward run", keep the ivps snapshot, prove the policy flipped.
+- Rewrote the xfce+guacamole runbook's teardown: explicit step ids (`teardown-xfce`, `teardown-guacamole`, `teardown-unexpose`), `--from teardown-xfce`, the order rationale, and the "role tags/grant are KEPT by default (retire only when the role is done)" default.
+- Engine-level phase separation (`phase=main|teardown`, so a normal run can never reach teardown) is roadmapped: `ROADMAP.md` "Runbook teardown phase (non-urgent)".

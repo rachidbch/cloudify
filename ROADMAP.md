@@ -57,6 +57,20 @@ The `node:instance` target syntax splits on the first colon, which collides with
 
 Target resolution (is X a node? which node hosts instance X?) piggybacks on ivps inventory today. Put it behind a small adapter seam so cloudify can use ivps or another provisioning/inventory tool and keep its own registry root. Decide the adapter API (look up node/instance, list targets, provision) and whether cloudify's registry root is its own (`~/.config/cloudify/...`) or delegated to the provider.
 
+## Runbook teardown phase (non-urgent)
+
+The runbook engine runs steps in document order with no phase concept, so a teardown section
+placed after a `human-gate` is reachable by a plain `cloudify deployment run <id> --yes`: it
+auto-confirms the gate and then immediately tears the deployment down. The only guard today is
+operator discipline (`--from <id>`), which lives nowhere in the artifact.
+
+Fix: a `phase=main|teardown` step attribute (default `main`). `deployment run <id>` executes
+`main` only; `deployment run <id> --phase teardown` (or a `cloudify deployment teardown <id>`
+verb) executes the teardown phase in declared order with the same preflight/verification. Makes
+the human gate the natural main/teardown boundary and removes the `--yes` footgun. Small
+`lib/runbooks.sh` change + tests; runs the CRITICAL GATE. The teardown ORDER itself is
+documented in `runbooks/README.md` ("Teardown contract").
+
 ## Remote bootstrap git pull vs task sync (non-urgent)
 
 The test container gets code from two writers into the same `/root/cloudify`: the bootstrap gist (`git pull` from GitHub) and `task sync` (rsync from the laptop). When a synced file is not yet in the container's checked-out commit, git sees it as untracked and refuses the pull ("untracked working tree files would be overwritten"), so the pull aborts and the clone stays stale; runs still use the synced tree. Reproduced 2026-09-10 on `cloudai:cloudify` with `lib/targets.sh`. Fix direction: bootstrap resets to the remote (`git fetch && git reset --hard`) or cleans untracked files before pulling; a remote-bootstrap change (brittle core), own gate.

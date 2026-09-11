@@ -103,26 +103,15 @@ until a human confirms.
 
 ## Teardown
 
-**This phase must never run in the forward run.** The engine executes steps in document
-order, so `cloudify deployment run xfce-gui --yes` would auto-confirm the human gate and then
-run the blocks below, destroying the deployment before anyone looks at it. Run them
-explicitly, after the gate, starting at the first teardown step:
+Never in the forward run: `--yes` auto-confirms the gate, then this tears down. After the gate:
 
 ```bash
 cloudify deployment run xfce-gui --target guest=<guest> --target gateway=<gateway> --from teardown-xfce
 ```
 
-Order (each item is load-bearing):
-
-1. **Software legs first** - they need ssh and the RDP path alive.
-2. **Deployment delete** - drops the deployment store and its registry records.
-3. **Policy and identity last** - revoke the grant *before* deleting a role tag (the API
-   rejects a tag still referenced by a grant), and only after no software needs the path:
-   revoking earlier kills guacd -> RDP mid-teardown.
-4. **Instances**: ones the operator PROVIDED are never deleted here; only the software is
-   removed. A runbook that launched an instance may delete only that instance.
-5. Remove **only what this run added**. Keep the snapshot path ivps prints; prove the
-   policy flipped before claiming done.
+Order: software legs (need ssh + the grant) -> `deployment delete` -> policy revoke -> tag reset ->
+tag delete (the API rejects a tag still referenced by a grant). Operator-provided instances are
+never deleted.
 
 ```bash step=uninstall target=guest pkg=xfce id=teardown-xfce
 cloudify --on "$TARGET_GUEST" uninstall xfce
@@ -136,28 +125,21 @@ cloudify --on "$TARGET_GATEWAY" uninstall guacamole
 ivps unexpose "$TARGET_GATEWAY" --direct
 ```
 
-Operator, after the software legs (keep this order):
-
 ```bash
 cloudify deployment delete xfce-gui
 ```
 
-The role tags and their grant are usually **kept** so later runs reuse the role. Retire them
-only when the role is no longer needed, in this order:
+Role tags/grant are kept by default; retire them only when the role is done:
 
 ```bash
-# 1. revoke the grant (grants only; never --ssh)
-ivps acl revoke tag:rdp-server --src tag:rdp-client --port 3389
-# 2. reset the tags on the devices this run tagged (they must keep tag:incus)
+ivps acl revoke tag:rdp-server --src tag:rdp-client --port 3389   # grants only; never --ssh
 ivps tag set <gateway> tag:incus
 ivps tag set <guest>   tag:incus
-# 3. delete the tag declarations last (API rejects a tag still in use)
 ivps tag delete rdp-client
 ivps tag delete rdp-server
 ```
 
-Prove it: `ivps acl show --section acl` no longer lists the row, and `ivps tag list` no
-longer shows the role tags. Deleting containers is not enough - policy outlives them.
+Prove: `ivps acl show --section acl` has no row, `ivps tag list` no role tags.
 
 ## Notes
 

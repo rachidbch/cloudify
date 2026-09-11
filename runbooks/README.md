@@ -26,22 +26,17 @@ Policy rules (ivps / Tailscale ACL):
 
 ## Teardown contract
 
-Teardown removes exactly what the run added, in this order. Each item is load-bearing:
+Remove exactly what the run added, in this order:
 
-1. **Software legs** (`uninstall`, `unexpose`) - they need ssh and any grant alive.
-2. **`cloudify deployment delete <id>`** - deployment store + its registry records.
-3. **Policy, then identity** - `ivps acl revoke` *before* `ivps tag delete`: the API rejects a
-   tag still referenced by a grant, and revoking earlier kills the path mid-teardown.
-4. **Instances** - operator-provided ones are never deleted (software only); a runbook may
-   delete only an instance it launched itself.
+1. Software legs (`uninstall`, `unexpose`) - they need ssh and any grant alive.
+2. `cloudify deployment delete <id>` - store + registry records.
+3. Policy then identity: `ivps acl revoke` before `ivps tag delete` (the API rejects a tag still in use).
+4. Instances: never the operator-provided ones; only those the runbook launched.
 
-Teardown must never run in the forward run. A teardown section placed after a `human-gate` is
-reachable by `deployment run --yes`, which auto-confirms the gate and then tears the
-deployment down before anyone looks. Run it explicitly with `--from <first-teardown-id>`, give
-teardown steps explicit `id=` values, and follow the order above.
-
-Keep the ivps snapshot path (and the rollback command it prints), and prove the policy flipped
-(`ivps acl show`) before claiming done. Deleting containers is not enough - policy outlives them.
+Never in the forward run: a teardown section after a `human-gate` is reachable by
+`deployment run --yes` (gate auto-confirmed, then teardown). Run it with `--from <first-teardown-id>`
+and explicit `id=` on teardown steps. Keep the ivps snapshot; prove the policy flipped
+(`ivps acl show`).
 
 Validation: the amnesiac test. A fresh agent session, given only the cloudify skill and
 the runbook path, completes the runbook on disposable infra with no human hints. Every

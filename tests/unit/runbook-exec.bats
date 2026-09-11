@@ -120,6 +120,30 @@ EOF
     grep -q "^output.seen: hello$" "$snap"
 }
 
+@test "execute: a step body reading stdin does not truncate the remaining steps" {
+    rubric "body stdin must not steal the step list (regression: silent truncation + false success)"
+    local rb="$CLOUDIFY_TMP/stdin.md"
+    _make_runbook "$rb" <<'EOF'
+---
+deployment: exec-stdin
+targets: guest
+---
+```bash step=install target=guest pkg=demo id=one
+cat >/dev/null
+echo one >> "$CLOUDIFY_TMP/stdin-order"
+```
+```bash step=verify target=guest pkg=demo id=two
+echo two >> "$CLOUDIFY_TMP/stdin-order"
+```
+```bash step=verify target=guest pkg=demo id=three
+echo three >> "$CLOUDIFY_TMP/stdin-order"
+```
+EOF
+    run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [ "$(cat "$CLOUDIFY_TMP/stdin-order")" = "$(printf 'one\ntwo\nthree')" ]
+}
+
 @test "execute: stops at the first failing step; later steps do not run; snapshot failed" {
     rubric "non-zero step -> break with the step id, snapshot status: failed"
     local rb="$CLOUDIFY_TMP/fail.md"

@@ -204,3 +204,5 @@
 - Tailscale API 401 root-caused: the token is well-formed and correctly read; it worked at 16:28Z today; no revocation logged. Provisioned 2026-06-12 (expose-service) = exactly 90 days today -> default API-key expiry. Also found: `ivps init` asks for `tskey-client-...` while the code uses the value directly as an API token (`tskey-api-...`). Console confirms expired vs revoked.
 
 - Scoped RDP rule created + verified: tags rdp-client (cloudify) / rdp-server (xfce-test), grant 3389; gateway->guest probe TCP-OPEN. E2E awaiting go-ahead.
+
+- E2E #1 surfaced a runbook-engine bug: step bodies inherited the loop's stdin and stole the remaining steps -> truncated run reported success. Fixed (array-fed loop + `</dev/null>` bodies), red test added, focused suites green.

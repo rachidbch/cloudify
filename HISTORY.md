@@ -908,3 +908,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Policy: `ivps acl grant tag:rdp-server --src tag:rdp-client --port 3389`; snapshot `acl-20260911T001954.809441151Z.json`, rollback command printed by ivps; the ssh section is unchanged.
 - Verified: `ivps acl show --section grants` lists `accept | tag:rdp-client | tag:rdp-server | 3389`; gateway -> guest probe on 3389 is `TCP-OPEN` (was `TCP-CLOSED`).
 - Next: the E2E exit gate `cloudify deployment run xfce-gui`, awaiting the operator's go.
+
+### 2026-09-11 - branch 7 T7: runbook engine bug found by the E2E (step bodies stole the step list)
+
+- The first `cloudify deployment run xfce-gui` reported `status: succeeded` in 64s having run only the 4 install/verify steps; the expose step, the human gate and the teardown never ran.
+- Root cause: `cloudify_runbook_execute` fed the parsed step list to its loop through stdin (`while ... done <<< "$parse_out"`), and step bodies were run with `bash -c "$body"` inheriting that stdin. Any body that reads stdin consumed the remaining steps, so the loop ended early and the run falsely succeeded. Minimal repro: a 3-step runbook whose first body is `cat >/dev/null` executed only step 1 and reported success.
+- Fix: read the step list into an array before the loop (no stdin coupling) and run each body with `</dev/null>` so a body can neither steal the list nor block. Red test added: `tests/unit/runbook-exec.bats` "a step body reading stdin does not truncate the remaining steps".
+- Focused suites green (runbook-exec + runbooks + runbook-replay 41/41, exit 0); lint clean.

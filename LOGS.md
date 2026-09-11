@@ -202,3 +202,5 @@
 - Tailscale API token deep diagnosis: client-side clean, single well-formed token, 401 on both schemes/endpoints and on tailnet/-; worked at 16:28Z today; no revocation logged in either repo. Cause = expired or revoked (console-only disambiguation). Rule creation blocked until a valid token exists.
 
 - Tailscale API 401 root-caused: the token is well-formed and correctly read; it worked at 16:28Z today; no revocation logged. Provisioned 2026-06-12 (expose-service) = exactly 90 days today -> default API-key expiry. Also found: `ivps init` asks for `tskey-client-...` while the code uses the value directly as an API token (`tskey-api-...`). Console confirms expired vs revoked.
+
+- Scoped RDP rule created + verified: tags rdp-client (cloudify) / rdp-server (xfce-test), grant 3389; gateway->guest probe TCP-OPEN. E2E awaiting go-ahead.

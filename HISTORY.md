@@ -901,3 +901,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Root cause (high confidence): expiry. The credential was provisioned with the expose-service feature on 2026-06-12 (ivps HISTORY, "config.env: new TS_SERVICE_API_KEY key"), exactly 90 days before today, matching Tailscale's default API-key expiry. That explains working this afternoon, failing tonight, and no revocation anywhere.
 - Secondary finding: `ivps init` prompts for a `tskey-client-...` (OAuth client secret) but every code path uses the stored value directly as a Bearer/Basic credential; the credential that actually works is a Tailscale API access token (`tskey-api-...`) with device + ACL (+ services) scopes. Prompt text or an OAuth token-exchange is wrong/missing - an ivps-side fix.
 - Disambiguation left to the admin console: the key list shows Expired vs Revoked and the expiry date; the arithmetic predicts "expired 2026-09-10".
+
+### 2026-09-11 - branch 7 T7: scoped RDP rule created and verified
+
+- Identity: `ivps tag create rdp-client` / `rdp-server`; devices `xfce-test` -> `tag:incus,tag:rdp-server` and `cloudify` -> `tag:incus,tag:rdp-client` (`ivps tag set` replaces the list, so `tag:incus` was kept; container ssh re-verified intact).
+- Policy: `ivps acl grant tag:rdp-server --src tag:rdp-client --port 3389`; snapshot `acl-20260911T001954.809441151Z.json`, rollback command printed by ivps; the ssh section is unchanged.
+- Verified: `ivps acl show --section grants` lists `accept | tag:rdp-client | tag:rdp-server | 3389`; gateway -> guest probe on 3389 is `TCP-OPEN` (was `TCP-CLOSED`).
+- Next: the E2E exit gate `cloudify deployment run xfce-gui`, awaiting the operator's go.

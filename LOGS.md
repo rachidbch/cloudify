@@ -206,3 +206,5 @@
 - Scoped RDP rule created + verified: tags rdp-client (cloudify) / rdp-server (xfce-test), grant 3389; gateway->guest probe TCP-OPEN. E2E awaiting go-ahead.
 
 - E2E #1 surfaced a runbook-engine bug: step bodies inherited the loop's stdin and stole the remaining steps -> truncated run reported success. Fixed (array-fed loop + `</dev/null>` bodies), red test added, focused suites green.
+
+- Branch 7 T7 done: E2E walked the plan to the human gate, gate PASSED, teardown done (test stack only; rdp rule + tags kept, permanent guac untouched). Docs synced: README/AGENTS/CLAUDE, cloudify + cloudify-dev skills, runbooks/README, pkg/guacamole/README. Plan archived.

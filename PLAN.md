@@ -1,1 +1,1 @@
-plans/urgent-surface-cleanup.md
+plans/archived/urgent-surface-cleanup.md

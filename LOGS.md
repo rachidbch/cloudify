@@ -210,3 +210,9 @@
 - Branch 7 T7 done: E2E walked the plan to the human gate, gate PASSED, teardown done (test stack only; rdp rule + tags kept, permanent guac untouched). Docs synced: README/AGENTS/CLAUDE, cloudify + cloudify-dev skills, runbooks/README, pkg/guacamole/README. Plan archived.
 
 - Layer 1 (docs): runbook teardown contract added (README) + xfce+guacamole teardown rewritten with explicit ids/order; Layer 2 (engine `phase=` separation) roadmapped.
+
+## 2026-09-12 - state model v2 design review
+
+- Adversarial review rejected ADR-021 as an implementation contract: it removed the only first-install and cross-host value scope, duplicated physical package truth per deployment, used an ambiguous and path-invalid deployment identity, discarded current target bindings, omitted a crash-safe event/state protocol, and allowed captured output to persist secrets.
+- ADR-022 supersedes it: one private dispatch context, retained desired inputs, tuple identity, deployment manifest, one physical package record with claims, explicit secret metadata, event-first revisioned commits, claim-aware pinned teardown, and no event replay.
+- `REDESIGN.md` and `GLOSSARY.md` rewritten; detailed gated plan created at `plans/state-model-v2.md`; old implementation plan archived. No runtime file changed and the CRITICAL GATE remains closed.

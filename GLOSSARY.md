@@ -1,291 +1,311 @@
-# Cloudify Glossary
+# Cloudify glossary
 
-Concepts only. What changes, where things live and how the tools behave: REDESIGN.md.
-`[proposed]` = not yet confirmed.
+Concepts for the accepted state-model v2 design.
+
+Behavior and storage rules live in `REDESIGN.md`.
 
 ## node
 
-**Definition.** A machine that runs an engine, registered with ivps under a stable name,
-reachable from the operator's machine.
+A machine registered in ivps that runs an instance engine and can be a Cloudify host.
 
-**Fields.**
+ivps owns node identity, metadata, and lifecycle.
 
-- id: immutable identity; every other artifact references it.
-- name: human handle, may change.
-- hostname: the machine's own name.
-- overlay name: how the overlay network names it.
-- origin: provisioned (ivps asked a server provider for the machine) or adopted (the machine
-  already existed and ivps registered it).
-- engine: the stack the node runs. See engine.
-- provider: display name (`digitalocean`, `aws`, `hetzner`, `premise`).
-- provider id: stable dispatch key; starts equal to provider, may diverge.
-- provider region: region inside the provider; empty for `premise`, or used to tell enterprise
-  regions apart.
-- role: declared purpose (today, the tailnet gateway).
-- spec: OS/image, cpu, memory, disk.
-- created at: when ivps registered it.
-- addresses: see address.
+Cloudify may keep host-bound state under the directory returned by `ivps node path <node>`.
 
-**Rules.**
-
-- Owner: ivps. cloudify reads nodes and never authors them.
-- `local` is this machine's own daemon, not deleteable.
-- Deletion follows origin: a provisioned machine is destroyed through its provider, an adopted
-  node is only unregistered, `local` is refused.
-- The cloud's active gateway is a cloud-level fact, not a node field.
-- Never recorded on a node: liveness, the containers it hosts.
-- Fields are captured when the node is provisioned or adopted, and updated on reconfigure.
-
-## address
-
-**Definition.** What makes a node or an instance reachable.
-
-**Fields.**
-
-- overlay IPv4: list. The mesh network.
-- overlay IPv6: list.
-- internal IPv4: list. The private network.
-- internal IPv6: list.
-- public IPv4: list.
-- public IPv6: list.
-
-**Rules.**
-
-- Use order: overlay IPv4, then internal IPv4, then public IPv4. One strategy, may evolve.
-- IPv6 is not in use yet; roadmapped.
-- Overlay is not Tailscale. Tailscale is today's implementation; nothing above this concept
-  names it.
-- A name is not an address: hostname and overlay name are naming, never addresses.
+Stable node IDs and rename migration are deferred to a separate ivps decision.
 
 ## instance
 
-**Definition.** A container (or VM) created by an engine on one node, addressed by name inside
-it: the `Y` in `X:Y`.
+A container or virtual machine created by an engine on one node.
 
-**Fields.**
+Its target form is the `Y` in `X:Y`.
 
-- id: immutable. Identity is (node id, instance id).
-- name: mutable inside the node.
-- node: the node it runs on.
-- engine: the stack that owns it.
-- image: what it was created from.
-- hostname: the instance's own name.
-- overlay name: how the overlay network names it.
-- addresses: as for a node.
-- os: the instance's own OS.
-- spec: cpu, memory, disk.
-- exposure: a published route (hostname, port, url).
+ivps and the engine own its lifecycle and live machine facts.
 
-**Rules.**
-
-- Machine-describing fields stay empty when the engine does not provide a machine. An Incus system
-  container or VM has an OS, memory and disk of its own; a docker or podman container has none of
-  the three, so `os` and `spec` stay empty.
-- Resource limits on a docker container are configuration, not capacity, so they do not fill `spec`.
+Stable instance IDs are deferred to a separate ivps decision.
 
 ## engine
 
-**Definition.** The stack that creates and runs instances on a node: incus, docker, podman today.
+The stack that creates and runs instances on a node, such as Incus, Docker, or Podman.
 
-**Fields.**
+Engine metadata redesign is deferred to a separate ivps decision.
 
-- name: `incus` | `docker` | `podman`.
+## address
 
-**Rules.**
+A network location through which a host can be reached.
 
-- A node runs one engine; an instance belongs to one node and one engine.
-- Nothing above this concept names an engine.
+Current target resolution remains name-based and uses ivps where available.
+
+Address-family and reachability-order normalization are deferred to a separate ivps decision.
+
+## external host
+
+An SSH host not registered as an ivps node or instance.
+
+Durable Cloudify state for an external host is keyed by an accepted SSH host-key fingerprint rather than its mutable SSH alias.
 
 ## host
 
-**Definition.** A place a package can be deployed onto.
+A place where Cloudify can dispatch a package operation.
 
-**Rules.**
+A host is a node, an instance, or an external host.
 
-- host = node | instance | external.
-- An external host is not in the inventory: ivps does not know it, and it is addressed by
-  its ssh name. Adopting it makes it a node.
-- Everything a package leaves behind is per host.
+## target reference
 
-## target
+A token typed after `--on` and resolved to one host for that command.
 
-**Definition.** A reference typed after `--on`, resolved at every use; never stored.
+The existing `X`, `X:`, `X:Y`, and `:Y` grammar remains unchanged during the state-model work.
 
-**Rules.**
+## target slot
 
-- Kinds: node (`X:`), instance on a node (`X:Y`), instance on the active node (`:Y`), bare `X`
-  (kind discovered; a name that is both a node and an instance is an error), external host (not
-  adopted by ivps).
-- A runbook declares target names and binds them for one run; the binding is history, not an
-  address.
+A role name declared by an application, such as `server`, `agent`, `guest`, or `gateway`.
+
+A target slot is bound to one resolved host.
+
+That binding is persisted in the current deployment manifest because later lifecycle commands need it.
+
+Changing a binding while active claims exist is an explicit migration.
 
 ## package
 
-**Definition.** The unit of provisioning: named software cloudify knows how to install, configure
-and remove on a node or an instance.
+The unit of provisioning exposed through Cloudify's stable package API.
 
-Everything a package declares lives in its recipe, and only there:
+A package declares its recipe phases, dependencies, consumed value names, defaults, secret metadata, and optional package-instance support.
 
-- the legs it implements: install required, configure, uninstall and verify optional. A leg the
-  package does not implement fails loudly when asked.
-- a spec for each dependency, a descendant of the package spec.
-- the values it consumes.
+A package definition lives in git and carries no host facts.
 
-**Fields.**
+## package instance
 
-- id: the package's relative path in the repo. Immutable, and the key every reference uses.
-- name: human handle, usually the same as the last path segment so the tree stays scannable; may
-  change.
-- version: the version the package installs.
+One independently configurable physical installation of a package on one host.
 
-**Rules.**
+The default package-instance key is `default`.
 
-- One declaration site: the recipe.
-- A package carries no per-host facts. What landed is an observation.
-- The same package installed on two hosts is two observations.
-- An application does not own a package. Several applications can use the same package, and the
-  package state record is one per deployment.
+A recipe must explicitly support package instances before a caller may choose another key.
+
+## physical package state
+
+Cloudify's last confirmed observation of one package instance on one host.
+
+One physical installation has one state record even when several deployments use it.
+
+The record contains a revision, the last successful applied state, the last attempt, verification health, and active deployment claims.
+
+The live host remains authoritative about what actually exists.
+
+## applied state
+
+The last package version and source-form values that Cloudify confirmed through a successful install or reconfigure.
+
+A failed attempt never overwrites applied state.
+
+Verify and teardown use applied state by default so changed defaults cannot silently alter their behavior.
+
+## last attempt
+
+The latest package operation Cloudify tried, including its phase, time, event, requested value metadata, and outcome.
+
+A failed or partially observed attempt may mark package health `degraded` or `unknown` without changing the last successful applied values.
+
+## health
+
+The last verification observation for one physical package instance.
+
+Health records the verification result and time without changing applied values.
+
+## claim
+
+A statement that one deployment and stable runbook step currently relies on one physical package instance.
+
+Compatible deployments may share one package instance through separate claims.
+
+A conflicting claim fails before mutation.
+
+Teardown releases every claim owned by its deployment, including dependency claims without uninstall actions.
+
+It may uninstall a physical package only after the last claim is released and the pinned teardown phase names that uninstall.
 
 ## value
 
-**Definition.** A string a recipe consumes at run time, addressed by name. The recipe declares the
-names it consumes; the operator supplies a string for a name in one of several sources.
+A string consumed by a package or application step and addressed by name.
 
-**Fields.**
+Its source form is a literal, an escaped literal, or a secret reference.
 
-- name: the name the recipe declares.
-- content: the string, either a literal or a reference to a secret backend, resolved when used.
-- secret: true when the content is sensitive.
+Its runtime form is the resolved plaintext made available only for execution.
 
-**Rules.**
+Value precedence depends on the selected lifecycle phase and is defined in `REDESIGN.md`.
 
-- One concept, several sources. The same name may exist in more than one source; that is
-  precedence, not duplication. The strongest source that provides it wins.
-- Source order: REDESIGN.md. The recipe default is the only source in git.
-- A reference stays a reference in a state record; the literal never replaces it.
+## default
+
+A weak value source used when no explicit deployment input or phase-specific applied value supplies the name.
+
+Defaults may live at recipe, global, package, or application scope.
+
+A default is intent, not evidence that the value reached a host.
+
+## deployment input
+
+An explicit value the operator supplies for one named application instance.
+
+Deployment inputs are desired configuration and remain available for first install, cross-host wiring, and later reconfigure.
+
+They do not claim that an operation succeeded.
+
+## secret
+
+A value explicitly classified as sensitive by a package or application declaration.
+
+Name-based detection is defense in depth, not the primary classification for canonical declarations.
+
+Legacy declarations use the heuristic with a migration warning during the compatibility period.
+
+Events and runs never store a literal secret.
+
+## secret reference
+
+A source-form value that names a backend and locator without containing the secret plaintext.
+
+The reference stays a reference in persistent state.
+
+The resolved plaintext exists only in the private dispatch context and target configuration that needs it.
 
 ## secret backend
 
-**Definition.** The external system that holds secrets and resolves a reference to its content.
+A resolver that converts a secret reference into plaintext at dispatch time.
 
-**Fields.**
+Backends own secret storage while Cloudify stores the reference.
 
-- name: the backend.
-
-**Rules.**
-
-- A value's content may be a reference instead of a literal; the backend resolves it when the
-  value is used.
-- No backend configured means no lookup happens.
+No configured backend means no lookup through that backend.
 
 ## application
 
-**Definition.** A runnable runbook: the program that applies intertwined packages to hosts. Lives
-in cloudify, in git.
+A versioned runbook that coordinates packages and other operations across named target slots.
 
-**Fields.**
+Its identity is `(application name, flavor)` and its canonical reference is `<application>/<flavor>`.
 
-- id: the runbook's relative path in the repo, `<name>/<flavor>`. Immutable, and the key every
-  reference uses.
-- name: the application name, shared by its flavors.
-- flavor: the variant of that name; `default` when none is given.
-- version: the application's version.
+The default flavor is `default`.
 
-The runbook, and only there, declares the host slots to bind, the names the application consumes,
-and its legs: install, reconfigure, verify, uninstall.
+An application declares inputs, mappings, targets, stable step IDs, and lifecycle phases.
 
-**Rules.**
-
-- An application declares names, never values. Defaults are the exception.
-- An application is not state. Applying it produces state.
-- An application owns its lifecycle. What a teardown removes is the runbook's decision.
-- A verify step writes no state record, so an application can use a package it does not own.
+An application is a plan in git, not current state.
 
 ## deployment
 
-**Definition.** The outcome of running an application: the state recording what was applied,
-where, when and with which values.
+One named instance of an application.
 
-**Fields.**
+Its identity is `(application name, flavor, deployment name)`.
 
-- id: the application plus the name the operator gives this instance. The key the state path uses.
-- application: the application it applied.
-- host: where each package landed.
+The default deployment name is `default`.
 
-**Rules.**
+A deployment has desired inputs under Cloudify configuration and a current manifest under Cloudify state.
 
-- Its state lives in the package state records, one per host and per package.
-- The events live in the log.
-- The state is distributed: one package state record per host and per package, tied together by
-  the deployment name in each path.
-- The package state records under a deployment are that application's uninstall checklist. A
-  package another application installed is not among them.
+Applied package facts remain in physical package state rather than being copied into the manifest.
 
-## event
+## deployment manifest
 
-**Definition.** One mutation of the system, appended to the log and never removed.
+The small current-state record for one deployment.
 
-**Fields.**
+It contains deployment identity, application commit, target bindings, lifecycle status, creation time, and last run and event IDs.
 
-- id: its own key.
-- time: when it happened.
-- command: what was run.
-- application, deployment id, host: the subject it touched, by id.
-- run id: the execution it belongs to.
-- values: what was used, a reference when the value came from a secret backend.
-- commit: the code it ran from.
-- outcome: exit status, captured outputs, and the values cloudify or ivps generated.
+It does not contain package applied values.
 
-## run
+A successful teardown removes the manifest only after all claims and application-owned external resources have been released.
 
-**Definition.** One execution of an application.
+## runbook
 
-**Fields.**
+The Markdown program for one application flavor at `runbooks/<application>/<flavor>/runbook.md`.
 
-- id: the key its events carry.
-- application: the application it ran.
-- deployment: the name it ran under.
-- started at: when the execution began.
-- status: running, succeeded or failed.
-- finished at: when it ended.
+Its typed shell steps have stable IDs and belong to explicit or defaulted lifecycle phases.
 
-It is written before the first event, so a run that dies immediately still leaves a trace.
+The runbook controls step order and the teardown method for package and non-package resources.
 
-**Rules.**
+## phase
 
-- It is the run's genesis, and it flips to a final status at the end, like every other state
-  record.
-- Its values, its hosts and its outcomes are those of its events, so nothing is duplicated.
-- It sits next to the log, at the top of the inventory.
+One selected part of an application lifecycle.
+
+The machine phase names are `install`, `reconfigure`, `verify`, and `teardown`.
+
+A bare application run executes install then verify.
+
+Reconfigure and teardown are deliberate commands.
 
 ## dispatch
 
-**Definition.** One command cloudify sends to one host: an install, a configure, a verify or an
-uninstall of one package.
+One operation for one deployment, target, top-level package, package instance, and phase.
 
-**Rules.**
+Cloudify expands the dependency graph and resolves the top-level package plus every possible dependency into one private context.
 
-- The host, the deployment and the package come from the step that runs it.
-- Values resolve at the dispatch: what the step's environment supplies wins, then the values in the
-  package state record for that host, deployment and package, then the defaults.
-- It appends an event.
+Preflight, remote forwarding, state, and event metadata consume that same context.
 
-## package state record
+## dispatch context
 
-**Definition.** The state cloudify keeps for one package on one host in one deployment: what was
-applied there, with which values, and when. One file.
+A mode-0600 temporary artifact holding the complete inputs for one dispatch.
 
-**Fields.**
+It contains identities plus one source-form and runtime-value view for the top-level package and each possible dependency.
 
-- application: the application that asked for it.
-- version: the package version that landed.
-- values: the values that were applied, a reference when the value came from a secret backend.
-- status and stamps: the current status, and the time of each act.
-- last event: the id of the event that touched it.
+It is the only value-resolution result for that dispatch and is removed after the parent process records the outcome.
 
-The host, the deployment and the package are the file's path, so they are not repeated.
+## run
 
-**Rules.**
+One execution of selected application phases.
 
-- It is what a reconfigure of that package on that host is seeded with.
-- Every dispatch that touches it updates it and sets its last event.
+Its record is written before the first selected step and ends as `succeeded`, `failed`, or `interrupted`.
+
+A run stores identity and lifecycle metadata but no resolved values or automatic step outputs.
+
+## event
+
+An immutable audit record for one observed attempt or state transition.
+
+An event links a tool, writer, run, step, deployment, subject, phase, outcome, and state revisions.
+
+It stores value names, sources, references or digests, and secret flags without raw output or literal secrets.
+
+Events help detect interrupted state commits but are not executable commands.
+
+## revision
+
+A monotonically increasing number on one physical package state record.
+
+A local host mutation lock serializes package revision changes for that host.
+
+No global total event order is required.
+
+## state check
+
+A read-only comparison of events and current state that reports missing events, unapplied events, duplicate revisions, and regressed revisions.
+
+Repair requires an explicit flag and only applies deterministic local state transitions.
+
+## reconfigure
+
+The explicit application phase that changes an existing claimed package instance.
+
+It may rewrite configuration, restart services, rotate secrets, or update artifacts.
+
+It must not silently change hosts, package ownership, or persistent-data retention.
+
+## teardown
+
+The explicit application phase that releases the deployment's resources and package claims.
+
+Claims identify the physical packages owned or shared by the deployment.
+
+The pinned runbook supplies teardown actions and order.
+
+A shared package is uninstalled only after its final claim is released.
+
+## upgrade
+
+An explicit migration from one application commit to another for an active deployment.
+
+Upgrade handles added, changed, and removed stable runbook steps before replacing the manifest's pinned commit.
+
+An ordinary reconfigure never performs an implicit upgrade.
+
+## compatibility period
+
+The release interval in which Cloudify reads both legacy and v2 deployment stores, runbooks, registry records, and snapshots.
+
+New writers switch only after schema, migration, and parity gates pass.
+
+Old readers are removed in a later explicitly approved release.

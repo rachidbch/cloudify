@@ -282,3 +282,53 @@ arguing non-breakage, then explicit consent, before anything under `lib/` is tou
 and skills follow the rename from deployment to application. Multi-instance applications, two
 k3s clusters included, now have a home for their per-instance values: the package state record.
 
+## ADR-022: One dispatch context, desired inputs, physical package state, and claims
+
+Status: accepted 2026-09-12 (supersedes ADR-021 as the implementation contract; when implemented, narrows ADR-020's never-source rule only for the v2 explicit reconfigure, verify, and teardown seed).
+
+Context: adversarial review of ADR-021 found that removing deployment inputs makes first installs
+and cross-host values impossible, per-deployment package records let one deployment uninstall a
+physical package another still uses, the proposed application-derived deployment id conflicts with
+current path validation and name-only reads, target bindings have no current home, and event output
+capture can persist generated secrets. ADR-021 also bundled the proved duplicate-value-walk defect
+with unrelated ivps identity and inventory redesigns.
+
+Decision:
+
+1. An application remains a runbook, identified by `(application, flavor)`. A deployment is one
+   named application instance, identified by `(application, flavor, deployment name)`. Each field
+   is a separate validated path component and the CLI always carries the application reference.
+2. Deployment desired inputs remain under Cloudify configuration. They supply first installs and
+   cross-host wiring but never claim that an operation succeeded. A current deployment manifest
+   stores the pinned application commit, target bindings, lifecycle status, and last run and event.
+3. One dispatch resolves values once into a private context. Preflight, the remote payload,
+   package state, compatibility snapshots, and event metadata consume that context. No writer
+   performs another value walk.
+4. Resolution is phase-specific. Install uses explicit inputs then defaults; reconfigure inserts
+   last successful applied values below explicit inputs; verify and teardown use applied values by
+   default. A failed attempt never replaces applied state. Existing-claim install is a no-op plus
+   verify and fails on conflicting explicit inputs rather than reinterpreting defaults.
+5. One physical package instance has one state record per host. Active deployment claims live in
+   that record. Compatible deployments may share it; conflicting claims fail before mutation.
+   Teardown releases every claim owned by the deployment, including dependency claims, while the
+   pinned teardown phase chooses which unclaimed physical packages to uninstall.
+6. Secret classification is explicit. Events and run records contain no literal secrets, rendered
+   payloads, raw stdout, raw stderr, or automatic persisted step outputs. The in-run output channel
+   stays private and ephemeral.
+7. Runs are written before execution. Events are immutable audit records. One local host mutation
+   lock covers remote execution plus every top-level and dependency result commit; per-subject
+   revisions remain independent. Each event is created before its state is replaced, so an
+   interrupted commit is detectable. Events are not executable commands.
+8. Claims choose the physical package subjects owned by a deployment. The pinned runbook teardown
+   phase supplies actions and order. Commit drift requires an explicit upgrade or migration and
+   fails loudly until pinned remote execution is available.
+9. Rebuild, log folding, multi-operator writes, event replication, and the ivps identity, provider,
+   address, role, gateway, and engine redesigns are deferred to separate decisions.
+
+Consequences: the existing deployment store and run snapshots remain during compatibility. The
+proved defect is fixed first by one dispatch context. Application identity, manifests, claims,
+events, teardown, and migration land in gated phases. Cloudify owns Cloudify global state and its
+event directory; ivps remains the owner of node inventory and node lifecycle. Full behavior,
+layouts, safety rules, and acceptance criteria are in `REDESIGN.md`; implementation is tracked in
+`plans/state-model-v2.md`.
+

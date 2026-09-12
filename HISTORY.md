@@ -938,3 +938,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - ivps changes queued: node id, provider meaning where the node lives, `adopted` as the origin flag, the declared spec fields, six address lists used in order, dispatch by provider id, instance id, engine name, hosts created only through ivps, and an external host identified by its ssh host key fingerprint.
 - `ROADMAP.md`: the superseded ladder paragraph deleted; a "Rebuild needs a pinned commit" item added; the teardown item now reads as the application's legs.
 - Nothing under `lib/` touched. Implementation is queued at `plans/state-model-implementation.md` and gated: description artifact, non-breakage plan, explicit consent.
+
+### 2026-09-12 - state model v2 supersedes ADR-021
+
+- Accepted ADR-022: keep deployment desired inputs, resolve each dispatch once, persist current bindings, separate physical package state from deployment claims, make events secret-free audit records with per-subject revisions, guard teardown by claims and the pinned application commit, and defer rebuild plus unrelated ivps redesigns; implementation moved to `plans/state-model-v2.md` behind the unchanged CRITICAL GATE.

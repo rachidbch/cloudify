@@ -230,3 +230,9 @@
 - Wrote `plans/state-model-v2-non-breakage.md` (306 lines). Touch matrix over `remote.sh`/router/shadows/package API/runbooks/storage/ivps for all nine phases, the six proofs the plan demands, per-phase invariant risk list, section 5 read-before-write ordering, section 7.1 rollback boundaries and files per phase, section 7.2 the eight-item behavior change set consent would cover.
 - Grounded on the accepted G1 invariants and re-checked against code: shadow family untouched by every phase (plan greps), snapshot replay needs only a `runbook:` line (`lib/runbooks.sh:856-857`) so dropping `output.*` stays readable, `_CLOUDIFY_VARS_RESERVED` lacks `HOME` (the collision hazard is pre-existing).
 - No runtime file changed. `git status --short` clean after commit.
+
+## 2026-09-12 - G3 consent: Phase 1 approved
+
+- Rachid approved Phase 1 of `plans/state-model-v2.md` (characterize the defect, freeze identity rules and JSON schemas, migration fixtures). Exact scope: `tests/`, new schema/fixture files, `plans/` and docs. No runtime file: nothing under `lib/`, the `cloudify` router, `pkg/`, or ivps.
+- Consent is scoped to Phase 1 only. Phase 2 and beyond need a new consent gate, as does every item in G2 section 7.2's behavior change set, SSH host-key pinning (still undecided: opt-in for one release vs fail-closed), and any harness-file edit.
+- Also approved: push the documentation commits, and one feature branch for this slice.

@@ -39,18 +39,18 @@ No task under `lib/`, the `cloudify` router, package runtime behavior, or ivps m
 
 ### G2: non-breakage argument
 
-- [ ] Write `plans/state-model-v2-non-breakage.md` after G1.
-- [ ] State the preserved forwarding invariants for every implementation phase.
-- [ ] State whether each phase touches `remote.sh`, the router, shadows, package APIs, runbooks, registry storage, or ivps.
-- [ ] Prove that collector exports remain the value channel and are never captured through command substitution.
-- [ ] Prove that payloads remain on stdin and secrets remain off argv.
-- [ ] Prove that the explicit `envsubst` allow-list contains exactly the resolved dispatch names.
-- [ ] Prove that remote-side single-quoted exports preserve literal expansion timing.
-- [ ] Prove that direct package install, configure, verify, and uninstall retain their current signatures, with claim protection as the one approved safety change.
-- [ ] Prove that shadow command lookup and behavior are byte-identical unless a separately consented change says otherwise.
-- [ ] Treat SSH host-key pinning as an explicit `remote.sh` change and include its transport non-breakage argument before Phase 5.
-- [ ] Prove that old state remains readable before any writer switches formats.
-- [ ] List rollback boundaries and the files restored by each rollback.
+- [x] Write `plans/state-model-v2-non-breakage.md` after G1.
+- [x] State the preserved forwarding invariants for every implementation phase.
+- [x] State whether each phase touches `remote.sh`, the router, shadows, package APIs, runbooks, registry storage, or ivps.
+- [x] Prove that collector exports remain the value channel and are never captured through command substitution.
+- [x] Prove that payloads remain on stdin and secrets remain off argv.
+- [x] Prove that the explicit `envsubst` allow-list contains exactly the resolved dispatch names.
+- [x] Prove that remote-side single-quoted exports preserve literal expansion timing.
+- [x] Prove that direct package install, configure, verify, and uninstall retain their current signatures, with claim protection as the one approved safety change.
+- [x] Prove that shadow command lookup and behavior are byte-identical unless a separately consented change says otherwise.
+- [x] Treat SSH host-key pinning as an explicit `remote.sh` change and include its transport non-breakage argument before Phase 5.
+- [x] Prove that old state remains readable before any writer switches formats.
+- [x] List rollback boundaries and the files restored by each rollback.
 
 ### G3: human consent
 

@@ -224,3 +224,9 @@
 - Verification by me, not trusted from the child: every cited line resolves within its file; a spread sample matched its claimed subject; the 25-token allow-list and the 0600 payload/stdin transport matched `lib/remote.sh`; swallowed exit codes matched `lib/shadows/{apt-get,git}.sh`; the depth-prefix defect matched `lib/package-api.sh:416`.
 - Not proven, carried into the artifact's uncertainties: no live remote dispatch, gist body quoted from the pinned raw URL, probe semantics pinned to envsubst 0.21 and bash 5.1.16, ivps bucket resolution for `local` inferred.
 - No file under `lib/`, the router, `shadows/`, `pkg/` or `tests/` changed. `git status --short` shows only docs.
+
+## 2026-09-12 - G2 non-breakage argument
+
+- Wrote `plans/state-model-v2-non-breakage.md` (306 lines). Touch matrix over `remote.sh`/router/shadows/package API/runbooks/storage/ivps for all nine phases, the six proofs the plan demands, per-phase invariant risk list, section 5 read-before-write ordering, section 7.1 rollback boundaries and files per phase, section 7.2 the eight-item behavior change set consent would cover.
+- Grounded on the accepted G1 invariants and re-checked against code: shadow family untouched by every phase (plan greps), snapshot replay needs only a `runbook:` line (`lib/runbooks.sh:856-857`) so dropping `output.*` stays readable, `_CLOUDIFY_VARS_RESERVED` lacks `HOME` (the collision hazard is pre-existing).
+- No runtime file changed. `git status --short` clean after commit.

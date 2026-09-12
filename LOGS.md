@@ -245,3 +245,9 @@
 - Review found and fixed a live hole: `schemas/v1/lib/schema-check.jq` silently ignored `minProperties`, used by `deployment-manifest.schema.json` for the non-empty `bindings` object. Added `minProperties`/`maxProperties` enforcement plus a fail-closed unsupported-keyword error; proved both with an injected unknown keyword (rc 5) and empty bindings (rejected).
 - Deviations recorded in the plan: the red proof runs in the unit harness instead of an integration test (the defect is fully observable there, real code plus stubbed ssh reading stdin), and the application-input mapping case is a red contract test because no mapping concept exists yet.
 - README repository map updated with `schemas/` and `tests/red/` so the new directories are discoverable.
+
+## 2026-09-12 - G3 consent: Phase 2 approved
+
+- Rachid approved Phase 2 (one dispatch context, one value resolution) after G2 section 7.2 was presented. Scope: `lib/vars.sh`, new `lib/context.sh`, `lib/remote.sh`, `lib/registry.sh`, `lib/runbooks.sh` and the router wiring, plus tests and docs.
+- Interface pinned before code in `plans/state-model-v2-phase2-design.md`: module and API, a metadata-only context file with no plaintext value, the parent-created context path that never reaches argv, the byte-identical payload and registry-record rules with the equivalence proof, the single accepted behavior change, and the `CLOUDIFY_LEGACY_VARS=1` rollback switch.
+- Still requiring a separate consent gate: every other item in G2 7.2, SSH host-key pinning, ipvs changes, and any harness-file edit.

@@ -226,3 +226,59 @@ state stays under `~/.config/cloudify/deployments/<id>/`. `cloudify deployment
 delete` sweeps the record dirs; uninstall marks `removed` (the record is kept for
 observation). Registry distribution/backup (secret-aware, never git) is ROADMAP
 non-urgent. Target addressing landed in branch 7 T1; the registry in T2-T5.
+
+## ADR-021: The application is the runbook; the state is now; the log is history
+
+Status: accepted 2026-09-11 (supersedes ADR-019's glue, ADR-020 and the remaining points of
+ADR-011). Details: `GLOSSARY.md` (concepts) and `REDESIGN.md` (changes).
+
+Context: the state model grew by accretion. The same values were computed twice by two different
+walks, the snapshot's `value.*` from the deployment store only, the registry record's `var.*` from
+env, deployment, package and global, and written to two places that were never compared. The
+registry lived inside the ivps tree while its shape was cloudify's. A deployment was a cloudify
+entity whose only content was a per-deployment defaults file and a name for the plan the runbook
+already named. And the runbook could not carry an application's lifecycle, so teardown had to be a
+separate phase bolted on later.
+
+Decision:
+
+1. An application is a runbook, one file at `runbooks/<app>/<flavor>/runbook.md`. It declares its
+target names, its version and its legs: install, reconfigure, verify, teardown. Nothing about it is
+state. A deployment is the outcome of running one, named by the operator at run time (`--name`,
+`default` when omitted). The deployment entity goes: no per-deployment defaults file, no write
+subcommands. Its identity is the application plus that name, and its state sits per host.
+2. Values: names and defaults live in cloudify, mirroring the repo tree (global, per package, per
+application). Applied values live in the state. The walk is the step's environment, then the
+package state record, then the defaults. One value that two packages must agree on is one name,
+declared by both.
+3. State: a package state record per host, deployment and package, holding the current status, the
+version, the applied values, the stamps and the last event. The state describes now. What is no
+longer current leaves it, a deleted host or a deleted deployment; the log keeps the story.
+4. Events: an append-only log in the ivps inventory, one file per event, recording every mutation
+with the command, the application, the deployment, the host, the values used, the commit and the
+outcome. ivps records its own actions in the same shape. A run state record (application,
+deployment, start, status, end) is written before the first event. The per-run snapshot file goes.
+5. Legs: a step declares `phase=install|reconfigure|verify|teardown`, defaulted from its type. A
+bare run executes install then verify. Reconfigure is deliberate, requires the state to exist, and
+is seeded from the package state record. It provisions nothing, removes nothing and compares
+nothing; the author's contract is that each leg is idempotent.
+6. Rebuild is the exceptional repair path: fold the log to a time and converge, or replay the
+commands. It is mostly the same, not exact: recipes are bash on remote hosts, secrets are
+references, and upstreams move.
+7. Read surface: `cloudify --on <target> show overlay-name`, `cloudify --on <target> state
+[--deployment <name>]`, `cloudify deployments`, `cloudify deployments show <name>`. The walk never
+reads the state on its own.
+8. ivps: a node carries an immutable id beside its mutable name; provider says where it lives and
+`adopted` says ivps did not create it; the node record gains the declared spec; addresses become
+six lists, overlay, internal and public, IPv4 and IPv6, used in that order; dispatch moves to
+provider id. An instance gains an id, an engine is named, hosts are created only through ivps, and
+an external host's state record carries the machine's ssh host key fingerprint.
+9. Ownership: ivps owns the inventory folder and its lifecycle, cloudify owns the state records'
+fields and meaning, and the event shape is shared by both tools and versioned.
+
+Consequences: the snapshot file, the per-deployment defaults file and the duplicated `var.*` walk
+go. Implementation is gated: a written description of the bash mechanisms at risk, then a plan
+arguing non-breakage, then explicit consent, before anything under `lib/` is touched. Tests, docs
+and skills follow the rename from deployment to application. Multi-instance applications, two
+k3s clusters included, now have a home for their per-instance values: the package state record.
+

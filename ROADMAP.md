@@ -62,12 +62,7 @@ placed after a `human-gate` is reachable by a plain `cloudify deployment run <id
 auto-confirms the gate and then immediately tears the deployment down. The only guard today is
 operator discipline (`--from <id>`), which lives nowhere in the artifact.
 
-- [ ] Fix: a `phase=main|teardown` step attribute (default `main`). `deployment run <id>` executes
-`main` only; `deployment run <id> --phase teardown` (or a `cloudify deployment teardown <id>`
-verb) executes the teardown phase in declared order with the same preflight/verification. Makes
-the human gate the natural main/teardown boundary and removes the `--yes` footgun. Small
-`lib/runbooks.sh` change + tests; runs the CRITICAL GATE. The teardown ORDER itself is
-documented in `runbooks/README.md` ("Teardown contract").
+- [ ] Fix: a `phase=install|reconfigure|verify|teardown` step attribute, defaulted from the step type, with `run` and `human-gate` steps declaring theirs. A bare run executes install then verify; teardown never runs as part of it. Decided in `REDESIGN.md` (Legs and reconfigure) and `ADR-021`; implementation tracked in `plans/state-model-implementation.md`. Runs the CRITICAL GATE. The teardown ORDER itself is documented in `runbooks/README.md` ("Teardown contract").
 
 ## Remote bootstrap git pull vs task sync (non-urgent)
 

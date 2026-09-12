@@ -352,8 +352,14 @@ inventory/
   <host>/@<tag>       Host tag files for grouping
 runbooks/
   <app>/<flavor>.md   Deployment procedure (front-matter + typed shell steps)
+schemas/
+  v1/                 State model v2 machine contracts: identity rules, the manifest,
+                      package state, run and event JSON schemas, fixtures, and
+                      validate.sh (frozen by plans/state-model-v2.md Phase 1)
 tests/
   unit/               Unit tests (mocked environment)
+  red/                Deliberately failing proofs of the v2 contract (not globbed
+                      by task test-unit; run explicitly, see tests/red/README.md)
   integration/        Integration tests (real package installs via SSH)
   helpers/            Test setup/teardown helpers
 ```

@@ -942,3 +942,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ### 2026-09-12 - state model v2 supersedes ADR-021
 
 - Accepted ADR-022: keep deployment desired inputs, resolve each dispatch once, persist current bindings, separate physical package state from deployment claims, make events secret-free audit records with per-subject revisions, guard teardown by claims and the pinned application commit, and defer rebuild plus unrelated ivps redesigns; implementation moved to `plans/state-model-v2.md` behind the unchanged CRITICAL GATE.
+
+### 2026-09-12 - G1 CRITICAL GATE description written
+
+- G1 done: `plans/state-model-v2-description.md` traces value forwarding, the `envsubst` payload, the four shadows, router dispatch, runbooks, dependency execution and the current registry/deployment write surfaces, with 249 `file:line` citations and 11 local probes.
+- Accepted after review: every citation resolves in range, a sample matched its claimed subject, probes re-run rc 0, and the draft was checked against `AGENTS.md` and the `cloudify-dev` skill. No runtime file changed; G2 and G3 remain open.

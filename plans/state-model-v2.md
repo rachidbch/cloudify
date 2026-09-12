@@ -26,16 +26,16 @@ No task under `lib/`, the `cloudify` router, package runtime behavior, or ivps m
 
 ### G1: CRITICAL GATE description
 
-- [ ] Spawn a read-only subagent whose only mission is to describe Cloudify's brittle Bash mechanisms end to end.
-- [ ] Write the accepted description to `plans/state-model-v2-description.md`.
-- [ ] Trace package declarations through `.remote-vars`, every value source, first-write-wins claiming, and caller-environment preservation.
-- [ ] Trace router parsing through target resolution, background dispatch metadata, local dispatch, and remote dispatch.
-- [ ] Trace `declare -f` payload extraction, placeholder insertion, the explicit `envsubst` allow-list, single-quoted remote references, stdin transport, and remote bootstrap.
-- [ ] Trace each shadow command and state the invariants recipes depend on.
-- [ ] Trace runbook parsing, preflight, target binding, phase exports, step execution, output ingestion, failure handling, snapshots, and replay.
-- [ ] Trace dependency execution through `pkg_depends`, including which packages the router can and cannot observe.
-- [ ] Include file and line references plus minimal shell probes for every load-bearing claim.
-- [ ] Review the description against `AGENTS.md` and `cloudify-dev` before accepting it.
+- [x] Spawn a read-only subagent whose only mission is to describe Cloudify's brittle Bash mechanisms end to end.
+- [x] Write the accepted description to `plans/state-model-v2-description.md`.
+- [x] Trace package declarations through `.remote-vars`, every value source, first-write-wins claiming, and caller-environment preservation.
+- [x] Trace router parsing through target resolution, background dispatch metadata, local dispatch, and remote dispatch.
+- [x] Trace `declare -f` payload extraction, placeholder insertion, the explicit `envsubst` allow-list, single-quoted remote references, stdin transport, and remote bootstrap.
+- [x] Trace each shadow command and state the invariants recipes depend on.
+- [x] Trace runbook parsing, preflight, target binding, phase exports, step execution, output ingestion, failure handling, snapshots, and replay.
+- [x] Trace dependency execution through `pkg_depends`, including which packages the router can and cannot observe.
+- [x] Include file and line references plus minimal shell probes for every load-bearing claim.
+- [x] Review the description against `AGENTS.md` and `cloudify-dev` before accepting it.
 
 ### G2: non-breakage argument
 

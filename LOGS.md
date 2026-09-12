@@ -216,3 +216,11 @@
 - Adversarial review rejected ADR-021 as an implementation contract: it removed the only first-install and cross-host value scope, duplicated physical package truth per deployment, used an ambiguous and path-invalid deployment identity, discarded current target bindings, omitted a crash-safe event/state protocol, and allowed captured output to persist secrets.
 - ADR-022 supersedes it: one private dispatch context, retained desired inputs, tuple identity, deployment manifest, one physical package record with claims, explicit secret metadata, event-first revisioned commits, claim-aware pinned teardown, and no event replay.
 - `REDESIGN.md` and `GLOSSARY.md` rewritten; detailed gated plan created at `plans/state-model-v2.md`; old implementation plan archived. No runtime file changed and the CRITICAL GATE remains closed.
+
+## 2026-09-12 - G1 description (read-only)
+
+- Spawned one read-only subagent for G1 only (no planning, no code). Its probes live in `~/tmp/state-model-v2-probes/`; all 11 re-run rc 0.
+- Artifact: `plans/state-model-v2-description.md` (1100 lines, 249 unique `file:line` citations). Covers value flow, the `envsubst` payload, the four shadows, dispatch/transport, runbooks, `pkg_depends` and the observability gap, registry and deployment writes, plus 34 positive invariants for G2.
+- Verification by me, not trusted from the child: every cited line resolves within its file; a spread sample matched its claimed subject; the 25-token allow-list and the 0600 payload/stdin transport matched `lib/remote.sh`; swallowed exit codes matched `lib/shadows/{apt-get,git}.sh`; the depth-prefix defect matched `lib/package-api.sh:416`.
+- Not proven, carried into the artifact's uncertainties: no live remote dispatch, gist body quoted from the pinned raw URL, probe semantics pinned to envsubst 0.21 and bash 5.1.16, ivps bucket resolution for `local` inferred.
+- No file under `lib/`, the router, `shadows/`, `pkg/` or `tests/` changed. `git status --short` shows only docs.

@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "event_id": "20260101T103000Z-33334444",
+  "at": "2026-01-01T10:30:00Z",
+  "tool": "cloudify",
+  "writer": {
+    "host": "cloudai",
+    "boot_id": "3f2a1b0c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "pid": 48213,
+    "process_start_ticks": 91726345
+  },
+  "run_id": "20260101T103000Z-5e6f7a8b",
+  "step_id": "configure-nginx",
+  "application": "k3s",
+  "flavor": "default",
+  "deployment": "default",
+  "application_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
+  "subject": {
+    "kind": "package",
+    "host": "cloudai:cloudify",
+    "host_key": "ivps:cloudai:cloudify",
+    "package": "nginx",
+    "package_instance": "default"
+  },
+  "phase": "reconfigure",
+  "command_kind": "configure",
+  "values": {
+    "BASIC_AUTH_PASSWORD": {
+      "source": "caller",
+      "secret": true,
+      "declaration": "legacy-heuristic",
+      "reference": null,
+      "digest": "sha256:cc5bc97c37dd5a567c3ea829ff9d1f05d59518f914a90d202614e128a0d496ed"
+    }
+  },
+  "outcome": {
+    "exit_status": 1,
+    "summary": "configure failed: guarded artifact could not be fetched"
+  },
+  "state": {
+    "previous_revision": 3,
+    "resulting_revision": 4
+  }
+}

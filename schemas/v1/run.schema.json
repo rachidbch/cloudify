@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloudify.invalid/schemas/v1/run.schema.json",
+  "title": "Cloudify run record (schema_version 1)",
+  "description": "One execution of selected application phases. It is written before the first selected step and stores identity, phases, status, and writer identity only: no resolved value and no automatic step output.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "application",
+    "flavor",
+    "deployment",
+    "application_commit",
+    "development_override",
+    "phases",
+    "status",
+    "started_at",
+    "ended_at",
+    "writer",
+    "interrupted"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Artifact schema version.",
+      "type": "integer",
+      "const": 1
+    },
+    "run_id": {
+      "description": "Sortable run ID: UTC second plus a random suffix.",
+      "$ref": "#/$defs/run_id"
+    },
+    "application": {
+      "$ref": "#/$defs/component"
+    },
+    "flavor": {
+      "$ref": "#/$defs/component"
+    },
+    "deployment": {
+      "$ref": "#/$defs/component"
+    },
+    "application_commit": {
+      "description": "Cloudify commit this run executed.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "development_override": {
+      "description": "True when this run executed a dirty or unidentified tree, so its result is not exactly reproducible.",
+      "type": "boolean"
+    },
+    "phases": {
+      "description": "Selected phases for this run, in document order. A bare application run selects install then verify.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["install", "reconfigure", "verify", "teardown"]
+      }
+    },
+    "status": {
+      "description": "Run lifecycle status. running is written before the first step and replaced with a terminal status by the parent process.",
+      "enum": ["running", "succeeded", "failed", "interrupted"]
+    },
+    "started_at": {
+      "description": "UTC start time, second precision.",
+      "$ref": "#/$defs/utc"
+    },
+    "ended_at": {
+      "description": "UTC end time, or null while the run is still running.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "writer": {
+      "description": "Identity of the process that wrote the running record. It is what lets a later reader classify an abandoned run.",
+      "$ref": "#/$defs/writer"
+    },
+    "interrupted": {
+      "description": "Classification of an abandoned run. Null while running and null for a run that ended by itself.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/interrupted"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "running"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "ended_at": {
+            "type": "null"
+          },
+          "interrupted": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": ["succeeded", "failed"]
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "ended_at": {
+            "type": "string"
+          },
+          "interrupted": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "interrupted"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "ended_at": {
+            "type": "string"
+          },
+          "interrupted": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phases": {
+            "contains": {
+              "const": "teardown"
+            }
+          }
+        },
+        "required": ["phases"]
+      },
+      "then": {
+        "properties": {
+          "phases": {
+            "maxItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "component": {
+      "description": "One validated identity path component; rules in schemas/v1/identity.md.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\x00-\\x1f\\x7f]+$",
+      "allOf": [
+        {
+          "not": {
+            "enum": [".", ".."]
+          }
+        },
+        {
+          "not": {
+            "pattern": "^\\s|\\s$"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^-"
+          }
+        }
+      ]
+    },
+    "utc": {
+      "description": "UTC timestamp, second precision and trailing Z.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "run_id": {
+      "description": "Sortable run ID: UTC second plus a random suffix.",
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+    },
+    "writer": {
+      "description": "Writer identity: host, kernel boot ID, process ID, and the process start time in clock ticks read from /proc/<pid>/stat field 22. The boot ID plus the start tick distinguish a finished process from a reused PID.",
+      "type": "object",
+      "required": ["host", "boot_id", "pid", "process_start_ticks"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "Hostname of the writing machine.",
+          "$ref": "#/$defs/component"
+        },
+        "boot_id": {
+          "description": "Kernel boot ID, so a reader can tell a reboot from a live process.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "pid": {
+          "description": "Process ID of the run parent.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "process_start_ticks": {
+          "description": "Process start time in clock ticks since boot, from /proc/<pid>/stat field 22.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "interrupted": {
+      "description": "Interrupted-run classification.",
+      "type": "object",
+      "required": ["at", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "description": "UTC time the classification was written.",
+          "$ref": "#/$defs/utc"
+        },
+        "reason": {
+          "description": "Why the recording writer is no longer alive.",
+          "enum": ["writer-process-gone", "writer-boot-changed"]
+        }
+      }
+    }
+  }
+}

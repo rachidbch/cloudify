@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloudify.invalid/schemas/v1/deployment-manifest.schema.json",
+  "title": "Cloudify deployment manifest (schema_version 1)",
+  "description": "Current state for one deployment. It records identity, the pinned application commit, target bindings, lifecycle status, the creation time, and the last run and event IDs. It never contains applied package values.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "application",
+    "flavor",
+    "deployment",
+    "application_commit",
+    "development_override",
+    "status",
+    "created_at",
+    "bindings",
+    "last_run_id",
+    "last_event_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Artifact schema version. Every machine-owned artifact carries this field.",
+      "type": "integer",
+      "const": 1
+    },
+    "application": {
+      "description": "Application name component of the deployment tuple.",
+      "$ref": "#/$defs/component"
+    },
+    "flavor": {
+      "description": "Flavor component of the deployment tuple.",
+      "$ref": "#/$defs/component"
+    },
+    "deployment": {
+      "description": "Deployment name component of the deployment tuple.",
+      "$ref": "#/$defs/component"
+    },
+    "application_commit": {
+      "description": "Git commit of the Cloudify repository holding the runbook and recipes used by this deployment.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "development_override": {
+      "description": "True when the deployment was created from a dirty or unidentified tree and is therefore not exactly replayable or teardown-safe.",
+      "type": "boolean"
+    },
+    "status": {
+      "description": "Lifecycle status. The manifest is created as applying, becomes active after a successful install plus verify sequence, and is marked degraded on an observed failure. An abandoned run is classified as interrupted in its run record, not here.",
+      "enum": ["applying", "active", "degraded"]
+    },
+    "created_at": {
+      "description": "UTC creation time, second precision.",
+      "$ref": "#/$defs/utc"
+    },
+    "bindings": {
+      "description": "Target slot to resolved host bindings used by the run. Every later reconfigure, verify, and teardown reuses them unless an explicit migration is supplied.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/binding"
+      }
+    },
+    "last_run_id": {
+      "description": "ID of the most recent run record, or null before the first run is written.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/run_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "last_event_id": {
+      "description": "ID of the most recent event linked to this deployment, or null when no event exists yet.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/event_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "component": {
+      "description": "One validated identity path component. The full rule set is normative in schemas/v1/identity.md.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\x00-\\x1f\\x7f]+$",
+      "allOf": [
+        {
+          "not": {
+            "enum": [".", ".."]
+          }
+        },
+        {
+          "not": {
+            "pattern": "^\\s|\\s$"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^-"
+          }
+        }
+      ]
+    },
+    "utc": {
+      "description": "UTC timestamp, second precision and trailing Z.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "run_id": {
+      "description": "Sortable run ID: UTC second plus a random suffix.",
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+    },
+    "event_id": {
+      "description": "Sortable event ID: UTC second plus a random suffix.",
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+    },
+    "binding": {
+      "description": "One target slot bound to one host. address is the token the CLI accepts; node and instance come from ivps; ssh_host is set for an external host.",
+      "type": "object",
+      "required": ["address", "node", "instance", "ssh_host"],
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "description": "Resolved address in --on grammar: node, node:instance, or the plain ssh host.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+        },
+        "node": {
+          "description": "ivps node component, or null for an external host.",
+          "type": ["string", "null"],
+          "minLength": 1,
+          "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+        },
+        "instance": {
+          "description": "Instance component on the node, or null when the binding addresses the node itself.",
+          "type": ["string", "null"],
+          "minLength": 1,
+          "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+        },
+        "ssh_host": {
+          "description": "SSH host for an external target, or null when the binding resolves through a node.",
+          "type": ["string", "null"],
+          "minLength": 1,
+          "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "node": {
+              "type": "string"
+            }
+          },
+          "required": ["node"]
+        },
+        {
+          "properties": {
+            "ssh_host": {
+              "type": "string"
+            }
+          },
+          "required": ["ssh_host"]
+        }
+      ]
+    }
+  }
+}

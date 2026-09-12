@@ -1,0 +1,12 @@
+# cloudify registry record (observation); do not edit by hand
+status: removed
+installed_at: 2026-01-01T10:11:12Z
+configured_at:
+removed_at: 2026-01-01T11:00:00Z
+deployment: legacy-app
+node:
+instance:
+package: nginx
+version:
+var.CLOUDIFY_NGINX_SERVER_NAME: demo.example.com
+var.CLOUDIFY_NGINX_API_TOKEN: @vault:kv/cloudify/legacy-app/nginx-api-token

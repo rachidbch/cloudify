@@ -1,0 +1,12 @@
+# cloudify registry record (observation); do not edit by hand
+status: installed
+installed_at: 2026-01-01T10:11:12Z
+configured_at:
+removed_at:
+deployment: legacy-app
+node: node-a
+instance:
+package: nginx
+version: 1.24.0
+var.CLOUDIFY_NGINX_SERVER_NAME: demo.example.com
+var.CLOUDIFY_NGINX_TLS: "false"

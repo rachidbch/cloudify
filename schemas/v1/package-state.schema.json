@@ -1,0 +1,409 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloudify.invalid/schemas/v1/package-state.schema.json",
+  "title": "Cloudify physical package state (schema_version 1)",
+  "description": "The last confirmed observation of one package instance on one host. One record exists per host, package, and package instance even when several deployments use that installation; active deployment claims live inside it.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "host",
+    "host_key",
+    "package",
+    "package_instance",
+    "revision",
+    "applied",
+    "last_attempt",
+    "health",
+    "claims"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Artifact schema version.",
+      "type": "integer",
+      "const": 1
+    },
+    "host": {
+      "description": "Operator-facing host address in --on grammar: node, node:instance, or the ssh host.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+    },
+    "host_key": {
+      "description": "Durable host identity: ivps:<node> or ivps:<node>:<instance> for an inventory host, ssh-sha256:<fingerprint> for an accepted external host.",
+      "type": "string",
+      "pattern": "^(ivps:[^/\\x00-\\x1f\\x7f]+(:[^/\\x00-\\x1f\\x7f]+)?|ssh-sha256:[A-Za-z0-9+/=]+)$"
+    },
+    "package": {
+      "description": "Package name as it appears under pkg/.",
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "package_instance": {
+      "description": "Package instance key. The default key is default; a non-default key requires a recipe that declares instance support.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+    },
+    "revision": {
+      "description": "Monotonically increasing subject revision. It changes only under the host mutation lock and only together with an event.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "applied": {
+      "description": "The last successful install or reconfigure result. A failed attempt never overwrites it.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/applied"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "last_attempt": {
+      "description": "The most recent package operation Cloudify tried, successful or not.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/attempt"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "health": {
+      "description": "The last verification observation. It never changes applied values.",
+      "$ref": "#/$defs/health"
+    },
+    "claims": {
+      "description": "Active deployment claims on this physical package instance, one per deployment and stable runbook step ID.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
+    }
+  },
+  "$defs": {
+    "component": {
+      "description": "One validated identity path component; rules in schemas/v1/identity.md.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\x00-\\x1f\\x7f]+$",
+      "allOf": [
+        {
+          "not": {
+            "enum": [".", ".."]
+          }
+        },
+        {
+          "not": {
+            "pattern": "^\\s|\\s$"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^-"
+          }
+        }
+      ]
+    },
+    "utc": {
+      "description": "UTC timestamp, second precision and trailing Z.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "value": {
+      "description": "One declared value held in its comparable source form. A non-secret value keeps its source form, a secret reference keeps the reference, and a literal secret keeps only redaction plus a digest so the plaintext never reaches persisted state.",
+      "type": "object",
+      "required": ["secret", "declaration", "source_form", "reference", "digest", "redacted"],
+      "additionalProperties": false,
+      "properties": {
+        "secret": {
+          "description": "Explicit secret declaration for this value name.",
+          "type": "boolean"
+        },
+        "declaration": {
+          "description": "How the secret classification was obtained. legacy-heuristic marks a value that only the legacy name heuristic classified during migration.",
+          "enum": ["explicit", "legacy-heuristic", "none"]
+        },
+        "source_form": {
+          "description": "The source-form value: a literal, an @@ escaped literal, or a @base64: encoded literal. Null when the plaintext is deliberately not persisted.",
+          "type": ["string", "null"]
+        },
+        "reference": {
+          "description": "The @<backend>:<locator> secret reference. Secret references compare by this field.",
+          "type": ["string", "null"],
+          "pattern": "^@[A-Za-z0-9_-]+:.+$"
+        },
+        "digest": {
+          "description": "sha256 digest of a literal secret. Literal secrets compare by this field because the plaintext is absent.",
+          "type": ["string", "null"],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "redacted": {
+          "description": "True when only a digest of the value is held.",
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "declaration": {
+                "const": "none"
+              }
+            },
+            "required": ["declaration"]
+          },
+          "then": {
+            "properties": {
+              "secret": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "declaration": {
+                "const": "legacy-heuristic"
+              }
+            },
+            "required": ["declaration"]
+          },
+          "then": {
+            "properties": {
+              "secret": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "secret": {
+                "const": false
+              }
+            },
+            "required": ["secret"]
+          },
+          "then": {
+            "properties": {
+              "redacted": {
+                "const": false
+              },
+              "reference": {
+                "type": "null"
+              },
+              "digest": {
+                "type": "null"
+              },
+              "source_form": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "secret": {
+                "const": true
+              },
+              "redacted": {
+                "const": false
+              }
+            },
+            "required": ["secret", "redacted"]
+          },
+          "then": {
+            "properties": {
+              "reference": {
+                "type": "string"
+              },
+              "digest": {
+                "type": "null"
+              },
+              "source_form": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "secret": {
+                "const": true
+              },
+              "redacted": {
+                "const": true
+              }
+            },
+            "required": ["secret", "redacted"]
+          },
+          "then": {
+            "properties": {
+              "reference": {
+                "type": "null"
+              },
+              "digest": {
+                "type": "string"
+              },
+              "source_form": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "values": {
+      "description": "Declared value names mapped to their comparable forms.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Z_][A-Z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/value"
+      }
+    },
+    "applied": {
+      "description": "The last successful result.",
+      "type": "object",
+      "required": ["package_version", "application_commit", "at", "event_id", "values"],
+      "additionalProperties": false,
+      "properties": {
+        "package_version": {
+          "description": "Package version observed at success, or null when the recipe reports none.",
+          "type": ["string", "null"]
+        },
+        "application_commit": {
+          "description": "Cloudify commit that produced this applied state.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "at": {
+          "description": "UTC time of the successful operation.",
+          "$ref": "#/$defs/utc"
+        },
+        "event_id": {
+          "description": "Event that recorded this revision, or null before event writers exist.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+        },
+        "values": {
+          "description": "Source-form values that were successfully applied.",
+          "$ref": "#/$defs/values"
+        }
+      }
+    },
+    "attempt": {
+      "description": "The most recent attempt, recorded whether it succeeded or failed.",
+      "type": "object",
+      "required": ["phase", "outcome", "at", "event_id", "requested"],
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "description": "Selected application phase that produced this attempt.",
+          "enum": ["install", "reconfigure", "verify", "teardown"]
+        },
+        "outcome": {
+          "description": "Attempt outcome. An abandoned attempt is classified as interrupted in its run record.",
+          "enum": ["succeeded", "failed"]
+        },
+        "at": {
+          "description": "UTC time of the attempt.",
+          "$ref": "#/$defs/utc"
+        },
+        "event_id": {
+          "description": "Event that recorded this attempt, or null before event writers exist.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+        },
+        "requested": {
+          "description": "Metadata for the values the attempt requested. Literal secrets appear only as digests.",
+          "$ref": "#/$defs/values"
+        }
+      }
+    },
+    "health": {
+      "description": "The last verification observation for this package instance.",
+      "type": "object",
+      "required": ["status", "checked_at", "event_id"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "description": "Verification result. unknown means no reliable observation is available.",
+          "enum": ["ok", "degraded", "unknown"]
+        },
+        "checked_at": {
+          "description": "UTC time of the verification, or null when never verified.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "event_id": {
+          "description": "Event that recorded this verification, or null before event writers exist.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+        }
+      }
+    },
+    "claim": {
+      "description": "One deployment and stable runbook step that relies on this physical package instance. Claims live in an array so the deployment tuple is never flattened into a map key.",
+      "type": "object",
+      "required": [
+        "application",
+        "flavor",
+        "deployment",
+        "step_id",
+        "claimed_at",
+        "run_id",
+        "event_id",
+        "values"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "application": {
+          "$ref": "#/$defs/component"
+        },
+        "flavor": {
+          "$ref": "#/$defs/component"
+        },
+        "deployment": {
+          "$ref": "#/$defs/component"
+        },
+        "step_id": {
+          "description": "Stable runbook step ID that owns this claim.",
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "claimed_at": {
+          "description": "UTC time the claim was added.",
+          "$ref": "#/$defs/utc"
+        },
+        "run_id": {
+          "description": "Run that added the claim, or null. A claim newer than the manifest is what makes an interrupted commit detectable.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+        },
+        "event_id": {
+          "description": "Event that recorded the claim, or null before event writers exist.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+        },
+        "values": {
+          "description": "The requested configuration of the claim. Compatibility compares non-secrets by source form, secret references by reference, and literal secrets by digest.",
+          "$ref": "#/$defs/values"
+        }
+      }
+    }
+  }
+}

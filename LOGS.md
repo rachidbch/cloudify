@@ -236,3 +236,11 @@
 - Rachid approved Phase 1 of `plans/state-model-v2.md` (characterize the defect, freeze identity rules and JSON schemas, migration fixtures). Exact scope: `tests/`, new schema/fixture files, `plans/` and docs. No runtime file: nothing under `lib/`, the `cloudify` router, `pkg/`, or ivps.
 - Consent is scoped to Phase 1 only. Phase 2 and beyond need a new consent gate, as does every item in G2 section 7.2's behavior change set, SSH host-key pinning (still undecided: opt-in for one release vs fail-closed), and any harness-file edit.
 - Also approved: push the documentation commits, and one feature branch for this slice.
+
+## 2026-09-12 - Phase 1 executed
+
+- Two parallel subagents on `state-model-v2-phase1`: A for identity rules, schemas and migration fixtures under `schemas/`; B for the characterization and red tests under `tests/`. Disjoint file sets.
+- A: `schemas/v1/{identity.md,README.md,validate.sh,lib/schema-check.jq}`, four schemas, 34 fixtures, 7 migration fixtures, inventory-only migration report. B: `tests/unit/state-v2-characterization.bats` (3 green), `tests/red/state-v2-duplicate-resolution.bats` (2 red), `tests/red/README.md`.
+- I verified rather than trusted: ran the validator, ran both bats files in the container (`ok 1-3`, `not ok 4-5` with setup sanity passing), ran the full `task test-unit` (524 ok, 0 not ok, rc 0), checked no em dashes or tables, and confirmed REDESIGN's `values.yaml`/`manifest.json`/`state.json` names match `identity.md`.
+- Review found and fixed a live hole: `schemas/v1/lib/schema-check.jq` silently ignored `minProperties`, used by `deployment-manifest.schema.json` for the non-empty `bindings` object. Added `minProperties`/`maxProperties` enforcement plus a fail-closed unsupported-keyword error; proved both with an injected unknown keyword (rc 5) and empty bindings (rejected).
+- Deviations recorded in the plan: the red proof runs in the unit harness instead of an integration test (the defect is fully observable there, real code plus stubbed ssh reading stdin), and the application-input mapping case is a red contract test because no mapping concept exists yet.

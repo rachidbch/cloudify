@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "host": "cloudai:cloudify",
+  "host_key": "ivps:cloudai:cloudify",
+  "package": "docker",
+  "package_instance": "default",
+  "revision": 1,
+  "applied": {
+    "package_version": null,
+    "application_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
+    "at": "2026-01-01T10:00:00Z",
+    "event_id": null,
+    "values": {
+      "cloudify_docker_driver": {
+        "secret": false,
+        "declaration": "none",
+        "source_form": "overlay2",
+        "reference": null,
+        "digest": null,
+        "redacted": false
+      }
+    }
+  },
+  "last_attempt": null,
+  "health": {
+    "status": "unknown",
+    "checked_at": null,
+    "event_id": null
+  },
+  "claims": []
+}

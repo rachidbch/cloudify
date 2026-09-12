@@ -1,0 +1,7 @@
+# legacy deployment desired inputs, flat KEY: value store (lib/vars.sh)
+CLOUDIFY_RDP_HOST: cloudai:cloudify
+CLOUDIFY_RDP_PORT: "3389"
+CLOUDIFY_RDP_PASSWORD: @vault:kv/cloudify/legacy-app/rdp-password
+CLOUDIFY_RDP_DOMAIN: @@literal-at-sign
+CLOUDIFY_RDP_DRIVE_MAP: @base64:UExBQ0VIT0xERVJfTElORV9PTkUKUExBQ0VIT0xERVJfTElORV9UV08=
+CLOUDIFY_RDP_PASSWORD_LITERAL: PLACEHOLDER_LITERAL_SECRET

@@ -949,3 +949,11 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Accepted after review: every citation resolves in range, a sample matched its claimed subject, probes re-run rc 0, and the draft was checked against `AGENTS.md` and the `cloudify-dev` skill. No runtime file changed; G2 and G3 remain open.
 - G2 argument written: `plans/state-model-v2-non-breakage.md`, one touch line per phase, the six required proofs, the ssh host-key transport argument, the read-before-write ordering rule, per-phase rollback boundaries and the exact eight-item behavior change set that consent would cover.
 - G2 open risks recorded rather than papered over: the verify path reads values itself, the Phase 4 remote result channel has no existing implementation (strongest risk), and four pre-existing hazards (allow-list name collision, single-quote injection, the inert depth bug, `pkg_depends` blind spots) are named and left out of scope pending separate consent.
+
+### 2026-09-12 - state model v2 Phase 1 complete
+
+- Phase 1 done on branch `state-model-v2-phase1`: `schemas/v1/` (normative identity rules, four `schema_version: 1` schemas for manifest, package state, run and event, 34 fixtures, 7 migration fixtures, a local `validate.sh`), a green characterization suite, and a deliberately red proof of the duplicate-resolution defect.
+- The defect is now pinned executably: one declared name with caller, deployment, package and global values, where the payload and the registry record carry the caller value while the run snapshot carries the deployment value.
+- Gate: 13 valid fixtures accepted and 21 invalid rejected, `task test-unit` 524 ok 0 not ok, red proof failing only on the intended assertions.
+- Fixed a validator hole found in review: the bounded JSON Schema evaluator silently ignored `minProperties`, which the manifest schema uses; it now enforces it and errors on any unsupported keyword.
+- No runtime file changed: `lib/`, the router, `pkg/` and ivps are untouched.

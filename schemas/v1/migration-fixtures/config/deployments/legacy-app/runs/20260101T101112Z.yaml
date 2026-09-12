@@ -1,0 +1,13 @@
+status: succeeded
+started_at: 2026-01-01T10:11:12Z
+finished_at: 2026-01-01T10:21:12Z
+runbook: runbooks/legacy-app/disposable.md
+target.guest: cloudai:cloudify
+target.gateway: cloudai
+value.CLOUDIFY_RDP_HOST: cloudai:cloudify
+value.CLOUDIFY_RDP_PORT: "3389"
+value.CLOUDIFY_RDP_PASSWORD: @vault:kv/cloudify/legacy-app/rdp-password
+value.CLOUDIFY_RDP_DOMAIN: @@literal-at-sign
+value.CLOUDIFY_RDP_DRIVE_MAP: @base64:UExBQ0VIT0xERVJfTElORV9PTkUKUExBQ0VIT0xERVJfTElORV9UV08=
+output.guest_address: cloudai:cloudify
+output.rdp_url: rdp://cloudai:cloudify:3389

@@ -1,0 +1,13 @@
+# cloudify registry record (observation); do not edit by hand
+status: configured
+installed_at: 2026-01-01T10:11:12Z
+configured_at: 2026-01-01T10:21:12Z
+removed_at:
+deployment: legacy-app
+node: node-b
+instance: web-1
+package: nginx
+version: 1.24.0
+var.CLOUDIFY_NGINX_SERVER_NAME: demo.example.com
+var.BASIC_AUTH_PASSWORD: PLACEHOLDER_LITERAL_SECRET
+var.CLOUDIFY_NGINX_DRIVE_MAP: @base64:UExBQ0VIT0xERVJfTElORV9PTkUKUExBQ0VIT0xERVJfTElORV9UV08=

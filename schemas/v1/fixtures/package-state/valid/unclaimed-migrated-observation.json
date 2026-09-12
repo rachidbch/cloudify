@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "host": "203.0.113.9",
+  "host_key": "ssh-sha256:AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKK",
+  "package": "docker",
+  "package_instance": "default",
+  "revision": 1,
+  "applied": {
+    "package_version": null,
+    "application_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
+    "at": "2025-12-31T08:00:00Z",
+    "event_id": null,
+    "values": {
+      "CLOUDIFY_DOCKER_DRIVER": {
+        "secret": false,
+        "declaration": "none",
+        "source_form": "overlay2",
+        "reference": null,
+        "digest": null,
+        "redacted": false
+      }
+    }
+  },
+  "last_attempt": null,
+  "health": {
+    "status": "unknown",
+    "checked_at": null,
+    "event_id": null
+  },
+  "claims": []
+}

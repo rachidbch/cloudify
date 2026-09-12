@@ -74,58 +74,65 @@ Outcome: executable tests prove the duplicate-resolution defect, and versioned s
 
 ### 1.1 Reproduce one dispatch resolving two answers
 
-- [ ] Add one failing integration-level test that gives one declared value conflicting deployment, package, global, and caller sources.
-- [ ] Assert the forwarded remote value is the caller value.
-- [ ] Assert the current snapshot and registry paths record different answers before the fix.
-- [ ] Keep the test focused on one package and one target.
-- [ ] Capture no literal secret in test output.
-- [ ] Confirm the test fails for the intended duplicate-walk reason.
+- [x] Add one failing test that gives one declared value conflicting deployment, package, global, and caller sources.
+- [x] Assert the forwarded remote value is the caller value.
+- [x] Assert the current snapshot and registry paths record different answers before the fix.
+- [x] Keep the test focused on one package and one target.
+- [x] Capture no literal secret in test output.
+- [x] Confirm the test fails for the intended duplicate-walk reason.
 
 ### 1.2 Characterize first-install shared inputs
 
-- [ ] Add a test with two packages on two targets consuming one deployment input.
-- [ ] Assert both first installs receive the value before either package has state.
-- [ ] Add a package-variable mapping case with one application input mapped to two package variable names.
-- [ ] Assert package defaults remain independent when no mapping exists.
+- [x] Add a test with two packages on two targets consuming one deployment input.
+- [x] Assert both first installs receive the value before either package has state.
+- [x] Add a package-variable mapping case with one application input mapped to two package variable names.
+- [x] Assert package defaults remain independent when no mapping exists.
 
 ### 1.3 Freeze identity rules
 
-- [ ] Specify validation for application, flavor, and deployment-name components.
-- [ ] Cover `default` flavor and deployment-name defaults.
-- [ ] Cover two applications using deployment name `default` without collision.
-- [ ] Cover rejection of empty components, dot components, separators, control characters, and traversal.
-- [ ] Cover unambiguous CLI rendering and parsing of the tuple.
+- [x] Specify validation for application, flavor, and deployment-name components.
+- [x] Cover `default` flavor and deployment-name defaults.
+- [x] Cover two applications using deployment name `default` without collision.
+- [x] Cover rejection of empty components, dot components, separators, control characters, and traversal.
+- [x] Cover unambiguous CLI rendering and parsing of the tuple.
 
 ### 1.4 Freeze JSON schemas
 
-- [ ] Add schema fixtures for the deployment manifest, package state, run, and event.
-- [ ] Include `schema_version: 1` in every machine-owned artifact.
-- [ ] Keep one file per subject and avoid nested documents that Bash cannot update safely.
-- [ ] Define package state fields for revision, applied, last attempt, health, and active claims.
-- [ ] Define event fields without raw command output or literal secret values.
-- [ ] Define explicit secret declaration metadata, reference comparison, and literal-secret digest fields before claim schemas depend on them.
-- [ ] Define run writer identity and interrupted-run classification fields.
-- [ ] Validate every fixture with `jq -e`.
-- [ ] Add invalid-schema cases that fail closed before mutation.
+- [x] Add schema fixtures for the deployment manifest, package state, run, and event.
+- [x] Include `schema_version: 1` in every machine-owned artifact.
+- [x] Keep one file per subject and avoid nested documents that Bash cannot update safely.
+- [x] Define package state fields for revision, applied, last attempt, health, and active claims.
+- [x] Define event fields without raw command output or literal secret values.
+- [x] Define explicit secret declaration metadata, reference comparison, and literal-secret digest fields before claim schemas depend on them.
+- [x] Define run writer identity and interrupted-run classification fields.
+- [x] Validate every fixture with `jq -e`.
+- [x] Add invalid-schema cases that fail closed before mutation.
 
 ### 1.5 Build migration fixtures
 
-- [ ] Add fixtures for the current deployment `config.yaml`.
-- [ ] Add fixtures for current registry `config.yaml` records in node, instance, and external-host buckets.
-- [ ] Add fixtures for successful and failed run snapshots.
-- [ ] Include secret reference, literal secret, multiline base64, target binding, and same-second snapshot cases.
-- [ ] Define an inventory-only migration report that prints names and paths but no values.
+- [x] Add fixtures for the current deployment `config.yaml`.
+- [x] Add fixtures for current registry `config.yaml` records in node, instance, and external-host buckets.
+- [x] Add fixtures for successful and failed run snapshots.
+- [x] Include secret reference, literal secret, multiline base64, target binding, and same-second snapshot cases.
+- [x] Define an inventory-only migration report that prints names and paths but no values.
 
 ### Phase 1 non-breakage argument
 
-- [ ] Confirm this phase changes tests, schemas, and documentation only.
-- [ ] Confirm no payload, shadow, package API, or on-disk writer behavior changes.
+- [x] Confirm this phase changes tests, schemas, and documentation only.
+- [x] Confirm no payload, shadow, package API, or on-disk writer behavior changes.
 
 ### Phase 1 gate
 
-- [ ] Run L0 for added shell tests and fixtures.
-- [ ] Run only the new characterization tests and confirm the intended red cases.
-- [ ] Review schemas and migration mapping before implementation.
+- [x] Run L0 for added shell tests and fixtures.
+- [x] Run only the new characterization tests and confirm the intended red cases.
+- [x] Review schemas and migration mapping before implementation.
+
+### Phase 1 result
+
+Artifacts: `schemas/v1/` (identity rules, four versioned schemas, 34 fixtures, 7 migration fixtures, `validate.sh`); `tests/unit/state-v2-characterization.bats` (3 tests, green); `tests/red/state-v2-duplicate-resolution.bats` (2 tests, deliberately red) plus `tests/red/README.md`.
+Gate: `bash schemas/v1/validate.sh` accepts 13 valid and rejects 21 invalid fixtures, `task test-unit` 524 ok 0 not ok, red proof fails on the intended assertions with its setup sanity lines passing.
+Deviations from the literal wording above, both deliberate: the failing proof runs in the unit harness rather than as an integration test, because the defect is fully observable there (real walker, real record builder, real runbook engine, stubbed ssh reading the payload from stdin) and an integration run would need a live host for no extra evidence; and the application-input mapping case is expressed as a red contract test because no mapping concept exists yet.
+Review notes: the schema validator is a bounded JSON Schema subset evaluator in `schemas/v1/lib/schema-check.jq` (no JSON Schema engine is installed locally); I found it silently ignoring `minProperties`, which the manifest schema uses, and made it enforce `minProperties`/`maxProperties` and error on any unsupported keyword so a schema constraint can never be validated away.
 
 ## Phase 2: one dispatch context and one value resolution
 

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "run_id": "20260101T103000Z-5e6f7a8b",
+  "application": "xfce-guacamole",
+  "flavor": "disposable",
+  "deployment": "prod",
+  "application_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
+  "development_override": true,
+  "phases": ["teardown"],
+  "status": "interrupted",
+  "started_at": "2026-01-01T10:30:00Z",
+  "ended_at": "2026-01-02T09:00:00Z",
+  "writer": {
+    "host": "cloudai",
+    "boot_id": "3f2a1b0c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "pid": 48213,
+    "process_start_ticks": 91726345
+  },
+  "interrupted": {
+    "at": "2026-01-02T09:00:00Z",
+    "reason": "writer-boot-changed"
+  }
+}

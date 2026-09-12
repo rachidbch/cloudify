@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "run_id": "20260101T101112Z-a1b2c3d4",
+  "application": "k3s",
+  "flavor": "default",
+  "deployment": "default",
+  "application_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
+  "development_override": false,
+  "phases": ["install", "verify"],
+  "status": "running",
+  "started_at": "2026-01-01T10:11:12Z",
+  "ended_at": "2026-01-01T10:21:12Z",
+  "writer": {
+    "host": "cloudai",
+    "boot_id": "3f2a1b0c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "pid": 48213,
+    "process_start_ticks": 91726345
+  },
+  "interrupted": null
+}

@@ -112,6 +112,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/deployments.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/hosts.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/targets.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/registry.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/context.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/runbooks.sh"
 
 #== INITIALIZATION

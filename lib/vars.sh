@@ -58,6 +58,16 @@ _cloudify_vars_claim() {
     return 0
 }
 
+# Record the single-pass provenance of a claimed name: which reader supplied
+# it, plus (reference values only) the store's raw `@<backend>:<locator>` text.
+# No-op unless a caller set _CLOUDIFY_VARS_SOURCES, so every existing call path
+# behaves identically. One `printf >>` per claimed name: no subprocess, and no
+# store is ever read a second time to recover this.
+_cloudify_vars_sources_record() {
+    [[ -n "${_CLOUDIFY_VARS_SOURCES:-}" ]] || return 0
+    printf '%s\t%s\t%s\n' "$1" "$2" "${3:-}" >> "$_CLOUDIFY_VARS_SOURCES"
+}
+
 _cloudify_vars_trim() {
     local s="$1"
     s="${s#"${s%%[![:space:]]*}"}"
@@ -92,9 +102,13 @@ _cloudify_resolve_var_value() {
 }
 
 # Export one value from a file store, honouring the ledger and the reserved guard.
-# _cloudify_vars_emit <name> <raw> [no-clobber] [print]
+# _cloudify_vars_emit <name> <raw> [no-clobber] [print] [source]
+# `source` is the calling reader's label (deployment|package|global|...). It is
+# recorded at this, the single export decision, so a caller never has to
+# re-derive it by reading the store again. Absent, it is `recipe`: the verify
+# path (lib/package-api.sh) passes no label and behaves exactly as before.
 _cloudify_vars_emit() {
-    local name="$1" raw="$2" mode="${3:-}" print="${4:-}"
+    local name="$1" raw="$2" mode="${3:-}" print="${4:-}" source="${5:-recipe}"
     if _cloudify_vars_reserved "$name"; then
         log_warn "Var $name is framework-owned — ignored from file store."
         return 0
@@ -102,25 +116,39 @@ _cloudify_vars_emit() {
     _cloudify_vars_claim "$name" || return 0
     [[ -n "$print" ]] && echo "$name"
     # Non-clobbering only matters in walker mode (ledger set): the caller env is
-    # the strongest source and file reads must not overwrite it.
+    # the strongest source and file reads must not overwrite it. With the ledger
+    # set, a claimed name that is already set can only have come from the caller
+    # env (every file export claims first), so that is the providing source.
     if [[ -n "${_CLOUDIFY_VARS_LEDGER:-}" && "$mode" == "no-clobber" && -n "${!name:-}" ]]; then
+        _cloudify_vars_sources_record "$name" environment ""
         return 0
     fi
-    local value
+    local value ref="" _ref
     if ! value=$(_cloudify_resolve_var_value "$name" "$raw"); then
         die "Var $name: cannot resolve value — refusing to forward an empty value."
     fi
     export "$name"="$value"
+    # Reference text only, same shape _cloudify_resolve_var_value accepts: it
+    # decodes `@base64:...` to plaintext, so the exported literal alone cannot
+    # reveal the form. A literal raw is never written here, so the provenance
+    # file holds no plaintext value.
+    if [[ "$raw" == @* && "$raw" != @@* ]]; then
+        _ref="${raw#@}"
+        [[ "$_ref" == *:* && "$_ref" != :* && "$_ref" != *: ]] && ref="$raw"
+    fi
+    _cloudify_vars_sources_record "$name" "$source" "$ref"
 }
 
 # Parse a flat `KEY: value` file and export each value.
-# _cloudify_load_yaml_vars <file> [no-clobber] [print]
+# _cloudify_load_yaml_vars <file> [no-clobber] [print] [source]
 # - no ledger: unconditional export (verify path, package-api.sh).
 # - ledger set + no-clobber: first source to claim a name wins (walker).
+# - `source` is threaded through to _cloudify_vars_emit's provenance label.
 function _cloudify_load_yaml_vars() {
     local file="$1"
     local mode="${2:-}"
     local print="${3:-}"
+    local source="${4:-}"
     [[ -f "$file" ]] || return 0
 
     while IFS= read -r line; do
@@ -136,7 +164,7 @@ function _cloudify_load_yaml_vars() {
         value="${value#\"}"; value="${value%\"}"
         value="${value#\'}"; value="${value%\'}"
 
-        _cloudify_vars_emit "$key" "$value" "$mode" "$print"
+        _cloudify_vars_emit "$key" "$value" "$mode" "$print" "$source"
     done < "$file"
 }
 
@@ -201,7 +229,7 @@ cloudify_vars_global_read() {
     local file="${1:-$(cloudify_vars_global_file)}"
     local print=""
     [[ -z "${_CLOUDIFY_VARS_LEDGER:-}" ]] && print=1
-    _cloudify_load_yaml_vars "$file" no-clobber "$print"
+    _cloudify_load_yaml_vars "$file" no-clobber "$print" global
 }
 
 cloudify_vars_global_write() {
@@ -241,11 +269,17 @@ cloudify_vars_pkg_read() {
                 _cloudify_vars_claim "$name" || continue
                 [[ -n "$print" ]] && echo "$name"
                 export "$name"="${!name}"
+                # With a claim ledger set, this branch is reachable only while
+                # the name is unclaimed and already set, i.e. from the caller
+                # env (nothing else can set a name without claiming it first),
+                # so env is the providing source. No-op unless a context build
+                # is recording.
+                _cloudify_vars_sources_record "$name" environment ""
             fi
         done < "$decl"
     fi
 
-    _cloudify_load_yaml_vars "${2:-$(cloudify_vars_pkg_file "$pkg")}" no-clobber "$print"
+    _cloudify_load_yaml_vars "${2:-$(cloudify_vars_pkg_file "$pkg")}" no-clobber "$print" package
 }
 
 cloudify_vars_pkg_write() {
@@ -274,7 +308,7 @@ cloudify_vars_deployment_read() {
         key="${key## }"; key="${key%% }"
         [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
         raw=$(_cloudify_vars_trim "$raw")
-        _cloudify_vars_emit "$key" "$raw" no-clobber "$print"
+        _cloudify_vars_emit "$key" "$raw" no-clobber "$print" deployment
     done < "$config"
 }
 
@@ -320,6 +354,7 @@ cloudify_vars_env_read() {
         _cloudify_vars_claim "$name" || continue
         [[ -n "$print" ]] && echo "$name"
         export "$name"="${!name}"
+        _cloudify_vars_sources_record "$name" environment ""
     done
 }
 
@@ -444,16 +479,32 @@ _cloudify_vars_parse_args() {
     done
 }
 
-# _cloudify_vars_source_of <name> <pkg> — walker-order source, read-only, no export.
-_cloudify_vars_source_of() {
-    local name="$1" pkg="$2"
-    [[ -n "${!name:-}" ]] && { echo env; return 0; }
+# _cloudify_vars_source_label <name> <pkg> — THE first-providing source label,
+# read-only and non-mutating. Single implementation: the walker-order spelling
+# below and lib/context.sh:cloudify_context_source_of both delegate here, so
+# runbook preflight and dispatch cannot select different sources.
+_cloudify_vars_source_label() {
+    local name="${1:-}" pkg="${2:-}"
+    [[ -n "${!name:-}" ]] && { echo environment; return 0; }
     if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]] && grep -q "^${name}:" "$(_cloudify_deployment_config "$CLOUDIFY_DEPLOYMENT")" 2>/dev/null; then
         echo deployment; return 0
     fi
     grep -q "^${name}:" "$(cloudify_vars_pkg_file "$pkg")" 2>/dev/null && { echo package; return 0; }
     grep -q "^${name}:" "$(cloudify_vars_global_file)" 2>/dev/null && { echo global; return 0; }
-    echo recipe-default
+    echo recipe
+}
+
+# _cloudify_vars_source_of <name> <pkg> — walker-order source, read-only, no
+# export. Keeps its legacy spelling (`env`, `recipe-default`), which runbook
+# preflight and its tests pin; only the label computation is shared.
+_cloudify_vars_source_of() {
+    local label
+    label=$(_cloudify_vars_source_label "${1:-}" "${2:-}")
+    case "$label" in
+        environment) echo env ;;
+        recipe) echo recipe-default ;;
+        *) echo "$label" ;;
+    esac
 }
 
 # cloudify_vars_declared <pkg> [--sources] — the declaration mirror, three kinds.

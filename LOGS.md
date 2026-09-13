@@ -250,4 +250,11 @@
 
 - Rachid approved Phase 2 (one dispatch context, one value resolution) after G2 section 7.2 was presented. Scope: `lib/vars.sh`, new `lib/context.sh`, `lib/remote.sh`, `lib/registry.sh`, `lib/runbooks.sh` and the router wiring, plus tests and docs.
 - Interface pinned before code in `plans/state-model-v2-phase2-design.md`: module and API, a metadata-only context file with no plaintext value, the parent-created context path that never reaches argv, the byte-identical payload and registry-record rules with the equivalence proof, the single accepted behavior change, and the `CLOUDIFY_LEGACY_VARS=1` rollback switch.
-- Still requiring a separate consent gate: every other item in G2 7.2, SSH host-key pinning, ipvs changes, and any harness-file edit.
+- Still requiring a separate consent gate: every other item in G2 7.2, SSH host-key pinning, ivps changes, and any harness-file edit.
+
+## 2026-09-12 - Phase 2 slice 2A: context module
+
+- Added `lib/context.sh` (resolver + metadata-only context file) and `tests/unit/context.bats` (19 tests), plus one sourcing line in the router. Nothing wired yet, by design.
+- `lib/vars.sh` gained a single-pass provenance record: `_cloudify_vars_emit` takes an optional source label and appends `name<TAB>source<TAB>reference` to `_CLOUDIFY_VARS_SOURCES` after a successful claim. The no-clobber branch records `environment`, because with the ledger set a claimed name that is already set can only have come from the caller env. That keeps label and value in one pass with no store re-read.
+- Review fix during the slice: my first version re-derived the source label by grepping the store files a second time, the exact duplicate-resolution class this phase removes. It was rebuilt on the emit-time record and the second pass was deleted; a structural test now fails if a store read or a `compgen -v` snapshot reappears in `lib/context.sh`.
+- Verified: `tests/unit/context.bats` 19 ok 0 not ok, `task test-unit` 543 ok 0 not ok, `task lint` rc 0, shellcheck clean on both files.

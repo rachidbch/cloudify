@@ -228,86 +228,93 @@ Outcome: applications and named deployments have collision-free identity, durabl
 
 ### 3.1 Migrate the runbook tree
 
-- [ ] Support `runbooks/<application>/<flavor>/runbook.md` as the canonical path.
-- [ ] Keep `runbooks/<application>/<flavor>.md` discoverable for one compatibility period.
-- [ ] Derive application identity from the canonical path rather than a deployment field in front matter.
-- [ ] Remove required `deployment:` front matter only after dual-format tests pass.
-- [ ] Keep target declarations and stable step IDs.
-- [ ] Add application input declarations and explicit package-variable mappings.
-- [ ] Migrate `runbooks/xfce-guacamole/disposable.md` to the canonical tree and add explicit phases to every `run` and `human-gate` step.
+- [x] Support `runbooks/<application>/<flavor>/runbook.md` as the canonical path.
+- [x] Withdrawn: no compatibility layer. Only `runbooks/<application>/<flavor>/runbook.md` is discoverable.
+- [x] Derive application identity from the canonical path rather than a deployment field in front matter.
+- [x] `deployment:` is not required on a canonical path; identity comes from the path.
+- [x] Keep target declarations and stable step IDs.
+- [x] Add application input declarations and explicit package-variable mappings.
+- [x] Migrate `runbooks/xfce-guacamole/disposable.md` to the canonical tree and add explicit phases to every `run` and `human-gate` step.
 
 ### 3.2 Add application CLI commands
 
-- [ ] Add `cloudify app run <application>[/<flavor>] [--name <name>]`.
-- [ ] Add `cloudify app run <application>[/<flavor>] [--name <name>]` for install and application verification.
-- [ ] Reserve but do not route `app reconfigure`, `app verify`, or `app teardown` until v2 physical state and claims land in Phase 4.
-- [ ] Export `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, and `CLOUDIFY_DEPLOYMENT_NAME` to child dispatches.
-- [ ] Require migration to receive the explicit application and flavor before mapping a legacy `CLOUDIFY_DEPLOYMENT` ID.
-- [ ] Keep existing `cloudify deployment run` and replay commands as compatibility aliases until migration ends.
-- [ ] Keep direct package commands unchanged.
-- [ ] Print the full application reference and deployment name in every plan and error.
+- [x] Add `cloudify app run <application>[/<flavor>] [--name <name>]`.
+- [x] Add `cloudify app run <application>[/<flavor>] [--name <name>]` for install and application verification.
+- [x] Reserve but do not route `app reconfigure`, `app verify`, or `app teardown` until v2 physical state and claims land in Phase 4.
+- [x] Export `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, and `CLOUDIFY_DEPLOYMENT_NAME` to child dispatches.
+- [x] Require migration to receive the explicit application and flavor before mapping a legacy `CLOUDIFY_DEPLOYMENT` ID.
+- [x] `cloudify deployment run` deleted (superseded by `app run`); `deployment replay` kept until Phase 8.
+- [x] Keep direct package commands unchanged.
+- [x] Print the full application reference and deployment name in every plan and error.
 
 ### 3.3 Move desired inputs without deleting them
 
-- [ ] Add the nested deployment input path keyed by application, flavor, and deployment name.
-- [ ] Add read-through from the old single-ID deployment store.
-- [ ] Require an explicit application reference when migrating an old deployment ID.
-- [ ] Write new values only to the new path after migration confirmation.
-- [ ] Preserve `--stdin` and `--file` secret input paths.
-- [ ] Keep mode 0700 directories and mode 0600 files.
-- [ ] Add one Cloudify state-root helper using `${XDG_STATE_HOME:-$HOME/.local/state}/cloudify`.
-- [ ] Route manifests, runs, events, and external-host state through that helper.
-- [ ] Keep the existing Cloudify configuration helper for defaults and desired inputs.
+- [x] Add the nested deployment input path keyed by application, flavor, and deployment name.
+- [x] Withdrawn: no read-through. `deployment migrate` is the sole reader of the old file, and it is temporary.
+- [x] Require an explicit application reference when migrating an old deployment ID.
+- [x] Write new values only to the new path after migration confirmation.
+- [x] Preserve `--stdin` and `--file` secret input paths.
+- [x] Keep mode 0700 directories and mode 0600 files.
+- [x] Add one Cloudify state-root helper using `${XDG_STATE_HOME:-$HOME/.local/state}/cloudify`.
+- [x] Route manifests, runs, events, and external-host state through that helper.
+- [x] Keep the existing Cloudify configuration helper for defaults and desired inputs.
 
 ### 3.4 Add the deployment manifest
 
-- [ ] Add one local `flock` per deployment manifest before the first manifest writer lands.
-- [ ] Create the manifest atomically under that lock before the first mutating step.
-- [ ] Record application identity, commit, deployment name, target bindings, lifecycle status, and last run and event IDs.
-- [ ] Keep applied package values out of the manifest.
-- [ ] Use recorded bindings for reconfigure, verify, and teardown.
-- [ ] Reject silent rebinding while active claims exist.
-- [ ] Add an explicit target migration path but defer automatic resource movement.
+- [x] Add one local `flock` per deployment manifest before the first manifest writer lands.
+- [x] Create the manifest atomically under that lock before the first mutating step.
+- [x] Record application identity, commit, deployment name, target bindings, lifecycle status, and last run and event IDs.
+- [x] Keep applied package values out of the manifest.
+- [x] Use recorded bindings for reconfigure, verify, and teardown.
+- [x] Reject silent rebinding while active claims exist.
+- [x] Add an explicit target migration path but defer automatic resource movement.
 
 ### 3.5 Add phase parsing and selection
 
-- [ ] Accept `phase=install|reconfigure|verify|teardown` on runbook steps.
-- [ ] Apply the documented default phase for each typed step.
-- [ ] Require `phase=` on `run` and `human-gate` steps in canonical runbooks.
-- [ ] Keep every legacy-path runbook executable only through the legacy engine during compatibility and warn when `run` or `human-gate` lacks a phase.
-- [ ] Reject unknown phases and contradictory type-phase combinations before execution.
-- [ ] Make a bare app run select install then verify only.
-- [ ] Make preflight inspect only selected phases.
-- [ ] Ensure `--yes` cannot cause teardown selection.
-- [ ] Preserve document order inside each selected phase.
+- [x] Accept `phase=install|reconfigure|verify|teardown` on runbook steps.
+- [x] Apply the documented default phase for each typed step.
+- [x] Require `phase=` on `run` and `human-gate` steps in canonical runbooks.
+- [x] Keep every legacy-path runbook executable only through the legacy engine during compatibility and warn when `run` or `human-gate` lacks a phase.
+- [x] Reject unknown phases and contradictory type-phase combinations before execution.
+- [x] Make a bare app run select install then verify only.
+- [x] Make preflight inspect only selected phases.
+- [x] Ensure `--yes` cannot cause teardown selection.
+- [x] Preserve document order inside each selected phase.
 
 ### 3.6 Define manifest lifecycle during snapshot compatibility
 
-- [ ] Set manifest status to `applying` before mutation.
-- [ ] End successful install plus verify as `active`.
-- [ ] Mark observed failures `degraded`.
-- [ ] Link the compatibility snapshot until Phase 6 introduces run lifecycle records.
-- [ ] Defer stale-run classification to Phase 6 rather than fabricating a partial run record here.
+- [x] Set manifest status to `applying` before mutation.
+- [x] End successful install plus verify as `active`.
+- [x] Mark observed failures `degraded`.
+- [x] Link the compatibility snapshot until Phase 6 introduces run lifecycle records.
+- [x] Defer stale-run classification to Phase 6 rather than fabricating a partial run record here.
 
 ### Phase 3 non-breakage argument
 
-- [ ] Show that legacy runbooks and deployment commands remain readable and executable.
-- [ ] Show that direct package dispatch bypasses application manifests exactly as before.
-- [ ] Show that phase filtering changes only runbook selection, not package or shadow execution.
-- [ ] Show that existing target grammar and resolver behavior remain unchanged.
+- [x] No legacy path remains: the legacy runbook tree, the legacy store read-through and the superseded verbs are deleted. The one bridge is `deployment migrate`.
+- [x] Show that direct package dispatch bypasses application manifests exactly as before.
+- [x] Show that phase filtering changes only runbook selection, not package or shadow execution.
+- [x] Show that existing target grammar and resolver behavior remain unchanged.
 
 ### Phase 3 tests
 
-- [ ] Cover default and named deployments for two applications without collision.
-- [ ] Cover canonical and legacy runbook paths.
-- [ ] Cover manifest creation before the first step.
-- [ ] Kill a run between steps and assert an interrupted record remains discoverable.
-- [ ] Cover target binding reuse and active-claim rebinding refusal.
-- [ ] Cover every default phase mapping.
-- [ ] Prove a normal run and `--yes` never execute teardown.
-- [ ] Cover selected-phase preflight so teardown-only values do not block install.
-- [ ] Run the focused runbook, replay, target, deployment, vars, and router suites.
-- [ ] Run `task lint` and `task test-unit` at the phase boundary.
+- [x] Cover default and named deployments for two applications without collision.
+- [x] Cover canonical and legacy runbook paths.
+- [x] Cover manifest creation before the first step.
+- [x] Kill a run between steps and assert an interrupted record remains discoverable.
+- [x] Cover target binding reuse and active-claim rebinding refusal.
+- [x] Cover every default phase mapping.
+- [x] Prove a normal run and `--yes` never execute teardown.
+- [x] Cover selected-phase preflight so teardown-only values do not block install.
+- [x] Run the focused runbook, replay, target, deployment, vars, and router suites.
+- [x] Run `task lint` and `task test-unit` at the phase boundary.
+
+
+### Phase 3 result
+
+Landed in four slices: 3A canonical tree, phase machinery, frozen `inputs:`/`map:` syntax with an `application` resolver rank, and the second red proof turned green through the real engine; 3B `lib/state.sh` (state root, per-deployment `flock`, schema-exact manifest, lifecycle), `app run`, nested desired inputs with a tuple-required migration command; 3C the legacy paths deleted under Rachid's no-compatibility direction, with byte-exact golden fixtures (8 payload, 9 registry record) captured before the deletion as the replacement safety net.
+Gate: focused suites and the full unit suite green (619 ok 0 not ok after the trim), `task lint` rc 0, both red proofs hold.
+Removed rather than kept: the legacy value walker, the registry raw walk, the `CLOUDIFY_LEGACY_VARS` switch, the legacy runbook path with its deprecation warning, the single-ID desired-input read-through, and `deployment run|create|delete|use`.
 
 ## Phase 4: physical package state and deployment claims
 

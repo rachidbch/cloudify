@@ -1,7 +1,7 @@
 # State model v2 - G2 non-breakage argument
 
 Second artifact of the CRITICAL GATE, written after G1 was accepted. G1 is
-`plans/state-model-v2-description.md`; every invariant number cited below as
+`plans/archived/state-model-v2-description.md`; every invariant number cited below as
 `inv N` refers to its section 8. G2 argues that each planned phase preserves the
 mechanisms G1 described. It approves nothing: G3 is Rachid's explicit consent,
 and the scope enumerated in section 7 is exactly what consent would cover.

@@ -34,7 +34,7 @@ When two documents disagree, use this order:
 6. `plans/state-model-v2-forwarding-description.md` for how forwarding actually works today.
 7. `plans/state-model-v2-phase2-non-breakage.md` for the current R1 non-breakage argument.
 8. This plan.
-9. Evidence only, never authority: the two archived attempts (`plans/archived/state-model-v2-attempt1.md`, `plans/archived/state-model-v2-phase2-attempt-design.md`), the superseded attempt-1 artifacts `plans/state-model-v2-description.md` and `plans/state-model-v2-non-breakage.md` (they describe the pre-repair tree, including `_cloudify_pkg_remote_vars`, which is now deleted), and the rejected patch under `~/tmp/cloudify-phase4a-rejected-20260913/`.
+9. Evidence only, never authority: the two archived attempts (`plans/archived/state-model-v2-attempt1.md`, `plans/archived/state-model-v2-phase2-attempt-design.md`), the superseded attempt-1 artifacts `plans/archived/state-model-v2-description.md` and `plans/archived/state-model-v2-non-breakage.md` (they describe the pre-repair tree, including `_cloudify_pkg_remote_vars`, which is now deleted), and the rejected patch under `~/tmp/cloudify-phase4a-rejected-20260913/`.
 
 No implementation may weaken a higher authority silently.
 

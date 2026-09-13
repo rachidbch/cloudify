@@ -642,3 +642,35 @@ candidate_file() {
 
     unset A B APP_IN CLOUDIFY_APP_MAP CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR
 }
+
+@test "nested inputs: the deployment source reads the nested store, with read-through to the legacy one" {
+    rubric "one file, one label, one value: nested store once it exists, legacy before that"
+    declare_pkg nestedpkg DEP_ONLY
+
+    # No nested file yet: the legacy single-ID store is the read-through source.
+    set_deployment DEP_ONLY from-legacy
+    unset DEP_ONLY
+    export CLOUDIFY_APPLICATION=myapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=default
+    cloudify_context_build install "$DEP" install "$(candidate_file nestedpkg)" nestedpkg > /dev/null
+    [ "$DEP_ONLY" = "from-legacy" ]
+    # The build exported the value; the label is read with it unset, so the
+    # environment rank cannot mask the store that provided it.
+    unset DEP_ONLY
+    [ "$(cloudify_context_source_of DEP_ONLY nestedpkg)" = "deployment" ]
+
+    # The nested values.yaml exists: it is now the store the ladder reads.
+    local nested
+    nested=$(cloudify_deployment_values_file myapp default default)
+    mkdir -p "$(dirname "$nested")"
+    printf 'DEP_ONLY: from-nested\n' > "$nested"
+    unset DEP_ONLY
+    cloudify_context_build install "$DEP" install "$(candidate_file nestedpkg)" nestedpkg > /dev/null
+    [ "$DEP_ONLY" = "from-nested" ]
+    [ "$(cloudify_context_read "$CTX" value.DEP_ONLY.source)" = "deployment" ]
+
+    # The registry record's deployment-source read resolves the same file, so the
+    # payload and the record cannot disagree.
+    [ "$(_cloudify_vars_store_get "$(_cloudify_deployment_config "$DEP")" DEP_ONLY)" = "from-nested" ]
+
+    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME DEP_ONLY
+}

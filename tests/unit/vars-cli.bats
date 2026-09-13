@@ -312,3 +312,24 @@ run_router() {
     _cloudify_pkg_remote_vars uninstall upkg > /dev/null 2>&1
     [ "$UP_VAR" = "fromyaml" ]
 }
+
+@test "router: --stdin and --file still write the deployment store" {
+    run_router deployment create stdin-dep
+    [ "$status" -eq 0 ]
+
+    printf 's3cr3t' > "$CLOUDIFY_TMP/secret-file"
+    run_router vars set FROM_STDIN --stdin --deployment stdin-dep < "$CLOUDIFY_TMP/secret-file"
+    [ "$status" -eq 0 ]
+    run_router vars set FROM_FILE --file "$CLOUDIFY_TMP/secret-file" --deployment stdin-dep
+    [ "$status" -eq 0 ]
+
+    local store="$CLOUDIFY_CREDENTIALS_DIR/deployments/stdin-dep/config.yaml"
+    [ "$(grep '^FROM_STDIN:' "$store" | sed 's/^FROM_STDIN: //')" = "s3cr3t" ]
+    [ "$(grep '^FROM_FILE:' "$store" | sed 's/^FROM_FILE: //')" = "s3cr3t" ]
+    [ "$(stat -c '%a' "$store")" = "600" ]
+
+    # A read resolves the same store; no value is duplicated anywhere else.
+    run_router vars show FROM_STDIN --deployment stdin-dep
+    [ "$status" -eq 0 ]
+    [ "$output" = "s3cr3t" ]
+}

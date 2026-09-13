@@ -18,6 +18,7 @@ setup() {
     mkdir -p "$HOME" "$CLOUDIFY_CREDENTIALS_DIR"
     export IVPS_CONFIG_DIR="$CLOUDIFY_TMP/ivps"
     mkdir -p "$IVPS_CONFIG_DIR"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
 
     source lib/colors.sh && cloudify_setup_colors
     source lib/utils.sh
@@ -750,4 +751,336 @@ EOF
     run cloudify_runbook_find_app missing default
     [ "$status" -ne 0 ]
     [[ "$output" == *"No runbook found for application"* ]]
+}
+
+# ---------------------------------------------------------------
+# Application commands, the deployment manifest and phases
+# (state model v2 Phase 3 slice 3B)
+# ---------------------------------------------------------------
+
+# A clean Cloudify tree: the manifest commit gate needs an identified commit.
+_clean_tree() {
+    git -C "$CLOUDIFY_DIR" init -q
+    git -C "$CLOUDIFY_DIR" -c user.email=t@t -c user.name=t add -A
+    git -C "$CLOUDIFY_DIR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+}
+
+# An app runbook at the canonical path, with an install and a verify step.
+_make_app_runbook() {
+    local app="$1" flavor="$2" deploy="$3" body_install="${4:-true}" body_verify="${5:-true}"
+    mkdir -p "$CLOUDIFY_DIR/runbooks/$app/$flavor"
+    cat > "$CLOUDIFY_DIR/runbooks/$app/$flavor/runbook.md" <<EOF
+---
+deployment: $deploy
+targets: guest
+---
+\`\`\`bash step=install target=guest pkg=demo id=one
+$body_install
+\`\`\`
+\`\`\`bash step=verify target=guest pkg=demo id=two
+$body_verify
+\`\`\`
+EOF
+}
+
+# --- Tuple derivation ---
+
+@test "tuple: application and flavor come from the path, name defaults to default" {
+    rubric "canonical runbook.md and the legacy <app>/<flavor>.md"
+    local canonical="$CLOUDIFY_DIR/runbooks/myapp/prod/runbook.md"
+    _make_runbook "$canonical" <<'EOF'
+---
+deployment: my-dep
+targets: guest
+---
+EOF
+    run _cloudify_runbook_tuple_for "$canonical"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'myapp\tprod\tdefault')" ]
+
+    run _cloudify_runbook_tuple_for "$canonical" "named"
+    [ "$output" = "$(printf 'myapp\tprod\tnamed')" ]
+
+    local legacy="$CLOUDIFY_DIR/runbooks/legacyapp/dev.md"
+    _make_runbook "$legacy" <<'EOF'
+---
+deployment: legacy-dep
+targets: guest
+---
+EOF
+    run _cloudify_runbook_tuple_for "$legacy"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'legacyapp\tdev\tdefault')" ]
+
+    # A plain fixture path carries no application identity: no manifest.
+    run _cloudify_runbook_tuple_for "$RUNBOOKS/valid.md"
+    [ "$status" -ne 0 ]
+
+    # A path component the identity rules reject fails closed.
+    run _cloudify_runbook_tuple_for "$CLOUDIFY_DIR/runbooks/myapp/../runbook.md"
+    [ "$status" -ne 0 ]
+}
+
+# --- app run surface ---
+
+@test "app run: default flavor and default deployment name, printed in the plan" {
+    rubric "cloudify app run <application> -> <application>/default --name default"
+    _make_app_runbook myapp default my-dep
+    _clean_tree
+
+    run cloudify_app_run myapp --dry-run --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Application: myapp/default"* ]]
+    [[ "$output" == *"Deployment: default"* ]]
+    [[ "$output" == *"phase=install"* ]]
+    # The plan prints the phase, never the base64 step body.
+    [[ "$output" != *"$(printf 'dHJ1ZQ==' )"* ]]
+}
+
+@test "app run: exports CLOUDIFY_APPLICATION, CLOUDIFY_FLAVOR and CLOUDIFY_DEPLOYMENT_NAME to the steps" {
+    rubric "the child dispatch carries the tuple"
+    _make_app_runbook myapp prod my-dep \
+        "echo \"TUPLE=\$CLOUDIFY_APPLICATION/\$CLOUDIFY_FLAVOR/\$CLOUDIFY_DEPLOYMENT_NAME DEP=\$CLOUDIFY_DEPLOYMENT\" > \"\$CLOUDIFY_TMP/tuple.txt\"" \
+        true
+    _clean_tree
+    run cloudify_app_run myapp/prod --name named --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [ "$(cat "$CLOUDIFY_TMP/tuple.txt")" = "TUPLE=myapp/prod/named DEP=my-dep" ]
+}
+
+@test "app run: rejects a three-segment reference and a bad component" {
+    rubric "exactly one '/', validated components"
+    run cloudify_app_run a/b/c
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"more than one '/'"* ]]
+
+    run cloudify_app_run ""
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Usage: cloudify app run"* ]]
+
+    run cloudify_app_run "/default"
+    [ "$status" -ne 0 ]
+    run cloudify_app_run "myapp/"
+    [ "$status" -ne 0 ]
+
+    run cloudify_app_run myapp --name ""
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--name needs a value"* ]]
+}
+
+@test "app run: no runbook dies naming the full reference and deployment name" {
+    rubric "every error carries the reference and the deployment name"
+    run cloudify_app_run missing/app --name prod
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"app run missing/app --name prod"* ]]
+}
+
+@test "app: reconfigure, verify and teardown are reserved until Phase 4" {
+    run cloudify_app_reserved reconfigure
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not yet available"* ]]
+    [[ "$output" == *"Phase 4"* ]]
+
+    run cloudify_app_reserved verify
+    [ "$status" -ne 0 ]
+    run cloudify_app_reserved teardown
+    [ "$status" -ne 0 ]
+}
+
+# --- Manifest lifecycle ---
+
+@test "manifest: exists as applying before the first mutating step, active after install+verify" {
+    rubric "creation before mutation, applying -> active"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook myapp default my-dep \
+        "test -f \"\$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/manifest.json\" && grep -q '\"status\": \"applying\"' \"\$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/manifest.json\""
+    _clean_tree
+    run cloudify_app_run myapp --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field myapp default default status)" = "active" ]
+    [ "$(cloudify_manifest_field myapp default default last_run_id)" = "null" ]
+    # the compatibility snapshot is still written where it always was
+    [ -n "$(ls "$CLOUDIFY_DEPLOYMENTS_DIR/my-dep/runs/"*.yaml 2>/dev/null)" ]
+}
+
+@test "manifest: an observed failure marks the deployment degraded" {
+    rubric "degraded on failure, and it stays discoverable"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook myapp default my-dep "exit 3"
+    _clean_tree
+    run cloudify_app_run myapp --target guest=cloudai:xfce-test
+    [ "$status" -ne 0 ]
+    [ "$(cloudify_manifest_field myapp default default status)" = "degraded" ]
+    run cloudify_deployment_show my-dep
+    [[ "$output" == *"status: degraded"* ]]
+}
+
+@test "manifest: a run killed between steps stays applying and show reveals it" {
+    rubric "interrupted: no status update, manifest still applying"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    local marker="$CLOUDIFY_TMP/killed"
+    _make_app_runbook myapp default my-dep \
+        "touch \"$marker\"; sleep 5" \
+        true
+    _clean_tree
+
+    ( cloudify_app_run myapp --target guest=cloudai:xfce-test ) &
+    local pid=$!
+    local i=0
+    while [[ ! -f "$marker" ]] && ((i < 100)); do sleep 0.1; i=$((i + 1)); done
+    [ -f "$marker" ]
+    # Kill the engine while it is inside the first step: it never reaches the
+    # status update, so the manifest stays applying.
+    kill -9 "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+
+    [ "$(cloudify_manifest_field myapp default default status)" = "applying" ]
+    run cloudify_deployment_show my-dep
+    [[ "$output" == *"status: applying"* ]]
+    [[ "$output" == *"interrupted"* ]]
+    # No run or event record is fabricated in Phase 3.
+    [ ! -d "$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/runs" ]
+}
+
+@test "manifest: two applications with deployment name default never collide" {
+    rubric "distinct manifests and distinct nested input stores"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook alpha default alpha-dep
+    _make_app_runbook beta default beta-dep
+    _clean_tree
+
+    run cloudify_app_run alpha --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    run cloudify_app_run beta --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+
+    local alpha beta
+    alpha=$(cloudify_state_manifest_file alpha default default)
+    beta=$(cloudify_state_manifest_file beta default default)
+    [ "$alpha" != "$beta" ]
+    [ -f "$alpha" ]
+    [ -f "$beta" ]
+    [ "$(cloudify_deployment_values_file alpha default default)" != "$(cloudify_deployment_values_file beta default default)" ]
+}
+
+@test "manifest: a legacy <app>/<flavor>.md runbook still runs and gets a manifest" {
+    rubric "legacy path compatibility"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    local legacy="$CLOUDIFY_DIR/runbooks/legacyapp/dev.md"
+    _make_runbook "$legacy" <<'EOF'
+---
+deployment: legacy-dep
+targets: guest
+---
+```bash step=install target=guest pkg=demo
+true
+```
+EOF
+    _clean_tree
+    run cloudify_app_run legacyapp/dev --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Application: legacyapp/dev"* ]]
+    [ "$(cloudify_manifest_field legacyapp dev default status)" = "active" ]
+}
+
+# --- Bindings ---
+
+@test "bindings: a rerun without --target reuses the recorded binding" {
+    rubric "recorded bindings instead of re-prompting"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook myapp default my-dep \
+        "printf '%s\\n' \"\$TARGET_GUEST\" >> \"\$CLOUDIFY_TMP/targets.txt\"" \
+        "printf '%s\\n' \"\$TARGET_GUEST\" >> \"\$CLOUDIFY_TMP/targets.txt\""
+    _clean_tree
+    run cloudify_app_run myapp --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    # Second run: no --target at all, the stored binding from the manifest is used.
+    run cloudify_app_run myapp
+    [ "$status" -eq 0 ]
+    [ "$(sort -u "$CLOUDIFY_TMP/targets.txt")" = "cloudai:xfce-test" ]
+}
+
+@test "bindings: a differing --target is refused unless --migrate-targets" {
+    rubric "rebinding is a migration, not a rerun"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook myapp default my-dep
+    _clean_tree
+    run cloudify_app_run myapp --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+
+    run cloudify_app_run myapp --target guest=cloudai:guac
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"refusing to rebind"* ]]
+    [[ "$output" == *"--migrate-targets"* ]]
+    run cloudify_manifest_bindings myapp default default
+    [[ "$output" == *"cloudai:xfce-test"* ]]
+
+    run cloudify_app_run myapp --target guest=cloudai:guac --migrate-targets
+    [ "$status" -eq 0 ]
+    run cloudify_manifest_bindings myapp default default
+    [[ "$output" == *"cloudai:guac"* ]]
+}
+
+# --- Source commit ---
+
+@test "commit: a dirty tree needs the explicit development override and is never replayable" {
+    rubric "CLOUDIFY_DEVELOPMENT_OVERRIDE, development_override, replayable: no"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook myapp default my-dep
+    _clean_tree
+    touch "$CLOUDIFY_DIR/dirty-file"
+
+    run cloudify_app_run myapp --target guest=cloudai:xfce-test
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"CLOUDIFY_DEVELOPMENT_OVERRIDE=1"* ]]
+
+    CLOUDIFY_DEVELOPMENT_OVERRIDE=1 run cloudify_app_run myapp --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field myapp default default development_override)" = "true" ]
+    [[ "$(cloudify_manifest_field myapp default default application_commit)" =~ ^[0-9a-f]{40}$ ]]
+    run cloudify_manifest_describe myapp default default
+    [[ "$output" == *"replayable: no"* ]]
+}
+
+@test "commit: a clean tree records a real commit and is replayable" {
+    rubric "development_override false"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook myapp default my-dep
+    _clean_tree
+    run cloudify_app_run myapp --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field myapp default default development_override)" = "false" ]
+    [[ "$(cloudify_manifest_field myapp default default application_commit)" == "$(git -C "$CLOUDIFY_DIR" rev-parse HEAD)" ]]
+    run cloudify_manifest_describe myapp default default
+    [[ "$output" == *"replayable: yes"* ]]
+}
+
+@test "preflight: only the selected phases are inspected" {
+    rubric "a teardown-only value cannot block an install run"
+    local f="$CLOUDIFY_DIR/runbooks/phaseapp/default/runbook.md"
+    _make_runbook "$f" <<'EOF'
+---
+deployment: phase-dep
+targets: guest
+---
+```bash step=install target=guest pkg=instpkg id=i
+true
+```
+```bash step=uninstall target=guest pkg=teardownpkg id=u
+true
+```
+EOF
+    _declare instpkg REQ_INSTALL
+    _declare teardownpkg REQ_TEARDOWN
+    _cloudify_vars_file_set "$(_cloudify_deployment_config phase-dep)" REQ_INSTALL yes
+
+    # A bare canonical run selects install then verify: the teardown-only
+    # requirement is never inspected.
+    run cloudify_runbook_preflight "$f" --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+
+    run cloudify_runbook_preflight "$f" --target guest=cloudai:xfce-test --phase teardown
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"teardownpkg: REQ_TEARDOWN"* ]]
+    [[ "$output" != *"instpkg: REQ_INSTALL"* ]]
 }

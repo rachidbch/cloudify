@@ -25,8 +25,12 @@
 #   cloudify_runbook_execute <path> [--target name=addr]... [--from <id>] [--yes] [--phase <phase>]...
 #   cloudify_deployment_run <id> [--runbook <path>] [--target name=addr]...
 #                               [--from <id>] [--phase <phase>]... [--dry-run] [--yes]
+#                               [--migrate-targets]
 #   cloudify_deployment_replay <id> [--at <run>] [--runbook <path>]
 #                               [--target name=addr]... [--from <id>] [--dry-run] [--yes]
+#   cloudify_runbook_tuple_for <path> [<name>]  application \t flavor \t deployment name
+#   cloudify_app_run <application>[/<flavor>] [--name <name>] [run args...]
+#   cloudify_app_reserved <verb>                the Phase 4 reservation message
 #
 # Canonical application runbooks live at
 # runbooks/<application>/<flavor>/runbook.md and derive their identity from the
@@ -67,6 +71,12 @@ set -Eeuo pipefail
 
 [[ -n "${_CLOUDIFY_RUNBOOKS_LOADED:-}" ]] && return 0
 _CLOUDIFY_RUNBOOKS_LOADED=1
+
+# The deployment manifest and the state root (lib/state.sh) are part of every
+# application-shaped run: the manifest is created under its lock before the
+# first mutating step, and its status follows the run.
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/state.sh"
 
 _CLOUDIFY_RUNBOOK_TYPES=(launch install configure verify uninstall run human-gate)
 # Step types that consume a package (and so declare required vars)
@@ -300,8 +310,14 @@ function _cloudify_runbook_export_app_spec() {
         app="${identity%%$'\t'*}"
         flavor="${identity#*$'\t'}"
     fi
-    export CLOUDIFY_APPLICATION="$app"
-    export CLOUDIFY_FLAVOR="$flavor"
+    # A canonical path is authoritative. A legacy path carries no identity, so an
+    # explicit application reference already exported by `cloudify app run`
+    # (which stated the application and flavor) stays in place instead of being
+    # clobbered with an empty tuple.
+    if [[ -n "$app" ]]; then
+        export CLOUDIFY_APPLICATION="$app"
+        export CLOUDIFY_FLAVOR="$flavor"
+    fi
 
     local -a inputs=()
     local name inputs_out
@@ -775,6 +791,220 @@ function cloudify_runbook_find_app() {
     die "No runbook found for application '$app/$flavor' under '$root'."
 }
 
+# _cloudify_runbook_tuple_for <path> [<deployment-name>] - the application
+# identity of a runbook: application \t flavor \t deployment name. The
+# application and flavor come from the path (canonical runbooks/<app>/<flavor>/
+# runbook.md or the legacy runbooks/<app>/<flavor>.md); the deployment name
+# defaults to `default`. Never derived from the front-matter `deployment:` ID,
+# which stays an opaque legacy store id. rc 1 when the path has no application
+# shape, so a plain fixture runbook keeps the legacy behavior and gets no
+# manifest. A path component the identity rules reject dies (fail closed).
+function _cloudify_runbook_tuple_for() {
+    local path="${1:-}" name="${2:-default}" app="" flavor="" root identity
+    [[ -n "$path" ]] || return 1
+    [[ -n "$name" ]] || return 1
+    if _cloudify_runbook_canonical_shape "$path"; then
+        identity=$(cloudify_runbook_identity "$path") || return 1
+        app="${identity%%$'\t'*}"
+        flavor="${identity#*$'\t'}"
+    else
+        root=$(_cloudify_runbook_root)
+        [[ "$path" == "$root"/*/*.md ]] || return 1
+        flavor="${path##*/}"
+        flavor="${flavor%.md}"
+        app="${path%/*}"
+        app="${app##*/}"
+        [[ -n "$app" && -n "$flavor" ]] || return 1
+        _cloudify_identity_check_component "runbook application" "$app"
+        _cloudify_identity_check_component "runbook flavor" "$flavor"
+    fi
+    _cloudify_identity_check_component "application" "$app"
+    _cloudify_identity_check_component "flavor" "$flavor"
+    _cloudify_identity_check_component "deployment name" "$name"
+    printf '%s\t%s\t%s\n' "$app" "$flavor" "$name"
+}
+
+# _cloudify_runbook_source_commit - the commit of the runbook and recipes in
+# use, plus whether it is a development override: print "commit\tdev". A dirty
+# or unidentified tree dies unless CLOUDIFY_DEVELOPMENT_OVERRIDE=1 is set, in
+# which case the manifest records the HEAD commit (or the git null object when
+# there is none) with development_override=true and the deployment is labelled
+# unreproducible. A dirty deployment is never presented as replayable.
+function _cloudify_runbook_source_commit() {
+    local dir="${CLOUDIFY_DIR:-}" commit dev="false"
+    commit=$(cloudify_commit_of "$dir")
+    if cloudify_tree_unreproducible "$dir"; then
+        if [[ "${CLOUDIFY_DEVELOPMENT_OVERRIDE:-}" == "1" ]]; then
+            dev="true"
+            [[ -n "$commit" ]] || commit="$_CLOUDIFY_MANIFEST_NULL_COMMIT"
+            log_warn "Cloudify tree '$dir' is dirty or unidentified (commit ${commit}); recording an unreproducible deployment (development override)."
+        else
+            die "deployment: the Cloudify tree '$dir' is dirty or its commit is unknown (commit: ${commit:-unknown}). Commit the tree, or set CLOUDIFY_DEVELOPMENT_OVERRIDE=1 to record an unreproducible deployment."
+        fi
+    fi
+    [[ -n "$commit" ]] ||
+        die "deployment: cannot identify the Cloudify commit at '$dir'."
+    printf '%s\t%s\n' "$commit" "$dev"
+}
+
+# _cloudify_runbook_bindings_file <out-file> <bound-lines> - render the
+# `cloudify_runbook_bind_targets` output (name\tnode\tinstance\tssh_host) as the
+# bindings file the manifest takes: slot\taddress\tnode\tinstance\tssh_host.
+function _cloudify_runbook_bindings_file() {
+    local out="${1:-}" bound="${2:-}" line name node instance ssh_host addr
+    : > "$out"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        name="${line%%$'\t'*}"
+        line="${line#*$'\t'}"
+        node="${line%%$'\t'*}"
+        line="${line#*$'\t'}"
+        instance="${line%%$'\t'*}"
+        ssh_host="${line#*$'\t'}"
+        addr=$(_cloudify_runbook_target_addr "$node" "$instance" "$ssh_host")
+        printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$addr" "$node" "$instance" "$ssh_host" >> "$out"
+    done <<< "$bound"
+    chmod 600 "$out" 2>/dev/null || true
+}
+
+# _cloudify_deployment_manifest_prepare <app> <flavor> <name> <bound-lines>
+#                                    <migrate-targets> [<cli-target>...]
+# Create the manifest as `applying` before the first mutating step, or refresh
+# it for a rerun. Reuses the recorded bindings: a recorded binding is never
+# silently replaced. A caller-supplied binding that differs is a rebinding and
+# needs --migrate-targets, because rebinding is a migration, not a rerun.
+# While the deployment has active claims (Phase 4) only the claim-release path
+# may rebind; the hook below is that gate for Phase 4.
+function _cloudify_deployment_manifest_prepare() {
+    local app="$1" flavor="$2" name="$3" bound="$4" migrate="${5:-0}"
+    shift 5 2>/dev/null || true
+    local -a cli_targets=("$@")
+    local bindings_file commit_line commit dev old_slot old_addr rc=0
+    local -A recorded=()
+
+    bindings_file=$(mktemp) || die "deployment: cannot create a bindings file."
+    _cloudify_runbook_bindings_file "$bindings_file" "$bound"
+
+    if cloudify_manifest_exists "$app" "$flavor" "$name"; then
+        while IFS=$'\t' read -r old_slot old_addr _ _ _; do
+            [[ -n "$old_slot" ]] && recorded["$old_slot"]="$old_addr"
+        done < <(cloudify_manifest_bindings "$app" "$flavor" "$name")
+        local b name_only
+        for b in ${cli_targets[@]+"${cli_targets[@]}"}; do
+            name_only="${b%%=*}"
+            [[ -n "${recorded[$name_only]:-}" ]] || continue
+            [[ "${recorded[$name_only]}" == "${b#*=}" ]] && continue
+            if declare -F cloudify_deployment_has_active_claims >/dev/null 2>&1 &&
+                cloudify_deployment_has_active_claims "$app" "$flavor" "$name"; then
+                rm -f "$bindings_file"
+                die "deployment '$app/$flavor --name $name': target '$name_only' cannot be rebound while the deployment has active claims (release them first)."
+            fi
+            if [[ "$migrate" != "1" ]]; then
+                rm -f "$bindings_file"
+                die "deployment '$app/$flavor --name $name': refusing to rebind target '$name_only' from '${recorded[$name_only]}' to '${b#*=}'. Pass --migrate-targets to migrate the binding explicitly (no active claims exist yet, so this updates the manifest only)."
+            fi
+            log_warn "Target migration for '$app/$flavor --name $name': $name_only '${recorded[$name_only]}' -> '${b#*=}'."
+        done
+    fi
+
+    commit_line=$(_cloudify_runbook_source_commit) || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        rm -f "$bindings_file"
+        return "$rc"
+    fi
+    IFS=$'\t' read -r commit dev <<< "$commit_line"
+    cloudify_manifest_write "$app" "$flavor" "$name" applying "$commit" "$dev" "$bindings_file" || rc=$?
+    rm -f "$bindings_file"
+    [[ "$rc" -eq 0 ]] || return "$rc"
+    msg "Manifest: $(cloudify_state_manifest_file "$app" "$flavor" "$name") (status applying)"
+    return 0
+}
+
+# cloudify_deployment_has_active_claims <app> <flavor> <name> - the Phase 4
+# reservation. Phase 3 records no claims, so the hook below is never defined and
+# a rebinding is guarded only by --migrate-targets. Phase 4 defines it and every
+# silent rebind then fails closed.
+
+#== Application commands (state model v2 Phase 3) ==
+
+# cloudify_app_run <application>[/<flavor>] [--name <name>] [run args...]
+# Resolve the application reference, print it and the deployment name, export
+# CLOUDIFY_APPLICATION / CLOUDIFY_FLAVOR / CLOUDIFY_DEPLOYMENT_NAME for the
+# child dispatches, then run the application's runbook. A bare run selects
+# install then verify; teardown is never selected.
+function cloudify_app_run() {
+    local ref="${1:-}" name="default" app="" flavor=""
+    [[ -n "$ref" ]] ||
+        die "Usage: cloudify app run <application>[/<flavor>] [--name <name>] [--target name=addr]... [--from <id>] [--phase <phase>]... [--dry-run] [--yes] [--migrate-targets]"
+    shift
+    local -a fwd=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name)
+                shift
+                name="${1:-}"
+                [[ -n "$name" ]] || die "app run $ref: --name needs a value."
+                ;;
+            *) fwd+=("$1") ;;
+        esac
+        shift
+    done
+
+    case "$ref" in
+        */*/*)
+            die "app run: '$ref' has more than one '/'; expected <application>/<flavor> (a three-segment form is never guessed)."
+            ;;
+        */*)
+            app="${ref%%/*}"
+            flavor="${ref#*/}"
+            ;;
+        *)
+            app="$ref"
+            flavor="default"
+            ;;
+    esac
+    [[ -n "$app" && -n "$flavor" ]] ||
+        die "app run: '$ref' is not <application>/<flavor> (both sides must be non-empty)."
+    _cloudify_identity_check_component "application" "$app"
+    _cloudify_identity_check_component "flavor" "$flavor"
+    _cloudify_identity_check_component "deployment name" "$name"
+    local where="app run $app/$flavor --name $name"
+
+    export CLOUDIFY_APPLICATION="$app" CLOUDIFY_FLAVOR="$flavor" CLOUDIFY_DEPLOYMENT_NAME="$name"
+
+    local runbook
+    runbook=$(cloudify_runbook_find_app "$app" "$flavor") ||
+        die "$where: no runbook found for application '$app/$flavor'."
+
+    local deployment
+    deployment=$(_cloudify_runbook_deployment_of "$runbook")
+    if [[ -z "$deployment" ]]; then
+        deployment="$app.$flavor.$name"
+        log_debug "$where: runbook has no front-matter deployment id; using '$deployment' as the compatibility store id."
+    fi
+    export CLOUDIFY_DEPLOYMENT="$deployment"
+
+    # An old single-ID store with no nested counterpart is still read
+    # (read-through). Tell the operator the explicit migration path; the ID is
+    # never split to guess the tuple.
+    if declare -F _cloudify_deployment_legacy_config >/dev/null 2>&1; then
+        local legacy nested
+        legacy=$(_cloudify_deployment_legacy_config "$deployment")
+        nested=$(cloudify_deployment_values_file "$app" "$flavor" "$name")
+        if [[ -f "$legacy" && ! -f "$nested" ]]; then
+            log_warn "$where: desired inputs are read from the legacy store '$legacy'; move future writes to the nested path with: cloudify deployment migrate $deployment --application $app --flavor $flavor --name $name"
+        fi
+    fi
+
+    cloudify_deployment_run "$deployment" --runbook "$runbook" ${fwd[@]+"${fwd[@]}"}
+}
+
+# cloudify_app_reserved <verb> - reconfigure, verify and teardown are reserved
+# until Phase 4 has physical package state and claims.
+function cloudify_app_reserved() {
+    die "cloudify app ${1:-} is not yet available: Phase 4 introduces reconfigure, verify and teardown with physical package state and claims. Use 'cloudify app run <application>[/<flavor>] [--name <name>]' for install plus verify."
+}
+
 # cloudify_runbook_find <deployment-id> [<runbooks-root>] — print the path of the
 # single runbook whose front-matter declares that deployment.
 function cloudify_runbook_find() {
@@ -946,13 +1176,15 @@ function cloudify_runbook_preflight() {
 
 # cloudify_deployment_run <id> [--runbook <path>] [--target name=addr]...
 #                           [--from <id>] [--phase <phase>]... [--dry-run] [--yes]
-# T6a find + parse + bind + preflight + print the plan; without --dry-run it then
-# dispatches cloudify_runbook_execute. Phase selection is opt-in; a canonical
-# runbook with no --phase selects install then verify, a legacy one runs every
-# step (compatibility).
+#                           [--migrate-targets]
+# find + parse + bind + preflight + print the plan; without --dry-run it creates
+# the deployment manifest as `applying` (before the first mutating step) and
+# then dispatches cloudify_runbook_execute. Phase selection is opt-in; a
+# canonical runbook with no --phase selects install then verify, a legacy one
+# runs every step (compatibility).
 function cloudify_deployment_run() {
-    local id="" runbook="" from="" dry=0 yes=0
-    local -a target_bindings=()
+    local id="" runbook="" from="" dry=0 yes=0 migrate_targets=0
+    local -a target_bindings=() cli_targets=()
     local -a cli_phases=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -965,6 +1197,7 @@ function cloudify_deployment_run() {
                 shift
                 [[ -n "${1:-}" && "$1" == *=* ]] || die "deployment run: --target expects name=addr."
                 target_bindings+=("$1")
+                cli_targets+=("$1")
                 ;;
             --from)
                 shift
@@ -977,6 +1210,7 @@ function cloudify_deployment_run() {
                     die "deployment run: unknown phase '${1:-}' (expected: ${_CLOUDIFY_RUNBOOK_PHASES[*]})."
                 cli_phases+=("$1")
                 ;;
+            --migrate-targets) migrate_targets=1 ;;
             --dry-run) dry=1 ;;
             --yes) yes=1 ;; # non-interactive human-gate confirmation
             -*) die "deployment run: unknown flag '$1'." ;;
@@ -988,7 +1222,7 @@ function cloudify_deployment_run() {
         shift
     done
     [[ -n "$id" ]] ||
-        die "Usage: cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--phase <phase>]... [--dry-run] [--yes]"
+        die "Usage: cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--phase <phase>]... [--dry-run] [--yes] [--migrate-targets]"
 
     if [[ -n "$runbook" ]]; then
         [[ -f "$runbook" ]] || die "Runbook '$runbook' not found."
@@ -1002,8 +1236,33 @@ function cloudify_deployment_run() {
     [[ "$deployment" == "$id" ]] ||
         die "Runbook '$runbook' declares deployment '$deployment', not '$id'."
 
+    # Application identity. An explicit reference exported by `cloudify app run`
+    # wins; otherwise the runbook path is the identity (canonical or legacy
+    # <app>/<flavor>.md). A path with no application shape has no v2 identity,
+    # so no manifest is written and every legacy behavior is untouched.
+    local tuple="" app="" flavor="" name="" manifest=0 b
+    if tuple=$(_cloudify_runbook_tuple_for "$runbook" "${CLOUDIFY_DEPLOYMENT_NAME:-default}" 2>/dev/null); then
+        IFS=$'\t' read -r app flavor name <<< "$tuple"
+        export CLOUDIFY_APPLICATION="$app" CLOUDIFY_FLAVOR="$flavor" CLOUDIFY_DEPLOYMENT_NAME="$name"
+        manifest=1
+    fi
+
+    # Recorded bindings: reconfigure, verify and teardown reuse them instead of
+    # re-prompting. A slot the caller bound explicitly keeps the caller's value.
+    if ((manifest)) && cloudify_manifest_exists "$app" "$flavor" "$name"; then
+        local rslot raddr supplied
+        while IFS=$'\t' read -r rslot raddr _ _ _; do
+            [[ -n "$rslot" ]] || continue
+            supplied=0
+            for b in ${cli_targets[@]+"${cli_targets[@]}"}; do
+                [[ "${b%%=*}" == "$rslot" ]] && supplied=1
+            done
+            ((supplied)) && continue
+            target_bindings+=("$rslot=$raddr")
+        done < <(cloudify_manifest_bindings "$app" "$flavor" "$name")
+    fi
+
     local -a bind_args=()
-    local b
     for b in ${target_bindings[@]+"${target_bindings[@]}"}; do
         bind_args+=(--target "$b")
     done
@@ -1013,7 +1272,7 @@ function cloudify_deployment_run() {
     done
 
     local bound parse_out steps_out
-    bound=$(cloudify_runbook_bind_targets "$runbook" ${bind_args[@]+"${bind_args[@]}"})
+    bound=$(cloudify_runbook_bind_targets "$runbook" ${bind_args[@]+"${bind_args[@]}"}) || return 1
     cloudify_runbook_preflight "$runbook" ${bind_args[@]+"${bind_args[@]}"} ${phase_args[@]+"${phase_args[@]}"} || return 1
     parse_out=$(cloudify_runbook_parse "$runbook") || return 1
     steps_out=$(_cloudify_runbook_select_steps "$runbook" "$parse_out" ${cli_phases[@]+"${cli_phases[@]}"}) || return 1
@@ -1029,24 +1288,28 @@ function cloudify_deployment_run() {
     else
         selected_phases="<all, legacy document order>"
     fi
+    if ((manifest)); then
+        msg "Application: $app/$flavor"
+        msg "Deployment: $name"
+    fi
     msg "Deployment: $deployment"
     msg "Runbook: $runbook"
     msg "Phases: $selected_phases"
     msg "Targets:"
-    local name rest node instance ssh_host
+    local name_ rest node instance ssh_host
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
-        name="${line%%$'\t'*}"
+        name_="${line%%$'\t'*}"
         rest="${line#*$'\t'}"
         node="${rest%%$'\t'*}"
         rest="${rest#*$'\t'}"
         instance="${rest%%$'\t'*}"
         ssh_host="${rest#*$'\t'}"
-        msg "  $name -> node=${node:-<plain>} instance=${instance:-<none>} ssh=$ssh_host"
+        msg "  $name_ -> node=${node:-<plain>} instance=${instance:-<none>} ssh=$ssh_host"
     done <<< "$bound"
 
     msg "Steps:"
-    local type sid tgt pkg phase
+    local type sid tgt pkg phase body_b64
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
         type="${line%%$'\t'*}"
@@ -1057,12 +1320,22 @@ function cloudify_deployment_run() {
         rest="${rest#*$'\t'}"
         pkg="${rest%%$'\t'*}"
         rest="${rest#*$'\t'}"
-        phase="${rest%%$'\t'*}"
+        body_b64="${rest%%$'\t'*}"
+        phase="${rest#*$'\t'}"
         msg "  $sid  $type${phase:+  phase=$phase}${tgt:+  target=$tgt}${pkg:+  pkg=$pkg}"
     done <<< "$steps_out"
 
     if [[ "$dry" == "1" ]]; then
+        if ((manifest)); then
+            msg "Manifest: $(cloudify_state_manifest_file "$app" "$flavor" "$name") (dry run: not created)"
+        fi
         return 0
+    fi
+
+    # The manifest exists before the first mutating step, under its own lock.
+    if ((manifest)); then
+        _cloudify_deployment_manifest_prepare "$app" "$flavor" "$name" "$bound" "$migrate_targets" \
+            ${cli_targets[@]+"${cli_targets[@]}"} || return $?
     fi
 
     local -a exec_args=()
@@ -1348,6 +1621,35 @@ function cloudify_runbook_execute() {
     rm -f "$outputs_file"
     unset CLOUDIFY_OUTPUTS_FILE STEP_ID STEP_TYPE STEP_TARGET STEP_PKG STEP_PHASE
 
+    # 7. Manifest lifecycle (Phase 3). The manifest was created as `applying`
+    # before the first step. A successful install plus verify from the start of
+    # the run ends `active`; an observed failure ends `degraded`; anything else
+    # keeps its recorded status. A killed process never reaches this code, so the
+    # manifest stays `applying`, which is the discoverable interrupted state (run
+    # and event records, and their stale-run classification, are Phase 6).
+    if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" && -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]] \
+        && cloudify_manifest_exists "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME"; then
+        local _commit_line _mcommit _mdev _mstatus _mapp _mflavor _mname
+        _mapp="$CLOUDIFY_APPLICATION"
+        _mflavor="$CLOUDIFY_FLAVOR"
+        _mname="$CLOUDIFY_DEPLOYMENT_NAME"
+        _commit_line=$(_cloudify_runbook_source_commit)
+        IFS=$'\t' read -r _mcommit _mdev <<< "$_commit_line"
+        if [[ "$status" == "failed" ]]; then
+            _mstatus="degraded"
+        else
+            _mstatus=$(cloudify_manifest_field "$_mapp" "$_mflavor" "$_mname" status)
+            if [[ -z "$from" ]] &&
+                cloudify_runbook_phases_for "$path" ${cli_phases[@]+"${cli_phases[@]}"} | grep -qx install; then
+                _mstatus="active"
+            fi
+            [[ -n "$_mstatus" ]] || _mstatus="applying"
+        fi
+        cloudify_manifest_update_status "$_mapp" "$_mflavor" "$_mname" "$_mstatus" "$_mcommit" "$_mdev" ||
+            return $?
+        msg "Manifest: $(cloudify_state_manifest_file "$_mapp" "$_mflavor" "$_mname") (status $_mstatus)"
+    fi
+
     if [[ "$status" == "failed" ]]; then
         die "$fail_msg"
     fi
@@ -1367,7 +1669,7 @@ function cloudify_runbook_execute() {
 # `deployment run` runs (preflight + steps + a new run snapshot). Seeded values
 # are referred to by name only: never printed, never part of argv.
 function cloudify_deployment_replay() {
-    local id="" at="" runbook="" from="" dry=0 yes=0
+    local id="" at="" runbook="" from="" dry=0 yes=0 migrate_targets=0
     local -a cli_bindings=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1393,6 +1695,7 @@ function cloudify_deployment_replay() {
                 ;;
             --dry-run) dry=1 ;;
             --yes) yes=1 ;;
+            --migrate-targets) migrate_targets=1 ;;
             -*) die "deployment replay: unknown flag '$1'." ;;
             *)
                 [[ -z "$id" ]] || die "deployment replay: unexpected argument '$1'."
@@ -1402,7 +1705,7 @@ function cloudify_deployment_replay() {
         shift
     done
     [[ -n "$id" ]] ||
-        die "Usage: cloudify deployment replay <id> [--at <run>] [--runbook <path>] [--target name=addr]... [--from <id>] [--dry-run] [--yes]"
+        die "Usage: cloudify deployment replay <id> [--at <run>] [--runbook <path>] [--target name=addr]... [--from <id>] [--dry-run] [--yes] [--migrate-targets]"
 
     local snapshot
     # The selector dies with the reason (none/ambiguous); stop here explicitly
@@ -1474,6 +1777,7 @@ function cloudify_deployment_replay() {
     [[ -n "$from" ]] && run_args+=(--from "$from")
     [[ "$dry" == "1" ]] && run_args+=(--dry-run)
     [[ "$yes" == "1" ]] && run_args+=(--yes)
+    [[ "$migrate_targets" == "1" ]] && run_args+=(--migrate-targets)
 
     # The engine records the seeded values (not the store's current state) in the
     # new snapshot, so a replay stays replayable after the store changes.

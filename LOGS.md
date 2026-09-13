@@ -293,3 +293,12 @@
 - The shipped runbook moved to `runbooks/xfce-guacamole/default/runbook.md` with explicit phases on its `run`/`human-gate` steps; every target, id and body preserved. Moved rather than copied, because a copy with the same `deployment:` makes runbook lookup ambiguous.
 - The second red proof is now GREEN through the real engine (a canonical fixture runbook whose steps dispatch each fixture package), so both contracts in `tests/red/` hold.
 - Verified: focused suites 76 ok 0 not ok, `task test-unit` 580 ok 0 not ok (results/3a-unit.tap), `task lint` rc 0.
+
+## 2026-09-12 - Phase 3 slice 3B: app commands, nested inputs, manifest and state root
+
+- New `lib/state.sh`: the one state root `${XDG_STATE_HOME:-$HOME/.local/state}/cloudify`, 0700 tuple directories, the per-deployment manifest and its `flock`, written atomically, fields exactly `schemas/v1/deployment-manifest.schema.json` with `schema_version: 1`, no applied values. A test proves a written manifest passes the reference checker in `schemas/v1/lib/schema-check.jq`.
+- `cloudify app run <app>[/<flavor>] [--name <name>]` exports `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, `CLOUDIFY_DEPLOYMENT_NAME`, prints the full reference in every plan and error, defaults flavor and name to `default`, and reserves `app reconfigure|verify|teardown` with a clear "Phase 4" error.
+- Desired inputs: nested `deployments/<app>/<flavor>/<name>/values.yaml` (0700/0600) with read-through to the legacy single-ID store; a nested write fails closed and names the migration command while legacy-only keys would be shadowed. `deployment migrate <id> --application <app>` requires the tuple explicitly, never splits the id, prints an inventory-only dry run and merges idempotently without deleting anything.
+- Lifecycle: `applying` before the first mutating step, `active` after install plus verify, `degraded` on failure, interrupted runs left discoverable as `applying`; recorded bindings reused instead of re-prompting; the Cloudify commit recorded with an explicit development override for a dirty tree.
+- Verified: `results/3b-unit-verify.tap` 623 ok 0 not ok, `task lint` rc 0.
+- Direction recorded from Rachid during this slice: no backward compatibility layers. The legacy dual paths are to be deleted rather than kept behind switches, so the next slice trims them.

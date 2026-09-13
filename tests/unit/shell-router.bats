@@ -393,3 +393,45 @@ STUB
     [ "$status" -ne 0 ]
     [[ "$output" == *"Missing package"* ]]
 }
+
+# ---------------------------------------------------------------
+# Application commands (state model v2 Phase 3 slice 3B)
+# ---------------------------------------------------------------
+
+@test "real router: app without a verb prints its usage and exits non-zero" {
+    run bash -c "cd $PWD && CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true \
+        CLOUDIFY_DIR=$CLOUDIFY_DIR CLOUDIFY_TMP=$CLOUDIFY_TMP DEBUG=false bash cloudify app 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Usage: cloudify app <run>"* ]]
+}
+
+@test "real router: app reconfigure, verify and teardown are reserved until Phase 4" {
+    local verb
+    for verb in reconfigure verify teardown; do
+        run bash -c "cd $PWD && CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true \
+            CLOUDIFY_DIR=$CLOUDIFY_DIR CLOUDIFY_TMP=$CLOUDIFY_TMP DEBUG=false bash cloudify app $verb 2>&1"
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"not yet available"* ]]
+        [[ "$output" == *"Phase 4"* ]]
+    done
+}
+
+@test "real router: app run on a missing application names the reference and the deployment name" {
+    run bash -c "cd $PWD && CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true \
+        CLOUDIFY_DIR=$CLOUDIFY_DIR CLOUDIFY_TMP=$CLOUDIFY_TMP DEBUG=false bash cloudify app run missing/app --name prod 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"app run missing/app --name prod"* ]]
+    [[ "$output" == *"No runbook found for application 'missing/app'"* ]]
+}
+
+@test "real router: deployment show and migrate are routed" {
+    run bash -c "cd $PWD && CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true \
+        CLOUDIFY_DIR=$CLOUDIFY_DIR CLOUDIFY_TMP=$CLOUDIFY_TMP DEBUG=false bash cloudify deployment show nosuch 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"deployment: nosuch"* ]]
+
+    run bash -c "cd $PWD && CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true \
+        CLOUDIFY_DIR=$CLOUDIFY_DIR CLOUDIFY_TMP=$CLOUDIFY_TMP DEBUG=false bash cloudify deployment migrate nosuch 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--application is required"* ]]
+}

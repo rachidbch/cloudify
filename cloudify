@@ -39,8 +39,14 @@ function usage() {
         cloudify vars declared <pkg> [--sources] [--reveal]      show a package's declared vars
         cloudify deployment create|new <id>            create a deployment
         cloudify deployment delete|del <id>            delete a deployment (+ its node/instance records)
-        cloudify deployment list|ls                    list deployments
+        cloudify deployment list|ls                    list deployments and their manifests
         cloudify deployment use <id>                   print export command
+        cloudify deployment show <id>                  manifest status, bindings, commit, replayability
+        cloudify deployment migrate <id> --application <app> [--flavor <flavor>] [--name <name>] [--dry-run] [--force]
+                                                       copy the legacy single-ID inputs to the nested path (inventory-only report)
+        cloudify app run <application>[/<flavor>] [--name <name>] [--target name=addr]...
+                                                       run the application (bare run: install then verify);
+                                                       --name defaults to 'default', --flavor defaults to 'default'
         cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--phase <phase>]... [--yes]
                                                        run a runbook (--dry-run: plan only; a canonical runbook with no
                                                        --phase selects install then verify; --yes never selects teardown)
@@ -113,6 +119,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/deployments.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/hosts.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/targets.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/registry.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/state.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/context.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/runbooks.sh"
 
@@ -208,7 +215,7 @@ function _cloudify_is_reserved() {
     local word="${1:-}"
     local context="${2:-global}"
     case "$word" in
-        --help | help | -h | --list | list | l | --credentials | credentials | c | --test | test | t | vars | deployment | deploy | dep)
+        --help | help | -h | --list | list | l | --credentials | credentials | c | --test | test | t | vars | deployment | deploy | dep | app)
             return 0
             ;;
     esac
@@ -571,16 +578,26 @@ function main() {
                             var_val="${_CV_POS[1]:-}"
                             [[ -n "$var_val" ]] || die "Usage: cloudify vars set <key> <value> [--stdin|--file <path>]" ;;
                     esac
-                    var_file=$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")
-                    [[ "$_CV_SCOPE" == global || "$_CV_SCOPE" == pkg ]] && var_strict=1
-                    _cloudify_vars_file_set "$var_file" "$var_key" "$var_val" "$var_strict"
+                    if [[ "$_CV_SCOPE" == deployment || "$_CV_SCOPE" == ambient ]]; then
+                        # With an explicit application reference the write goes to the
+                        # nested values.yaml, never to the legacy single-ID store.
+                        cloudify_vars_deployment_write "$var_key" "$var_val" "$_CV_SCOPE_ARG"
+                    else
+                        var_file=$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")
+                        [[ "$_CV_SCOPE" == pkg ]] && var_strict=1
+                        _cloudify_vars_file_set "$var_file" "$var_key" "$var_val" "$var_strict"
+                    fi
                     ;;
                 delete | del | unset)
                     _cloudify_vars_parse_args "$@"
                     [[ $_CV_JSON -eq 0 && $_CV_SOURCES -eq 0 && $_CV_REVEAL -eq 0 && $_CV_RESOLVE -eq 0 && "$_CV_VALUE_MODE" == literal ]] || die "vars delete: invalid flag."
                     local var_key="${_CV_POS[0]:-}"
                     [[ -n "$var_key" ]] || die "Usage: cloudify vars delete <key> [scope]"
-                    _cloudify_vars_store_delete "$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")" "$var_key"
+                    if [[ "$_CV_SCOPE" == deployment || "$_CV_SCOPE" == ambient ]]; then
+                        cloudify_vars_deployment_delete "$var_key" "$_CV_SCOPE_ARG"
+                    else
+                        _cloudify_vars_store_delete "$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")" "$var_key"
+                    fi
                     ;;
                 show)
                     _cloudify_vars_parse_args "$@"
@@ -632,6 +649,15 @@ function main() {
                 list | ls)
                     cloudify_deployment_list
                     ;;
+                show)
+                    shift
+                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment show <id>"
+                    cloudify_deployment_show "$1"
+                    ;;
+                migrate | migration)
+                    shift
+                    cloudify_deployment_migrate "$@"
+                    ;;
                 use)
                     shift
                     [[ -n "${1:-}" ]] || die "Usage: cloudify deployment use <id>"
@@ -646,7 +672,23 @@ function main() {
                     cloudify_deployment_replay "$@"
                     ;;
                 *)
-                    die "Usage: cloudify deployment <create|delete|list|use|run|replay> [args]"
+                    die "Usage: cloudify deployment <create|delete|list|use|show|migrate|run|replay> [args]"
+                    ;;
+            esac
+            break
+            ;;
+        app)
+            shift
+            case "${1:-}" in
+                run)
+                    shift
+                    cloudify_app_run "$@"
+                    ;;
+                reconfigure | verify | teardown)
+                    cloudify_app_reserved "$1"
+                    ;;
+                *)
+                    die "Usage: cloudify app <run> [args] (reconfigure, verify and teardown arrive in Phase 4)"
                     ;;
             esac
             break

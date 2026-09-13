@@ -349,6 +349,12 @@ cloudify_vars_pkg_write() {
 
 # --- deployment source ---
 
+# cloudify_vars_deployment_read [<id>]
+# Read the ONE desired-inputs store this process resolves from: the nested
+# values.yaml once it exists, else the legacy single-ID config.yaml
+# (read-through chosen by lib/deployments.sh:_cloudify_deployment_config). One
+# file means one label and one value, so the payload and the registry record
+# cannot disagree (Phase 2 one-resolution rule). Neither file is deleted.
 cloudify_vars_deployment_read() {
     local id="${1:-${CLOUDIFY_DEPLOYMENT:-}}"
     [[ -n "$id" ]] || return 0
@@ -375,8 +381,30 @@ cloudify_vars_deployment_write() {
     local key="$1" value="$2" id="${3:-${CLOUDIFY_DEPLOYMENT:-}}"
     [[ -n "$key" ]] || die "Usage: cloudify vars set <key> <value>"
     [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
+    _cloudify_vars_deployment_nested_write_guard "$id"
     _cloudify_deployment_ensure "$id"
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$id")" "$key" "$value"
+    _cloudify_vars_file_set "$(_cloudify_deployment_write_config "$id")" "$key" "$value"
+}
+
+# _cloudify_vars_deployment_nested_write_guard <id> - fail closed rather than
+# shadow the legacy store. With an explicit application reference, a write goes
+# to the nested values.yaml; if the legacy single-ID store still holds keys the
+# nested store does not (or holds different values), writing now would make the
+# nested store the one the resolver reads while the legacy keys disappear from
+# the ladder. The operator migrates first, explicitly, and the message names the
+# exact command.
+function _cloudify_vars_deployment_nested_write_guard() {
+    local id="${1:-}" file legacy plan
+    [[ -n "$id" ]] || return 0
+    declare -F _cloudify_deployment_tuple_active >/dev/null 2>&1 || return 0
+    declare -F _cloudify_deployment_values_merge >/dev/null 2>&1 || return 0
+    _cloudify_deployment_tuple_active || return 0
+    file=$(_cloudify_deployment_write_config "$id")
+    legacy=$(_cloudify_deployment_legacy_config "$id")
+    [[ -f "$legacy" ]] || return 0
+    plan=$(_cloudify_deployment_values_merge "$legacy" "$file")
+    printf '%s\n' "$plan" | grep -q '^\(add\|conflict\)' || return 0
+    die "deployment '$id': desired inputs still live in the legacy store '$legacy'; migrate them to '$file' first: cloudify deployment migrate $id --application $CLOUDIFY_APPLICATION --flavor $CLOUDIFY_FLAVOR --name $CLOUDIFY_DEPLOYMENT_NAME"
 }
 
 cloudify_vars_deployment_delete() {
@@ -538,6 +566,15 @@ _cloudify_vars_parse_args() {
     done
 }
 
+# _cloudify_vars_deployment_has_key <id> <key> — rc 0 when the ONE store this
+# process resolves from holds the key. Never a value, never a second walk; the
+# label check and the value read therefore see the same file.
+function _cloudify_vars_deployment_has_key() {
+    local id="${1:-}" key="${2:-}"
+    [[ -n "$id" && -n "$key" ]] || return 1
+    grep -q "^${key}:" "$(_cloudify_deployment_config "$id")" 2>/dev/null
+}
+
 # _cloudify_vars_source_label <name> <pkg> — THE first-providing source label,
 # read-only and non-mutating. Single implementation: the walker-order spelling
 # below and lib/context.sh:cloudify_context_source_of both delegate here, so
@@ -545,7 +582,7 @@ _cloudify_vars_parse_args() {
 _cloudify_vars_source_label() {
     local name="${1:-}" pkg="${2:-}"
     [[ -n "${!name:-}" ]] && { echo environment; return 0; }
-    if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]] && grep -q "^${name}:" "$(_cloudify_deployment_config "$CLOUDIFY_DEPLOYMENT")" 2>/dev/null; then
+    if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]] && _cloudify_vars_deployment_has_key "$CLOUDIFY_DEPLOYMENT" "$name"; then
         echo deployment; return 0
     fi
     # Application ranks: the mapped application input (its own value resolved as
@@ -589,7 +626,7 @@ function _cloudify_vars_app_input_has_value() {
     [[ -n "$input" ]] || return 1
     [[ -n "${!input:-}" ]] && return 0
     if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]] \
-        && grep -q "^${input}:" "$(_cloudify_deployment_config "$CLOUDIFY_DEPLOYMENT")" 2>/dev/null; then
+        && _cloudify_vars_deployment_has_key "$CLOUDIFY_DEPLOYMENT" "$input"; then
         return 0
     fi
     if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" ]] \

@@ -261,3 +261,193 @@ EOF
     run cloudify_vars_show TOKEN
     [ "$output" = "token-b" ]
 }
+
+# ---------------------------------------------------------------
+# Nested desired inputs, read-through, migration and the read
+# surface (state model v2 Phase 3 slice 3B)
+# ---------------------------------------------------------------
+
+# An explicit application reference: the three tuple components exported, which
+# is what `cloudify app run` does before any child dispatch.
+_app_ref() {
+    export CLOUDIFY_APPLICATION="$1" CLOUDIFY_FLAVOR="$2" CLOUDIFY_DEPLOYMENT_NAME="$3"
+}
+
+@test "nested inputs: values file path is one validated component per level" {
+    run cloudify_deployment_values_file myapp default prod
+    [ "$status" -eq 0 ]
+    [ "$output" = "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/prod/values.yaml" ]
+
+    run cloudify_deployment_values_file "../evil" default prod
+    [ "$status" -ne 0 ]
+    run cloudify_deployment_values_file myapp "a/b" prod
+    [ "$status" -ne 0 ]
+    run cloudify_deployment_values_file myapp default "."
+    [ "$status" -ne 0 ]
+}
+
+@test "nested inputs: no explicit application reference keeps the legacy store" {
+    cloudify_deployment_create legacy-dep
+    [ "$(_cloudify_deployment_config legacy-dep)" = "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml" ]
+    [ "$(_cloudify_deployment_write_config legacy-dep)" = "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml" ]
+
+    export CLOUDIFY_DEPLOYMENT=legacy-dep
+    cloudify_vars_set LEGACY_KEY legacy-value
+    run cloudify_vars_show LEGACY_KEY
+    [ "$output" = "legacy-value" ]
+    [ -f "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml" ]
+}
+
+@test "nested inputs: read-through uses the legacy store until the nested file exists" {
+    cloudify_deployment_create legacy-dep
+    export CLOUDIFY_DEPLOYMENT=legacy-dep
+    cloudify_vars_set FROM_LEGACY read-through
+
+    _app_ref myapp default prod
+    # No nested file yet: the read resolves through the legacy single-ID store.
+    [ "$(_cloudify_deployment_config legacy-dep)" = "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml" ]
+    [ "$(_cloudify_deployment_read_vars legacy-dep >/dev/null; printf ok)" = "ok" ]
+    run cloudify_vars_deployment_show FROM_LEGACY legacy-dep
+    [ "$output" = "read-through" ]
+}
+
+@test "nested inputs: a write after an explicit application reference goes to the nested path only" {
+    cloudify_deployment_create legacy-dep
+    export CLOUDIFY_DEPLOYMENT=legacy-dep
+    cloudify_vars_set OLD_KEY old-value
+
+    _app_ref myapp default prod
+    # The legacy store still holds OLD_KEY: the write guard refuses until the operator migrates.
+    run cloudify_vars_deployment_write NEW_KEY new-value legacy-dep
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"migrate"* ]]
+    [ ! -f "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/prod/values.yaml" ]
+
+    # After the explicit migration the nested store is authoritative.
+    run cloudify_deployment_migrate legacy-dep --application myapp --flavor default --name prod
+    [ "$status" -eq 0 ]
+    run cloudify_vars_deployment_write NEW_KEY new-value legacy-dep
+    [ "$status" -eq 0 ]
+    [ -f "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/prod/values.yaml" ]
+    run grep -c '^NEW_KEY:' "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml"
+    [ "$output" = "0" ]
+    run grep '^OLD_KEY:' "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml"
+    [ "$output" = "OLD_KEY: old-value" ]
+}
+
+@test "migrate: requires an explicit application and flavor, never splits the ID" {
+    cloudify_deployment_create legacy-app
+    run cloudify_deployment_migrate legacy-app
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--application is required"* ]]
+    [[ "$output" == *"never split"* ]]
+
+    run cloudify_deployment_migrate legacy-app --application "../evil"
+    [ "$status" -ne 0 ]
+    [ ! -d "$CLOUDIFY_DEPLOYMENTS_DIR/../evil" ]
+}
+
+@test "migrate: dry run writes nothing and prints names and paths, never a value" {
+    cloudify_deployment_create legacy-app
+    export CLOUDIFY_DEPLOYMENT=legacy-app
+    cloudify_vars_set API_TOKEN "PLACEHOLDER_MIGRATE_SECRET"
+    cloudify_vars_set PUBLIC_HOST "demo.example.com"
+
+    run cloudify_deployment_migrate legacy-app --application myapp --flavor default --name default --dry-run
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"source: $CLOUDIFY_DEPLOYMENTS_DIR/legacy-app/config.yaml"* ]]
+    [[ "$output" == *"destination: $CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default/values.yaml"* ]]
+    [[ "$output" == *"input keys (names only, 2): API_TOKEN,PUBLIC_HOST"* ]]
+    [[ "$output" == *"add (names only): API_TOKEN,PUBLIC_HOST"* ]]
+    [[ "$output" == *"dry run, nothing written"* ]]
+    # names and paths only: neither value leaks
+    [[ "$output" != *"PLACEHOLDER_MIGRATE_SECRET"* ]]
+    [[ "$output" != *"demo.example.com"* ]]
+    [ ! -f "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default/values.yaml" ]
+}
+
+@test "migrate: copies idempotently, keeps the legacy store, mode 0600" {
+    cloudify_deployment_create legacy-app
+    export CLOUDIFY_DEPLOYMENT=legacy-app
+    cloudify_vars_set API_TOKEN "@@literal-at-sign"
+    cloudify_vars_set PUBLIC_HOST "demo.example.com"
+
+    run cloudify_deployment_migrate legacy-app --application myapp --flavor default --name default
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"migrated (2 key names added"* ]]
+    local target="$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default/values.yaml"
+    [ -f "$target" ]
+    [ "$(stat -c '%a' "$target")" = "600" ]
+    [ "$(stat -c '%a' "$(dirname "$target")")" = "700" ]
+
+    # The legacy store is untouched: a rollback needs no reverse transformation.
+    run grep -c '^API_TOKEN:' "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-app/config.yaml"
+    [ "$output" = "1" ]
+
+    run cloudify_deployment_migrate legacy-app --application myapp --flavor default --name default
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already migrated"* ]]
+    [[ "$output" == *"nothing to do"* ]]
+}
+
+@test "migrate: a conflicting destination key is refused unless --force" {
+    cloudify_deployment_create legacy-app
+    export CLOUDIFY_DEPLOYMENT=legacy-app
+    cloudify_vars_set PUBLIC_HOST "legacy.example.com"
+
+    _app_ref myapp default default
+    mkdir -p "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default"
+    printf 'PUBLIC_HOST: nested.example.com\n' > "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default/values.yaml"
+    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
+
+    run cloudify_deployment_migrate legacy-app --application myapp --flavor default --name default
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"conflict (names only): PUBLIC_HOST"* ]]
+    [[ "$output" == *"--force"* ]]
+    run grep '^PUBLIC_HOST:' "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default/values.yaml"
+    [ "$output" = "PUBLIC_HOST: nested.example.com" ]
+
+    run cloudify_deployment_migrate legacy-app --application myapp --flavor default --name default --force
+    [ "$status" -eq 0 ]
+    run grep '^PUBLIC_HOST:' "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default/values.yaml"
+    [ "$output" = "PUBLIC_HOST: legacy.example.com" ]
+}
+
+@test "show: prints the manifest and the compatibility snapshots, never a value" {
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    source lib/state.sh
+    _app_ref myapp default default
+    export CLOUDIFY_DEPLOYMENT=myapp.default.default
+    local bindings="$CLOUDIFY_TMP/bindings.tsv"
+    printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\tcloudify\n' > "$bindings"
+    cloudify_manifest_write myapp default default applying 0123456789abcdef0123456789abcdef01234567 false "$bindings"
+    mkdir -p "$CLOUDIFY_DEPLOYMENTS_DIR/myapp.default.default/runs"
+    printf 'status: succeeded\n' > "$CLOUDIFY_DEPLOYMENTS_DIR/myapp.default.default/runs/20260101T000000Z.yaml"
+
+    # The read surface takes the tuple from an explicit application reference, or
+    # from the runbook that declares the deployment (none in this fixture).
+    run cloudify_deployment_show myapp.default.default
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"application: myapp/default"* ]]
+    [[ "$output" == *"deployment_name: default"* ]]
+    [[ "$output" == *"status: applying"* ]]
+    [[ "$output" == *"replayable: yes"* ]]
+    [[ "$output" == *"snapshots: 1"* ]]
+    [[ "$output" == *"binding guest: cloudai:cloudify"* ]]
+    # the read surface carries names, paths and bindings, never an applied value
+    [[ "$output" != *"value."* ]]
+}
+
+@test "list: current manifests are listed alongside legacy deployment ids" {
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    source lib/state.sh
+    cloudify_deployment_create legacy-listed
+    local bindings="$CLOUDIFY_TMP/bindings.tsv"
+    printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\tcloudify\n' > "$bindings"
+    cloudify_manifest_write myapp default default applying 0123456789abcdef0123456789abcdef01234567 false "$bindings"
+
+    run cloudify_deployment_list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"legacy-listed"* ]]
+    [[ "$output" == *"myapp/default --name default"* ]]
+}

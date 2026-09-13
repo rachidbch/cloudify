@@ -159,8 +159,7 @@ the xfce generate+print path is the fallback, not the primary flow.
 
 ## ADR-018: no framework errexit restore — recipes contract is explicit `|| die`
 
-Status: accepted 2026-09-07 (CRITICAL GATE; rejected by gate description, see
-plans/errexit-restore-description.md).
+Status: accepted 2026-09-07 (CRITICAL GATE; the proposal was rejected after an end-to-end description of the affected code).
 Context: recipes are sourced inside pkg_depends' `if ! ( ... )` subshell, so
 errexit is suspended and bare failing commands continue silently (root cause of
 a silent chrome-install failure). A proposal to restore real errexit by
@@ -183,8 +182,8 @@ creation, two hosts, and human render acceptance.
 Decision: no orchestration package and no pkg coupling (SOP boundary). Config
 glue lives in the cloudify deployment store (ADR-011), one source of truth,
 read by both pkgs via .remote-vars names. Sequence glue is a pure runbook of
-ivps + cloudify commands plus one orchestrator-side password generation
-(plans/xfce-guacamole-e2e.md); no custom scripts. Reachability policy is the
+ivps + cloudify commands plus one orchestrator-side password generation; no
+custom scripts. Reachability policy is the
 tailnet ACL (ivps), proven by the human browser session - the only
 unautomatable acceptance step.
 Consequences: any future GUI deployment = same runbook with new targets; a
@@ -329,9 +328,8 @@ Consequences: the existing deployment store and run snapshots remain during comp
 proved defect is fixed first by one dispatch context. Application identity, manifests, claims,
 events, teardown, and migration land in gated phases. Cloudify owns Cloudify global state and its
 event directory; ivps remains the owner of node inventory and node lifecycle. Full behavior,
-layouts, safety rules, and acceptance criteria are in `REDESIGN.md`; implementation is tracked in
-`plans/state-model-v2.md`.
-
+layouts, safety rules, and acceptance criteria are in `REDESIGN.md`; implementation is tracked through
+`PLAN.md`.
 
 ## ADR-023: One v2 runtime path and temporary migration bridges
 
@@ -357,5 +355,4 @@ Decision:
 
 Consequences: operators must migrate known old artifacts before relying on v2 state.
 Rollback is a Git revert plus restoration from a pre-migration backup, not a permanent runtime switch.
-`REDESIGN.md` and the current recovery plan use this decision; ADR-022 remains authoritative for the state model itself.
-ADR-022's reference to `plans/state-model-v2.md` is historical; `PLAN.md` is the live tracker and resolves to `plans/state-model-v2-recovery.md`.
+`REDESIGN.md` and the live plan use this decision; ADR-022 remains authoritative for the state model itself.

@@ -171,14 +171,25 @@ The description artifact exists: `tmp/state-model-v2-forwarding-description.md` 
 
 ### Replace the incomplete context (R1.2)
 
-This slice changes a foundational mechanism (value forwarding), so no line of it is written until the design below has passed a fresh subagent review of forwarding and shadowing. Update this plan and the working notes first; implementation is gated.
+This slice changes a foundational mechanism (value forwarding), so its implementation is gated behind a fresh subagent review of the design against the forwarding invariants and the shadow contract. That review has run; see the rejected option below.
 
-- [ ] Replace the two internal temp files with in-process associative arrays. The claim set and the provenance become arrays inside the context builder; the context file stays, because it is the only channel from the child that fills it to the parent that writes the registry record. A `grep -qx` per claimed name and the provenance parse-back both disappear.
-- [ ] Assert the assumption the arrays rest on: a claim set in an array is only shared while every reader that claims runs in the same shell. No reader may claim from inside a subshell or a command substitution, because a subshell would take a copy and its claims would be lost, silently turning first-wins into last-wins. State this at the declaration and prove it with a test that gives one name to two sources and requires the stronger one to be recorded.
-- [ ] Prove the change leaves shadowing untouched: no shadowed command (`sudo`, `apt-get`, `add-apt-repository`, `git`) and no file under `lib/shadows/` is read, called or modified by it.
-- [ ] Obtain a fresh subagent review of this design against the forwarding invariants and the shadow contract; `PASS` with no actionable feedback before any code.
+- [x] Obtain a fresh subagent review of this design against the forwarding invariants and the shadow contract before any code. Outcome: the internal-temp-file conversion below was **rejected**, and the repair is limited to the defect itself.
+
+**Rejected option: converting the context builder's two internal temp files to associative arrays.** Kept here so it is not re-proposed. The three files each do a distinct job, and two of them have properties a naive conversion breaks:
+
+- The claim ledger is two things at once: the list of provided names, and the signal that arming is on. `_CLOUDIFY_VARS_LEDGER` is tested for emptiness in six places (`lib/vars.sh:58,175,290,308,366,427`), and reading an associative array as a scalar expands element `[0]`, which is always empty. Keeping those tests would make the claim check return success unconditionally, so every later source would overwrite and first-wins would silently become last-wins, and the caller-environment branch would stop firing.
+- **The ledger's iteration order is load-bearing for the payload bytes.** The context writes `value.<NAME>.*` in `sort -u "$ledger"` order (`lib/context.sh:310-314`), the allow-list is recovered from that order (`lib/remote.sh:123`), and it becomes the payload's export order, pinned byte-for-byte by the eight `tests/fixtures/golden/payload/*` cases. `${!array[@]}` yields hash order.
+- A `declare -gA` array would leak claims across dispatches in one shell, and the test suite builds the context repeatedly. `local -A` plus an exact name match is required, and a name mismatch would be silently empty.
+- The verify path arms the same variable with an empty `mktemp` used purely as a non-empty sentinel (`lib/package-api.sh:346-349`, behaviour pinned by `tests/unit/verify-vars.bats:66-79`), so that file would have to join the slice.
+- An existing structural guard greps for the provenance symbols (`tests/unit/context.bats:572-574`) and would need rewriting in the same slice.
+
+The gain was one `grep -qx` per claimed name and one parse-back. Not worth that risk surface in the same slice that already touches the most breakage-prone code in the repository.
+
+- [ ] Prove the repair leaves shadowing untouched: no shadowed command (`sudo`, `apt-get`, `add-apt-repository`, `git`) and no file under `lib/shadows/` is read, called or modified by it.
 
 - [ ] Build each package view once from the source ladder at context creation.
+- [ ] Do not change the context builder's internal temp files: the claim ledger and the provenance file stay files. See the rejected option above for why.
+- [ ] Add the raw source form to what the builder records per name, beside the existing provenance record, so the registry record and the snapshot can be built from the context without reopening a store.
 - [ ] Preserve install precedence exactly as `REDESIGN.md` states, strongest first: caller or step environment, deployment desired inputs, application defaults, package defaults, global defaults, recipe defaults.
 - [ ] Resolve application input mappings into the relevant package view only, never into one shared ambient namespace.
 - [ ] Preserve separate defaults when two packages use the same variable name differently.

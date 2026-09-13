@@ -33,9 +33,16 @@ Its completed boxes do not authorize work and must not be copied here.
 
 `PLAN.md` points at this file, and this file is the only plan. There is no second plan, no parallel plan, and no phase plan beside it.
 
-If something in this plan does not fly, stop and raise it with Rachid; do not fork a new plan, and do not keep executing around the problem.
+Four kinds of document, split by what they are for:
 
-Temporary artifacts, including gate descriptions and non-breakage arguments, live in `tmp/` (gitignored). Their durable trace lives in `LOGS.md`: the artifact path, the invariants it asserted, what was traced, and the consent given. A later reader therefore finds the justification in `LOGS.md`, not in a transient file.
+- **Spec** - what must be true, and why: `REDESIGN.md`, the data contracts in `schemas/v1/`, and the decisions in `ADR.md`. Tracked.
+- **Plan** - what to do, in what order, behind which gate: this file. Tracked.
+- **Explanation** - why the system works this way, for a reader: the "Core Mechanisms" section of `README.md`. Tracked.
+- **Per-slice gate evidence** - what was traced for this one change: `tmp/`, with the durable trace in `LOGS.md`. Untracked and transient.
+
+The test: a line stating what must be true, or why, belongs in a tracked file. A line stating what was checked for one change may live in `tmp/`. Never the reverse.
+
+If something in this plan does not fly, stop and raise it with Rachid; do not fork a new plan, and do not keep executing around the problem.
 
 Superseded plans move to `plans/archived/`. Nothing else is added to `plans/`.
 

@@ -190,11 +190,20 @@ Folding an event log is not a substitute for inspecting a live host.
 
 ## One value resolution per dispatch
 
-A dispatch is one `(deployment, target, top-level package, package instance, phase)` operation.
+A dispatch is one target's job. It carries one or more top-level packages and never spans two targets.
+One dispatch context therefore holds a value view per top-level package it carries.
+
+Resolution happens once and the context is written once, after resolution completes.
+A context written incrementally while resolution is still running is the last-writer-wins defect and is forbidden: later sources would overwrite earlier ones and the recorded source would drift from the value.
+
+Precedence is first source wins. The first source to provide a name claims it and records where it came from; every later source is refused without looking.
+The visit order is not the precedence order: the caller's environment is visited last yet wins, because a source refuses to overwrite a name that is already set.
+
+Records and events use a value's source form. Only the payload uses the resolved runtime form.
 
 Before execution, Cloudify expands the static dependency graph and builds one private dispatch context.
 
-The context contains a separate declared-value view for the top-level package and every dependency that may execute.
+The context contains a separate declared-value view for each top-level package and every dependency that may execute.
 
 The context contains:
 
@@ -213,6 +222,9 @@ The source form is a literal, an escaped literal, or a secret reference.
 The resolved runtime form exists only long enough to execute the dispatch.
 
 The context is created with mode 0600 and removed after the parent process has written the result.
+
+The parent process owns the context path. It creates the context, forks one dispatch job per target, waits for them, and writes each result. The child job fills the context, renders the payload and ships it.
+The context is a file because it is the only channel from the child back to the parent: a fork inherits downward only.
 
 Preflight, the `envsubst` allow-list, payload exports, state update, and event metadata all consume this same context.
 

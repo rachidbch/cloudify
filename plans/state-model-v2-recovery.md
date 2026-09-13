@@ -148,7 +148,7 @@ The description artifact exists: `tmp/state-model-v2-forwarding-description.md` 
 - [x] Write that description as an artifact and cite it from the plan before touching code.
 - [ ] Use the artifact's section "What a safe Phase 2 fix may and may not touch" as the starting invariant list, dropping the two invariants the artifact marks as superseded by design (the metadata-only context and the frozen allow-list) and following `REDESIGN.md` where they differ.
 - [x] State explicitly in the plan why the context change cannot break forwarding or the shadows: name each invariant preserved, each mechanism traced, and the test that re-asserts it. Written before the first `lib/` edit in `tmp/state-model-v2-phase2-non-breakage.md`, with its durable trace in `LOGS.md`.
-- [ ] Obtain explicit consent from Rachid and record it in `LOGS.md`.
+- [x] Obtain explicit consent from Rachid and record it in `LOGS.md`. Consent given 2026-09-13 for the Phase 2 repair, scope: the seven files listed in R1.2, no shadow or recipe changes.
 
 ### Freeze the context contract before code (R1.1)
 

@@ -28,10 +28,24 @@ are deleted.
   `cloudify_registry_record_build` at the context.
 - `lib/vars.sh` - capture the raw text at the single export decision in
   `_cloudify_vars_emit`, next to the provenance label it already records.
+- `lib/remote.sh` - `_cloudify_dispatch_vars` (`lib/remote.sh:116-142`) **name
+  extraction only**. Today the allow-list is recovered from the flat context with
+  `sed -n 's/^value\.\([^.]*\)\.source:.*$/\1/p' "$CLOUDIFY_CONTEXT_FILE"`
+  (`lib/remote.sh:127`). Once the context is JSON that sed matches nothing, the
+  allow-list goes empty and payload forwarding silently stops exporting package
+  values. The extraction changes; the payload template (`lib/remote.sh:24-77`),
+  the single `envsubst` call (`:221-242`) and the stdin transport (`:270-274`) do
+  not.
+- `lib/runbooks.sh` - the snapshot's resolver (`_cloudify_runbook_resolver_value`
+  invoked from the seed block around `lib/runbooks.sh:1390`) still re-reads the
+  deployment, package and global stores through `_cloudify_vars_store_get`. It
+  must read the context instead, which is what R1.2 already requires.
+- `lib/utils.sh` and `cloudify` - the single-owner context epilogue described in
+  section 4.
 
-Not in scope: `lib/remote.sh`'s payload template, the `envsubst` allow-list, the
-stdin transport, `cloudify`'s dispatch epilogue, `lib/shadows/*`, `lib/shadow.sh`,
-`pkg/*`, and the value-resolution ladder itself.
+Not in scope: the payload template, the `envsubst` invocation, the stdin
+transport, `lib/shadows/*`, `lib/shadow.sh`, `pkg/*`, and the value-resolution
+ladder itself.
 
 ## 3. Why forwarding cannot break
 
@@ -64,7 +78,7 @@ Each claim names the code that would have to change for it to fail.
 6. **First-write-wins order is untouched.** The ladder stays recipe < global <
    package < application < deployment < caller environment
    (`lib/vars.sh:56-66`). Claiming still precedes the emptiness check
-   (`lib/vars.sh:172` before `:186`), so a present-but-empty store value still
+   (`lib/vars.sh:169`), so a present-but-empty store value still
    wins rather than falling through.
 
 7. **The record and the payload cannot disagree.** They now consume the same
@@ -74,9 +88,21 @@ Each claim names the code that would have to change for it to fail.
 
 8. **Secrets still do not leak.** The context file is 0600 and ephemeral. It may
    hold resolved plaintext because the target process needs it (`REDESIGN.md:302`),
-   and it is removed exactly once by the parent after the outcome is recorded.
-   Plaintext remains forbidden in logs, manifests, package state, run records,
-   events and debug output. Re-asserted by the fixture-secret scan test.
+   and plaintext remains forbidden in logs, manifests, package state, run records,
+   events and debug output.
+
+   **The current removal is not single-owner, and R1 must fix that before it puts
+   plaintext in the file.** Two live leak paths exist today:
+   `_cloudify_registry_record_bg` returns early when `CLOUDIFY_DEPLOYMENT` is
+   unset (`lib/registry.sh:395-397`), which is the direct package command path, and
+   never reaches its `rm -f "$context"` (`lib/registry.sh:415-417`); and the only
+   backstop, `cleanup()` (`lib/utils.sh:74-87`), returns early under
+   `CLOUDIFY_LOG_LEVEL=DEBUG` (`lib/utils.sh:77-79`). So a successful
+   `cloudify --on host install pkg` with DEBUG on leaves a plaintext file behind.
+   R1 therefore owns the fix: one EXIT and RETURN trap armed at context creation,
+   removing the file on success, failure and interruption, plus a test proving no
+   context file survives all three. Phase 4.3 inherits that owner and only has to
+   keep it working when the registry writer is deleted.
 
 9. **The shadows are unaffected.** Nothing in scope reads or writes
    `lib/shadows/*` or `lib/shadow.sh`, and no command they override changes
@@ -90,10 +116,13 @@ Each claim names the code that would have to change for it to fail.
 The context file now carries resolved plaintext where it previously carried only
 metadata. That is the redesign's intent (`REDESIGN.md:208`, `:302`, `:213`), and it
 is the reason the file is 0600, created by the parent, never named in argv, and
-removed by the parent on success, failure and interruption. The mitigation is
-threefold: one owner for removal, a test proving no context file survives a
-successful, a failed and an interrupted dispatch, and a scan proving no fixture
-secret appears in any log, manifest, state, run or event.
+removed by the parent on success, failure and interruption. Today's removal is not
+single-owner (section 3, item 8), so R1 must first install one owner: an EXIT and
+RETURN trap armed when the parent creates the context, covering both the direct
+package command path and the DEBUG path. The mitigation is threefold: one owner
+for removal, a test proving no context file survives a successful, a failed and an
+interrupted dispatch, and a scan proving no fixture secret appears in any log,
+manifest, state, run or event.
 
 ## 5. What was traced, not assumed
 

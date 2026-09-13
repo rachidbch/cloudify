@@ -138,12 +138,14 @@ The description artifact exists: `plans/state-model-v2-forwarding-description.md
 - [ ] Preserve separate defaults when two packages use the same variable name differently.
 - [ ] Preserve file-store secret reference resolution and caller-environment literal timing.
 - [ ] Compute literal-secret digests while the resolved plaintext is in the private context.
+- [ ] Update the allow-list name extraction in `lib/remote.sh:_cloudify_dispatch_vars` (`lib/remote.sh:127`) to read the JSON context; today's `sed` over `^value\.<name>\.source:` finds nothing once the context is JSON, which would empty the allow-list and silently stop forwarding package values. Change the extraction only, never the payload template or the `envsubst` call.
+- [ ] Update the snapshot resolver in `lib/runbooks.sh` (the seed block around `lib/runbooks.sh:1390`) so it stops calling `_cloudify_vars_store_get` and reads the same context.
+- [ ] Install one owner for context removal before the context carries plaintext: an EXIT and RETURN trap armed when the parent creates the context, removing it on success, failure and interruption. Today `_cloudify_registry_record_bg` removes it only on the deployment path (`lib/registry.sh:395-397` returns early without removing, `:415-417` removes) and the `cleanup()` backstop returns early under `CLOUDIFY_LOG_LEVEL=DEBUG` (`lib/utils.sh:77-79`).
 - [ ] Delete `_cloudify_registry_context_raw`, the committed store re-opener, and any equivalent helper that reopens a value store after context creation; `cloudify_context_raw_value` existed only in the rejected patch and is already gone.
 - [ ] Make preflight, the `envsubst` allow-list names, registry observation, snapshot writer and future state/event writers consume this context only.
 - [ ] Never read a resolved value back from the context to build the payload; values still flow resolver shell exports to one envsubst pass to single-quoted remote exports.
 - [ ] Keep collector exports in the calling shell and never capture them with command substitution.
 - [ ] Keep the payload on stdin and keep context paths and values off argv.
-- [ ] Remove the context only after the parent has written every result consumer.
 
 ### R1.3 Prove the root defect is gone
 
@@ -153,6 +155,7 @@ The description artifact exists: `plans/state-model-v2-forwarding-description.md
 - [ ] Cover required, optional and declared-default names.
 - [ ] Cover plain, escaped-at, backend reference, multiline, spaces, quotes, colons and shell metacharacters.
 - [ ] Assert no fixture secret appears in debug output or any persisted artifact.
+- [ ] Prove no context file survives a successful, a failed and an interrupted dispatch, including a direct package command with no deployment and with `CLOUDIFY_LOG_LEVEL=DEBUG`.
 - [ ] Prove the corrected resolution keeps payload and registry bytes identical to the pre-deletion goldens; treat any changed byte as a defect to explain, not a new golden to accept.
 - [ ] Run focused context, vars, remote, registry, runbook, replay and router suites.
 - [ ] Run `task lint` and the full unit suite.
@@ -275,7 +278,7 @@ This phase touches the remote result transport and the host lock in `lib/remote.
 - [ ] Release the host lock before updating the manifest.
 - [ ] Once package state is written here, stop the runtime registry observation writer: the v2 package state becomes the single record of what landed, and the old registry record-write path is deleted rather than kept beside it.
 - [ ] Split `tests/unit/golden-fixtures.bats` in the same slice: delete only the registry-record half and its `tests/fixtures/golden/registry/*` cases, and keep the `tests/fixtures/golden/payload/*` matrix that R1.3 depends on. The record-format fixtures move to the `cloudify state migrate-registry` reader's suite in 4.7.
-- [ ] Name the new owner of context cleanup before deleting the old one. Today `_cloudify_registry_record_bg` removes the parent-owned 0600 context on success (`lib/registry.sh:415-417`). Deleting that path orphans a plaintext-bearing file unless the parent dispatch epilogue removes it on both success and failure through one EXIT and RETURN trap armed when the parent creates the context. That epilogue is the stated owner; add a test proving no context file survives a successful, a failed and an interrupted dispatch.
+- [ ] Keep the context-cleanup owner installed in R1 working when the registry writer goes, and prove it with the same success, failure and interruption test.
 - [ ] Keep only the migration command's registry reader until Phase 8 deletes it.
 
 ### 4.4 Phase-specific resolution

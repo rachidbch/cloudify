@@ -189,8 +189,8 @@ skipped. `cloudify_context_build` sets `_CLOUDIFY_VARS_LEDGER` before walking
 (`lib/context.sh:208-210`) and every reader is therefore non-clobbering.
 
 The single export decision is `lib/vars.sh:163-196` `_cloudify_vars_emit`, which
-calls `_cloudify_vars_claim "$name" || return 0` at `lib/vars.sh:172` *before*
-any emptiness check or value resolution. So claiming happens on presence of the
+calls `_cloudify_vars_claim "$name" || return 0` at `lib/vars.sh:169` *before*
+any value resolution. So claiming happens on presence of the
 key, not on the value being non-empty.
 
 ### 3.2 Order (weakest -> strongest)
@@ -228,13 +228,13 @@ already claimed.
 
 ### 3.4 Present-but-empty store value now wins
 
-The claim at `lib/vars.sh:172` runs before any emptiness test, and the flat
+The claim at `lib/vars.sh:169` runs on key presence, and the flat
 reader does not drop `KEY:` lines with an empty value. `lib/vars.sh:200-224`
 `_cloudify_load_yaml_vars` only skips fully-empty/comment lines
 (`lib/vars.sh:208-209`) and then calls `_cloudify_vars_emit "$key" "$value" ...`
 (`lib/vars.sh:222`) even when `value` is empty. So a store line `KEY:` (key
-present, value empty) claims the name and exports an empty value
-(`lib/vars.sh:186-188`), preventing any weaker source from supplying it. This is
+present, value empty) claims the name and exports an empty value, preventing any
+weaker source from supplying it. This is
 the "present but empty wins" behavior: the name is claimed on key presence, not
 on value non-emptiness.
 
@@ -469,8 +469,8 @@ Each is stated as "X must remain true", with the code that would break it.
    env check (`lib/vars.sh:176-179`).
 
 5. **A present-but-empty store value must still claim its name.** The claim
-   precedes emptiness handling (`lib/vars.sh:172` before `lib/vars.sh:186`), and
-   `_cloudify_load_yaml_vars` does not skip `KEY:` lines. Breakage: adding an
+   precedes value resolution (`lib/vars.sh:169`), and
+   `_cloudify_load_yaml_vars` does not skip `KEY:` lines (`lib/vars.sh:200-224`). Breakage: adding an
    `[[ -z "$raw" ]] && return 0` before the claim, or skipping empty-value keys
    in the flat reader.
 

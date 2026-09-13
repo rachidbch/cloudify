@@ -117,7 +117,7 @@ Surfaced by plan review, each verified against the code, none yet fixed because 
 - Context removal has two live leaks today: a direct package command with no deployment (`lib/registry.sh:395-397` returns before its `rm` at `:418`), and `cleanup()` being DEBUG-guarded (`lib/utils.sh:77-79`). The fix must keep the single existing EXIT trap and must not leave the file behind under DEBUG.
 - `tests/unit/golden-fixtures.bats` pins the payload matrix and the registry record in one file. The registry half must go with the writer while the payload half stays, or the byte-exact golden proof (R1.3) is lost.
 - `lib/state.sh` keeps a hand-rolled JSON encoder and field parser beside `jq`, so "one encoder" is not yet true (fixed by the application and runbook audit, R2.2).
-- `tests/e2e/two-host-application.bats` does not exist yet; the first phase exit gate cannot be met until the Phase 2 repair (R1) creates it.
+- `tests/e2e/two-host-application.bats` now exists and its four Phase 2 repair scenarios pass; the remaining exit-gate work is the two independent reviews.
 
 ## Clean baseline (R0)
 
@@ -154,7 +154,7 @@ The description artifact exists: `tmp/state-model-v2-forwarding-description.md` 
 
 The context keeps its current flat `key: value` format. Converting it to JSON with a schema and a `jq` dependency is deferred and roadmapped; see "Dispatch context as a JSON contract" in `ROADMAP.md`. The reason: the conversion is what makes the four flat readers fail silently rather than loudly, and the repair does not need it.
 
-- [ ] Create `tests/e2e/two-host-application.bats` with every scenario named and the phase that unlocks each one, so the per-phase E2E gate has a real artifact from the Phase 2 repair (R1) onward.
+- [x] Create `tests/e2e/two-host-application.bats` with every scenario named and the phase that unlocks each one. Done for the Phase 2 repair: 4 scenarios green, 4 later-phase scenarios skipped by name.
 - [x] The L1 driver is not a new file. `tests/unit/context-wiring.bats` already runs the real code against a real machine without dispatching a package, so a `tests/unit/drivers/context.bats` would duplicate it and add a file rather than coverage. Later slices add a driver only if nothing existing covers the new wiring.
 - [ ] Add one field per name: the raw source form, the exact text the registry record and the snapshot must contain. It is carried verbatim when it fits on one line, and as `@base64:` when it does not, the same encoding the registry record and the snapshot already use. Nothing else about the format changes.
 - [ ] Freeze the per-name field set: declaration kind, source label, source form, raw source form, resolved runtime form, secret classification origin.
@@ -214,8 +214,8 @@ The gain was one `grep -qx` per claimed name and one parse-back. Not worth that 
 - [ ] Assert no fixture secret appears in debug output or any persisted artifact.
 - [ ] Prove no context file survives a successful, a failed and an interrupted dispatch, including a direct package command with no deployment and with `CLOUDIFY_LOG_LEVEL=DEBUG`.
 - [ ] Prove the corrected resolution keeps payload and registry bytes identical to the pre-deletion goldens; treat any changed byte as a defect to explain, not a new golden to accept.
-- [ ] Run focused context, vars, remote, registry, runbook, replay and router suites.
-- [ ] Run `task lint` and the full unit suite.
+- [x] Run focused context, vars, remote, registry, runbook, replay and router suites. Green.
+- [x] Run `task lint` and the full unit suite: lint rc 0, 619 ok, 0 not ok.
 - [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
 
 ## Audit and trim the Phase 3 foundations (R2)

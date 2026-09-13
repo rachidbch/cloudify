@@ -49,9 +49,8 @@ A required design change needs a new append-only ADR and Rachid's consent before
 - [ ] Full unit suite runs only at recovery and phase boundaries.
 - [ ] Run tests in the background into `results/<name>.tap` and poll with plain `tail`.
 - [ ] Read Cloudify's normal `/tmp/cloudify/logs/<timestamp>.log`; do not create custom diagnostic logs or grep test output.
-- [ ] Do not use integration or E2E as a debugger.
-- [ ] Run a blast-radius-focused integration or partial E2E only after L0 through L3 are green and predict its result first.
-- [ ] Run the full disposable E2E only as the final exit gate.
+- [ ] Do not use integration or E2E as a debugger: fix what it exposes with L0 to L3 and focused tests first, then re-run it once.
+- [ ] Run the full disposable E2E at every code phase exit gate, and again at the final gate.
 - [ ] Push before every test whose remote host pulls from GitHub.
 - [ ] No compatibility flags, fallback readers, dual writers, legacy path discovery or superseded command aliases.
 - [ ] A temporary migration reader must be the sole caller of the old format and must have a deletion task in this plan.
@@ -62,6 +61,22 @@ A required design change needs a new append-only ADR and Rachid's consent before
 - [ ] `git status --short` is clean at every committed boundary.
 
 Test levels are fixed: L0 is shellcheck plus syntax; L1 is a real-target driver without dispatch; L2 is one no-verify mutation; L3 is verify with `PKG_VERIFY_TIMEOUT=30`; L4 is the scoped bats acceptance harness.
+
+## Phase exit gate (every code phase)
+
+Every code phase (R1, R2 and Phases 4 to 9) ends here, and no later phase starts until it passes.
+R0 changes no runtime code and R3 writes no code, so those two run the reviews but skip the E2E lines.
+
+- [ ] Full unit suite green on the phase's final HEAD.
+- [ ] Full disposable end-to-end run green as an operator would run it: the two-host application workflow exercising install, verify, reconfigure, interruption, shared claim, conflict, first teardown and last teardown.
+- [ ] Full fleet E2E green: `tests/e2e/k3s-multi-cluster.bats` on throwaway tagged nodes, mutating the tailnet ACL only inside its own snapshot and restore.
+- [ ] Every disposable resource torn down and the tailnet and host policy proven restored, with no leftover tag, node or grant.
+- [ ] Fresh-context SPEC review against `REDESIGN.md`, ADR-022, ADR-023, the schemas and this plan, returning exactly `PASS` with no actionable feedback.
+- [ ] Fresh-context Technical review on a different model covering correctness, modularity, DRY, KISS, maintainability, Bash safety, error paths and lock ordering, returning exactly `PASS` with no actionable feedback.
+- [ ] Fix every review finding and re-review from a fresh context; defer none to a later phase.
+- [ ] Commit and push only when every line above is green.
+
+If the fleet E2E is genuinely unrunnable for a phase, that is a blocker to raise with Rachid, not a line to tick with a substitute.
 
 ## Recovery Gate R0: clean baseline
 
@@ -134,8 +149,7 @@ Outcome: one private dispatch context contains everything every later consumer n
 - [ ] Prove the corrected resolution keeps payload and registry bytes identical to the pre-deletion goldens; treat any changed byte as a defect to explain, not a new golden to accept.
 - [ ] Run focused context, vars, remote, registry, runbook, replay and router suites.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Obtain fresh SPEC and Technical reviews of the Phase 2 repair, both `PASS` with no actionable feedback.
-- [ ] Commit and push only after both reviews pass.
+- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
 
 ## Recovery Gate R2: audit and trim Phase 3
 
@@ -175,9 +189,7 @@ Outcome: application identity, desired inputs, phase selection and manifests mat
 - [ ] Run focused runbook, replay, target, deployment, state, vars and router suites.
 - [ ] Run a real L1 driver in `cloudai:cloudify` without dispatch.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Obtain a fresh SPEC review against `REDESIGN.md` and schema fixtures, returning `PASS` with no actionable feedback.
-- [ ] Obtain a fresh Technical review for DRY, KISS, data flow, error paths and lock ordering, returning `PASS` with no actionable feedback.
-- [ ] Commit and push only after both reviews pass.
+- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
 
 ## Gate R3: fresh Phase 4 design before code
 
@@ -205,7 +217,7 @@ Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-s
 - [ ] Include outcome, parent, package instance and phase for every attempted top-level package and dependency, with no values.
 - [ ] Reconcile results against every precomputed package view and fail closed on an unexpected package.
 - [ ] Freeze lock, state, event and result-frame tests before implementation.
-- [ ] Obtain independent SPEC and Technical design reviews, both `PASS` with no actionable feedback.
+- [ ] Obtain independent SPEC and Technical design reviews, both `PASS` with no actionable feedback; this gate writes no code, so it runs the reviews only and skips the E2E lines.
 - [ ] Obtain explicit Rachid consent for the reviewed Phase 4 design before code.
 
 ## Phase 4: physical package state, events and claims
@@ -287,8 +299,7 @@ Outcome: one physical installation is represented once, every mutation has an im
 - [ ] Run focused package API, context, state, event, registry, router and runbook suites.
 - [ ] Run one real shared-dependency case only after L0 through L3 pass.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Obtain fresh SPEC and Technical implementation reviews, both `PASS` with no actionable feedback.
-- [ ] Commit and push only after both reviews pass.
+- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
 
 ## Phase 5: explicit secrets, ephemeral outputs and SSH identity
 
@@ -310,7 +321,7 @@ Outcome: classification is enforceable, no new artifact copies plaintext secrets
 - [ ] Cover key match, mismatch, first acceptance and approved rotation.
 - [ ] Run focused secret, vars, context, remote, state, event and runbook suites.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Obtain fresh SPEC and Technical reviews, both `PASS` with no actionable feedback.
+- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
 
 ## Phase 6: run lifecycle and repair detection
 
@@ -329,7 +340,7 @@ Outcome: runs are durable, interruptions and event-state gaps are reportable, an
 - [ ] Delete `deployment replay` when the run record path replaces it; do not keep an alias.
 - [ ] Run focused run, event, state, runbook and concurrency suites.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Obtain fresh SPEC and Technical reviews, both `PASS` with no actionable feedback.
+- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
 
 ## Phase 7: pinned provenance, safe teardown and upgrade
 
@@ -350,7 +361,7 @@ Outcome: teardown releases only owned resources and today's branch tip is never 
 - [ ] Add explicit upgrade or migration with stable-step preview and treatment for removed claims.
 - [ ] Run focused teardown, claim, provenance, runbook and router suites.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Obtain fresh SPEC and Technical reviews, both `PASS` with no actionable feedback.
+- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
 
 ## Phase 8: read surface, one-shot migration and deletion of bridges
 
@@ -375,7 +386,7 @@ Outcome: operators inspect state through commands, all known old data is migrate
 - [ ] Confirm repo-wide searches find no migration bridge, compatibility flag, old path parser or stale documentation outside append-only history.
 - [ ] Run focused migration, read-surface, state, run, event and secret suites.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Obtain fresh SPEC and Technical reviews, both `PASS` with no actionable feedback.
+- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
 
 ## Phase 9: docs, skills and final acceptance
 
@@ -404,14 +415,14 @@ Outcome: code, language, docs and operator workflow describe one v2 system and t
 - [ ] Run the full unit suite once on final HEAD.
 - [ ] Run one disposable two-host application through install, verify, reconfigure, interruption, shared claim, conflict, first teardown and last teardown.
 - [ ] Scan every new artifact and Cloudify log for the fixture secret.
-- [ ] Run the full E2E once, only now, as the exit gate.
+- [ ] Run the full fleet E2E once, only now, as the final exit gate, and record its result in `HISTORY.md`.
 - [ ] Teardown every disposable resource and prove policy restoration.
 
 ### Mandatory independent completion reviews
 
 - [ ] Spawn a fresh-context SPEC reviewer on a different backend/model to evaluate every shipped behavior against `REDESIGN.md`, ADR-022, ADR-023, schemas and this plan; if no different backend is available, stop for an explicit human waiver.
 - [ ] Require the SPEC reviewer to return exactly `PASS` with no actionable feedback.
-- [ ] Spawn a separate fresh-context Technical reviewer on another backend/model to evaluate correctness, security, Bash safety, error propagation, DRY, KISS, maintainability, locking, atomic writes and test quality; if unavailable, stop for an explicit human waiver.
+- [ ] Spawn a separate fresh-context Technical reviewer on another backend/model to evaluate correctness, modularity, security, Bash safety, error propagation, DRY, KISS, maintainability, locking, atomic writes and test quality; if unavailable, stop for an explicit human waiver.
 - [ ] Require the Technical reviewer to return exactly `PASS` with no actionable feedback.
 - [ ] If either reviewer returns any actionable feedback, fix it, rerun the affected test ladder, then rerun both reviews from fresh contexts.
 - [ ] Never declare completion from a conditional pass, a pass with suggestions, or one review only.

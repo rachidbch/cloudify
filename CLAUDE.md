@@ -88,6 +88,8 @@ task lint              # Push + shellcheck
 
 **ADRs:** self-contained, never referencing a path that can move or be deleted. `REDESIGN.md` and `PLAN.md` are the only stable references an ADR may name.
 
+**Naming:** reference every step, phase and entry by a human-readable name with its id in parentheses, never the bare id.
+
 **Issues:** filed on GitHub (`github.com/rachidbch/cloudify`), not as local markdown.
 **PRs:** `git push -u origin <branch>` then `gh pr create`.
 

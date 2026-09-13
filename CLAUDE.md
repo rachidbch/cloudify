@@ -82,7 +82,11 @@ task lint              # Push + shellcheck
 
 **Debugging:** Read `/tmp/cloudify/logs/<timestamp>.log`. Fix one issue, push, re-test.
 
-**Planning:** `PLAN.md` → symlink to `plans/<current>.md`. Done plans move to `plans/archived/`. Issues/PRs document outcomes; plans reference issues.
+**Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues.
+
+**Gate artifacts:** the CRITICAL GATE description and non-breakage argument are temporary working notes: write them to `tmp/` and record their durable trace in `LOGS.md` (path, invariants asserted, what was traced, consent given). Never add them to `plans/`, and keep them a page or a table, not a plan-shaped document.
+
+**ADRs:** self-contained, never referencing a path that can move or be deleted. `REDESIGN.md` and `PLAN.md` are the only stable references an ADR may name.
 
 **Issues:** filed on GitHub (`github.com/rachidbch/cloudify`), not as local markdown.
 **PRs:** `git push -u origin <branch>` then `gh pr create`.

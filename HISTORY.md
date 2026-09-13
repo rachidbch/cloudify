@@ -957,3 +957,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Gate: 13 valid fixtures accepted and 21 invalid rejected, `task test-unit` 524 ok 0 not ok, red proof failing only on the intended assertions.
 - Fixed a validator hole found in review: the bounded JSON Schema evaluator silently ignored `minProperties`, which the manifest schema uses; it now enforces it and errors on any unsupported keyword.
 - No runtime file changed: `lib/`, the router, `pkg/` and ivps are untouched.
+
+### 2026-09-12 - state model v2 Phase 2 complete
+
+- One dispatch context now feeds the payload, the registry record and the run snapshot, so the three can no longer answer differently: `lib/context.sh` resolves once and records provenance at the emit point, the payload name list and exports come from the context, and the registry writer and snapshot read that same resolution.
+- Payload text and registry records proven equivalent to the legacy walker: 8-case byte-identical payload matrix and 9-case registry record equality, each run twice, legacy versus context.
+- Debug output no longer renders the payload; it prints names, source labels and redaction status, so a secret with an unrecognised name cannot leak through `DEBUG=true`.
+- `CLOUDIFY_LEGACY_VARS=1` is the rollback switch and needs no data transformation.

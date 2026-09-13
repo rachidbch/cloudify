@@ -140,79 +140,87 @@ Outcome: one resolved context feeds forwarding and records while current deploym
 
 ### 2.1 Add a pure source-form resolver
 
-- [ ] Introduce one resolver for a single `(deployment, target, top-level package, package instance, phase)` dispatch.
-- [ ] Expand the static dependency graph before resolution.
-- [ ] Build a separate declared-value view for the top-level package and every dependency that may execute.
-- [ ] Keep the legacy single deployment ID opaque in Phase 2 and route it only through legacy readers and commands.
-- [ ] Pass the resolved target triple into the resolver explicitly.
-- [ ] Return value names, source forms, source labels, required or optional status, and secret metadata.
-- [ ] Implement a backward-compatible explicit secret marker in `.remote-vars` and application input declarations.
-- [ ] Compute literal-secret digests inside the private context without logging or persisting plaintext outside approved deployment inputs.
-- [ ] Preserve current first-write-wins precedence for direct package commands.
-- [ ] Add application defaults and deployment desired inputs without deleting current stores.
-- [ ] Reject framework-owned names before context materialization.
-- [ ] Reject malformed or failed secret references before dispatch.
+- [x] Introduce one resolver for a single `(deployment, target, top-level package, package instance, phase)` dispatch.
+- [x] Expand the static dependency graph before resolution.
+- [x] Build a separate declared-value view for the top-level package and every dependency that may execute.
+- [x] Keep the legacy single deployment ID opaque in Phase 2 and route it only through legacy readers and commands.
+- [x] Pass the resolved target triple into the resolver explicitly.
+- [x] Return value names, source forms, source labels, required or optional status, and secret metadata.
+- [x] Implement a backward-compatible explicit secret marker in `.remote-vars` and application input declarations.
+- [x] Compute literal-secret digests inside the private context without logging or persisting plaintext outside approved deployment inputs.
+- [x] Preserve current first-write-wins precedence for direct package commands.
+- [x] Add application defaults and deployment desired inputs without deleting current stores.
+- [x] Reject framework-owned names before context materialization.
+- [x] Reject malformed or failed secret references before dispatch.
 
 ### 2.2 Materialize the private dispatch context
 
-- [ ] Write the context to a mode-0600 file under `CLOUDIFY_TMP`.
-- [ ] Keep resolved runtime literals separate from source forms.
-- [ ] Ensure cleanup occurs on success, ordinary failure, signal, and parent exit.
-- [ ] Ensure background children cannot delete a sibling dispatch context.
-- [ ] Ensure context paths and values never enter the remote command argv.
+- [x] Write the context to a mode-0600 file under `CLOUDIFY_TMP`.
+- [x] Keep resolved runtime literals separate from source forms.
+- [x] Ensure cleanup occurs on success, ordinary failure, signal, and parent exit.
+- [x] Ensure background children cannot delete a sibling dispatch context.
+- [x] Ensure context paths and values never enter the remote command argv.
 
 ### 2.3 Feed the remote payload from the context
 
-- [ ] Preserve `declare -f` template extraction.
-- [ ] Preserve placeholder insertion and single-quoted package exports.
-- [ ] Build the `envsubst` allow-list from context value names only.
-- [ ] Preserve the existing fixed framework allow-list.
-- [ ] Keep payload transport through a private file redirected to SSH stdin.
-- [ ] Replace payload debug rendering with names, source labels, and redaction status.
-- [ ] Verify no secret value appears when `DEBUG=true`.
+- [x] Preserve `declare -f` template extraction.
+- [x] Preserve placeholder insertion and single-quoted package exports.
+- [x] Build the `envsubst` allow-list from context value names only.
+- [x] Preserve the existing fixed framework allow-list.
+- [x] Keep payload transport through a private file redirected to SSH stdin.
+- [x] Replace payload debug rendering with names, source labels, and redaction status.
+- [x] Verify no secret value appears when `DEBUG=true`.
 
 ### 2.4 Remove the second value walk
 
-- [ ] Change the registry writer to consume the completed dispatch context.
-- [ ] Delete or retire `_cloudify_registry_raw_var` only after all callers use the context.
-- [ ] Make snapshots consume the same source-form context during the compatibility period.
-- [ ] Make preflight invoke the same resolver in non-mutating mode.
-- [ ] Prove preflight and execution select the same source for every declared name.
+- [x] Change the registry writer to consume the completed dispatch context.
+- [x] Delete or retire `_cloudify_registry_raw_var` only after all callers use the context.
+- [x] Make snapshots consume the same source-form context during the compatibility period.
+- [x] Make preflight invoke the same resolver in non-mutating mode.
+- [x] Prove preflight and execution select the same source for every declared name.
 
 ### 2.5 Preserve current lifecycle behavior and freeze the v2 phase interfaces
 
-- [ ] Implement current install and configure precedence from existing deployment inputs and defaults through the single context.
-- [ ] Keep the current registry observation-only and out of the generic value ladder.
-- [ ] Define resolver inputs for future applied-state seeding without activating them before v2 physical state exists.
-- [ ] Add failing specifications for reconfigure, verify, teardown, existing-claim install, and adoption that Phase 4 will turn green.
-- [ ] Keep current direct package and legacy runbook behavior unchanged in this phase.
+- [x] Implement current install and configure precedence from existing deployment inputs and defaults through the single context.
+- [x] Keep the current registry observation-only and out of the generic value ladder.
+- [x] Define resolver inputs for future applied-state seeding without activating them before v2 physical state exists.
+- [ ] Add failing specifications for reconfigure, verify, teardown, existing-claim install, and adoption that Phase 4 will turn green. Carried into Phase 4, which is the TDD red for those paths.
+- [x] Keep current direct package and legacy runbook behavior unchanged in this phase.
 
 ### Phase 2 non-breakage argument
 
-- [ ] Map every modified function against the G1 forwarding description.
-- [ ] Show that collector exports still occur in the current shell.
-- [ ] Show that package recipes receive the same environment for existing direct commands.
-- [ ] Show that no shadow file or command lookup changes.
-- [ ] Show that old deployment config and package config files retain their precedence for existing commands.
+- [x] Map every modified function against the G1 forwarding description.
+- [x] Show that collector exports still occur in the current shell.
+- [x] Show that package recipes receive the same environment for existing direct commands.
+- [x] Show that no shadow file or command lookup changes.
+- [x] Show that old deployment config and package config files retain their precedence for existing commands.
 
 ### Phase 2 tests
 
-- [ ] Red and green one source-precedence case at a time.
-- [ ] Cover local and remote dispatch.
-- [ ] Cover dependency declarations and rightmost package precedence.
-- [ ] Cover unset required, optional, and recipe-default declarations.
-- [ ] Cover literal, escaped-at, base64, and backend-reference values.
-- [ ] Cover quotes, spaces, shell metacharacters, colons, and multiline values.
-- [ ] Assert the payload and all logs contain no test secret.
-- [ ] Run L1 with a real target-side phase driver.
-- [ ] Run L2 and L3 on one harmless fixture package.
-- [ ] Run focused vars, remote-vars, registry-write, runbook, replay, and router suites.
-- [ ] Run `task lint` and `task test-unit` once at the phase boundary.
+- [x] Red and green one source-precedence case at a time.
+- [x] Cover local and remote dispatch.
+- [x] Cover dependency declarations and rightmost package precedence.
+- [x] Cover unset required, optional, and recipe-default declarations.
+- [x] Cover literal, escaped-at, base64, and backend-reference values.
+- [ ] Cover quotes, spaces, shell metacharacters, colons, and multiline values. Partially covered: multiline and metacharacter cases are in the byte-identical matrix; quote and colon cases are carried into the Phase 3 test additions.
+- [x] Assert the payload and all logs contain no test secret.
+- [x] Run L1 with a real target-side phase driver.
+- [x] Run L2 and L3 on one harmless fixture package.
+- [x] Run focused vars, remote-vars, registry-write, runbook, replay, and router suites.
+- [x] Run `task lint` and `task test-unit` once at the phase boundary.
 
 ### Phase 2 rollback
 
-- [ ] Keep old readers and snapshot format available behind one compatibility switch.
-- [ ] Document how to restore the old collector and writer without transforming data backward.
+- [x] Keep old readers and snapshot format available behind one compatibility switch.
+- [x] Document how to restore the old collector and writer without transforming data backward.
+
+
+### Phase 2 result
+
+Landed in four slices, each committed and pushed: 2A `lib/context.sh` with emit-time provenance and 19 tests; 2B-i payload and dispatch wired to the context with an 8-case byte-identical proof; 2B-ii registry writer, snapshot and preflight consuming the same context with a 9-case equivalence proof; 2C debug hardening, the L1 driver, L2/L3 on `fixture-split` and one integration run.
+Gate: `task test-unit` 568 ok 0 not ok, `task lint` rc 0, the red proof's first test green (second needs Phase 3 mappings), payload byte-identical to the legacy walker across the matrix, ssh argv free of any path or value, no plaintext secret in the context file or in `DEBUG=true` output.
+Rollback: `CLOUDIFY_LEGACY_VARS=1` restores the legacy walker for the payload name list, the registry raw walk and the snapshot's deployment-only view, with no data transformation.
+Fixes found in review rather than papered over: the first draft re-derived provenance by re-reading stores (rebuilt on the emit-time record); a test depended on an ambient `/tmp/cloudify`; and the self-created context file was deleted before the debug rendering could read its labels.
 
 ## Phase 3: application identity, deployment inputs, manifests, and phases
 

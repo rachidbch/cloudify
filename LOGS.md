@@ -275,3 +275,11 @@
 - The red gate flipped: `tests/red/state-v2-duplicate-resolution.bats` test 1 is now green (payload = registry = snapshot = caller-value); test 2 stays red, it needs the Phase 3 application input mappings.
 - Verified: `task test-unit` 567 ok 0 not ok, `task lint` rc 0.
 - Accepted change, recorded: a store value that is present but empty no longer falls through to the next store for the registry record, because the record must agree with the payload; this is G2 7.2 scope.
+
+## 2026-09-12 - Phase 2 gate (2C)
+
+- L1 driver on the container: `cloudify_context_build` exports the literal into the calling shell and writes a metadata-only 0600 context file with the expected labels.
+- L2 `cloudify --on localhost --no-verify install fixture-split` OK, L3 `PKG_VERIFY_TIMEOUT=30 cloudify verify fixture-split` verified on attempt 1, `CLOUDIFY_LEGACY_VARS=1` install OK, registry record written from the context path. One integration run (`task test-integration:entr`) passed on the pushed branch.
+- Debug hardening: replaced the masked-payload debug rendering with names, source labels and redaction status, plus a test proving neither fixture value nor any `export ...=` payload line appears with `DEBUG=true`.
+- Three review fixes this gate: a test that depended on an ambient `/tmp/cloudify`, a self-created context file deleted before the debug rendering could read its labels, and (earlier) the provenance re-read.
+- `task test-unit` 568 ok 0 not ok, `task lint` rc 0.

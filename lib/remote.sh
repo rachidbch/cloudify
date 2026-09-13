@@ -325,7 +325,13 @@ function cloudify_remote_sync() {
         fi
         _cloudify_dispatch_vars "$_pkg_vars_list" "$_ctx_action" "$_ctx_deployment" "$_ctx_phase" \
             "${_ctx_pkgs[@]}"
-        if [[ -n "$_ctx_own" ]]; then rm -f "$CLOUDIFY_CONTEXT_FILE"; fi
+        if [[ -n "$_ctx_own" ]]; then
+            # Remove the self-created context only when THIS function returns, so
+            # the provenance labels are still readable for the debug rendering
+            # below (the payload is already extracted by then).
+            local _ctx_own_file="$CLOUDIFY_CONTEXT_FILE"
+            trap '[[ "${FUNCNAME[0]:-}" == "cloudify_remote_sync" ]] && rm -f "${_ctx_own_file:-}"' RETURN
+        fi
         pkg_var_names=$(cat "$_pkg_vars_list")
         rm -f "$_pkg_vars_list"
         local pkg_envsubst=""
@@ -355,18 +361,19 @@ function cloudify_remote_sync() {
         # Append the command; </dev/null keeps package code off the payload's stdin.
         cloudify_remote_payload="$cloudify_remote_payload; cloudify $* </dev/null"
 
-        PKG_DEBUG "Payload to execute remotely on $host:"
-        # Passwords are replaced by asterisks before printing
-        # HACK! Passwords are recognized only if env variable ends with 'PWD', contains 'PASSWORD' or contains 'SECRET'
-        local cloudify_remote_payload_secure
-        cloudify_remote_payload_secure="${cloudify_remote_payload//PWD=\'*\'/PWD=\'***********\'}"
-        cloudify_remote_payload_secure="${cloudify_remote_payload_secure//PASSWORD*=\'*\'/PASSWORD=\'***********\'}"
-        cloudify_remote_payload_secure="${cloudify_remote_payload_secure//SECRET*=\'*\'/SECRET=\'***********\'}"
-        # ADR-011: extend masking to TOKEN and KEY (K3S_TOKEN, TS_API_KEY, etc.)
-        cloudify_remote_payload_secure="${cloudify_remote_payload_secure//TOKEN*=\'*\'/TOKEN=\'***********\'}"
-        cloudify_remote_payload_secure="${cloudify_remote_payload_secure//KEY*=\'*\'/KEY=\'***********\'}"
-
-        $DEBUG && msg "$cloudify_remote_payload_secure"
+        # Debug renders names, source labels and redaction status only (Phase 2.3,
+        # Phase 5.4): the payload text is never printed, so a secret whose name the
+        # masking heuristics do not recognise cannot leak through DEBUG=true.
+        if $DEBUG; then
+            local _dbg_context="${CLOUDIFY_CONTEXT_FILE:-}" _dbg_name _dbg_src _dbg_sec
+            msg "Payload for $host: $(printf '%s' "$pkg_var_names" | grep -c . || true) forwarded name(s)."
+            while IFS= read -r _dbg_name; do
+                [[ -n "$_dbg_name" ]] || continue
+                _dbg_src=$(cloudify_context_read "$_dbg_context" "value.${_dbg_name}.source" 2>/dev/null || true)
+                _dbg_sec=$(cloudify_context_read "$_dbg_context" "value.${_dbg_name}.secret" 2>/dev/null || true)
+                msg "  $_dbg_name source=${_dbg_src:-recipe} secret=${_dbg_sec:-false} value=$( [[ "${_dbg_sec:-false}" == "true" ]] && printf 'redacted' || printf 'shown-at-recipe' )"
+            done <<< "$pkg_var_names"
+        fi
 
         PKG_DEBUG "SSHing..."
         # The SSH session is launched in the background to parallelize hosts cloudifcation

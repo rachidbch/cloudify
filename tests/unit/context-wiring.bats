@@ -370,6 +370,9 @@ EOF
     # the dispatch context lands there. Only files this run creates are captured.
     local ctx_root before_file saved ctx_path ctx_pid ctx
     ctx_root=$(sed -n 's/^export CLOUDIFY_TMP=//p' "$CLOUDIFY_SCRIPT_DIR/cloudify" | head -1)
+    # The router creates this on its first run (cloudify:123), so a fresh
+    # container must not make this test depend on an earlier run having done it.
+    mkdir -p "$ctx_root"
     [ -d "$ctx_root" ]
     before_file="$CLOUDIFY_TMP/ctx-before"
     ls "$ctx_root"/cloudify-context-* > "$before_file" 2>/dev/null || true
@@ -497,4 +500,31 @@ EOF
     subrubric "the name preflight judged unresolved has no context block either"
     ! cloudify_context_read "$ctx" value.FIX_PRE_MISSING.source
     unset FIX_PRE_ENV
+}
+
+@test "DEBUG=true prints names and sources, never the payload text" {
+    rubric "debug output carries no rendered payload and no secret value"
+    local pkg="dbgtest"
+    mkdir -p "$CLOUDIFY_DIR/pkg/$pkg"
+    printf 'FIX_DBG_TOKEN\nFIX_DBG_PLAIN\n' > "$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
+    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" FIX_DBG_TOKEN "fixture-dbg-secret"
+    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" FIX_DBG_PLAIN "fixture-dbg-plain"
+    export CLOUDIFY_DEPLOYMENT="$DEP"
+    unset FIX_DBG_TOKEN FIX_DBG_PLAIN
+
+    # `capture` redirects the dispatch's stdout/stderr into its own log file.
+    DEBUG=true capture context dbg install "$pkg" || true
+    local out="$CAP_DIR/dbg.log"
+    [ -f "$out" ]
+
+    subrubric "no rendered export line and no value text reaches the output"
+    step "asserting absence of payload lines and both fixture values"
+    ! grep -q "export FIX_DBG_TOKEN=" "$out"
+    ! grep -q "export FIX_DBG_PLAIN=" "$out"
+    ! grep -q "fixture-dbg-secret" "$out"
+    ! grep -q "fixture-dbg-plain" "$out"
+
+    subrubric "names, source labels and redaction status are printed instead"
+    grep -q "FIX_DBG_TOKEN source=deployment secret=true" "$out"
+    grep -q "FIX_DBG_PLAIN source=deployment secret=false" "$out"
 }

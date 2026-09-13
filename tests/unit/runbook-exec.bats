@@ -325,3 +325,62 @@ EOF
     grep -q "^value.ENV_WINS: from-env$" "$snap"
     [ "$(grep -c '^value\.' "$snap")" -eq 3 ]
 }
+
+# ---------------------------------------------------------------
+# Phase selection (state model v2 Phase 3)
+# ---------------------------------------------------------------
+
+@test "execute: a canonical bare run selects install+verify; --yes never reaches teardown" {
+    rubric "bare run = install then verify; teardown only with --phase teardown"
+    local rb="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
+    _make_runbook "$rb" <<'EOF'
+---
+deployment: exec-canonical
+targets: guest
+---
+```bash step=install target=guest pkg=demo id=i
+echo install >> "$CLOUDIFY_TMP/canon-order"
+```
+```bash step=verify target=guest pkg=demo id=v
+echo verify >> "$CLOUDIFY_TMP/canon-order"
+```
+```bash step=uninstall target=guest pkg=demo id=u
+echo teardown >> "$CLOUDIFY_TMP/canon-order"
+```
+EOF
+    run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test --yes
+    [ "$status" -eq 0 ]
+    [ "$(cat "$CLOUDIFY_TMP/canon-order")" = "$(printf 'install\nverify')" ]
+
+    run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test --phase teardown
+    [ "$status" -eq 0 ]
+    [ "$(tail -1 "$CLOUDIFY_TMP/canon-order")" = "teardown" ]
+    [ "$(grep -c teardown "$CLOUDIFY_TMP/canon-order")" -eq 1 ]
+}
+
+@test "preflight: only selected phases are inspected" {
+    rubric "a teardown-only required var cannot block the install run"
+    local rb="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
+    _make_runbook "$rb" <<'EOF'
+---
+deployment: exec-phases
+targets: guest
+---
+```bash step=install target=guest pkg=inst id=i
+echo i
+```
+```bash step=uninstall target=guest pkg=teardown-pkg id=u
+echo u
+```
+EOF
+    mkdir -p "$CLOUDIFY_DIR/pkg/teardown-pkg"
+    printf 'TEARDOWN_ONLY\n' > "$CLOUDIFY_DIR/pkg/teardown-pkg/.remote-vars"
+
+    run cloudify_runbook_preflight "$rb" --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+
+    run cloudify_runbook_preflight "$rb" --target guest=cloudai:xfce-test --phase teardown
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"teardown-pkg: TEARDOWN_ONLY"* ]]
+}

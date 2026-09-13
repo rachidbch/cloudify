@@ -34,11 +34,11 @@ payload and never writes a record.
 - Runs in the dispatch shell, exports every resolved runtime literal into that shell (inv 1), and never emits a value on stdout.
 - Writes the context file to `$CLOUDIFY_CONTEXT_FILE` (created by the caller, mode 0600) and prints nothing else.
 - `<declared-names-file>` is the candidate name set: the union of `.remote-vars` names for the top-level package and every dependency the graph walk finds (inv 29 today, expanded by the static graph walk).
-- Resolution order is the existing ladder, unchanged: deployment, then packages rightmost-CLI-first with dependencies, then global, then caller env, with first-write-wins and caller env never overwritten (inv 4).
+- Resolution order is the existing ladder, extended by Phase 3: deployment, then the application defaults file, then the mapped application inputs, then packages rightmost-CLI-first with dependencies, then global, then caller env, with first-write-wins and caller env never overwritten (inv 4). The full total order, strongest last, is recipe default < global < package < application default < mapped application input < deployment value for the package variable itself < caller environment for the package variable itself; the application input's own value resolves application default < deployment value for the input name < caller environment for the input name. Both application ranks carry the `application` label and are read at emit time, so the single-pass rule is unchanged.
 - `<phase>` is accepted and recorded now, and selects nothing in Phase 2.
 
 `cloudify_context_source_of <name> <pkg>` (pure, non-mutating)
-- Returns one label: `environment`, `deployment`, `package`, `global`, or `recipe`.
+- Returns one label: `environment`, `deployment`, `application`, `package`, `global`, or `recipe`.
 - Never exports, never writes, never resolves the raw value.
 - `_cloudify_vars_source_of` and runbook preflight are reimplemented over this function, so preflight and dispatch cannot select different sources.
 

@@ -3,8 +3,13 @@
 #
 # One read/write helper per var source. The collector
 # (_cloudify_pkg_remote_vars, lib/remote.sh) is a thin precedence walker over
-# these helpers. Target precedence (weakest -> strongest):
-#   recipe default < global < package < deployment < caller env
+# these helpers. Target precedence (weakest -> strongest), extended by the
+# state model v2 application inputs:
+#   recipe default < global < package < application < deployment < caller env
+# `application` covers an application default (apps/<app>/<flavor>/defaults.yaml)
+# and the mapped application input; its own value resolves as
+# application default < deployment value for the input name < caller env for the
+# input name. See runbooks/README.md.
 #
 # Readers export resolved values into the CURRENT shell (their exports are the
 # value channel) and must be invoked with a redirect, never `$(...)` (I1).
@@ -73,6 +78,54 @@ _cloudify_vars_trim() {
     s="${s#"${s%%[![:space:]]*}"}"
     s="${s%"${s##*[![:space:]]}"}"
     printf '%s' "$s"
+}
+
+# --- identity components (schemas/v1/identity.md) ---
+
+# _cloudify_identity_valid_component <value> - the frozen machine-owned
+# identity component rule: non-empty, no '/', no control character, not '.' or
+# '..', no leading/trailing whitespace, no leading '-', at most 255 bytes.
+# Pure predicate (never dies) so a caller can choose its own message.
+function _cloudify_identity_valid_component() {
+    local v="${1:-}" LC_ALL=C
+    [[ -n "$v" ]] || return 1
+    (( ${#v} <= 255 )) || return 1
+    [[ "$v" != */* ]] || return 1
+    [[ "$v" != "." && "$v" != ".." ]] || return 1
+    [[ "$v" != -* ]] || return 1
+    [[ "$v" != [[:space:]]* && "$v" != *[[:space:]] ]] || return 1
+    [[ "$v" != *[[:cntrl:]]* ]] || return 1
+    return 0
+}
+
+# _cloudify_identity_check_component <label> <value> - die, naming the component.
+function _cloudify_identity_check_component() {
+    _cloudify_identity_valid_component "${2:-}" ||
+        die "Invalid ${1:-component} '${2:-}' (non-empty, no '/', no control character, not '.' or '..', no leading/trailing whitespace, no leading '-', at most 255 bytes)."
+}
+
+# _cloudify_identity_valid_name <value> - a shell/variable name (the runbook step
+# ID tightening and the application input / mapped package variable shape).
+function _cloudify_identity_valid_name() {
+    [[ "${1:-}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
+function _cloudify_identity_check_name() {
+    _cloudify_identity_valid_name "${2:-}" ||
+        die "Invalid ${1:-name} '${2:-}' (expected a letter or '_' followed by letters, digits or '_')."
+}
+
+# _cloudify_identity_valid_step_id <value> - the frozen stable runbook step ID
+# shape: a leading alphanumeric followed by alphanumerics, '.', '_' or '-'.
+function _cloudify_identity_valid_step_id() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+}
+
+function _cloudify_identity_check_step_id() {
+    if _cloudify_identity_valid_step_id "${2:-}" && _cloudify_identity_valid_component "${2:-}"; then
+        return 0
+    fi
+    die "Invalid ${1:-step id} '${2:-}' (expected a leading alphanumeric followed by alphanumerics, '.', '_' or '-', and no path separator or control character)."
 }
 
 # Resolve a raw value to its literal form (R4).
@@ -180,6 +233,12 @@ cloudify_vars_global_file() {
 
 cloudify_vars_pkg_file() {
     echo "$(cloudify_vars_config_dir)/pkgs/$1.yaml"
+}
+
+# cloudify_vars_app_file <application> <flavor> - the application defaults file
+# (REDESIGN "Defaults and desired inputs"). Keyed by application input name.
+cloudify_vars_app_file() {
+    echo "$(cloudify_vars_config_dir)/apps/$1/$2/defaults.yaml"
 }
 
 # --- file writes (0700 dir / 0600 file, I10) ---
@@ -489,9 +548,55 @@ _cloudify_vars_source_label() {
     if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]] && grep -q "^${name}:" "$(_cloudify_deployment_config "$CLOUDIFY_DEPLOYMENT")" 2>/dev/null; then
         echo deployment; return 0
     fi
+    # Application ranks: the mapped application input (its own value resolved as
+    # application default < deployment value for the input name < caller env for
+    # the input name) sits above package and global, below the deployment value
+    # for the package variable itself (checked above) and its caller env (first).
+    local _app_input
+    _app_input=$(_cloudify_vars_app_input_for "$name")
+    if [[ -n "$_app_input" ]] && _cloudify_vars_app_input_has_value "$_app_input"; then
+        echo application; return 0
+    fi
+    if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" ]] \
+        && grep -q "^${name}:" "$(cloudify_vars_app_file "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR")" 2>/dev/null; then
+        echo application; return 0
+    fi
     grep -q "^${name}:" "$(cloudify_vars_pkg_file "$pkg")" 2>/dev/null && { echo package; return 0; }
     grep -q "^${name}:" "$(cloudify_vars_global_file)" 2>/dev/null && { echo global; return 0; }
     echo recipe
+}
+
+# _cloudify_vars_app_input_for <package-variable> - print the application input
+# that the (names-only) CLOUDIFY_APP_MAP maps this package variable onto, else
+# nothing. The map carries no value.
+function _cloudify_vars_app_input_for() {
+    local name="${1:-}" map="${CLOUDIFY_APP_MAP:-}" pair
+    [[ -n "$name" && -n "$map" ]] || return 0
+    local IFS=','
+    for pair in $map; do
+        pair="$(_cloudify_vars_trim "$pair")"
+        [[ -n "$pair" && "$pair" == *=* ]] || continue
+        [[ "${pair%%=*}" == "$name" ]] && { printf '%s\n' "${pair#*=}"; return 0; }
+    done
+    return 0
+}
+
+# _cloudify_vars_app_input_has_value <input> - a pure check: is there any value
+# for this application input (caller env, then the deployment store, then the
+# application defaults file)? Never prints the value.
+function _cloudify_vars_app_input_has_value() {
+    local input="${1:-}"
+    [[ -n "$input" ]] || return 1
+    [[ -n "${!input:-}" ]] && return 0
+    if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]] \
+        && grep -q "^${input}:" "$(_cloudify_deployment_config "$CLOUDIFY_DEPLOYMENT")" 2>/dev/null; then
+        return 0
+    fi
+    if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" ]] \
+        && grep -q "^${input}:" "$(cloudify_vars_app_file "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR")" 2>/dev/null; then
+        return 0
+    fi
+    return 1
 }
 
 # _cloudify_vars_source_of <name> <pkg> — walker-order source, read-only, no

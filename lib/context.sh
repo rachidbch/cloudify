@@ -12,6 +12,14 @@
 # _CLOUDIFY_VARS_SOURCES), so this module never reads a store file a second
 # time: a label cannot drift from the source that supplied the exported value.
 #
+# Application inputs (state model v2 Phase 3): the runbook engine exports the
+# names-only mapping CLOUDIFY_APP_MAP (`PKG_VAR=APPLICATION_INPUT,...`) plus
+# CLOUDIFY_APPLICATION/CLOUDIFY_FLAVOR and the resolved application input values.
+# The ladder below reads the application defaults file once (label
+# `application`) and then maps each input value onto its package variable names
+# (also `application`), both above package/global and below the deployment value
+# for the package variable itself and its caller env.
+#
 # Interface:
 #   cloudify_context_build <action> <deployment> <phase> <declared-names-file> <packages...>
 #     Exports every resolved runtime literal into the CALLING shell (same
@@ -202,13 +210,17 @@ function cloudify_context_build() {
     _CLOUDIFY_VARS_SOURCES="$sources"
     unset _CLOUDIFY_VARS_DECLARED
 
-    # -- candidate name set: the env pass gate (inv 5) --
+    # -- candidate name set: the env pass gate (inv 5), and the gate for the
+    # mapped application inputs (only a declared package variable is forwarded) --
     local -a candidates=()
+    local -A _ctx_candidate=()
     if [[ -n "$declared_file" && -f "$declared_file" ]]; then
         local _line
         while IFS= read -r _line; do
             [[ -n "$_line" ]] || continue
-            candidates+=("${_line%%$'\t'*}")
+            _line="${_line%%$'\t'*}"
+            candidates+=("$_line")
+            _ctx_candidate["$_line"]=1
         done < "$declared_file"
     fi
 
@@ -235,10 +247,36 @@ function cloudify_context_build() {
         done
     }
 
-    # The ladder, unchanged: deployment, then packages rightmost-first with
-    # dependencies, then global, then caller env (inv 4).
+    # The ladder, unchanged: deployment, then application defaults, then the
+    # mapped application inputs, then packages rightmost-first with
+    # dependencies, then global, then caller env (inv 4, extended by Phase 3).
     if [[ -n "$deployment" ]]; then
         cloudify_vars_deployment_read "$deployment" > /dev/null
+    fi
+    if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" ]]; then
+        _cloudify_load_yaml_vars "$(cloudify_vars_app_file "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR")" \
+            no-clobber "" application
+    fi
+    # Mapped application inputs. The mapping is names only and the input values
+    # are already in the step environment (the runbook engine resolved them);
+    # this exports them under the package variable names at the `application`
+    # rank. A value a replay would re-read as a reference is escaped, exactly as
+    # _cloudify_vars_emit expects a literal.
+    if [[ -n "${CLOUDIFY_APP_MAP:-}" ]]; then
+        local -a _app_pairs=()
+        IFS=',' read -ra _app_pairs <<< "$CLOUDIFY_APP_MAP" || true
+        local _app_pair _app_var _app_input _app_raw
+        for _app_pair in ${_app_pairs[@]+"${_app_pairs[@]}"}; do
+            _app_pair="$(_cloudify_vars_trim "$_app_pair")"
+            [[ -n "$_app_pair" && "$_app_pair" == *=* ]] || continue
+            _app_var="${_app_pair%%=*}"
+            _app_input="${_app_pair#*=}"
+            [[ -n "${_ctx_candidate[$_app_var]:-}" ]] || continue
+            [[ -n "${!_app_input:-}" ]] || continue
+            _app_raw="${!_app_input}"
+            [[ "$_app_raw" == @* ]] && _app_raw="@$_app_raw"
+            _cloudify_vars_emit "$_app_var" "$_app_raw" no-clobber "" application
+        done
     fi
     local i
     for ((i = ${#pkgs[@]} - 1; i >= 0; i--)); do

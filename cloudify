@@ -41,8 +41,9 @@ function usage() {
         cloudify deployment delete|del <id>            delete a deployment (+ its node/instance records)
         cloudify deployment list|ls                    list deployments
         cloudify deployment use <id>                   print export command
-        cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--yes]
-                                                       run a runbook (--dry-run: plan only)
+        cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--phase <phase>]... [--yes]
+                                                       run a runbook (--dry-run: plan only; a canonical runbook with no
+                                                       --phase selects install then verify; --yes never selects teardown)
         cloudify deployment replay <id> [--at <run>] [--runbook <path>] [--target name=addr]...
                                                        re-run a recorded run (--at: path, basename or timestamp prefix;
                                                        default: newest; --dry-run: plan only)

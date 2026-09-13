@@ -489,3 +489,265 @@ EOF
     [ -f "$cf/tmp/exec-marker" ]
     [ -n "$(ls "$cf/creds/deployments/demo/runs/"*.yaml 2>/dev/null)" ]
 }
+
+# ---------------------------------------------------------------
+# Canonical tree, application inputs and phases (state model v2 Phase 3)
+# ---------------------------------------------------------------
+
+@test "identity: application and flavor come from the canonical path" {
+    rubric "runbooks/<application>/<flavor>/runbook.md, not the front-matter deployment"
+    local f="$CLOUDIFY_DIR/runbooks/myapp/prod/runbook.md"
+    _make_runbook "$f" <<'EOF'
+---
+deployment: legacy-id
+targets: guest
+---
+EOF
+    run cloudify_runbook_identity "$f"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'myapp\tprod')" ]
+
+    run cloudify_runbook_identity "$CLOUDIFY_TMP/legacy.md"
+    [ "$status" -ne 0 ]
+}
+
+@test "meta: a canonical runbook does not require deployment: front-matter" {
+    rubric "deployment: stays required only for the legacy path"
+    local f="$CLOUDIFY_DIR/runbooks/myapp/default/runbook.md"
+    _make_runbook "$f" <<'EOF'
+---
+targets: guest
+---
+EOF
+    export CLOUDIFY_DEPLOYMENT=from-env
+    run cloudify_runbook_meta "$f"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'from-env\tguest')" ]
+
+    unset CLOUDIFY_DEPLOYMENT
+    run cloudify_runbook_meta "$f"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"CLOUDIFY_DEPLOYMENT is not set"* ]]
+
+    run cloudify_runbook_meta "$RUNBOOKS/guest-only.md"
+    [ "$status" -eq 0 ]
+}
+
+@test "parse: default phase per step type" {
+    rubric "launch/install -> install, configure -> reconfigure, verify -> verify, uninstall -> teardown"
+    local f="$CLOUDIFY_TMP/phases.md"
+    _make_runbook "$f" <<'EOF'
+---
+deployment: demo
+targets: guest
+---
+```bash step=launch target=guest pkg=x id=l
+echo l
+```
+```bash step=install target=guest pkg=x id=i
+echo i
+```
+```bash step=configure target=guest pkg=x id=c
+echo c
+```
+```bash step=verify target=guest pkg=x id=v
+echo v
+```
+```bash step=uninstall target=guest pkg=x id=u
+echo u
+```
+EOF
+    run cloudify_runbook_parse "$f"
+    [ "$status" -eq 0 ]
+    [ "$(_field "${lines[0]}" 5)" = "install" ]
+    [ "$(_field "${lines[1]}" 5)" = "install" ]
+    [ "$(_field "${lines[2]}" 5)" = "reconfigure" ]
+    [ "$(_field "${lines[3]}" 5)" = "verify" ]
+    [ "$(_field "${lines[4]}" 5)" = "teardown" ]
+}
+
+@test "parse: a canonical run/human-gate step must declare a phase" {
+    rubric "canonical path -> phase= required on run and human-gate"
+    local f="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
+    _make_runbook "$f" <<'EOF'
+---
+deployment: demo
+targets: guest
+---
+```bash step=run target=guest id=r
+echo hi
+```
+EOF
+    run cloudify_runbook_parse "$f"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"must declare phase="* ]]
+
+    local g="$CLOUDIFY_TMP/legacy-run.md"
+    _make_runbook "$g" <<'EOF'
+---
+deployment: demo
+targets: guest
+---
+```bash step=run target=guest id=r
+echo hi
+```
+EOF
+    run cloudify_runbook_parse "$g"
+    [ "$status" -eq 0 ]
+    [ -z "$(_field "${lines[0]}" 5)" ]
+}
+
+@test "parse: unknown phases and contradictory type-phase pairs are rejected" {
+    rubric "fail closed before execution"
+    local f="$CLOUDIFY_TMP/phase-bad.md"
+    _make_runbook "$f" <<'EOF'
+---
+deployment: demo
+targets: guest
+---
+```bash step=run target=guest id=r phase=bogus
+echo hi
+```
+EOF
+    run cloudify_runbook_parse "$f"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unknown phase 'bogus'"* ]]
+
+    _make_runbook "$f" <<'EOF'
+---
+deployment: demo
+targets: guest
+---
+```bash step=install target=guest pkg=x id=i phase=teardown
+echo hi
+```
+EOF
+    run cloudify_runbook_parse "$f"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"cannot run in phase 'teardown'"* ]]
+}
+
+@test "inputs/map: frozen flat syntax parses; a mapping input must be declared" {
+    rubric "inputs: NAME[, ...] and map: PACKAGE_VAR=APPLICATION_INPUT[, ...]"
+    local f="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
+    _make_runbook "$f" <<'EOF'
+---
+deployment: demo
+targets: guest
+inputs: SHARED, RDP_PASSWORD
+map: SPEC=SHARED, OTHER=RDP_PASSWORD
+---
+```bash step=install target=guest pkg=x id=i
+echo hi
+```
+EOF
+    run cloudify_runbook_inputs "$f"
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "SHARED" ]
+    [ "${lines[1]}" = "RDP_PASSWORD" ]
+
+    run cloudify_runbook_map "$f"
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "$(printf 'SPEC\tSHARED')" ]
+    [ "${lines[1]}" = "$(printf 'OTHER\tRDP_PASSWORD')" ]
+
+    _make_runbook "$f" <<'EOF'
+---
+deployment: demo
+targets: guest
+inputs: SHARED
+map: SPEC=NOT_DECLARED
+---
+```bash step=install target=guest pkg=x id=i
+echo hi
+```
+EOF
+    run _cloudify_runbook_export_app_spec "$f" demo
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"is not declared"* ]]
+
+    _make_runbook "$f" <<'EOF'
+---
+deployment: demo
+targets: guest
+inputs: SHARED
+map: bad/name=SHARED
+---
+```bash step=install target=guest pkg=x id=i
+echo hi
+```
+EOF
+    run _cloudify_runbook_export_app_spec "$f" demo
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Invalid mapped package variable"* ]]
+}
+
+@test "phases: a bare canonical run selects install then verify, never teardown" {
+    rubric "cloudify_runbook_phases_for + the selected step list"
+    local f="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
+    _make_runbook "$f" <<'EOF'
+---
+deployment: demo
+targets: guest
+---
+```bash step=install target=guest pkg=x id=i
+echo i
+```
+```bash step=verify target=guest pkg=x id=v
+echo v
+```
+```bash step=uninstall target=guest pkg=x id=u
+echo u
+```
+EOF
+    run cloudify_runbook_phases_for "$f"
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "install" ]
+    [ "${lines[1]}" = "verify" ]
+    [ "${#lines[@]}" -eq 2 ]
+
+    local po
+    po=$(cloudify_runbook_parse "$f")
+    run _cloudify_runbook_select_steps "$f" "$po"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *$'\tu'* ]]
+    [[ "$output" == *$'\ti\t'* ]]
+    [[ "$output" == *$'\tv\t'* ]]
+
+    run _cloudify_runbook_select_steps "$f" "$po" teardown
+    [ "$status" -eq 0 ]
+    [[ "$output" == *$'\tu'* ]]
+
+    run cloudify_runbook_phases_for "$f" bogus
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unknown phase 'bogus'"* ]]
+}
+
+@test "find_app: canonical path first, legacy path during the compatibility period" {
+    rubric "dual discovery"
+    local canonical="$CLOUDIFY_DIR/runbooks/myapp/default/runbook.md"
+    local legacy="$CLOUDIFY_DIR/runbooks/myapp/prod.md"
+    _make_runbook "$canonical" <<'EOF'
+---
+deployment: one
+targets: guest
+---
+EOF
+    _make_runbook "$legacy" <<'EOF'
+---
+deployment: two
+targets: guest
+---
+EOF
+    run cloudify_runbook_find_app myapp default
+    [ "$status" -eq 0 ]
+    [ "$output" = "$canonical" ]
+
+    run cloudify_runbook_find_app myapp prod
+    [ "$status" -eq 0 ]
+    [ "$output" = "$legacy" ]
+
+    run cloudify_runbook_find_app missing default
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No runbook found for application"* ]]
+}

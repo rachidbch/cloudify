@@ -1,22 +1,23 @@
 #!/usr/bin/env bats
-# State model v2 - Phase 1 RED proof (deliberately failing).
+# State model v2 - duplicate-resolution proof.
 #
 # This directory is NOT globbed by `task test-unit` (`bats --recursive
 # tests/unit/`) or by `task test` (`bats tests/unit/ tests/integration/...`).
-# A failing test here is expected evidence that the v2 contract is not
-# implemented yet, never a broken build. See tests/red/README.md.
+# See tests/red/README.md.
 #
 # The files state the intended v2 contract:
 #   1. one dispatch resolves one declared value ONCE, so the value that reaches
 #      the remote payload, the value recorded in the registry and the value
-#      recorded in the run snapshot all agree (today they do not: see
-#      tests/unit/state-v2-characterization.bats, case 1.1).
+#      recorded in the run snapshot all agree. Implemented in Phase 2 (this case
+#      is a regression guard now).
 #   2. one application input mapped to two package variable names reaches both
-#      packages (today there is no mapping concept at all).
+#      packages. Implemented in Phase 3 slice 3A and driven through the REAL
+#      engine path: a canonical fixture runbook
+#      (runbooks/<app>/<flavor>/runbook.md with `inputs:`/`map:`) whose steps
+#      dispatch the two fixture packages from a separate `cloudify` process.
 #
-# Both are expected to fail on the assertions below, not on setup: the setup
-# steps are asserted first so a broken fixture cannot masquerade as the
-# intended red.
+# The setup steps are asserted before the contract assertions, so a broken
+# fixture cannot masquerade as a contract gap.
 
 setup() {
     source tests/helpers/common.bash
@@ -59,6 +60,30 @@ setup() {
         cat > "$CAPTURE_DIR/payload-$host"
         return 0
     }
+
+    # A separate `cloudify` process (a runbook step body) cannot see the shell
+    # function above, so it dispatches through an executable stub tree: a real
+    # router shim, an ssh capture stub, and an ivps stub that forces the plain
+    # host path. The repo root is resolved from this test file.
+    export CLOUDIFY_REPO="${CLOUDIFY_SCRIPT_DIR:-/root/cloudify}/cloudify"
+    STUB_DIR="$(mktemp -d "$CLOUDIFY_TMP/stub.XXXXXX")"
+    export STUB_DIR
+    cat > "$STUB_DIR/cloudify" <<'STUB'
+#!/bin/bash
+exec bash "$CLOUDIFY_REPO" "$@"
+STUB
+    cat > "$STUB_DIR/ssh" <<'STUB'
+#!/bin/bash
+host=""
+for arg in "$@"; do [[ "$arg" == *@* ]] && host="${arg#*@}"; done
+cat > "$CAPTURE_DIR/payload-$host"
+STUB
+    cat > "$STUB_DIR/ivps" <<'STUB'
+#!/bin/bash
+exit 1
+STUB
+    chmod +x "$STUB_DIR/cloudify" "$STUB_DIR/ssh" "$STUB_DIR/ivps"
+    export PATH="$STUB_DIR:$PATH"
 }
 
 teardown() {
@@ -151,18 +176,34 @@ EOF
     _declare redpkg-a PKG_A_TARGET
     _declare redpkg-b PKG_B_TARGET
     _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" APP_SHARED_INPUT mapped-value
-    # Provisional v2 mapping shape (Phase 3.1 freezes the real one): one
-    # application input -> the package variable names it feeds. No reader exists
-    # today, which is exactly what this red proof asserts.
-    local dep_dir="$CLOUDIFY_DEPLOYMENTS_DIR/$DEP"
-    printf 'APP_SHARED_INPUT: PKG_A_TARGET PKG_B_TARGET\n' > "$dep_dir/mappings.yaml"
     export CLOUDIFY_DEPLOYMENT="$DEP"
     unset PKG_A_TARGET PKG_B_TARGET
 
-    subrubric "dispatch both packages (first install, no prior state)"
-    cloudify_remote_sync host-a install redpkg-a >/dev/null 2>&1
-    unset PKG_A_TARGET
-    cloudify_remote_sync host-b install redpkg-b >/dev/null 2>&1
+    subrubric "a canonical runbook whose two steps dispatch the two fixture packages"
+    local rb="$CLOUDIFY_DIR/runbooks/redapp/default/runbook.md"
+    _make_runbook "$rb" <<'EOF'
+---
+deployment: red-dep
+targets: a, b
+inputs: APP_SHARED_INPUT
+map: PKG_A_TARGET=APP_SHARED_INPUT, PKG_B_TARGET=APP_SHARED_INPUT
+---
+```bash step=install target=a pkg=redpkg-a id=a
+cloudify --on "$TARGET_A" install redpkg-a
+```
+```bash step=install target=b pkg=redpkg-b id=b
+cloudify --on "$TARGET_B" install redpkg-b
+```
+EOF
+    [ -f "$rb" ]
+
+    subrubric "the real engine runs both steps; each dispatches in its own cloudify process"
+    run cloudify_runbook_execute "$rb" --target a=host-a --target b=host-b
+    if [[ "$status" -ne 0 ]]; then
+        echo "engine status=$status" >&2
+        echo "$output" >&2
+    fi
+    [ "$status" -eq 0 ]
 
     subrubric "setup sanity (must pass; a failure here would be the wrong red)"
     [ -f "$CAPTURE_DIR/payload-host-a" ]

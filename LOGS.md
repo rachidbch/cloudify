@@ -283,3 +283,13 @@
 - Debug hardening: replaced the masked-payload debug rendering with names, source labels and redaction status, plus a test proving neither fixture value nor any `export ...=` payload line appears with `DEBUG=true`.
 - Three review fixes this gate: a test that depended on an ambient `/tmp/cloudify`, a self-created context file deleted before the debug rendering could read its labels, and (earlier) the provenance re-read.
 - `task test-unit` 568 ok 0 not ok, `task lint` rc 0.
+
+## 2026-09-12 - Phase 3 slice 3A: canonical application tree, phases, input mappings
+
+- Canonical tree `runbooks/<application>/<flavor>/runbook.md` with identity derived from the path; legacy `runbooks/<application>/<flavor>.md` stays discoverable through the legacy engine with the deprecation warning for a `run`/`human-gate` step without a phase.
+- Frozen flat syntax, documented in `runbooks/README.md`: `inputs: NAME[, NAME...]` and `map: PACKAGE_VAR=APPLICATION_INPUT[, ...]`, both sides validated against `schemas/v1/identity.md` before any step; a mapping whose input is not declared is rejected.
+- Resolver order extended with an `application` rank, strongest last: recipe default < global < package < application default < mapped application input < deployment value for the package variable < caller environment for the package variable; the application input's own value resolves application default < deployment < caller env. Still one pass at the emit point, no store read twice.
+- Phase machinery: phase defaults per step type, `phase=` required for `run`/`human-gate` on canonical paths, unknown or contradictory combinations rejected at parse, bare application run selecting install then verify, preflight filtered to the selected phases, `--yes` unable to select teardown, document order preserved.
+- The shipped runbook moved to `runbooks/xfce-guacamole/default/runbook.md` with explicit phases on its `run`/`human-gate` steps; every target, id and body preserved. Moved rather than copied, because a copy with the same `deployment:` makes runbook lookup ambiguous.
+- The second red proof is now GREEN through the real engine (a canonical fixture runbook whose steps dispatch each fixture package), so both contracts in `tests/red/` hold.
+- Verified: focused suites 76 ok 0 not ok, `task test-unit` 580 ok 0 not ok (results/3a-unit.tap), `task lint` rc 0.

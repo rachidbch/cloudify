@@ -1,6 +1,8 @@
 ---
 deployment: xfce-gui
 targets: guest, gateway
+inputs: RDP_PASSWORD
+map: CLOUDIFY_XFCE_USER_PASSWORD=RDP_PASSWORD, CLOUDIFY_GUACAMOLE_RDP_PASSWORD=RDP_PASSWORD
 ---
 
 # Runbook: XFCE guest + Guacamole gateway (server side)
@@ -12,8 +14,12 @@ Rules: variable NAMES only, never values; cross-host references are full MagicDN
 (`<guest>.<tailnet-domain>`), never a bare container name and never an IP; human-gate steps
 are mandatory; teardown removes the software, never the instances.
 
-Playable: `cloudify deployment run xfce-gui` executes the `step=` blocks in order, with the
-deployment set and the targets bound. Target names take environment variables
+Playable: `cloudify deployment run xfce-gui` executes the selected `step=` blocks, with the
+deployment set and the targets bound. This is the canonical runbook at
+`runbooks/xfce-guacamole/default/runbook.md`: the application identity (`xfce-guacamole`,
+flavor `default`) comes from that path, and `deployment: xfce-gui` is only the store id.
+A bare run selects the `install` then `verify` phases; teardown needs an explicit
+`--phase teardown` (or `--from teardown-xfce`). Target names take environment variables
 `$TARGET_GUEST` and `$TARGET_GATEWAY`. Bind them per run:
 `--target guest=<node>:<guest> --target gateway=<node>:<gateway>` (or store the same values
 as `TARGET_GUEST` / `TARGET_GATEWAY` in the deployment). Plain fenced blocks are operator
@@ -59,7 +65,11 @@ commands, not run by the engine.
   cloudify vars list --deployment xfce-gui
   ```
   One secret, two names: `CLOUDIFY_XFCE_USER_PASSWORD` and
-  `CLOUDIFY_GUACAMOLE_RDP_PASSWORD` must hold the same value. The xfce password is consumed
+  `CLOUDIFY_GUACAMOLE_RDP_PASSWORD` must hold the same value. The front matter maps both
+  package variables onto the single application input `RDP_PASSWORD`, so setting that one
+  input (deployment value, `apps/xfce-guacamole/default/defaults.yaml`, or the caller
+  environment) supplies both; a deployment value for either package variable still wins.
+  The xfce password is consumed
   only when the account is CREATED: a later run cannot change it.
 
 ## Steps
@@ -89,13 +99,13 @@ cloudify --on "$TARGET_GATEWAY" verify guacamole
 `8080` is the Guacamole web port; the container publishes it on loopback (a deployment
 value), so this proxies it to the tailnet.
 
-```bash step=run target=gateway
+```bash step=run target=gateway phase=install
 ivps expose-direct "$TARGET_GATEWAY" 8080
 ```
 
 ### 4. HUMAN GATE (mandatory)
 
-```bash step=human-gate
+```bash step=human-gate phase=verify
 Open the printed https://<gateway>.<tailnet-domain> URL, sign in as guacadmin, click the
 GUI connection, and confirm the XFCE desktop renders and the keyboard works. Do not proceed
 until a human confirms.
@@ -121,7 +131,7 @@ cloudify --on "$TARGET_GUEST" uninstall xfce
 cloudify --on "$TARGET_GATEWAY" uninstall guacamole
 ```
 
-```bash step=run target=gateway id=teardown-unexpose
+```bash step=run target=gateway id=teardown-unexpose phase=teardown
 ivps unexpose "$TARGET_GATEWAY" --direct
 ```
 

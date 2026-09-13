@@ -572,3 +572,73 @@ candidate_file() {
     [ "$(cloudify_context_source_of SPEC foo)" = "environment" ]
     unset SPEC
 }
+
+# --- application inputs (state model v2 Phase 3) ----------------------------
+
+@test "application inputs: a mapped package variable resolves at the application rank" {
+    rubric "recipe < global < package < application < deployment < environment"
+    declare_pkg foo SPEC
+    local cand
+    cand=$(candidate_file foo)
+
+    _cloudify_vars_file_set "$(cloudify_vars_app_file myapp default)" APP_IN app-default
+    export CLOUDIFY_APPLICATION=myapp CLOUDIFY_FLAVOR=default
+    export CLOUDIFY_APP_MAP="SPEC=APP_IN"
+
+    # (a) the application default supplies the mapped variable.
+    reset_stores
+    unset SPEC APP_IN
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+    [ "$SPEC" = "app-default" ]
+    [ "$(cloudify_context_read "$CTX" value.SPEC.source)" = "application" ]
+
+    # (b) the application rank outranks a package value.
+    reset_stores
+    unset SPEC APP_IN
+    set_pkg foo SPEC package-value
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+    [ "$SPEC" = "app-default" ]
+
+    # (c) the deployment value for the package variable itself wins.
+    reset_stores
+    unset SPEC APP_IN
+    set_deployment SPEC deployment-value
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+    [ "$SPEC" = "deployment-value" ]
+    [ "$(cloudify_context_read "$CTX" value.SPEC.source)" = "deployment" ]
+
+    # (d) the caller environment for the package variable itself wins.
+    reset_stores
+    unset SPEC APP_IN
+    export SPEC=env-value
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+    [ "$SPEC" = "env-value" ]
+    [ "$(cloudify_context_read "$CTX" value.SPEC.source)" = "environment" ]
+    unset SPEC
+
+    # (e) the input's own deployment value feeds the mapped variable.
+    reset_stores
+    unset SPEC APP_IN
+    set_deployment APP_IN dep-input
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+    [ "$SPEC" = "dep-input" ]
+    [ "$(cloudify_context_read "$CTX" value.SPEC.source)" = "application" ]
+
+    unset SPEC APP_IN CLOUDIFY_APP_MAP CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR
+}
+
+@test "application inputs: a mapping is names only, so an unmapped package variable is untouched" {
+    declare_pkg foo A B
+    local cand
+    cand=$(candidate_file foo)
+    _cloudify_vars_file_set "$(cloudify_vars_app_file myapp default)" APP_IN shared
+    export CLOUDIFY_APPLICATION=myapp CLOUDIFY_FLAVOR=default CLOUDIFY_APP_MAP="A=APP_IN"
+    unset A B APP_IN
+
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+    [ "$A" = "shared" ]
+    [ "${B:-}" = "" ]
+    [[ "$(cloudify_context_read "$CTX" value.A.source)" == "application" ]]
+
+    unset A B APP_IN CLOUDIFY_APP_MAP CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR
+}

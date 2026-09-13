@@ -295,14 +295,17 @@ function cloudify_context_build() {
     # -- provenance, captured during the walk above (first claim wins) --
     # No store file is consulted here: this is the same single resolution the
     # readers already performed, so the label cannot drift from the value.
-    local -A _ctx_source=() _ctx_ref=()
+    # Four fields, 0x1f-separated. A tab separator would let `read` collapse an
+    # empty field and shift the rest; see _cloudify_vars_sources_record.
+    local -A _ctx_source=() _ctx_ref=() _ctx_raw=()
     if [[ -s "$sources" ]]; then
-        local _sn _sl _sr
-        while IFS=$'\t' read -r _sn _sl _sr; do
+        local _sn _sl _sr _sw
+        while IFS=$'\x1f' read -r _sn _sl _sr _sw; do
             [[ -n "$_sn" ]] || continue
             [[ -n "${_ctx_source[$_sn]:-}" ]] && continue
             _ctx_source[$_sn]="$_sl"
             _ctx_ref[$_sn]="${_sr:-}"
+            _ctx_raw[$_sn]="${_sw:-}"
         done < "$sources"
     fi
 
@@ -342,11 +345,64 @@ function cloudify_context_build() {
             printf 'value.%s.secret: %s\n' "$name" "$is_secret"
             printf 'value.%s.reference: %s\n' "$name" "$ref"
             printf 'value.%s.digest: %s\n' "$name" "$digest"
+            # The raw source form, in the transport encoding, so a multiline
+            # value stays on one line. This is what lets the registry record and
+            # the run snapshot be built without reopening a source.
+            printf 'value.%s.raw: %s\n' "$name" "${_ctx_raw[$name]:-t:}"
         done
     } > "$out"
 
     chmod 600 "$out" 2>/dev/null || true
+    cloudify_context_validate "$out" || die "cloudify_context_build: the context failed validation; refusing to dispatch."
     mv "$out" "$CLOUDIFY_CONTEXT_FILE" || die "cloudify_context_build: cannot write $CLOUDIFY_CONTEXT_FILE."
+    return 0
+}
+
+# cloudify_context_validate <file> - fail loudly before anything consumes the
+# context. A context that is silently empty or partial stops payload forwarding
+# with no error at all, so this is a hard gate, not a convenience.
+function cloudify_context_validate() {
+    local file="${1:-}" line seen_bad="" _sn
+    [[ -f "$file" ]] || return 1
+
+    local version="" action="" deployment="" phase="" target="" top_kind=""
+    while IFS= read -r line; do
+        case "$line" in
+            "") continue ;;
+            context_version:*|action:*|deployment:*|phase:*|target:*|top_kind:*|value.*) ;;
+            *) seen_bad="$line" ;;
+        esac
+        case "$line" in
+            context_version:*) version="${line#context_version: }" ;;
+            action:*) action="${line#action: }" ;;
+            deployment:*) deployment="${line#deployment: }" ;;
+            phase:*) phase="${line#phase: }" ;;
+            target:*) target="${line#target: }" ;;
+            top_kind:*) top_kind="${line#top_kind: }" ;;
+        esac
+    done < "$file"
+
+    [[ -z "$seen_bad" ]] || die "context '$file': unexpected line '$seen_bad'."
+    [[ "$version" == "1" ]] || die "context '$file': unsupported or missing context_version '${version:-<none>}'."
+    [[ -n "$action" ]] || die "context '$file': no action."
+    [[ -n "$top_kind" ]] || die "context '$file': no top_kind."
+    # target, deployment and phase are NOT required: a direct package command has
+    # no deployment, and a context built for a record write alone has no target.
+    # Requiring a field no producer supplies is how a phase ends up fabricating one.
+
+    # Every name with a source block must also carry a raw block, and the raw
+    # form must be one this build understands.
+    while IFS= read -r _sn; do
+        [[ -n "$_sn" ]] || continue
+        local raw
+        raw=$(cloudify_context_read "$file" "value.$_sn.raw") \
+            || die "context '$file': value '$_sn' has no raw source form."
+        case "$raw" in
+            t:*|b:*) ;;
+            *) die "context '$file': value '$_sn' has a malformed raw form." ;;
+        esac
+    done < <(sed -n 's/^value\.\([^.]*\)\.source:.*$/\1/p' "$file")
+
     return 0
 }
 

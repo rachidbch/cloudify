@@ -219,6 +219,15 @@ The context contains:
 
 The source form is a literal, an escaped literal, or a secret reference.
 
+Each declared value carries: its declaration kind, its source label, its source form, its **raw source form**, its resolved runtime form, and its secret classification.
+
+The raw source form is the exact text the registry record and the run snapshot must contain. It is why no consumer reopens a source: whoever resolves a value records its raw text at the same moment, so the recorded text cannot drift from the forwarded value, and an absent value stays distinguishable from a present-but-empty one.
+A raw form that cannot be carried on one line is transported in an explicit, unambiguous encoding, so a raw text that itself looks encoded is never mistaken for the transport.
+
+A value's raw form and its resolved runtime form both live in the context, and the context is removed when the dispatch ends. That removal is what bounds them; neither may appear in a log, a manifest, package state, a run record or an event.
+
+The context is validated before payload construction and before any mutation. A malformed or partial context fails loudly, because a silently empty context stops payload forwarding without an error.
+
 The resolved runtime form exists only long enough to execute the dispatch.
 
 The context is created with mode 0600 and removed after the parent process has written the result.

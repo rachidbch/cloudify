@@ -63,14 +63,51 @@ _cloudify_vars_claim() {
     return 0
 }
 
-# Record the single-pass provenance of a claimed name: which reader supplied
-# it, plus (reference values only) the store's raw `@<backend>:<locator>` text.
+# Record the single-pass provenance of a claimed name: which reader supplied it,
+# the store's raw `@<backend>:<locator>` text when the value is a reference, and
+# the raw source form the registry record and the run snapshot must contain.
+# The raw form is the reason no consumer reopens a source.
+#
+# Fields are separated by 0x1f, never a tab: `read` collapses runs of IFS
+# *whitespace*, so a tab-separated record silently shifts every field after an
+# empty one. 0x1f is not whitespace, so an empty field keeps its place.
+#
+# The raw form is carried as `t:<text>` or `b:<base64>`, chosen by
+# _cloudify_vars_raw_encode. The prefix makes the choice explicit, so a raw text
+# that itself looks encoded is never mistaken for the transport.
+#
 # No-op unless a caller set _CLOUDIFY_VARS_SOURCES, so every existing call path
-# behaves identically. One `printf >>` per claimed name: no subprocess, and no
-# store is ever read a second time to recover this.
+# behaves identically. One `printf >>` per claimed name: no subprocess unless
+# base64 is genuinely needed, and no store is ever read a second time.
 _cloudify_vars_sources_record() {
     [[ -n "${_CLOUDIFY_VARS_SOURCES:-}" ]] || return 0
-    printf '%s\t%s\t%s\n' "$1" "$2" "${3:-}" >> "$_CLOUDIFY_VARS_SOURCES"
+    printf '%s\x1f%s\x1f%s\x1f%s\n' "$1" "$2" "${3:-}" \
+        "$(_cloudify_vars_raw_encode "${4:-}")" >> "$_CLOUDIFY_VARS_SOURCES"
+}
+
+# _cloudify_vars_raw_encode <text> - transport form of a raw source value.
+# Verbatim when it is a single line holding no field separator; base64 otherwise,
+# so the record always stays one line and never splits a field.
+_cloudify_vars_raw_encode() {
+    local raw="${1:-}"
+    if [[ "$raw" == *$'\n'* || "$raw" == *$'\t'* || "$raw" == *$'\x1f'* ]]; then
+        printf 'b:%s' "$(printf '%s' "$raw" | base64 -w0)"
+    else
+        printf 't:%s' "$raw"
+    fi
+}
+
+# _cloudify_vars_raw_decode <transport form> - the raw source value again.
+# Prints the text unchanged when the form is unrecognised, so a value written by
+# an older dispatch is never lost; cloudify_context_validate is what rejects a
+# malformed context, loudly, before anything consumes it.
+_cloudify_vars_raw_decode() {
+    local enc="${1:-}"
+    case "$enc" in
+        b:*) printf '%s' "${enc#b:}" | base64 -d 2>/dev/null || printf '%s' "${enc#b:}" ;;
+        t:*) printf '%s' "${enc#t:}" ;;
+        *) printf '%s' "$enc" ;;
+    esac
 }
 
 _cloudify_vars_trim() {
@@ -173,7 +210,7 @@ _cloudify_vars_emit() {
     # set, a claimed name that is already set can only have come from the caller
     # env (every file export claims first), so that is the providing source.
     if [[ -n "${_CLOUDIFY_VARS_LEDGER:-}" && "$mode" == "no-clobber" && -n "${!name:-}" ]]; then
-        _cloudify_vars_sources_record "$name" environment ""
+        _cloudify_vars_sources_record "$name" environment "" "${!name:-}"
         return 0
     fi
     local value ref="" _ref
@@ -189,7 +226,7 @@ _cloudify_vars_emit() {
         _ref="${raw#@}"
         [[ "$_ref" == *:* && "$_ref" != :* && "$_ref" != *: ]] && ref="$raw"
     fi
-    _cloudify_vars_sources_record "$name" "$source" "$ref"
+    _cloudify_vars_sources_record "$name" "$source" "$ref" "$raw"
 }
 
 # Parse a flat `KEY: value` file and export each value.
@@ -333,7 +370,7 @@ cloudify_vars_pkg_read() {
                 # env (nothing else can set a name without claiming it first),
                 # so env is the providing source. No-op unless a context build
                 # is recording.
-                _cloudify_vars_sources_record "$name" environment ""
+                _cloudify_vars_sources_record "$name" environment "" "${!name:-}"
             fi
         done < "$decl"
     fi
@@ -431,7 +468,7 @@ cloudify_vars_env_read() {
         _cloudify_vars_claim "$name" || continue
         [[ -n "$print" ]] && echo "$name"
         export "$name"="${!name}"
-        _cloudify_vars_sources_record "$name" environment ""
+        _cloudify_vars_sources_record "$name" environment "" "${!name:-}"
     done
 }
 

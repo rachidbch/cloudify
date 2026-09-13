@@ -251,32 +251,21 @@ function _cloudify_registry_declared_names() {
     done < "$decl"
 }
 
-# _cloudify_registry_context_raw <context-file> <name> <pkg> <deployment>
-# The raw, unresolved value for <name> as the dispatch context recorded it.
-# A `reference` form carries the store's `@<backend>:<locator>` text verbatim;
-# a `literal` form is read back from the ONE store the context's `source` label
-# names (never the ladder, never a second walk). rc 1 when the context has no
-# block for the name, i.e. no source provided it. Read-only: never resolves.
+# _cloudify_registry_context_raw <context-file> <name>
+# The raw, unresolved value for <name> as the dispatch resolution recorded it.
+# The context carries it as `t:<text>` or `b:<base64>`; see
+# _cloudify_vars_sources_record for why the form is explicit. rc 1 when the
+# context has no block for the name, i.e. no source provided it.
+#
+# This deliberately does NOT reopen a source. The value was resolved once, during
+# the dispatch, and the raw text was recorded at that same moment; reading a
+# store again here would let the record drift from what the payload forwarded,
+# and would make a deliberately empty value indistinguishable from an absent one.
 function _cloudify_registry_context_raw() {
-    local context="$1" name="$2" pkg="$3" deployment="$4" source form ref store=""
-    source=$(cloudify_context_read "$context" "value.$name.source") || return 1
-    form=$(cloudify_context_read "$context" "value.$name.form") || form=literal
-    if [[ "$form" == "reference" ]]; then
-        ref=$(cloudify_context_read "$context" "value.$name.reference") || ref=""
-        [[ -n "$ref" ]] || return 1
-        printf '%s' "$ref"
-        return 0
-    fi
-    case "$source" in
-        environment) printf '%s' "${!name:-}" ;;
-        deployment)
-            store=$(_cloudify_deployment_config) || store=""
-            _cloudify_vars_store_get "$store" "$name"
-            ;;
-        package) _cloudify_vars_store_get "$(cloudify_vars_pkg_file "$pkg")" "$name" ;;
-        global) _cloudify_vars_store_get "$(cloudify_vars_global_file)" "$name" ;;
-        *) return 1 ;;
-    esac
+    local context="$1" name="$2" enc
+    enc=$(cloudify_context_read "$context" "value.$name.raw") || return 1
+    [[ -n "$enc" ]] || return 1
+    _cloudify_vars_raw_decode "$enc"
 }
 
 # cloudify_registry_record_build <action> <deployment> <node> <instance> <ssh_host> <pkg> [context-file]
@@ -352,7 +341,10 @@ function cloudify_registry_record_build() {
         [[ -n "$name" ]] || continue
         [[ -n "${seen[$name]:-}" ]] && continue
         seen["$name"]=1
-        raw=$(_cloudify_registry_context_raw "$context" "$name" "$pkg" "$deployment") || continue
+        # The raw text the resolution recorded, not a second look at a store.
+        # The context's transport form is decoded, then re-encoded into the
+        # record's own convention below, so the record's bytes are unchanged.
+        raw=$(_cloudify_registry_context_raw "$context" "$name") || continue
         if [[ "$(cloudify_context_read "$context" "value.$name.secret" 2>/dev/null || true)" == "true" ]]; then
             PKG_DEBUG "Registry: var.$name is marked secret; the record keeps its raw, unresolved form."
         fi

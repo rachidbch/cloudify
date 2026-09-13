@@ -78,7 +78,11 @@ task lint              # Push + shellcheck
 
 **Push before tests.** Integration tests SSH into the container, pull from GitHub, run there.
 
-**Test output:** rubric/subrubric/step (`tests/helpers/report.bash`, fd 9 = live stream). Run long tests in the background and poll `results/<name>.tap` with plain `tail`, never grep, never invent a log; E2E only as the final gate.
+**Testing:** tests run in `cloudai:cloudify` only; `task sync` rsyncs the tree (prunes deletions), integration tests also need the branch pushed.
+Background + poll, never redirect or grep: `mkdir -p results/<suite>`; `setsid <cmd> --report-formatter tap13 -o results/<suite> </dev/null >/dev/null 2>&1 &`; then `tail results/<suite>/report.tap`. bats always names it `report.tap`, and stdout must be discarded or SIGPIPE kills it when the ssh channel closes. tap13 carries each failure's assertion and output, so the tap suffices; give a large tap to a subagent for the failures only.
+Full suite at phase and milestone boundaries; E2E is an exit gate, never a debugger.
+
+**Implementation:** the lead agent writes the code and shows the moves; subagents review, research, and read large taps.
 
 **Debugging:** Read `/tmp/cloudify/logs/<timestamp>.log`. Fix one issue, push, re-test.
 

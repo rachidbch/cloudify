@@ -178,10 +178,13 @@ function cloudify_init_paths() {
 # final wait loop can write a registry record for each package on success.
 # Pid-keyed, parallel to _CLOUDIFY_BG_HOSTS (both live in main()'s scope).
 function _cloudify_note_bg() {
-    local pid="$1" action="$2" pkg_list="$3" target="$4"
+    local pid="$1" action="$2" pkg_list="$3" target="$4" context="${5:-}"
     _CLOUDIFY_BG_ACTION[$pid]="$action"
     _CLOUDIFY_BG_PKGS[$pid]="$pkg_list"
     _CLOUDIFY_BG_TARGET[$pid]="$target"
+    # The dispatch context path (slice 2B-i). Recorded only: the registry writer
+    # still builds its record the Phase 1 way until slice 2B-ii consumes it.
+    _CLOUDIFY_BG_CONTEXT[$pid]="$context"
 }
 
 # Guard: ensure remote credentials are set before remote operations
@@ -231,6 +234,14 @@ function _cloudify_execute_package_action() {
     shift
     local pkgs=("$@")
     cloudify_init_paths
+    # One dispatch context per action (design section 5): the PARENT creates the
+    # 0600 file so it already knows the path, the backgrounded child fills it,
+    # and _cloudify_note_bg records the path for the registry write. verify is
+    # excluded on purpose: it resolves its own package yaml and writes no record
+    # (inv 33, 32).
+    if [[ "$action" != "verify" && "${CLOUDIFY_LEGACY_VARS:-}" != "1" ]]; then
+        _cloudify_context_file_init
+    fi
     if [[ "$action" == "install" ]]; then
         # Auto-install @default packages first (idempotent — apt skips already-installed)
         # With --no-defaults, install only basics (essential tooling) instead of all defaults
@@ -247,9 +258,9 @@ function _cloudify_execute_package_action() {
             # @default install is synchronous and a prerequisite env check
             # (e.g. sudo password). If it fails, the user-requested package is
             # NOT attempted — fail fast with a clear message + remediation.
-            # R1: the five-source walker runs on the local path too, so one
+            # R1: the same one-resolution path runs on the local path too, so one
             # precedence governs local and remote installs (I9).
-            if ! ( _cloudify_pkg_remote_vars install $defaults > /dev/null; cloudify_install_package $defaults ); then
+            if ! ( _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install $defaults; cloudify_install_package $defaults ); then
                 msg "${RED}@default package(s) failed to install — your requested package(s) were NOT attempted.${RESET}"
                 msg "${RED}Fix the failure above, or re-run with --no-defaults to install only basics + your package(s).${RESET}"
                 exit 1
@@ -261,25 +272,25 @@ function _cloudify_execute_package_action() {
         # --clear-data implies CLOUDIFY_FORCE.
         PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs[*]}${RESET}"
         # shellcheck disable=SC2030
-        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; _cloudify_pkg_remote_vars install "${pkgs[@]}" > /dev/null; cloudify_install_package "${pkgs[@]}") &
+        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_install_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
-        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}"
+        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
         is_setup_in_progress=true
     elif [[ "$action" == "configure" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_configure_package ${pkgs[*]}${RESET}"
-        ( _cloudify_pkg_remote_vars configure "${pkgs[@]}" > /dev/null; cloudify_configure_package "${pkgs[@]}" ) &
+        ( _cloudify_dispatch_vars /dev/null configure "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_configure_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
-        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}"
+        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
         is_setup_in_progress=true
     elif [[ "$action" == "uninstall" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs[*]}${RESET}"
         # The uninstall leg needs the same resolved vars as install/configure.
-        ( _cloudify_pkg_remote_vars uninstall "${pkgs[@]}" > /dev/null; cloudify_uninstall_package "${pkgs[@]}" ) &
+        ( _cloudify_dispatch_vars /dev/null uninstall "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_uninstall_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
-        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}"
+        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
         is_setup_in_progress=true
     elif [[ "$action" == "verify" ]]; then
         PKG_DEBUG "${YELLOW}cloudify verify ${pkgs[*]}${RESET}"
@@ -361,7 +372,7 @@ function _cloudify_dispatch() {
             # the final wait loop needs for the registry record (T3).
             local _dispatch_pkgs="${packages#--"$action"}"
             _dispatch_pkgs="${_dispatch_pkgs# }"
-            _cloudify_note_bg "$!" "$action" "$_dispatch_pkgs" "${_target_of_host[$host]:-$'\t\t'"$host"}"
+            _cloudify_note_bg "$!" "$action" "$_dispatch_pkgs" "${_target_of_host[$host]:-$'\t\t'"$host"}" "${CLOUDIFY_CONTEXT_FILE:-}"
         fi
     done
 }
@@ -395,6 +406,7 @@ function main() {
     local -A _CLOUDIFY_BG_ACTION=()
     local -A _CLOUDIFY_BG_PKGS=()
     local -A _CLOUDIFY_BG_TARGET=()
+    local -A _CLOUDIFY_BG_CONTEXT=()
     local _CLOUDIFY_CUR_TARGET=""
     # Resolved --on targets: one "<node>\t<instance>\t<ssh_host>" triple per target
     local -a _CLOUDIFY_TARGETS=()

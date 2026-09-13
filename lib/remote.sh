@@ -6,6 +6,14 @@ set -Eeuo pipefail
 [[ -n "${_CLOUDIFY_REMOTE_LOADED:-}" ]] && return 0
 _CLOUDIFY_REMOTE_LOADED=1
 
+# The dispatch wrapper resolves value names through lib/context.sh. Source it
+# here so any caller that has lib/remote.sh also has the resolver; the router
+# sources both and the module guard makes the second load a no-op.
+if [[ -z "${_CLOUDIFY_CONTEXT_LOADED:-}" ]]; then
+    # shellcheck source=/dev/null
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/context.sh"
+fi
+
 #== REMOTING
 ##  Cloudify can execute cloudify package init scripts on remote host
 
@@ -184,8 +192,69 @@ function _cloudify_pkg_remote_vars() {
     sort -u "$TMPFILE" 2>/dev/null
 }
 
+# _cloudify_context_file_init - create THIS dispatch's context file and export
+# CLOUDIFY_CONTEXT_FILE. The PARENT calls it before the child starts (the
+# backgrounded cloudify_remote_sync, or the local install subshell) so the
+# parent already knows the path for the later registry write; the child fills
+# it. The path never travels as an argument, so it never enters ssh argv
+# (design section 5, inv 2).
+function _cloudify_context_file_init() {
+    CLOUDIFY_CONTEXT_FILE=$(mktemp "$CLOUDIFY_TMP/cloudify-context-XXXXXX") \
+        || die "Cannot create a dispatch context file under $CLOUDIFY_TMP."
+    chmod 600 "$CLOUDIFY_CONTEXT_FILE"
+    export CLOUDIFY_CONTEXT_FILE
+}
+
+# _cloudify_dispatch_vars <names-file> <action> <deployment> <phase> [pkg...]
+# Resolve one dispatch's forwarded names and export their literals into the
+# CALLING shell (inv 1: always invoked with a redirect, never `$(...)`), then
+# write the claimed names, sorted, one per line, to <names-file>. Resolution
+# itself lives in lib/context.sh; this is only the dispatch-facing wrapper.
+# CLOUDIFY_LEGACY_VARS=1 restores the pre-Phase-2 walker, so a rollback needs no
+# data change (design section 6.7).
+function _cloudify_dispatch_vars() {
+    local names_file="$1" action="$2" deployment="$3" phase="$4"
+    shift 4
+    local -a pkgs=("$@")
+
+    if [[ "${CLOUDIFY_LEGACY_VARS:-}" == "1" ]]; then
+        _cloudify_pkg_remote_vars "$action" "${pkgs[@]}" > "$names_file"
+        return 0
+    fi
+
+    if [[ -z "${CLOUDIFY_CONTEXT_FILE:-}" ]]; then
+        die "_cloudify_dispatch_vars: CLOUDIFY_CONTEXT_FILE is not set."
+    fi
+    local cand_file
+    cand_file=$(mktemp "$CLOUDIFY_TMP/cloudify-candidates-XXXXXX")
+    if (( ${#pkgs[@]} )); then
+        cloudify_context_candidate_names "${pkgs[@]}" > "$cand_file"
+    fi
+    cloudify_context_build "$action" "$deployment" "$phase" "$cand_file" \
+        "${pkgs[@]}" > /dev/null
+    # The context's resolved names ARE the payload's allow-list entries, and the
+    # context build wrote them in the walker's sorted order.
+    sed -n 's/^value\.\([^.]*\)\.source:.*$/\1/p' "$CLOUDIFY_CONTEXT_FILE" > "$names_file"
+    # L12: a declared required name no source provides is warned about, never
+    # fatal (same condition and content as the walker this replaces).
+    local name pkg kind
+    while IFS=$'\t' read -r name pkg kind; do
+        [[ -n "$name" ]] || continue
+        [[ "${kind:-required}" == required ]] || continue
+        [[ -n "${!name:-}" ]] || log_warn "Var $name (declared in pkg $pkg .remote-vars) is unset in caller env - not forwarded."
+    done < "$cand_file"
+    rm -f "$cand_file"
+    return 0
+}
+
 # By default cloudify_remote executes remotely
 function cloudify_remote() {
+    # The PARENT owns the context path: the backgrounded sync fills the file and
+    # the router records the path with the dispatch metadata, so it never
+    # reaches a command line (inv 2, design section 5).
+    if [[ "${CLOUDIFY_LEGACY_VARS:-}" != "1" ]]; then
+        _cloudify_context_file_init
+    fi
     (cloudify_remote_sync "$@") &
     _CLOUDIFY_BG_PIDS+=($!)
     _CLOUDIFY_BG_HOSTS[$!]="$1"
@@ -211,11 +280,52 @@ function cloudify_remote_sync() {
         export CLOUDIFY_LOG_BASENAME
         CLOUDIFY_LOG_BASENAME="$(basename "${CLOUDIFY_LOG_FILE:-}")"
 
-        # --- Collect package remote vars from yaml files ---
-        # Run in parent shell (not $()) so export calls survive for envsubst below.
+        # --- Resolve the forwarded names and their literals (one resolution) ---
+        # Run in THIS shell (not $()) so the exports survive for envsubst below
+        # (inv 1); only the NAMES come back, through a file.
         local pkg_var_names
-        local _pkg_vars_list="${CLOUDIFY_TMP}/pkg-vars-list-$$"
-        _cloudify_pkg_remote_vars "$@" > "$_pkg_vars_list"
+        local _pkg_vars_list
+        _pkg_vars_list=$(mktemp "$CLOUDIFY_TMP/pkg-vars-list-XXXXXX")
+        # Parse the action and the package words exactly as the pre-Phase-2
+        # walker did: `$@` word-split, the action word anywhere in the list, the
+        # package words after it (flags excluded).
+        # shellcheck disable=SC2206  # intentional word-splitting of $@, as before
+        local -a _ctx_args=($@) _ctx_pkgs=()
+        local _ctx_arg _ctx_action="" _ctx_phase="verify" _ctx_deployment=""
+        for _ctx_arg in ${_ctx_args[@]+"${_ctx_args[@]}"}; do
+            case "$_ctx_arg" in
+                install | --install) _ctx_action=install; _ctx_phase=install; break ;;
+                configure | --configure) _ctx_action=configure; _ctx_phase=install; break ;;
+                uninstall | --uninstall | u) _ctx_action=uninstall; _ctx_phase=install; break ;;
+            esac
+        done
+        _ctx_action="${_ctx_action:-${_ctx_args[0]:-verify}}"
+        if [[ "$_ctx_phase" == install ]]; then
+            local _ctx_saw_action=false
+            for _ctx_arg in ${_ctx_args[@]+"${_ctx_args[@]}"}; do
+                case "$_ctx_arg" in
+                    install | --install | configure | --configure | uninstall | --uninstall | u)
+                        _ctx_saw_action=true
+                        continue
+                        ;;
+                esac
+                if $_ctx_saw_action && [[ "$_ctx_arg" != -* ]]; then
+                    _ctx_pkgs+=("$_ctx_arg")
+                fi
+            done
+            _ctx_deployment="${CLOUDIFY_DEPLOYMENT:-}"
+        fi
+        # The parent (cloudify_remote) creates the context file so it already
+        # knows the path; a direct call (cloudify exec, tests) makes its own and
+        # removes it, because no parent will ever consume that metadata.
+        local _ctx_own=""
+        if [[ -z "${CLOUDIFY_CONTEXT_FILE:-}" ]]; then
+            _cloudify_context_file_init
+            _ctx_own=1
+        fi
+        _cloudify_dispatch_vars "$_pkg_vars_list" "$_ctx_action" "$_ctx_deployment" "$_ctx_phase" \
+            "${_ctx_pkgs[@]}"
+        if [[ -n "$_ctx_own" ]]; then rm -f "$CLOUDIFY_CONTEXT_FILE"; fi
         pkg_var_names=$(cat "$_pkg_vars_list")
         rm -f "$_pkg_vars_list"
         local pkg_envsubst=""

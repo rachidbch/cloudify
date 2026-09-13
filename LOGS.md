@@ -258,3 +258,11 @@
 - `lib/vars.sh` gained a single-pass provenance record: `_cloudify_vars_emit` takes an optional source label and appends `name<TAB>source<TAB>reference` to `_CLOUDIFY_VARS_SOURCES` after a successful claim. The no-clobber branch records `environment`, because with the ledger set a claimed name that is already set can only have come from the caller env. That keeps label and value in one pass with no store re-read.
 - Review fix during the slice: my first version re-derived the source label by grepping the store files a second time, the exact duplicate-resolution class this phase removes. It was rebuilt on the emit-time record and the second pass was deleted; a structural test now fails if a store read or a `compgen -v` snapshot reappears in `lib/context.sh`.
 - Verified: `tests/unit/context.bats` 19 ok 0 not ok, `task test-unit` 543 ok 0 not ok, `task lint` rc 0, shellcheck clean on both files.
+
+## 2026-09-12 - Phase 2 slice 2B-i: payload and dispatch from the context
+
+- `lib/remote.sh`: `_cloudify_context_file_init` creates the 0600 context file in the parent and exports `CLOUDIFY_CONTEXT_FILE`; `cloudify_remote` calls it before backgrounding the per-host sync; the child builds the context and derives the payload name list from it. `_cloudify_dispatch_vars` is the single dispatch entry that parses action and package words and runs `cloudify_context_build`.
+- `cloudify`: local install, configure and uninstall subshells build the context in the child while the parent created the path; the path is recorded per pid as `_CLOUDIFY_BG_CONTEXT` for the registry write in slice 2B-ii. Verify skips context init (inv 33 unchanged).
+- Payload text proven byte-identical: 16 new tests in `tests/unit/context-wiring.bats` capture the payload twice, with `CLOUDIFY_LEGACY_VARS=1` and without, and `cmp` them over an 8-case matrix (caller env, deployment, package, global, base64 reference, multiline, rightmost wins, dependency). ssh argv carries no path and no value.
+- Deliberate non-identical detail: the re-emitted "required var unset" warning uses a hyphen where the legacy text used an em dash; the condition and wording are otherwise the same.
+- Verified: `task test-unit` 559 ok 0 not ok, `task lint` rc 0.

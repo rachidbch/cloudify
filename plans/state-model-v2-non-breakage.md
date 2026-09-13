@@ -304,3 +304,25 @@ the router, and the compatibility period in section 5 is what makes it
 revertable.
 No claim that pinning is safe without the rotation command.
 No claim about ivps: nothing in this plan writes to it.
+
+## 9. Amendment: no compatibility layers (human direction, 2026-09-12)
+
+Rachid withdrew every compatibility clause in this document: no dual code paths,
+no legacy structure kept discoverable by legacy code, no rollback switch as a
+permanent feature. Superseded in consequence:
+
+- Section 5's read-before-write ordering is replaced by "one writer, one reader,
+  v2 only", with the single exception of the one-shot migration command that
+  moves an existing store once and is deleted after use.
+- Section 7.1's rollback boundaries stay valid as revert-the-commit boundaries,
+  but a phase may no longer ship a permanent switch to restore an old writer.
+- The `CLOUDIFY_LEGACY_VARS=1` switch described in `plans/state-model-v2-phase2-design.md`
+  is removed rather than kept.
+- Section 6's "accepted change" list is unaffected: those are v2 behaviours, not
+  compatibility choices.
+
+What replaces the safety net: byte-exact golden fixtures captured from the
+current implementation before the legacy code is deleted, so the payload and the
+registry record stay pinned without shipping the code that produced them.
+
+This amendment is a scope reduction, not an expansion: it removes work and code.

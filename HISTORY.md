@@ -964,3 +964,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Payload text and registry records proven equivalent to the legacy walker: 8-case byte-identical payload matrix and 9-case registry record equality, each run twice, legacy versus context.
 - Debug output no longer renders the payload; it prints names, source labels and redaction status, so a secret with an unrecognised name cannot leak through `DEBUG=true`.
 - `CLOUDIFY_LEGACY_VARS=1` is the rollback switch and needs no data transformation.
+
+### 2026-09-12 - no compatibility layers (direction change)
+
+- Rachid's direction: the code base stays focused and trimmed, so v2 does not ship backward-compatibility layers. Legacy dual paths are deleted, not kept behind switches; the one exception is the one-shot migration command that moves an existing store once.
+- Withdrawn in consequence: the `CLOUDIFY_LEGACY_VARS=1` rollback switch, `_cloudify_pkg_remote_vars`, `_cloudify_registry_raw_var`, the legacy runbook path, the legacy single-ID desired-input read-through, and the compatibility clauses in `plans/state-model-v2-non-breakage.md` section 5 and section 7.1.
+- The safety net moves to byte-exact golden fixtures captured before the legacy code is deleted, plus the existing contract proofs in `tests/red/`.
+- Grounded in a real cost measured tonight: the delegate implementing slice 3B was still carrying dual-path logic and its tests, which is exactly the bloat the direction removes.

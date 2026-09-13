@@ -101,3 +101,12 @@ introduces application input mappings.
 Then: the equivalence test of section 6.3; the existing `vars`, `remote-vars`,
 `remote`, `remote-stdin`, `registry`, `registry-write`, `runbook-exec`,
 `runbook-replay` suites; a context-file secret grep; and the Phase 2C gate.
+
+## 9. Amendment: the legacy switch is removed
+
+Rachid withdrew compatibility layers on 2026-09-12. Section 6 point 7 and the
+`CLOUDIFY_LEGACY_VARS=1` rollback switch are deleted, together with
+`_cloudify_pkg_remote_vars` and `_cloudify_registry_raw_var`. The equivalence
+proofs survive as byte-exact golden fixtures captured before the deletion, so
+the payload text and the registry record stay pinned by data instead of by the
+old implementation.

@@ -980,3 +980,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Docs realigned from a compatibility period to migration-and-removal; `REDESIGN.md`, `GLOSSARY.md`, `README.md`, `ROADMAP.md` and `schemas/v1` updated; both earlier plan documents archived and every live citation repointed.
 - Schemas: `heuristic` replaces `legacy-heuristic`; `application_commit` is nullable in manifest, run and package-state with the `development_override` cross-field rule; validator green at 15 valid / 23 invalid.
 - Execution plan re-issued as `plans/state-model-v2-recovery.md`, `PLAN.md` repointed; order R0 baseline, R1 Phase 2 repair, R2 Phase 3 audit, R3 fresh Phase 4 design, then Phases 4-9, each with independent SPEC and Technical `PASS` gates.
+
+### 2026-09-13 - why the v2 plan was replaced
+
+- Cloudify was executing `plans/state-model-v2.md`. Rachid detected drift against that plan's own contract, not a schedule slip, and directed a recovery rather than more patching.
+- Two independent read-only audits confirmed the drift with `file:line` evidence: a registry writer reopening value stores after the dispatch context was built, a package state written as flat text into a file named `state.json` while its schema required JSON, a forgeable remote result sentinel, package-instance identity dropped from state keys, and migration fabricating `application_commit`.
+- Response: discard the uncommitted Phase 4 work, keep Phases 1 to 3 as a repairable baseline, archive the original plan as `plans/archived/state-model-v2-attempt1.md`, and replace it with `plans/state-model-v2-recovery.md` via `PLAN.md`.
+- The original plan's destination stands; its state-model contract did not. The replacement keeps the destination and corrects the contract.

@@ -2,7 +2,13 @@
 
 Goal: repair the committed Phase 2 and Phase 3 foundations, then implement `REDESIGN.md` through completion without carrying rejected code or compatibility layers.
 
-Decision: ADR-022.
+Decision: ADR-022 and ADR-023.
+
+## Why this plan exists
+
+Cloudify was executing `plans/state-model-v2.md`. Rachid detected that the work had drifted away from that plan's own contract, not merely fallen behind it, and directed a recovery instead of more patching. Two independent read-only audits then confirmed the drift with `file:line` evidence: a registry writer that reopened value stores after the dispatch context was built (the second-walk defect the redesign exists to remove), a package-state file that was flat text in a file named `state.json` while its schema required JSON, a remote result channel a recipe could forge, package-instance identity dropped from state keys, and migration fabricating `application_commit`. The uncommitted Phase 4 work was discarded, Phases 1 to 3 were kept as a repairable baseline, and this plan replaced `plans/state-model-v2.md`, now archived as `plans/archived/state-model-v2-attempt1.md`.
+
+The original plan was not wrong about the destination; it was wrong about the state model it would have shipped. This plan keeps the destination and corrects the contract, so the chain is: `plans/state-model-v2.md` (drifted, archived) to this plan (R0 to R3 repair, then Phases 4 to 9).
 
 This plan supersedes `plans/archived/state-model-v2-attempt1.md`.
 
@@ -13,6 +19,7 @@ Its completed boxes do not authorize work and must not be copied here.
 ## Current truth
 
 - [x] Phase 1 schemas, identity rules, fixtures and defect proofs are retained.
+- [x] Cloudify was executing `plans/state-model-v2.md`; Rachid detected drift against that plan and directed recovery rather than further patching, and two independent audits confirmed it.
 - [x] Phase 2 and Phase 3 commits are retained as a repairable baseline, not accepted as specification-complete.
 - [x] Uncommitted Phase 4A code was archived under `~/tmp/cloudify-phase4a-rejected-20260913/` and removed from the repository.
 - [x] The rejected `plans/state-model-v2-phase4-design.md` was removed.

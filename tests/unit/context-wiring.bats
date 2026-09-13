@@ -20,6 +20,8 @@ setup() {
     source lib/packages.sh
     source lib/vars.sh
     source lib/deployments.sh
+    source lib/targets.sh
+    source lib/runbooks.sh
     source lib/context.sh
     source lib/remote.sh
 
@@ -28,6 +30,11 @@ setup() {
     export DEBUG=false
     export CLOUDIFY_CONTEXT_TARGET=$'local\t\tlocalhost'
     cloudify_init_log
+
+    unset CLOUDIFY_NODE IVPS_DEFAULT_NODE
+    IVPS_NODES=(cloudai)
+    IVPS_ROWS=(cloudai:xfce-test)
+    IVPS_LIST_RC=0
 
     export DEP="wiring-dep"
     cloudify_deployment_create "$DEP" >/dev/null
@@ -51,6 +58,29 @@ setup() {
 
 teardown() {
     teardown_test_env
+}
+
+# ivps stub as a shell function (shadows any real ivps in PATH): the runbook
+# preflight needs target resolution, nothing else.
+ivps() {
+    local sub="${1:-}" e r
+    case "$sub" in
+        node)
+            for e in ${IVPS_NODES[@]+"${IVPS_NODES[@]}"}; do
+                [[ "$e" == "${3:-}" ]] && { echo "/ivps/nodes/${3:-}"; return 0; }
+            done
+            return 1
+            ;;
+        list)
+            [[ "${IVPS_LIST_RC:-0}" -eq 0 ]] || return "$IVPS_LIST_RC"
+            echo "  REMOTE:NAME      STATUS"
+            for r in ${IVPS_ROWS[@]+"${IVPS_ROWS[@]}"}; do
+                printf '  %-30s Running\n' "$r"
+            done
+            return 0
+            ;;
+        *) return 1 ;;
+    esac
 }
 
 # --- fixtures ---------------------------------------------------------------
@@ -321,9 +351,11 @@ assert_case() {
 
 @test "the router's local install dispatch creates and fills a 0600 context file" {
     # Black-box: the real router, a stubbed @default package and one fixture
-    # package whose recipe reports the forwarded value. DEBUG=true keeps the
-    # router's EXIT cleanup from wiping CLOUDIFY_TMP, so the context file the
-    # parent created and the child filled is still there to inspect.
+    # package whose recipe reports the forwarded value. The parent removes the
+    # dispatch context after the registry write (design section 5), so the test
+    # snapshots it while the run is in flight: the file is created before the
+    # background dispatch and filled atomically (mv) by the child, so a copy
+    # taken while it is non-empty is the child's context.
     local home cfg
     home=$(mktemp -d "$CLOUDIFY_TMP/home.XXXXXX")
     cfg="$CLOUDIFY_TMP/lp-config"
@@ -335,14 +367,31 @@ EOF
     printf 'LOCAL_VAR: fromyaml\n' > "$cfg/pkgs/localtest.yaml"
 
     # The router pins CLOUDIFY_TMP (cloudify constants, overriding the env), so
-    # the dispatch context lands there. Snapshot before/after: only the files
-    # this run created are inspected.
-    local ctx_root before_file after_file ctx
+    # the dispatch context lands there. Only files this run creates are captured.
+    local ctx_root before_file saved ctx_path ctx_pid ctx
     ctx_root=$(sed -n 's/^export CLOUDIFY_TMP=//p' "$CLOUDIFY_SCRIPT_DIR/cloudify" | head -1)
     [ -d "$ctx_root" ]
     before_file="$CLOUDIFY_TMP/ctx-before"
-    after_file="$CLOUDIFY_TMP/ctx-after"
     ls "$ctx_root"/cloudify-context-* > "$before_file" 2>/dev/null || true
+    saved="$CLOUDIFY_TMP/ctx-captured"
+    ctx_path="$CLOUDIFY_TMP/ctx-path"
+    (
+        for ((_i = 0; _i < 2000; _i++)); do
+            for _f in "$ctx_root"/cloudify-context-*; do
+                [[ -f "$_f" && -s "$_f" ]] || continue
+                # The @default pre-pass fills the same file first (an empty name
+                # set); wait for the fixture's name to appear.
+                grep -q '^value.LOCAL_VAR.source:' "$_f" 2>/dev/null || continue
+                if grep -qxF "$_f" "$before_file"; then continue; fi
+                cp -p "$_f" "$saved"
+                printf '%s\n' "$_f" > "$ctx_path"
+                exit 0
+            done
+            sleep 0.01
+        done
+        exit 1
+    ) &
+    ctx_pid=$!
 
     run env HOME="$home" \
         CLOUDIFY_DIR="$CLOUDIFY_DIR" \
@@ -356,15 +405,18 @@ EOF
     [ "$status" -eq 0 ]
     [ "$(cat "$CLOUDIFY_TMP/local-var-out")" = "fromyaml" ]
 
-    ls "$ctx_root"/cloudify-context-* > "$after_file" 2>/dev/null || true
-    ctx=$(grep -vxF -f "$before_file" "$after_file" | head -1) || true
-    step "context file: ${ctx:-none}"
+    wait "$ctx_pid" || true
+    ctx=$(cat "$ctx_path" 2>/dev/null || true)
+    step "context file: ${ctx:-none} (captured while in flight)"
     [ -n "$ctx" ]
-    [ "$(stat -c '%a' "$ctx")" = "600" ]
-    [ "$(cloudify_context_read "$ctx" action)" = "install" ]
-    [ "$(cloudify_context_read "$ctx" value.LOCAL_VAR.source)" = "package" ]
-    [ "$(cloudify_context_read "$ctx" value.LOCAL_VAR.form)" = "literal" ]
-    rm -f "$ctx"
+    [ "$(stat -c '%a' "$saved")" = "600" ]
+    [ "$(cloudify_context_read "$saved" action)" = "install" ]
+    [ "$(cloudify_context_read "$saved" value.LOCAL_VAR.source)" = "package" ]
+    [ "$(cloudify_context_read "$saved" value.LOCAL_VAR.form)" = "literal" ]
+
+    subrubric "the parent removed the context after the registry write"
+    [ ! -e "$ctx" ]
+    rm -f "$saved" "$ctx_path"
 }
 
 @test "the router builds the context in the parent and records the path per pid" {
@@ -389,4 +441,60 @@ EOF
     subrubric "lib/remote.sh keeps the walker only behind the legacy switch"
     grep -q '_cloudify_pkg_remote_vars "\$action" "${pkgs\[@\]}"' "$BATS_TEST_DIRNAME/../../lib/remote.sh"
     grep -q 'cloudify_context_build' "$BATS_TEST_DIRNAME/../../lib/remote.sh"
+}
+
+# --- preflight selects through the dispatcher's single label implementation ---
+
+@test "preflight and a real dispatch select the same source for every declared name" {
+    rubric "one label implementation (cloudify_context_source_of): preflight == the context's value.<NAME>.source"
+    declare_pkg preflight-pkg FIX_PRE_ENV FIX_PRE_DEP FIX_PRE_PKG FIX_PRE_GLOBAL FIX_PRE_MISSING
+    reset_stores
+    export FIX_PRE_ENV=env-value
+    set_deployment FIX_PRE_DEP dep-value
+    set_pkg preflight-pkg FIX_PRE_PKG pkg-value
+    set_global FIX_PRE_GLOBAL global-value
+    unset FIX_PRE_DEP FIX_PRE_PKG FIX_PRE_GLOBAL FIX_PRE_MISSING
+
+    local rb="$CAP_DIR/preflight.md"
+    cat > "$rb" <<'EOF'
+---
+deployment: wiring-dep
+targets: guest
+---
+```bash step=install target=guest pkg=preflight-pkg
+echo ok
+```
+EOF
+
+    subrubric "preflight fails listing exactly the name no source provides"
+    run cloudify_runbook_preflight "$rb" --target guest=cloudai:xfce-test
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"preflight-pkg: FIX_PRE_MISSING"* ]]
+    [[ "$output" != *"FIX_PRE_ENV"* ]]
+    [[ "$output" != *"FIX_PRE_DEP"* ]]
+    [[ "$output" != *"FIX_PRE_PKG"* ]]
+    [[ "$output" != *"FIX_PRE_GLOBAL"* ]]
+
+    subrubric "the same dispatch labels those names with those sources"
+    local ctx="$CAP_DIR/preflight-context.yaml"
+    : > "$ctx"
+    chmod 600 "$ctx"
+    export CLOUDIFY_CONTEXT_FILE="$ctx"
+    capture context preflight install preflight-pkg
+    unset CLOUDIFY_CONTEXT_FILE
+
+    local name expected
+    while IFS='=' read -r name expected; do
+        [ "$(cloudify_context_read "$ctx" "value.$name.source")" = "$expected" ]
+        step "$name -> $(cloudify_context_read "$ctx" "value.$name.source")"
+    done <<'EOF'
+FIX_PRE_ENV=environment
+FIX_PRE_DEP=deployment
+FIX_PRE_PKG=package
+FIX_PRE_GLOBAL=global
+EOF
+
+    subrubric "the name preflight judged unresolved has no context block either"
+    ! cloudify_context_read "$ctx" value.FIX_PRE_MISSING.source
+    unset FIX_PRE_ENV
 }

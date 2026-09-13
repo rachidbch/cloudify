@@ -268,3 +268,60 @@ EOF
     rec=$(cloudify_registry_file exec-sep cloudai xfce-test xfce-test demo)
     [ ! -e "$rec" ]
 }
+
+@test "execute: CLOUDIFY_LEGACY_VARS=1 keeps the deployment-store-only snapshot" {
+    rubric "rollback switch -> no resolver view; the pre-Phase-2 value.* set (design section 6.7)"
+    local rb="$CLOUDIFY_TMP/legacy-values.md"
+    mkdir -p "$CLOUDIFY_DIR/pkg/demo"
+    printf 'ENV_ONLY\n' > "$CLOUDIFY_DIR/pkg/demo/.remote-vars"
+    _cloudify_vars_file_set "$(_cloudify_deployment_config exec-legacy)" FOO bar
+    _make_runbook "$rb" <<'EOF'
+---
+deployment: exec-legacy
+targets: guest
+---
+```bash step=install target=guest pkg=demo id=one
+echo ok
+```
+EOF
+    export ENV_ONLY=env-value CLOUDIFY_LEGACY_VARS=1
+    run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test
+    unset CLOUDIFY_LEGACY_VARS ENV_ONLY
+    [ "$status" -eq 0 ]
+
+    local snap
+    snap=$(_snapshot exec-legacy)
+    grep -q "^value.FOO: bar$" "$snap"
+    ! grep -q "^value.ENV_ONLY" "$snap"
+}
+
+@test "execute: the snapshot adds declared names and keeps every deployment key" {
+    rubric "resolver view built once per run: adds the package name, corrects the env name, drops no deployment line"
+    mkdir -p "$CLOUDIFY_DIR/pkg/demo"
+    printf 'PKG_ONLY\nENV_WINS\n' > "$CLOUDIFY_DIR/pkg/demo/.remote-vars"
+    cloudify_vars_pkg_write demo PKG_ONLY from-package
+    _cloudify_vars_file_set "$(_cloudify_deployment_config exec-add)" DEP_KEY kept
+    _cloudify_vars_file_set "$(_cloudify_deployment_config exec-add)" ENV_WINS from-deployment
+    export ENV_WINS=from-env
+
+    local rb="$CLOUDIFY_TMP/add.md"
+    _make_runbook "$rb" <<'EOF'
+---
+deployment: exec-add
+targets: guest
+---
+```bash step=install target=guest pkg=demo id=one
+echo ok
+```
+EOF
+    run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test
+    unset ENV_WINS
+    [ "$status" -eq 0 ]
+
+    local snap
+    snap=$(_snapshot exec-add)
+    grep -q "^value.DEP_KEY: kept$" "$snap"
+    grep -q "^value.PKG_ONLY: from-package$" "$snap"
+    grep -q "^value.ENV_WINS: from-env$" "$snap"
+    [ "$(grep -c '^value\.' "$snap")" -eq 3 ]
+}

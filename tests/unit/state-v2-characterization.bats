@@ -9,9 +9,10 @@
 #     the same name again with its own implementation. The run snapshot
 #     (lib/runbooks.sh:cloudify_runbook_execute) records value.* from the
 #     deployment store alone.
-#   - case 1.1 (one pkg, one target, four conflicting sources): the payload and
-#     the registry record carry the caller value; the snapshot carries the
-#     deployment value; the two records disagree.
+#   - case 1.1 (one pkg, one target, four conflicting sources): Phase 2 made the
+#     snapshot agree with the payload and the registry, so all three now carry
+#     the caller value. The assertions below pin that agreement; the pre-Phase-2
+#     divergence is preserved in the plan's characterization notes, not here.
 #   - case 1.2 part one: two packages on two targets consume one deployment
 #     input, with no prior package state.
 #   - case 1.2 part two: package defaults stay independent when no mapping
@@ -111,7 +112,7 @@ _snapshot_value() {
 # 1.1 one dispatch, four conflicting sources
 # ---------------------------------------------------------------
 
-@test "1.1 one declared name: payload=caller, registry=caller, snapshot=deployment" {
+@test "1.1 one declared name: payload=registry=snapshot=caller" {
     rubric "one package, one target, one name from caller env + deployment + package + global"
     _declare charpkg SHARED_INPUT
     printf 'SHARED_INPUT: global-value\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
@@ -128,6 +129,8 @@ _snapshot_value() {
     [ -f "$payload" ]
     step "payload exists ($(wc -l < "$payload") lines); caller value must be the one forwarded"
     grep -q "export SHARED_INPUT='caller-value'" "$payload"
+    local payload_value
+    payload_value=$(sed -n "s/.*export SHARED_INPUT='\\(.*\\)'.$/\\1/p" "$payload" | head -1)
 
     subrubric "registry record (independent raw walk over the same name)"
     local record registry_value
@@ -136,7 +139,7 @@ _snapshot_value() {
     step "registry var.SHARED_INPUT=$registry_value"
     [ "$registry_value" = "caller-value" ]
 
-    subrubric "run snapshot (deployment store alone)"
+    subrubric "run snapshot (deployment store + the resolver view)"
     local rb="$CLOUDIFY_TMP/char.md"
     _make_runbook "$rb" <<'EOF'
 ---
@@ -153,11 +156,12 @@ EOF
     snap=$(_snapshot "$DEP")
     snapshot_value=$(_snapshot_value "$snap" SHARED_INPUT)
     step "snapshot value.SHARED_INPUT=$snapshot_value"
-    [ "$snapshot_value" = "deployment-value" ]
+    [ "$snapshot_value" = "caller-value" ]
 
-    subrubric "pinned divergence: the two records answer differently for one name"
-    step "registry=$registry_value snapshot=$snapshot_value (today they differ)"
-    [ "$registry_value" != "$snapshot_value" ]
+    subrubric "v2: one resolution feeds all three records"
+    step "payload=$payload_value registry=$registry_value snapshot=$snapshot_value"
+    [ "$registry_value" = "$payload_value" ]
+    [ "$registry_value" = "$snapshot_value" ]
 
     subrubric "no literal secret in payload or log"
     ! grep -q "placeholder-secret-must-not-leak" "$payload"

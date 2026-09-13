@@ -27,7 +27,11 @@
 # cloudify_runbook_execute also honours CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES (a run
 # snapshot path): the new snapshot records that file's `value.*` lines instead of
 # the deployment store's current state. replay sets it so its own snapshot stays
-# replayable after the store changes. Snapshots are
+# replayable after the store changes. Otherwise the snapshot keeps every
+# deployment-store key and corrects/adds the declared names of the run's step
+# packages with the source form the payload would use (one resolution built once
+# per run). CLOUDIFY_LEGACY_VARS=1 keeps the deployment-store-only record.
+# Snapshots are
 # ${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml (0600, atomic); a name already
 # taken (a run and its immediate replay share a second) gets a -2, -3, ... suffix.
 #
@@ -66,6 +70,71 @@ function _cloudify_runbook_pkg_type() {
         [[ "$type" == "$k" ]] && return 0
     done
     return 1
+}
+
+# _cloudify_runbook_source_label <name> <pkg> - the dispatcher's single label
+# implementation (lib/context.sh:cloudify_context_source_of) when the resolver
+# module is loaded, else the same implementation through its lib/vars.sh
+# wrapper (a unit test that loads neither). Both delegate to
+# lib/vars.sh:_cloudify_vars_source_label, so preflight and dispatch cannot
+# select different sources. The wrapper's legacy spelling (`env`) is normalized
+# to the canonical one (`environment`) here: the selection is identical either
+# way, and `_cloudify_vars_source_of` keeps its own spelling for display.
+function _cloudify_runbook_source_label() {
+    local label
+    if declare -F cloudify_context_source_of >/dev/null 2>&1; then
+        cloudify_context_source_of "${1:-}" "${2:-}"
+        return 0
+    fi
+    label=$(_cloudify_vars_source_of "${1:-}" "${2:-}")
+    case "$label" in
+        env) printf '%s\n' environment ;;
+        *) printf '%s\n' "$label" ;;
+    esac
+}
+
+# _cloudify_runbook_declared_names <pkg> - declared names from
+# pkg/<pkg>/.remote-vars, declaration order, one per line (the same three shapes
+# lib/vars.sh:cloudify_vars_pkg_read enumerates).
+function _cloudify_runbook_declared_names() {
+    local pkg="${1:-}" decl line name
+    [[ -n "$pkg" && -n "${CLOUDIFY_DIR:-}" ]] || return 0
+    decl="$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
+    [[ -f "$decl" ]] || return 0
+    while IFS= read -r line; do
+        line="$(_cloudify_vars_trim "$line")"
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
+            name="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)$ ]]; then
+            name="${BASH_REMATCH[1]}"
+        else
+            continue
+        fi
+        printf '%s\n' "$name"
+    done < "$decl"
+}
+
+# _cloudify_runbook_resolver_value <name> <label> <pkg> - the raw, replayable
+# form of the resolved value, i.e. the form the payload would use: the
+# caller-env literal, else the ONE store the label names (never the ladder, and
+# no value on stdout outside this helper). A value that a flat `KEY: value`
+# line cannot carry verbatim (a newline, or an env literal a replay would
+# re-read as a reference) is encoded as `@base64:`, the var-store encoding
+# replay already resolves. rc 1 when the label names no source.
+function _cloudify_runbook_resolver_value() {
+    local name="$1" label="$2" pkg="$3" value
+    case "$label" in
+        environment) value="${!name:-}" ;;
+        deployment) value=$(_cloudify_vars_store_get "$(_cloudify_deployment_config "${CLOUDIFY_DEPLOYMENT:-}")" "$name") ;;
+        package) value=$(_cloudify_vars_store_get "$(cloudify_vars_pkg_file "$pkg")" "$name") ;;
+        global) value=$(_cloudify_vars_store_get "$(cloudify_vars_global_file)" "$name") ;;
+        *) return 1 ;;
+    esac
+    if [[ "$label" == "environment" && ( "$value" == *$'\n'* || "$value" == @* ) ]]; then
+        value="@base64:$(printf '%s' "$value" | base64 -w0)"
+    fi
+    printf '%s' "$value"
 }
 
 # _cloudify_runbook_now — UTC ISO8601, second precision (snapshot timestamps)
@@ -464,8 +533,11 @@ function cloudify_runbook_preflight() {
             [[ "$dline" == *=* ]] && continue # NAME=/NAME=value are not required
             [[ "$dline" =~ ^[A-Z_][A-Z0-9_]*$ ]] || continue
             name="$dline"
-            src=$(_cloudify_vars_source_of "$name" "$pkg")
-            [[ "$src" == "recipe-default" ]] || continue
+            src=$(_cloudify_runbook_source_label "$name" "$pkg")
+            case "$src" in
+                recipe | recipe-default) ;;
+                *) continue ;;
+            esac
             [[ ",$seen_missing," == *",$pkg:$name,"* ]] && continue
             seen_missing="${seen_missing:+$seen_missing,}$pkg:$name"
             missing+=("$pkg: $name")
@@ -659,10 +731,15 @@ function cloudify_runbook_execute() {
     chmod 600 "$outputs_file" 2>/dev/null || true
     export CLOUDIFY_OUTPUTS_FILE="$outputs_file"
 
-    # 3. Snapshot the deployment store's raw vars for the record. A replay sets
+    # 3. Snapshot the run's values for the record. A replay sets
     # CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES (its source snapshot): the new record then
     # carries the values the run was seeded with, so it stays replayable even if
     # the store changed since.
+    # Without a replay the record keeps every deployment-store key it always
+    # kept and corrects/adds the declared names the resolver knows, with the same
+    # source form the payload would use (one resolution, design section 6.4).
+    # The resolver view is built ONCE, here, never per step and never printed;
+    # CLOUDIFY_LEGACY_VARS=1 keeps the deployment-store-only record.
     local -a value_lines=()
     local cfg
     if [[ -n "${CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES:-}" ]]; then
@@ -674,6 +751,39 @@ function cloudify_runbook_execute() {
             value_lines+=("$rline")
         done < "$CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES"
     else
+        local -a _rv_order=()
+        local -A _rv_value=()
+        if [[ "${CLOUDIFY_LEGACY_VARS:-}" != "1" ]]; then
+            local -A _rv_pkg=() _rv_seen=()
+            local _rl _rtype _rrest _rpkg _rname _rlabel _rvalue
+            while IFS= read -r _rl; do
+                [[ -n "$_rl" ]] || continue
+                _rtype="${_rl%%$'\t'*}"
+                _cloudify_runbook_pkg_type "$_rtype" || continue
+                _rrest="${_rl#*$'\t'}"     # drop type -> id\ttarget\tpkg\tbody
+                _rrest="${_rrest#*$'\t'}"  # drop id -> target\tpkg\tbody
+                _rrest="${_rrest#*$'\t'}"  # drop target -> pkg\tbody
+                _rpkg="${_rrest%%$'\t'*}"
+                [[ -n "$_rpkg" ]] || continue
+                [[ -n "${_rv_pkg[$_rpkg]:-}" ]] && continue
+                _rv_pkg["$_rpkg"]=1
+                while IFS= read -r _rname; do
+                    [[ -n "$_rname" ]] || continue
+                    [[ -n "${_rv_seen[$_rname]:-}" ]] && continue
+                    _rv_seen["$_rname"]=1
+                    _rlabel=$(_cloudify_runbook_source_label "$_rname" "$_rpkg")
+                    case "$_rlabel" in
+                        recipe | recipe-default) continue ;;
+                    esac
+                    _rvalue=$(_cloudify_runbook_resolver_value "$_rname" "$_rlabel" "$_rpkg") || continue
+                    _rv_order+=("$_rname")
+                    _rv_value["$_rname"]="$_rvalue"
+                done < <(_cloudify_runbook_declared_names "$_rpkg")
+            done <<< "$parse_out"
+        fi
+
+        local -A _vline=() _vseen=()
+        local -a _vorder=()
         cfg=$(_cloudify_deployment_config "$deployment")
         if [[ -f "$cfg" ]]; then
             local vline vkey
@@ -681,9 +791,20 @@ function cloudify_runbook_execute() {
                 [[ -n "$vline" && "$vline" != \#* && "$vline" == *:* ]] || continue
                 vkey="$(_cloudify_vars_trim "${vline%%:*}")"
                 [[ -n "$vkey" ]] || continue
-                value_lines+=("value.$vkey: $(_cloudify_vars_trim "${vline#*:}")")
+                _vline["$vkey"]="value.$vkey: $(_cloudify_vars_trim "${vline#*:}")"
+                if [[ -z "${_vseen[$vkey]:-}" ]]; then _vseen["$vkey"]=1; _vorder+=("$vkey"); fi
             done < "$cfg"
         fi
+        # The resolver view corrects an existing line or appends a new one; no
+        # deployment-store line ever disappears.
+        local vname
+        for vname in ${_rv_order[@]+"${_rv_order[@]}"}; do
+            _vline["$vname"]="value.$vname: ${_rv_value[$vname]}"
+            if [[ -z "${_vseen[$vname]:-}" ]]; then _vseen["$vname"]=1; _vorder+=("$vname"); fi
+        done
+        for vname in ${_vorder[@]+"${_vorder[@]}"}; do
+            value_lines+=("${_vline[$vname]}")
+        done
     fi
 
     # 4/5. Walk the steps, streaming their output, collecting step outputs.

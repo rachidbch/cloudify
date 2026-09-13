@@ -266,3 +266,12 @@
 - Payload text proven byte-identical: 16 new tests in `tests/unit/context-wiring.bats` capture the payload twice, with `CLOUDIFY_LEGACY_VARS=1` and without, and `cmp` them over an 8-case matrix (caller env, deployment, package, global, base64 reference, multiline, rightmost wins, dependency). ssh argv carries no path and no value.
 - Deliberate non-identical detail: the re-emitted "required var unset" warning uses a hyphen where the legacy text used an em dash; the condition and wording are otherwise the same.
 - Verified: `task test-unit` 559 ok 0 not ok, `task lint` rc 0.
+
+## 2026-09-12 - Phase 2 slice 2B-ii: registry, snapshot and preflight from the context
+
+- `cloudify_registry_record_build` takes the dispatch context file and reads `var.<NAME>` from it: reference text verbatim for a reference, the labelled store's raw text for a literal, no precedence walk. Missing or unreadable context warns and writes nothing; it never falls back to a second walk. The context file is removed after the write and on the router's failure path.
+- Equivalence proved before deleting anything: 9 cases build the record twice, legacy and context, over caller env, deployment, package, global, caller-env-plus-conflicting-deployment, base64 reference, multiline, unresolved declared name and an undeclared ambient name, and assert full text equality after normalizing only the write timestamps. `_cloudify_registry_raw_var` stays in the tree behind `CLOUDIFY_LEGACY_VARS=1` as the design's rollback rule requires.
+- Snapshot: deployment-store keys are kept and a resolver view built once per run corrects or appends the declared names, so no existing line disappears. Preflight selects sources through the same label function as the dispatcher (a spelling mismatch between the two was found and fixed).
+- The red gate flipped: `tests/red/state-v2-duplicate-resolution.bats` test 1 is now green (payload = registry = snapshot = caller-value); test 2 stays red, it needs the Phase 3 application input mappings.
+- Verified: `task test-unit` 567 ok 0 not ok, `task lint` rc 0.
+- Accepted change, recorded: a store value that is present but empty no longer falls through to the next store for the registry record, because the record must agree with the payload; this is G2 7.2 scope.

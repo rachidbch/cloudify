@@ -57,7 +57,7 @@ A required design change needs a new append-only ADR and Rachid's consent before
 - [ ] Deleting a migration reader or its fixtures must leave the surviving gates (especially `bash schemas/v1/validate.sh`) passing; name the replacement gate in the same task.
 - [ ] No code commit while a SPEC or Technical reviewer has actionable feedback on that slice.
 - [ ] Any slice that changes `lib/`, the `cloudify` router, `lib/shadows/` or `lib/shadow.sh` needs the project CRITICAL GATE first, in this order: a read-only description subagent writes the artifact explaining the bash mechanism at risk, then a plan states explicitly why the change cannot break it, then Rachid gives explicit consent, then the consent is recorded in `LOGS.md`. No tick may be claimed before all four.
-- [ ] When a review returns actionable feedback, fix the slice, rerun its focused tests and shellcheck, then request that review again from a fresh context.
+- [ ] Plan-level reviews are bounded: stop after two consecutive rounds with no must-fix finding, log anything smaller as an implementation checklist item, and let the phase gate settle it on real code. Per-phase reviews of a real diff are the primary gate; reviewing plan prose is not.
 - [ ] `git status --short` is clean at every committed boundary.
 
 Test levels are fixed. L0 is shellcheck plus syntax. L1 is a real-target driver suite that runs the real code against a real target without dispatching a package, landing one file per slice: `tests/unit/drivers/context.bats` in R1, `tests/unit/drivers/state.bats` and `tests/unit/drivers/runbook.bats` in R2, `tests/unit/drivers/event.bats` in Phase 4.1 alongside the event writer it drives, and a run-record driver in Phase 6. L2 is one no-verify mutation of the disposable package `fixture-split` (already in `pkg/`) with an inspection of Cloudify's own log. L3 is `PKG_VERIFY_TIMEOUT=30 cloudify verify fixture-split`. L4 is the scoped bats acceptance harness. Every level names a concrete artifact, and no driver is created before the code it drives, so none can be satisfied by an empty green file.
@@ -79,6 +79,16 @@ R0 changes no runtime code and R3 writes no code, so those two run the reviews b
 
 The fleet E2E (`tests/e2e/k3s-multi-cluster.bats`, four throwaway nodes, live ACL mutation, up to fifteen minutes per node) is not a per-phase gate: it validates k3s UX rather than the state model, so it runs once at the Phase 9 final gate, where the tailnet and ACL restore is part of the exit criteria.
 If the two-host E2E is genuinely unrunnable for a phase, that is a blocker to raise with Rachid, not a line to tick with a substitute.
+
+## Known implementation risks carried into R1
+
+Surfaced by plan review, each verified against the code, none yet fixed because they are code:
+
+- Four places read the context as flat text and go silent, not loud, once it is JSON. A missed one empties the envsubst allow-list and payload forwarding stops exporting package values without an error: the allow-list `sed` (`lib/remote.sh:123`), `cloudify_context_read` (`lib/context.sh:364-376`), the DEBUG rendering loop (`lib/remote.sh:250-260`), and the snapshot resolver's store read (`lib/runbooks.sh:189-191`). Each needs a test that fails if it returns nothing.
+- Context removal has two live leaks today: a direct package command with no deployment (`lib/registry.sh:395-397` returns before its `rm` at `:418`), and `cleanup()` being DEBUG-guarded (`lib/utils.sh:77-79`). The fix must keep the single existing EXIT trap and must not leave the file behind under DEBUG.
+- `tests/unit/golden-fixtures.bats` pins the payload matrix and the registry record in one file. The registry half must go with the writer while the payload half stays, or R1.3's byte-exact proof is lost.
+- `lib/state.sh` keeps a hand-rolled JSON encoder and field parser beside `jq`, so "one encoder" is not yet true (R2.2).
+- `tests/e2e/two-host-application.bats` does not exist yet; the first phase exit gate cannot be met until R1 creates it.
 
 ## Recovery Gate R0: clean baseline
 

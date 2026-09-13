@@ -84,7 +84,7 @@ task lint              # Push + shellcheck
 
 **Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues.
 
-**Gate artifacts:** the CRITICAL GATE description and non-breakage argument are temporary working notes: write them to `tmp/` and record their durable trace in `LOGS.md` (path, invariants asserted, what was traced, consent given). Never add them to `plans/`, and keep them a page or a table, not a plan-shaped document.
+**Normative files:** the design (`REDESIGN.md`) and the plan (`plans/<current>.md` via `PLAN.md`) are the single source of truth. Everything else is a working note I may use freely, except `schemas/v1/` (machine-enforced), `AGENTS.md` (process) and `LOGS.md`/`HISTORY.md` (required records). Every spec or plan change must land in a normative file, and a design change lands in `REDESIGN.md` in the same commit as the decision that authorizes it.
 
 **ADRs:** self-contained, never referencing a path that can move or be deleted. `REDESIGN.md` and `PLAN.md` are the only stable references an ADR may name.
 

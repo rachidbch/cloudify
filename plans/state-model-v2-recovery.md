@@ -60,7 +60,7 @@ A required design change needs a new append-only ADR and Rachid's consent before
 - [ ] When a review returns actionable feedback, fix the slice, rerun its focused tests and shellcheck, then request that review again from a fresh context.
 - [ ] `git status --short` is clean at every committed boundary.
 
-Test levels are fixed: L0 is shellcheck plus syntax; L1 is a real-target driver without dispatch; L2 is one no-verify mutation; L3 is verify with `PKG_VERIFY_TIMEOUT=30`; L4 is the scoped bats acceptance harness.
+Test levels are fixed. L0 is shellcheck plus syntax. L1 is a real-target driver suite at `tests/unit/drivers/context.bats`, `tests/unit/drivers/state.bats`, `tests/unit/drivers/event.bats` and `tests/unit/drivers/runbook.bats`, created in R1 and R2, that runs the real code against a real target without dispatching a package. L2 is one no-verify mutation of the disposable package `fixture-split` (already in `pkg/`) with an inspection of Cloudify's own log. L3 is `PKG_VERIFY_TIMEOUT=30 cloudify verify fixture-split`. L4 is the scoped bats acceptance harness. Every level names a concrete artifact, so none can be satisfied by a no-op.
 
 ## Phase exit gate (every code phase)
 
@@ -68,10 +68,12 @@ Every code phase (R1, R2 and Phases 4 to 9) ends here, and no later phase starts
 R0 changes no runtime code and R3 writes no code, so those two run the reviews but skip the E2E lines.
 
 - [ ] Full unit suite green on the phase's final HEAD.
-- [ ] Full disposable end-to-end run green as an operator would run it: the two-host application workflow exercising install, verify, reconfigure, interruption, shared claim, conflict, first teardown and last teardown. This is the state-model blast radius, so it runs at every code phase.
+- [ ] Full disposable end-to-end run green in `tests/e2e/two-host-application.bats`, created in R1 and run as an operator would: two disposable hosts, the scenario set unlocked by this phase, and `CLOUDIFY_CMD="cloudify --no-defaults"`.
+- [ ] Run the phase's unlocked E2E scenarios only: R1 and R2 run install, verify and interruption; Phase 4 onward adds reconfigure, shared claim and conflict; Phase 7 adds first teardown and last teardown. A scenario whose phase has not landed stays marked not-yet-unlocked in the suite, never deleted and never silently skipped.
 - [ ] Every disposable resource torn down and the host policy proven restored, with no leftover node, binding or claim.
 - [ ] Fresh-context SPEC review against `REDESIGN.md`, ADR-022, ADR-023, the schemas and this plan, returning exactly `PASS` with no actionable feedback.
 - [ ] Fresh-context Technical review on a different model covering correctness, modularity, DRY, KISS, maintainability, Bash safety, error paths and lock ordering, returning exactly `PASS` with no actionable feedback.
+- [ ] Require every reviewer to show its work: alongside `PASS`, a checklist mapping each `REDESIGN.md` success criterion and each listed Technical concern to concrete file:line evidence. A bare `PASS` without that mapping is not a `PASS` and must be sent back.
 - [ ] Fix every review finding and re-review from a fresh context; defer none to a later phase.
 - [ ] Commit and push only when every line above is green.
 
@@ -101,13 +103,17 @@ Outcome: one private dispatch context contains everything every later consumer n
 
 ### R1.0 CRITICAL GATE before any `lib/` edit
 
-- [ ] Spawn a read-only subagent whose only mission is to describe how the env-var forwarding path works end to end: `declare -f` payload extraction, the `envsubst` allow-list, single-quoted `$VAR` remoting, first-write-wins claiming, and where the registry record and snapshot are written.
-- [ ] Write that description as an artifact and cite it from the plan before touching code.
-- [ ] State explicitly why the context change cannot break forwarding or the shadows, naming the invariants preserved and what was traced.
+The description artifact exists: `plans/state-model-v2-forwarding-description.md` (627 lines, written 2026-09-13 by a read-only subagent). It cites the forwarding path, the context, the registry and snapshot writers, the shadows, and `_cloudify_registry_context_raw` as the defect.
+
+- [x] Spawn a read-only subagent whose only mission is to describe how the env-var forwarding path works end to end: `declare -f` payload extraction, the `envsubst` allow-list, single-quoted `$VAR` remoting, first-write-wins claiming, and where the registry record and snapshot are written.
+- [x] Write that description as an artifact and cite it from the plan before touching code.
+- [ ] State explicitly why the context change cannot break forwarding or the shadows, naming the invariants preserved and what was traced. Use the artifact's section "What a safe Phase 2 fix may and may not touch" as the invariant list.
 - [ ] Obtain explicit consent from Rachid and record it in `LOGS.md`.
 
 ### R1.1 Freeze the context contract before code
 
+- [ ] Create `tests/e2e/two-host-application.bats` with every scenario named and the phase that unlocks each one, so the per-phase E2E gate has a real artifact from R1 onward.
+- [ ] Create the L1 driver suite `tests/unit/drivers/context.bats`, `tests/unit/drivers/state.bats`, `tests/unit/drivers/event.bats` and `tests/unit/drivers/runbook.bats`, running the real code on a real target without dispatching a package.
 - [ ] Add `schemas/v1/dispatch-context.schema.json` and valid and invalid fixtures.
 - [ ] Add `dispatch-context` to `schemas/v1/validate.sh`'s artifact list and update `schemas/v1/README.md` file list, field lists, validator description and `schema_version` rule for the fifth schema.
 - [ ] Use actual JSON for the context so the schema and the file cannot disagree, with `schema_version: 1` like every other machine-owned artifact.
@@ -182,6 +188,7 @@ Outcome: application identity, desired inputs, phase selection and manifests mat
 - [ ] Prove direct package commands bypass application manifests as specified.
 - [ ] Delete dead aliases, duplicate parsers, duplicate path builders and stale compatibility language.
 - [ ] Reduce `lib/runbooks.sh`, `lib/state.sh`, `lib/context.sh`, `lib/deployments.sh` and `lib/vars.sh` where the same fact is parsed or formatted more than once; inline each duplicate into one existing parser rather than adding another abstraction layer.
+- [ ] Replace `lib/state.sh`'s hand-rolled JSON encoder, field reader and bindings parser (`_cloudify_manifest_render`, `_cloudify_manifest_field_file`, `_cloudify_manifest_parse_bindings`) and its optional-jq shell fallback with `jq`, so "one parent-side encoder and validator" is true repo-wide rather than only for the context.
 - [ ] Replace the all-zeros `_CLOUDIFY_MANIFEST_NULL_COMMIT` sentinel with real `null` in the manifest and run records, now that the schemas allow it, and make the shell manifest validator accept null only with `development_override: true`.
 
 ### R2.3 Phase 3 gate
@@ -198,7 +205,7 @@ Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-s
 - [ ] Write a new `plans/state-model-v2-phase4-design.md` from `REDESIGN.md`, the corrected context schema and the package-state/event schemas; do not copy the rejected patch.
 - [ ] State is actual JSON and validates against `schemas/v1/package-state.schema.json` before atomic replacement.
 - [ ] No package state writer lands before the immutable event writer exists.
-- [ ] Tighten the package-state schema before implementation so every new applied, attempt, health and claim object carries a non-null event ID; migration also emits its own event.
+- [ ] The design must specify tightening the package-state schema so every new applied, attempt, health and claim object carries a non-null event ID; migration also emits its own event. The schema and fixture edit itself lands in Phase 4.1, not in this design-only gate.
 - [ ] Allow `applied.application_commit: null` only for a proved old-registry migration; require a 40-hex commit for every new application mutation and record the migration origin in its event.
 - [x] Keep `application_commit` nullable in the manifest and run schemas with one `allOf` rule requiring `development_override: true` whenever it is null, so a dirty or unidentified tree never forces a fabricated commit.
 - [x] Add the matching valid fixtures (`unproved-commit-development-override` for manifest and run, the migrated-observation package state) and invalid fixtures (`null-commit-without-development-override` for manifest and run), and keep `bash schemas/v1/validate.sh` green.
@@ -224,7 +231,17 @@ Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-s
 
 Outcome: one physical installation is represented once, every mutation has an immutable event, and one deployment cannot break another.
 
+### 4.0 CRITICAL GATE before any `lib/` edit
+
+This phase touches the remote result transport and the host lock in `lib/remote.sh`, plus the writers in `lib/state.sh`, so the gate applies in full.
+
+- [ ] Extend the R1.0 description artifact to cover the framed-result transport and the lock, citing the forwarding invariants it must not break.
+- [ ] State explicitly why the framed result and the host lock cannot break payload forwarding, the shadows or any recipe.
+- [ ] Obtain Rachid's explicit consent and record it in `LOGS.md`.
+
 ### 4.1 State and event substrate
+
+- [ ] Tighten `schemas/v1/package-state.schema.json` so every new applied, attempt, health and claim object carries a non-null event ID, add the matching fixtures, and keep `bash schemas/v1/validate.sh` green.
 
 - [ ] Add collision-resistant run and event IDs without a new runtime dependency.
 - [ ] Write immutable Cloudify-owned event files under the Cloudify state root.
@@ -255,7 +272,9 @@ Outcome: one physical installation is represented once, every mutation has an im
 - [ ] Fail the commit when a reported package or instance was not precomputed.
 - [ ] Commit successful dependency results, not only CLI package words.
 - [ ] Release the host lock before updating the manifest.
-- [ ] Once package state is written here, stop the runtime registry observation writer: the v2 package state becomes the single record of what landed, and the old registry record-write path plus its tests are deleted rather than kept beside it.
+- [ ] Once package state is written here, stop the runtime registry observation writer: the v2 package state becomes the single record of what landed, and the old registry record-write path is deleted rather than kept beside it.
+- [ ] Split `tests/unit/golden-fixtures.bats` in the same slice: delete only the registry-record half and its `tests/fixtures/golden/registry/*` cases, and keep the `tests/fixtures/golden/payload/*` matrix that R1.3 depends on. The record-format fixtures move to the `cloudify state migrate-registry` reader's suite in 4.7.
+- [ ] Name the new owner of context cleanup before deleting the old one. Today `_cloudify_registry_record_bg` removes the parent-owned 0600 context on success (`lib/registry.sh:415-417`). Deleting that path orphans a plaintext-bearing file unless the parent dispatch epilogue removes it on both success and failure through one EXIT and RETURN trap armed when the parent creates the context. That epilogue is the stated owner; add a test proving no context file survives a successful, a failed and an interrupted dispatch.
 - [ ] Keep only the migration command's registry reader until Phase 8 deletes it.
 
 ### 4.4 Phase-specific resolution
@@ -305,6 +324,14 @@ Outcome: one physical installation is represented once, every mutation has an im
 
 Outcome: classification is enforceable, no new artifact copies plaintext secrets or automatic outputs, and external-host state has durable identity.
 
+### 5.0 CRITICAL GATE before any `lib/` edit
+
+This phase touches secret classification, the outputs channel and the SSH transport, so the gate applies in full.
+
+- [ ] Extend the R1.0 description artifact to cover secret classification, the `CLOUDIFY_OUTPUTS_FILE` channel and the SSH option set, citing the shadow and forwarding invariants at risk.
+- [ ] State explicitly why the secret, output and SSH changes cannot break payload forwarding, password injection or recipe auth.
+- [ ] Obtain Rachid's explicit consent and record it in `LOGS.md`.
+
 - [ ] Validate explicit package and application secret declarations through one parser.
 - [ ] Keep `heuristic` as defense in depth and never call it legacy.
 - [ ] Expose classification without content through `cloudify vars declared`.
@@ -327,6 +354,14 @@ Outcome: classification is enforceable, no new artifact copies plaintext secrets
 
 Outcome: runs are durable, interruptions and event-state gaps are reportable, and events remain audit rather than replay commands.
 
+### 6.0 CRITICAL GATE before any `lib/` edit
+
+This phase touches the run writer and the dispatch epilogue in `lib/runbooks.sh`, so the gate applies in full.
+
+- [ ] Extend the R1.0 description artifact to cover the run snapshot writer, its replay reader and the dispatch epilogue that owns context cleanup.
+- [ ] State explicitly why the run and epilogue changes cannot break payload forwarding, the shadows or any recipe.
+- [ ] Obtain Rachid's explicit consent and record it in `LOGS.md`.
+
 - [ ] Write a schema-valid run record with `running` before the first selected step.
 - [ ] Finish it as `succeeded`, `failed` or `interrupted` with writer and boot identity.
 - [ ] Store selected phases and deployment identity, but no resolved values or automatic outputs.
@@ -345,6 +380,14 @@ Outcome: runs are durable, interruptions and event-state gaps are reportable, an
 ## Phase 7: pinned provenance, safe teardown and upgrade
 
 Outcome: teardown releases only owned resources and today's branch tip is never presented as yesterday's application.
+
+### 7.0 CRITICAL GATE before any `lib/` edit
+
+This phase touches commit pinning and the teardown path across `lib/runbooks.sh`, `lib/state.sh` and `lib/remote.sh`, so the gate applies in full.
+
+- [ ] Extend the R1.0 description artifact to cover commit resolution, remote execution and the teardown dispatch.
+- [ ] State explicitly why pinning and teardown cannot break payload forwarding, the shadows or any recipe.
+- [ ] Obtain Rachid's explicit consent and record it in `LOGS.md`.
 
 - [ ] Require a clean commit for production application runs.
 - [ ] Keep an explicit development override marked unreproducible.
@@ -366,6 +409,14 @@ Outcome: teardown releases only owned resources and today's branch tip is never 
 ## Phase 8: read surface, one-shot migration and deletion of bridges
 
 Outcome: operators inspect state through commands, all known old data is migrated once, and no migration or old-format code remains.
+
+### 8.0 CRITICAL GATE before any `lib/` edit
+
+This phase deletes the old readers and migration bridges, so the gate applies in full.
+
+- [ ] Extend the R1.0 description artifact to cover every function and file about to be deleted, so the deletion is provably complete rather than hopeful.
+- [ ] State explicitly why each deletion cannot break payload forwarding, the shadows or any recipe.
+- [ ] Obtain Rachid's explicit consent and record it in `LOGS.md`.
 
 - [ ] Add `cloudify deployments` from current manifests.
 - [ ] Add `cloudify deployment show <application>[/<flavor>] --name <name>`.

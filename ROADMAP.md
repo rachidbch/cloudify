@@ -72,6 +72,67 @@ operator discipline (`--from <id>`), which lives nowhere in the artifact.
 
 - [ ] Hosts pull the branch tip, so reconfigure or teardown cannot claim to execute the application commit recorded in state. Phase 7 of `PLAN.md` must pin remote execution and fail on commit drift before historical teardown is enabled. Automatic rebuild and command replay are deferred by ADR-022.
 
+## Dispatch context as a JSON contract (state-model v2, deferred)
+
+### What
+
+Convert the private dispatch context from its flat `key: value` format to JSON, give it a
+`schema_version: 1`, validate it against `schemas/v1/dispatch-context.schema.json` through
+`schemas/v1/validate.sh`, and make local `jq` the one parent-side JSON encoder and validator.
+The context is ephemeral and nothing persisted reads it, so there is no migration.
+
+### Why
+
+Three gains. The contract becomes machine-checked instead of checked by hand, so a malformed
+context fails loudly rather than silently emptying the payload's name allow-list. Multi-line
+values become native, so the `@base64:` convention is no longer needed inside the context
+(it stays in the registry record and the run snapshot, which are user-visible). And one
+encoder replaces the hand-rolled writer and its hand-rolled reader.
+
+### Why it was deferred
+
+The conversion itself is what turns four existing readers into silent failures. Today they
+parse flat lines, and every one of them returns nothing rather than erroring once the file is
+JSON:
+
+- the allow-list name extraction in `lib/remote.sh`, which decides which names are substituted
+- `cloudify_context_read` in `lib/context.sh`
+- the DEBUG rendering loop in `lib/remote.sh`, through that reader
+- the snapshot's value lookup in `lib/runbooks.sh`
+
+Missing the first one stops payload forwarding from exporting package values **with no error
+message**. The Phase 2 repair does not need the format change: it needs one added field, the
+raw source form, which the flat format carries equally well. So the format change was split
+out rather than ridden along with a repair to the most breakage-prone code in the repository.
+
+### How
+
+One slice, its own consent and its own review, most usefully after the Phase 2 repair lands
+and before the state and event writers of Phase 4 start consuming the context, so they can
+rely on a validated contract. Do not block Phase 4 on it.
+
+1. Write `schemas/v1/dispatch-context.schema.json` covering every field the context carries,
+   with fields that have no producer yet typed nullable. Add valid and invalid fixtures.
+2. Add `dispatch-context` to the artifact list in `schemas/v1/validate.sh` and update
+   `schemas/v1/README.md`: file list, field lists, validator description, and the
+   `schema_version` rule that currently covers four schemas.
+3. Confirm `jq` is present on the operator machine before any state work, fail with an
+   install hint if it is not, and change nothing about the remote bootstrap.
+4. Convert the four readers in one commit, each with a test that fails if it returns nothing
+   for a valid context. This is the step that carries the risk; do not split it.
+5. **Preserve the payload bytes.** The context's entries are written in the ledger's `sort -u`
+   order today, that order becomes the allow-list order, and that becomes the payload's export
+   order, pinned byte-for-byte by the eight `tests/fixtures/golden/payload/*` cases. A JSON
+   writer that emits keys in hash order changes the payload. Emit sorted, and prove it by
+   keeping those eight cases byte-identical with `cmp`.
+6. Replace `context_version: 1` with `schema_version: 1`, and drop the `@base64:` convention
+   inside the context once the value can carry a newline natively.
+7. Validate the context before payload construction and before any mutation.
+
+Acceptance: the eight payload golden cases and the nine registry record golden cases stay
+byte-identical; each converted reader has a test that fails when it returns nothing; the
+context schema and its fixtures pass `bash schemas/v1/validate.sh`.
+
 ## Mixed local/remote host list dispatch (non-urgent)
 
 - [ ] `_cloudify_dispatch` picks local vs remote once for the whole run (only when the host list is exactly `localhost`). A list containing `localhost` plus a remote host (`--on localhost cloudai ...`, or a tag expanding to both) sends the whole run down the remote path; the `localhost` leg then receives the package text as one already-joined argument (`cloudify "verify bats-test"`) and dies `Unknown argument`. Reproduced 2026-09-10 with a read-only `verify`. Fix: decide per host, and carry packages as a list, not a string.

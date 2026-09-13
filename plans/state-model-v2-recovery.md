@@ -152,21 +152,20 @@ The description artifact exists: `tmp/state-model-v2-forwarding-description.md` 
 
 ### Freeze the context contract before code (R1.1)
 
+The context keeps its current flat `key: value` format. Converting it to JSON with a schema and a `jq` dependency is deferred and roadmapped; see "Dispatch context as a JSON contract" in `ROADMAP.md`. The reason: the conversion is what makes the four flat readers fail silently rather than loudly, and the repair does not need it.
+
 - [ ] Create `tests/e2e/two-host-application.bats` with every scenario named and the phase that unlocks each one, so the per-phase E2E gate has a real artifact from the Phase 2 repair (R1) onward.
 - [ ] Create `tests/unit/drivers/context.bats`, the L1 driver that runs the real context code on a real target without dispatching a package. The state, runbook, event and run-record drivers land with the code they drive, in the Phase 3 audit (R2), the state and event substrate step (4.1) and the run lifecycle phase (Phase 6), so no driver can be created empty and pass green.
-- [ ] Add `schemas/v1/dispatch-context.schema.json` and valid and invalid fixtures.
-- [ ] Add `dispatch-context` to `schemas/v1/validate.sh`'s artifact list and update `schemas/v1/README.md` file list, field lists, validator description and `schema_version` rule for the fifth schema.
-- [ ] Use actual JSON for the context so the schema and the file cannot disagree, with `schema_version: 1` like every other machine-owned artifact.
-- [ ] Use local `jq` as the one parent-side JSON encoder and validator; require it on the operator machine before state work, and make no remote bootstrap or remote-host dependency change.
+- [ ] Add one field per name: the raw source form, the exact text the registry record and the snapshot must contain. It is carried verbatim when it fits on one line, and as `@base64:` when it does not, the same encoding the registry record and the snapshot already use. Nothing else about the format changes.
+- [ ] Freeze the per-name field set: declaration kind, source label, source form, raw source form, resolved runtime form, secret classification origin.
 - [ ] Include dispatch identity, resolved target identity and address, application commit, run ID, stable step ID, package instance and phase.
 - [ ] Fields without a producer stay null: run ID until Phase 6, stable step ID outside a runbook, and application commit outside an application run; package instance is the specified `default` until explicit multi-instance support lands.
-- [ ] Include a separate declared-value view for the top-level package and every dependency that may execute.
-- [ ] For each name include declaration kind, source label, source form, resolved runtime form and secret classification origin.
+- [ ] Include a separate declared-value view for each top-level package and every dependency that may execute.
 - [ ] Define and test the exact projections from each context value into `package-state.applied.values`, `package-state.last_attempt.requested` and event `values` before any writer uses them.
 - [x] Secret classification origin is exactly `explicit`, `heuristic` or `none`; the stale `legacy-heuristic` term is removed from schemas, fixtures and docs.
 - [ ] Permit resolved plaintext transiently in both this 0600 ephemeral context and collector shell exports, as `REDESIGN.md` requires; neither channel may be removed before payload execution.
-- [ ] Keep literal secret plaintext out of logs, debug output, state, runs and events.
-- [ ] Validate the context before payload construction and before any mutation.
+- [ ] Keep secret plaintext out of logs, debug output, state, runs and events. The raw source form of a secret is permitted in the context for the same reason the resolved form is, and the context's removal is what bounds it.
+- [ ] Validate the context with an explicit check before payload construction and before any mutation: every expected field present, no unexpected field, the encoding well formed. A malformed context must fail loudly, because a silently empty context stops payload forwarding with no error.
 - [ ] Obtain a fresh SPEC review and Technical review of this contract, each returning `PASS` with no actionable feedback.
 
 ### Replace the incomplete context (R1.2)

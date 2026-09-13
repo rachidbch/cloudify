@@ -77,7 +77,7 @@ Outcome: the branch contains committed Phases 1-3 only, the rejected Phase 4 wor
 - [x] Record the recovery decision and the exact retained baseline in `LOGS.md` and `HISTORY.md`.
 - [x] Harden `task sync`: mirror `lib`, `tests`, `pkg`, `schemas` and `runbooks` with `--delete`, because the container is an rsync target, not a git checkout, so a deleted file or a stale schema otherwise survives and silently pollutes a run.
 - [x] Run `task lint` (rc 0) and the full unit suite on the restored baseline (619 ok, 0 not ok, `results/r0-unit-clean.tap`).
-- [ ] Commit and push the clean recovery baseline.
+- [x] Commit and push the clean recovery baseline (667d96f).
 
 ## Recovery Gate R1: make Phase 2 one real resolution
 

@@ -50,7 +50,8 @@ are deleted.
   (`lib/runbooks.sh:189-191`). It must read the context instead, which is what
   R1.2 already requires.
 - `lib/utils.sh` and `cloudify` - the per-dispatch context removal described in
-  section 4.
+  section 4: the wait loop's success path, the `_CLOUDIFY_BG_CONTEXT` global-scope
+  declaration, and the removal loop at the top of `cleanup()`.
 
 Not in scope: the payload template, the `envsubst` invocation, the stdin
 transport, `lib/shadows/*`, `lib/shadow.sh`, `pkg/*`, and the value-resolution
@@ -133,17 +134,21 @@ two-layered and deliberately flat:
    `_CLOUDIFY_BG_CONTEXT[$pid]`, mirroring what the failure path already does
    (`cloudify:821-824`). This closes the direct package command leak, because it
    no longer depends on the registry writer having run.
-2. **Once per process, in `main()`.** Arm one EXIT trap that iterates
-   `_CLOUDIFY_BG_CONTEXT[*]` and removes any file still present, so a signal, an
-   early `exit`, or an interrupted run cannot leave plaintext behind. This trap
-   must not be `DEBUG`-guarded, unlike `cleanup()` (`lib/utils.sh:77-79`).
+2. **Once per failing path, inside the existing exit trap.** Declare
+   `_CLOUDIFY_BG_CONTEXT` at global scope instead of `local -A` (`cloudify:412`),
+   and add the removal loop at the top of `cleanup()` (`lib/utils.sh:74-87`),
+   before its `DEBUG` early-return, so the already-installed
+   `trap cleanup SIGINT SIGTERM ERR EXIT` (`cloudify:98`) removes any surviving
+   context file on a signal, an early `exit`, or an interrupted run.
 
-A RETURN trap armed when the parent creates the context (in
-`_cloudify_context_file_init`, `lib/remote.sh:94`) does **not** work: it fires the
-moment that function returns, before the backgrounded child has filled the file,
-and it is keyed to the single `CLOUDIFY_CONTEXT_FILE` variable while
-`_CLOUDIFY_BG_CONTEXT` holds one path per backgrounded dispatch, so earlier
-dispatches would still leak. RETURN is correct only for the self-created
+Two designs do **not** work and must not be used. A RETURN trap armed when the
+parent creates the context (`_cloudify_context_file_init`, `lib/remote.sh:94`) fires
+the moment that function returns, before the backgrounded child has filled the
+file, and is keyed to the single `CLOUDIFY_CONTEXT_FILE` while
+`_CLOUDIFY_BG_CONTEXT` holds one path per dispatch. A second `trap ... EXIT` armed
+inside `main()` replaces `cleanup` for the EXIT signal, silently disabling
+`CLOUDIFY_TMP` cleanup on every normal exit, and it cannot see a `local` array
+once `main()` has returned. RETURN is correct only for the self-created
 `cloudify_remote_sync` context, which already uses it (`lib/remote.sh:212-216`).
 
 The mitigation is threefold: the two layers above, a test proving no context file

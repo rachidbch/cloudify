@@ -625,9 +625,12 @@ store. This is the Phase 2 fix.
   `cloudify_vars_pkg_read`, `cloudify_vars_global_read`, `cloudify_vars_env_read`):
   the ladder order and first-write-wins must not change.
 - The router (`cloudify`) dispatch/wait-loop metadata plumbing
-  (`_cloudify_note_bg` at `cloudify:183-193`, the wait loop at
-  `cloudify:807-824`) except as strictly required to point the registry writer at
-  the new raw-value channel.
+  (`_cloudify_note_bg` at `cloudify:183-193`, the `_CLOUDIFY_BG_CONTEXT`
+  declaration at `cloudify:412`, the wait loop at `cloudify:807-824`) only for
+  these named changes: point the registry writer at the new raw-value channel,
+  remove each dispatch's context on the wait loop's success path, and declare
+  `_CLOUDIFY_BG_CONTEXT` at global scope so the `cleanup()` removal loop can see
+  it.
 
 ### Invariants to re-assert after the fix
 
@@ -637,12 +640,15 @@ specifically:
 1. The record's `var.<NAME>` equals the payload's forwarded value for every
    declared name, for every source label (environment, deployment, package,
    global, recipe), including the present-but-empty store value.
-2. The context file is 0600, is removed on every exit path (wait loop on success
-   and failure, plus a non-`DEBUG`-guarded process EXIT trap), and no plaintext or
-   resolved value from it reaches a log, a manifest, package state, a run record
-   or an event. (Invariant #8 as superseded by design.)
-3. The context path still never appears in `ps`/ssh argv, and cleanup still
-   happens exactly once (success / failure / self-created).
+2. The context file is 0600, is removed on every exit path (the wait loop on both
+   success and failure, plus the removal loop at the top of the existing
+   `cleanup()` before its `DEBUG` early-return), and no plaintext or resolved value
+   from it reaches a log, a manifest, package state, a run record or an event.
+   (Invariant #8 as superseded by design.)
+3. The context path still never appears in `ps`/ssh argv, and the file is gone
+   after the dispatch on every path. Removal is idempotent: the wait loop and the
+   `cleanup()` loop both use `rm -f`, so whichever runs first wins and the second
+   is a no-op.
 4. The envsubst allow-list still substitutes exactly the names it should. If a
    phase adds a name (for example the Phase 4 frame nonce), that phase must state
    the addition and re-prove byte-identical payloads for the unchanged inputs;

@@ -409,7 +409,10 @@ function main() {
     local -A _CLOUDIFY_BG_ACTION=()
     local -A _CLOUDIFY_BG_PKGS=()
     local -A _CLOUDIFY_BG_TARGET=()
-    local -A _CLOUDIFY_BG_CONTEXT=()
+    # Global scope, not local: cleanup() runs from the EXIT trap AFTER main()
+    # returns, when a local is already unset, and it must still see these paths
+    # to remove a context that outlived its dispatch.
+    declare -gA _CLOUDIFY_BG_CONTEXT=()
     local _CLOUDIFY_CUR_TARGET=""
     # Resolved --on targets: one "<node>\t<instance>\t<ssh_host>" triple per target
     local -a _CLOUDIFY_TARGETS=()
@@ -810,9 +813,14 @@ function main() {
             wait "$_bg_pid" && _bg_rc=0 || _bg_rc=$?
             if [[ "$_bg_rc" -eq 0 ]]; then
                 msg "  ${GREEN}${_bg_host}: OK${RESET}"
-                # _cloudify_registry_record_bg removes the dispatch context after
-                # the registry write (design section 5).
+                # _cloudify_registry_record_bg removes the dispatch context when
+                # it writes a record. It returns early when there is no deployment
+                # (a direct package command), so remove it here too: the file
+                # carries resolved values and must not outlive the dispatch.
                 _cloudify_registry_record_bg "$_bg_pid"
+                if [[ -n "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]:-}" && -e "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}" ]]; then
+                    rm -f "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}"
+                fi
             else
                 msg "  ${RED}${_bg_host}: FAILED (exit ${_bg_rc})${RESET}"
                 had_failures=true

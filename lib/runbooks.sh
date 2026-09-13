@@ -175,25 +175,54 @@ function _cloudify_runbook_declared_names() {
     done < "$decl"
 }
 
-# _cloudify_runbook_resolver_value <name> <label> <pkg> - the raw, replayable
-# form of the resolved value, i.e. the form the payload would use: the
-# caller-env literal, else the ONE store the label names (never the ladder, and
-# no value on stdout outside this helper). A value that a flat `KEY: value`
-# line cannot carry verbatim (a newline, or an env literal a replay would
-# re-read as a reference) is encoded as `@base64:`, the var-store encoding
-# replay already resolves. rc 1 when the label names no source.
+# _cloudify_runbook_pkg_context <action> <deployment> <phase> <pkg> - resolve one
+# package once and print the path of the dispatch context holding the result.
+# The snapshot resolver reads each raw value from that context instead of
+# reopening the store, so the snapshot and the payload cannot disagree.
+# Fails closed: an unresolvable context is a broken run, not a missing value.
+function _cloudify_runbook_pkg_context() {
+    local action="${1:-}" deployment="${2:-}" phase="${3:-}" pkg="${4:-}" \
+        file cand
+    [[ -n "$pkg" ]] || return 1
+    file=$(mktemp "$CLOUDIFY_TMP/cloudify-runbook-context-XXXXXX") || return 1
+    chmod 600 "$file" 2>/dev/null || true
+    cand=$(mktemp "$CLOUDIFY_TMP/cloudify-runbook-candidates-XXXXXX") || { rm -f "$file"; return 1; }
+    cloudify_context_candidate_names "$pkg" > "$cand" 2>/dev/null || true
+    # Subshell: the resolved values are exported for the walk, and must not leak
+    # into this shell. Only the context file matters here.
+    if ! ( CLOUDIFY_CONTEXT_FILE="$file" \
+        cloudify_context_build "$action" "$deployment" "$phase" "$cand" "$pkg" ) >/dev/null; then
+        rm -f "$cand" "$file"
+        return 1
+    fi
+    rm -f "$cand"
+    printf '%s\n' "$file"
+    return 0
+}
+
+# _cloudify_runbook_resolver_value <name> <label> <pkg> <context> - the raw,
+# replayable form of the resolved value, i.e. the form the payload would use.
+# The caller-env and application labels come from this shell; a store-backed
+# label (deployment, package, global) reads the raw form the resolution recorded
+# in the context, never the store again. A value a flat `KEY: value` line cannot
+# carry verbatim (a newline, or an env literal a replay would re-read as a
+# reference) is encoded as `@base64:`, the var-store encoding replay resolves.
+# rc 1 when the label names no source.
 function _cloudify_runbook_resolver_value() {
-    local name="$1" label="$2" pkg="$3" value _input
+    local name="$1" label="$2" pkg="$3" context="${4:-}" value="" _input _enc
     case "$label" in
         environment) value="${!name:-}" ;;
-        deployment) value=$(_cloudify_vars_store_get "$(_cloudify_deployment_config || true)" "$name") ;;
-        package) value=$(_cloudify_vars_store_get "$(cloudify_vars_pkg_file "$pkg")" "$name") ;;
-        global) value=$(_cloudify_vars_store_get "$(cloudify_vars_global_file)" "$name") ;;
         application)
             # The app input value the engine resolved into the step environment.
             _input=$(_cloudify_vars_app_input_for "$name")
             [[ -n "$_input" ]] || return 1
             value="${!_input:-}"
+            ;;
+        deployment | package | global)
+            [[ -n "$context" && -r "$context" ]] || return 1
+            _enc=$(cloudify_context_read "$context" "value.$name.raw") || return 1
+            [[ -n "$_enc" ]] || return 1
+            value=$(_cloudify_vars_raw_decode "$_enc")
             ;;
         *) return 1 ;;
     esac
@@ -1367,7 +1396,7 @@ function cloudify_runbook_execute() {
         local -a _rv_order=()
         local -A _rv_value=()
         local -A _rv_pkg=() _rv_seen=()
-        local _rl _rtype _rrest _rpkg _rname _rlabel _rvalue
+        local _rl _rtype _rrest _rpkg _rphase _rname _rlabel _rvalue
         while IFS= read -r _rl; do
             [[ -n "$_rl" ]] || continue
             _rtype="${_rl%%$'\t'*}"
@@ -1376,9 +1405,15 @@ function cloudify_runbook_execute() {
             _rrest="${_rrest#*$'\t'}"  # drop id -> target\tpkg\tbody
             _rrest="${_rrest#*$'\t'}"  # drop target -> pkg\tbody\tphase
             _rpkg="${_rrest%%$'\t'*}"
+            _rphase="${_rrest##*$'\t'}"
             [[ -n "$_rpkg" ]] || continue
             [[ -n "${_rv_pkg[$_rpkg]:-}" ]] && continue
             _rv_pkg["$_rpkg"]=1
+            # One resolution for this package, in its own context. The step's own
+            # type is the action: no field is invented, and no store is read again.
+            local _rctx=""
+            _rctx=$(_cloudify_runbook_pkg_context "$_rtype" "$deployment" "$_rphase" "$_rpkg") \
+                || die "runbook execute: cannot resolve '$_rpkg' for the run's snapshot."
             while IFS= read -r _rname; do
                 [[ -n "$_rname" ]] || continue
                 [[ -n "${_rv_seen[$_rname]:-}" ]] && continue
@@ -1387,10 +1422,11 @@ function cloudify_runbook_execute() {
                 case "$_rlabel" in
                     recipe | recipe-default) continue ;;
                 esac
-                _rvalue=$(_cloudify_runbook_resolver_value "$_rname" "$_rlabel" "$_rpkg") || continue
+                _rvalue=$(_cloudify_runbook_resolver_value "$_rname" "$_rlabel" "$_rpkg" "$_rctx") || continue
                 _rv_order+=("$_rname")
                 _rv_value["$_rname"]="$_rvalue"
             done < <(_cloudify_runbook_declared_names "$_rpkg")
+            [[ -n "$_rctx" ]] && rm -f "$_rctx"
         done <<< "$steps_out"
 
         local -A _vline=() _vseen=()

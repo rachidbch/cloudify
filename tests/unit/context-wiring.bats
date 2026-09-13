@@ -279,7 +279,11 @@ EOF
     ! grep -q '_cloudify_pkg_remote_vars' "$router"
 
     subrubric "the context path is pid-keyed metadata for the registry write"
-    grep -q 'local -A _CLOUDIFY_BG_CONTEXT=()' "$router"
+    # Global, not local: cleanup() runs from the EXIT trap after main() returns,
+    # when a local would already be unset, and it must still remove a context
+    # that outlived its dispatch.
+    grep -q 'declare -gA _CLOUDIFY_BG_CONTEXT=()' "$router"
+    ! grep -q 'local -A _CLOUDIFY_BG_CONTEXT=()' "$router"
     grep -q '_CLOUDIFY_BG_CONTEXT\[\$pid\]="\$context"' "$router"
     grep -q '_cloudify_note_bg "\$!" "\$action" "\${pkgs\[\*\]}"' "$router"
 

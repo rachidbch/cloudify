@@ -74,6 +74,17 @@ function log_debug() {
 function cleanup() {
     trap - SIGINT SIGTERM ERR EXIT
 
+    # Remove any dispatch context still on disk BEFORE the DEBUG return below:
+    # these files carry resolved values, so a DEBUG run must not be the one run
+    # that leaves them behind. The wait loop removes each context it can; this is
+    # the backstop for a signal, an early exit, or an interrupted run.
+    if declare -p _CLOUDIFY_BG_CONTEXT >/dev/null 2>&1; then
+        local _ctx
+        for _ctx in ${_CLOUDIFY_BG_CONTEXT[@]+"${_CLOUDIFY_BG_CONTEXT[@]}"}; do
+            [[ -n "$_ctx" && -e "$_ctx" ]] && rm -f "$_ctx"
+        done
+    fi
+
     if [[ "${CLOUDIFY_LOG_LEVEL:-INFO}" == "DEBUG" ]]; then
         return 0
     fi

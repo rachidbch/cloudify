@@ -62,7 +62,7 @@ placed after a `human-gate` is reachable by a plain `cloudify deployment run <id
 auto-confirms the gate and then immediately tears the deployment down. The only guard today is
 operator discipline (`--from <id>`), which lives nowhere in the artifact.
 
-- [ ] Fix: a `phase=install|reconfigure|verify|teardown` step attribute, defaulted from the step type, with `run` and `human-gate` steps declaring theirs. A bare run executes install then verify; teardown never runs as part of it. Decided in `REDESIGN.md` and ADR-022; implementation is Phase 3 of `plans/state-model-v2.md`. Runs the CRITICAL GATE. The teardown order itself is documented in `runbooks/README.md` ("Teardown contract").
+- [ ] Fix: a `phase=install|reconfigure|verify|teardown` step attribute, defaulted from the step type, with `run` and `human-gate` steps declaring theirs. A bare run executes install then verify; teardown never runs as part of it. Decided in `REDESIGN.md` and ADR-022; implementation and recovery are tracked through `PLAN.md`. Runs the CRITICAL GATE. The teardown order itself is documented in `runbooks/README.md` ("Teardown contract").
 
 ## Remote bootstrap git pull vs task sync (non-urgent)
 
@@ -70,7 +70,7 @@ operator discipline (`--from <id>`), which lives nowhere in the artifact.
 
 ## Pinned execution before safe historical teardown (state-model v2)
 
-- [ ] Hosts pull the branch tip, so reconfigure or teardown cannot claim to execute the application commit recorded in state. Phase 7 of `plans/state-model-v2.md` must pin remote execution and fail on commit drift before historical teardown is enabled. Automatic rebuild and command replay are deferred by ADR-022.
+- [ ] Hosts pull the branch tip, so reconfigure or teardown cannot claim to execute the application commit recorded in state. Phase 7 of `PLAN.md` must pin remote execution and fail on commit drift before historical teardown is enabled. Automatic rebuild and command replay are deferred by ADR-022.
 
 ## Mixed local/remote host list dispatch (non-urgent)
 

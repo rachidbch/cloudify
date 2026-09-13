@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Byte-exact golden fixtures for the dispatch payload and the registry record
-# (plans/state-model-v2-phase2-design.md section 9). The legacy walkers
+# (plans/archived/state-model-v2-phase2-attempt-design.md section 9). The legacy walkers
 # (_cloudify_pkg_remote_vars, _cloudify_registry_raw_var) are deleted, so the
 # payload text and the record text are pinned by DATA instead of by the code
 # that first produced them: this suite rebuilds both from the surviving v2 path

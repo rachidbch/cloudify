@@ -127,8 +127,8 @@
           "type": "boolean"
         },
         "declaration": {
-          "description": "How the secret classification was obtained. legacy-heuristic marks a value that only the legacy name heuristic classified during migration.",
-          "enum": ["explicit", "legacy-heuristic", "none"]
+          "description": "How the secret classification was obtained. heuristic marks a value classified only by the defense-in-depth name heuristic.",
+          "enum": ["explicit", "heuristic", "none"]
         },
         "source_form": {
           "description": "The source-form value: a literal, an @@ escaped literal, or a @base64: encoded literal. Null when the plaintext is deliberately not persisted.",
@@ -171,7 +171,7 @@
           "if": {
             "properties": {
               "declaration": {
-                "const": "legacy-heuristic"
+                "const": "heuristic"
               }
             },
             "required": ["declaration"]
@@ -285,8 +285,8 @@
           "type": ["string", "null"]
         },
         "application_commit": {
-          "description": "Cloudify commit that produced this applied state.",
-          "type": "string",
+          "description": "Cloudify commit that produced this applied state, or null when only an old registry record could be migrated or a direct package command ran without deployment context.",
+          "type": ["string", "null"],
           "pattern": "^[0-9a-f]{40}$"
         },
         "at": {

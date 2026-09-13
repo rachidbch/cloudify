@@ -379,7 +379,7 @@
         },
         "declaration": {
           "description": "How the secret classification was obtained.",
-          "enum": ["explicit", "legacy-heuristic", "none"]
+          "enum": ["explicit", "heuristic", "none"]
         },
         "reference": {
           "description": "The @<backend>:<locator> secret reference when the source was a reference.",
@@ -414,7 +414,7 @@
           "if": {
             "properties": {
               "declaration": {
-                "const": "legacy-heuristic"
+                "const": "heuristic"
               }
             },
             "required": ["declaration"]

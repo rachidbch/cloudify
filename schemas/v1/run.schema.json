@@ -40,8 +40,8 @@
       "$ref": "#/$defs/component"
     },
     "application_commit": {
-      "description": "Cloudify commit this run executed.",
-      "type": "string",
+      "description": "Cloudify commit this run executed, or null when the tree was dirty or unidentified and no clean commit could be proved.",
+      "type": ["string", "null"],
       "pattern": "^[0-9a-f]{40}$"
     },
     "development_override": {
@@ -162,6 +162,23 @@
         "properties": {
           "phases": {
             "maxItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "application_commit": {
+            "type": "null"
+          }
+        },
+        "required": ["application_commit"]
+      },
+      "then": {
+        "properties": {
+          "development_override": {
+            "const": true
           }
         }
       }

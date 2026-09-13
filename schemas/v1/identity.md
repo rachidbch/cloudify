@@ -1,7 +1,7 @@
 # Identity and validation rules
 
 Status: normative for schema_version 1.
-Frozen under Phase 1 of `plans/state-model-v2.md` (tasks 1.3 and 1.4), before any v2 writer exists.
+Frozen under Phase 1 of `plans/archived/state-model-v2-attempt1.md` tasks 1.3 and 1.4, before any v2 writer exists; recovery and completion are tracked through `PLAN.md`.
 Implementation contract: `REDESIGN.md` section "Identity", decision: `ADR.md` ADR-022 point 1.
 
 ## Scope
@@ -30,7 +30,7 @@ A deployment is identified by the tuple `(application, flavor, deployment name)`
 The three components are independent: none is derived from another, and no component is a joined key.
 The tuple is never flattened into one path component or one identifier.
 The application command exports `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, and `CLOUDIFY_DEPLOYMENT_NAME` for its child dispatches.
-The legacy `CLOUDIFY_DEPLOYMENT` value stays an opaque single-string compatibility identity, and it cannot be translated into the tuple without an explicit application and flavor supplied to migration.
+An old `CLOUDIFY_DEPLOYMENT` value is accepted only as an opaque input to the temporary migration command, and it cannot be translated into the tuple without an explicit application and flavor.
 
 ## Defaults
 
@@ -70,12 +70,13 @@ The v2 rule keeps every current rejection and adds these:
 The step ID rule is the existing runbook ID shape (`lib/runbooks.sh:246-270`: any non-empty token, defaulted to a two-digit index) tightened to a leading alphanumeric followed by alphanumerics, `.`, `_`, or `-`, so IDs remain shell- and filename-safe.
 The package name rule is the current `pkg/` directory shape: a lowercase alphanumeric followed by lowercase alphanumerics, `.`, `_`, or `-`.
 
-## Legacy compatibility
+## Old-ID migration
 
-An existing `CLOUDIFY_DEPLOYMENT` ID keeps the old rule set (empty, `/`, `.`, `..`), so every existing deployment remains readable and executable during the compatibility period.
-An ID that the v2 component rules reject, for example one containing a newline or a trailing space, is migratable only through an explicit operator rename, because the old and new stores cannot both name it.
-The legacy ID must not be split on any character to guess the tuple, and it stays opaque until migration receives the application and flavor.
-Desired inputs and run snapshots keep working from the legacy path for as long as the legacy readers exist.
+The temporary migration command applies the old ID rule set only to locate an old file: non-empty and not `/`, `.` or `..`.
+Runtime commands never accept that ID as a deployment identity and never read the old path.
+An old ID that the v2 component rules reject, for example one containing a newline or trailing space, requires an explicit operator rename during migration.
+The old ID is never split to guess the tuple; migration requires application and flavor explicitly.
+Old desired inputs, registry records and snapshots are migration inputs only, each read by its one temporary migration command and deleted after inventory reaches zero.
 
 ## On-disk consequence
 

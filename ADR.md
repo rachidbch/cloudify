@@ -332,3 +332,30 @@ event directory; ivps remains the owner of node inventory and node lifecycle. Fu
 layouts, safety rules, and acceptance criteria are in `REDESIGN.md`; implementation is tracked in
 `plans/state-model-v2.md`.
 
+
+## ADR-023: One v2 runtime path and temporary migration bridges
+
+Status: accepted 2026-09-13 (supersedes ADR-022 only where ADR-022 retained compatibility readers, writers, aliases, paths or command spellings that cannot express tuple identity).
+
+Context: the attempted compatibility period duplicated source readers, runbook discovery, desired-input paths, router verbs and tests.
+That duplication increased core size, left contradictory completed tasks, and recreated the second-read failure class the redesign exists to remove.
+Rachid directed that Cloudify stay focused and trim dead weight rather than ship backward-compatibility layers.
+Existing desired inputs and observations still need one explicit bridge into v2 without becoming runtime precedence sources.
+
+Decision:
+
+1. Cloudify runtime reads and writes only v2 paths, identities and schemas.
+2. No compatibility switch, dual reader, dual writer, fallback precedence path, legacy runbook discovery or superseded command alias ships in the completed implementation.
+3. Temporary one-shot migration commands are the sole readers of old desired-input files, registry records and snapshots.
+4. Migration is dry-run first, idempotent, prints names and paths without values, preserves only facts the old artifact proves, and removes an old source file only after its v2 copy verifies.
+5. After every old source file is migrated or removed and the inventory reports zero old artifacts, migration commands, old readers and migration fixtures are deleted.
+6. Byte-exact golden fixtures and contract tests replace runtime parity code as the non-breakage safety net.
+7. Direct package function signatures and shadow command behavior remain stable; claim protection is the deliberate lifecycle change.
+8. Command surface: reads are `cloudify deployments`, `cloudify deployment show <application>[/<flavor>] --name <name>`, `cloudify --on <target> state [--application <application>[/<flavor>]] [--name <name>]`, `cloudify runs`, `cloudify run show <run-id>` and `cloudify state check`.
+   Desired inputs are written by `cloudify vars set|delete|list` scoped with `--application` and `--name`, so the deployment-wide store survives as the v2 input writer.
+   Removal is owned by `cloudify app teardown`; `cloudify deployment delete` and `cloudify deployments show` from ADR-022 point 7 do not exist because a bare name cannot express the tuple.
+
+Consequences: operators must migrate known old artifacts before relying on v2 state.
+Rollback is a Git revert plus restoration from a pre-migration backup, not a permanent runtime switch.
+`REDESIGN.md` and the current recovery plan use this decision; ADR-022 remains authoritative for the state model itself.
+ADR-022's reference to `plans/state-model-v2.md` is historical; `PLAN.md` is the live tracker and resolves to `plans/state-model-v2-recovery.md`.

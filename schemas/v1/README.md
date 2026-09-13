@@ -1,10 +1,10 @@
 # Cloudify schemas v1
 
-Status: Phase 1 freeze of `plans/state-model-v2.md` (tasks 1.3, 1.4, and 1.5).
+Status: Phase 1 freeze from `plans/archived/state-model-v2-attempt1.md` tasks 1.3, 1.4 and 1.5; recovery and completion are tracked through `PLAN.md`.
 Design authority: `REDESIGN.md`.
-Decision: `ADR.md` ADR-022.
+Decisions: `ADR.md` ADR-022 and ADR-023.
 These files are the contract for the v2 machine-owned artifacts.
-No writer in `lib/` produces them yet, so nothing in this directory changes runtime behavior.
+`lib/state.sh` writes and validates `deployment-manifest.schema.json`; package-state, run and event writers do not exist yet.
 
 ## Files
 
@@ -26,17 +26,17 @@ The field is required, not optional, so a reader never has to guess an unversion
 
 ## Field lists per artifact
 
-`deployment-manifest.schema.json`: `schema_version`, `application`, `flavor`, `deployment`, `application_commit`, `development_override`, `status` (`applying`, `active`, `degraded`), `created_at`, `bindings` (per slot: `address`, `node`, `instance`, `ssh_host`), `last_run_id`, `last_event_id`.
+`deployment-manifest.schema.json`: `schema_version`, `application`, `flavor`, `deployment`, `application_commit` (40-hex or null), `development_override` (true whenever the commit is null), `status` (`applying`, `active`, `degraded`), `created_at`, `bindings` (per slot: `address`, `node`, `instance`, `ssh_host`), `last_run_id`, `last_event_id`.
 Applied package values are deliberately absent, and `additionalProperties: false` makes an accidental `applied_values` field a validation failure.
 
 `package-state.schema.json`: `schema_version`, `host`, `host_key`, `package`, `package_instance`, `revision`, `applied`, `last_attempt`, `health`, `claims`.
-`applied` holds `package_version`, `application_commit`, `at`, `event_id`, and `values`.
+`applied` holds `package_version`, `application_commit` (40-hex, or null for a migrated old record or a direct package command without deployment context), `at`, `event_id`, and `values`.
 `last_attempt` holds `phase`, `outcome`, `at`, `event_id`, and `requested`.
 `health` holds `status`, `checked_at`, and `event_id`.
 Each claim holds `application`, `flavor`, `deployment`, `step_id`, `claimed_at`, `run_id`, `event_id`, and `values`.
-Each value entry holds `secret` (the explicit declaration), `declaration` (`explicit`, `legacy-heuristic`, `none`), `source_form`, `reference`, `digest`, and `redacted`.
+Each value entry holds `secret` (the explicit declaration), `declaration` (`explicit`, `heuristic`, `none`), `source_form`, `reference`, `digest`, and `redacted`.
 
-`run.schema.json`: `schema_version`, `run_id`, `application`, `flavor`, `deployment`, `application_commit`, `development_override`, `phases`, `status`, `started_at`, `ended_at`, `writer`, `interrupted`.
+`run.schema.json`: `schema_version`, `run_id`, `application`, `flavor`, `deployment`, `application_commit` (40-hex or null), `development_override` (true whenever the commit is null), `phases`, `status`, `started_at`, `ended_at`, `writer`, `interrupted`.
 No resolved value and no automatic step output exists in a run record.
 `writer` holds `host`, `boot_id`, `pid`, and `process_start_ticks`.
 `interrupted` holds `at` and `reason` (`writer-process-gone`, `writer-boot-changed`).
@@ -53,8 +53,8 @@ No `stdout`, `stderr`, rendered payload, or literal secret field exists, and `ad
 `~/.config/cloudify/deployments/<id>/config.yaml` becomes `<config-root>/deployments/<application>/<flavor>/<deployment>/values.yaml`.
 Each `KEY: value` line is one deployment input, and the current `@base64:`, `@@`, and `@<backend>:` encodings carry over as the value's source form.
 
-`~/.config/cloudify/deployments/<id>/runs/<UTC>.yaml` becomes the run record of `run.schema.json` for the same execution, and its `target.*` lines are the only current source of manifest bindings.
-The run snapshot remains the replay source and is not deleted by migration.
+`~/.config/cloudify/deployments/<id>/runs/<UTC>.yaml` is inventory-only migration evidence: the migration reports the file and never converts it, because a run record needs a proved commit and bindings that an old snapshot cannot supply.
+Automatic `output.*` fields are discarded, and old snapshot replay plus the snapshot reader are deleted once the inventory reports zero old artifacts.
 
 `<bucket>/deployments/<id>/pkgs/<pkg>/config.yaml` becomes `<host-state-root>/cloudify/packages/<pkg>/<package_instance>/state.json` following `package-state.schema.json`.
 The bucket is `ivps node path <node>`, that path plus `<instance>`, or `<config-root>/registry/hosts/<ssh_host>`.
@@ -71,7 +71,7 @@ A `var.<NAME>` field is observation data for migration, never intent and never a
 
 A raw stored value that begins with `@<backend>:` is a secret reference: `secret: true`, `declaration: explicit`, `reference` and `source_form` both hold the reference string, `redacted: false`, `digest: null`.
 
-A raw stored value whose name matches the heuristic (`TOKEN`, `KEY`, `PASSWORD`, `SECRET`) and that is not a reference is a literal secret: the migration computes `digest: sha256(<plaintext>)`, drops the plaintext, and writes `secret: true`, `declaration: legacy-heuristic`, `source_form: null`, `redacted: true`.
+A raw stored value whose name matches the heuristic (`TOKEN`, `KEY`, `PASSWORD`, `SECRET`) and that is not a reference is a literal secret: migration computes `digest: sha256(<plaintext>)`, drops the plaintext, and writes `secret: true`, `declaration: heuristic`, `source_form: null`, `redacted: true`.
 
 A raw stored value that begins with `@@` is an escaped literal and keeps its source form with `secret: false` unless the name heuristic applies.
 
@@ -142,7 +142,7 @@ Points where `REDESIGN.md` implies a field but does not specify it, with the lea
 10. Event subject kinds are `package` and `deployment`; a runbook action event that touches no package uses the deployment subject and names its step in the top-level `step_id`.
 11. Event value metadata has no source-form field at all, which makes a plaintext value structurally impossible in an event; `REDESIGN.md` lists names, sources, references or digests, and secret flags only.
 12. The optional `log_reference` with `path` and `sha256` is the leanest shape for "referenced by path and digest where useful"; `REDESIGN.md` defines no such record.
-13. `application_commit` is a 40-hex git commit and `development_override` is a separate boolean; `REDESIGN.md` requires an explicit development override that marks a deployment unreproducible but names neither the field nor the marker.
+13. `application_commit` is a 40-hex git commit or null when no clean commit can be proved, and `development_override` is a separate boolean that must be true whenever `application_commit` is null; `REDESIGN.md` requires an explicit development override that marks a deployment unreproducible but names neither the field nor the marker.
 14. The manifest has no `updated_at`; `REDESIGN.md` states only a creation time, and `last_run_id` plus `last_event_id` already order later changes.
 15. Component patterns are fully anchored, and the local interpreter evaluates `pattern` as an unanchored search, which is equivalent for an anchored pattern; `identity.md` specifies the byte length while the schema approximates it with a character length.
 16. A single-string deployment ID keeps the old rule set, so an existing ID that the v2 component rules reject must be renamed explicitly when it is migrated.

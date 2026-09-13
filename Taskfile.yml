@@ -21,11 +21,13 @@ env:
 
 tasks:
   sync:
-    desc: Push local files into container
+    desc: Push local files into container (mirrors each subtree, so a deleted file is deleted there too)
     cmds:
-      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/lib {{.REPO_DIR}}/
-      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/tests {{.REPO_DIR}}/
-      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/pkg {{.REPO_DIR}}/
+      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/lib {{.REPO_DIR}}/ -- --delete
+      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/tests {{.REPO_DIR}}/ -- --delete
+      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/pkg {{.REPO_DIR}}/ -- --delete
+      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/schemas {{.REPO_DIR}}/ -- --delete
+      - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/runbooks {{.REPO_DIR}}/ -- --delete
       - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/cloudify {{.REPO_DIR}}/
       - ivps push {{.CONTAINER}} {{.LOCAL_DIR}}/Taskfile.yml {{.REPO_DIR}}/
 

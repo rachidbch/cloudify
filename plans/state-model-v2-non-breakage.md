@@ -316,7 +316,7 @@ permanent feature. Superseded in consequence:
   moves an existing store once and is deleted after use.
 - Section 7.1's rollback boundaries stay valid as revert-the-commit boundaries,
   but a phase may no longer ship a permanent switch to restore an old writer.
-- The `CLOUDIFY_LEGACY_VARS=1` switch described in `plans/state-model-v2-phase2-design.md`
+- The `CLOUDIFY_LEGACY_VARS=1` switch described in `plans/archived/state-model-v2-phase2-attempt-design.md`
   is removed rather than kept.
 - Section 6's "accepted change" list is unaffected: those are v2 behaviours, not
   compatibility choices.

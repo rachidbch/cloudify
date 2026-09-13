@@ -1,8 +1,8 @@
 # State model v2 - Phase 2 interface design
 
-Pinned before any Phase 2 code, so the implementation is reviewable and the
-75+ recipes keep working. Gates: `plans/state-model-v2.md` G1, G2, G3 (Phase 2
-consent recorded in `LOGS.md`). Evidence base: `plans/state-model-v2-description.md`
+Pinned before the attempted Phase 2 code, so the implementation was reviewable and the
+75+ recipes kept working. Its original gates are archived at
+`plans/archived/state-model-v2-attempt1.md`; current recovery is tracked through `PLAN.md`. Evidence base: `plans/state-model-v2-description.md`
 (invariant numbers below are its section 8) and
 `plans/state-model-v2-non-breakage.md` section 3.
 

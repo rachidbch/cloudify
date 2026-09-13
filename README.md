@@ -362,7 +362,8 @@ runbooks/
 schemas/
   v1/                 State model v2 machine contracts: identity rules, the manifest,
                       package state, run and event JSON schemas, fixtures, and
-                      validate.sh (frozen by plans/state-model-v2.md Phase 1)
+                      validate.sh (Phase 1 provenance in the archived attempt;
+                      current recovery and completion tracked through PLAN.md)
 tests/
   unit/               Unit tests (mocked environment)
   red/                Deliberately failing proofs of the v2 contract (not globbed

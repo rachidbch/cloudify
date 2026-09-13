@@ -28,7 +28,7 @@
     "BASIC_AUTH_PASSWORD": {
       "source": "caller",
       "secret": true,
-      "declaration": "legacy-heuristic",
+      "declaration": "heuristic",
       "reference": null,
       "digest": "sha256:cc5bc97c37dd5a567c3ea829ff9d1f05d59518f914a90d202614e128a0d496ed"
     }

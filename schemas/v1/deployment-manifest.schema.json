@@ -37,8 +37,8 @@
       "$ref": "#/$defs/component"
     },
     "application_commit": {
-      "description": "Git commit of the Cloudify repository holding the runbook and recipes used by this deployment.",
-      "type": "string",
+      "description": "Git commit of the Cloudify repository holding the runbook and recipes used by this deployment, or null when no clean commit could be proved.",
+      "type": ["string", "null"],
       "pattern": "^[0-9a-f]{40}$"
     },
     "development_override": {
@@ -84,6 +84,25 @@
       ]
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "application_commit": {
+            "type": "null"
+          }
+        },
+        "required": ["application_commit"]
+      },
+      "then": {
+        "properties": {
+          "development_override": {
+            "const": true
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "component": {
       "description": "One validated identity path component. The full rule set is normative in schemas/v1/identity.md.",

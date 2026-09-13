@@ -971,3 +971,12 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Withdrawn in consequence: the `CLOUDIFY_LEGACY_VARS=1` rollback switch, `_cloudify_pkg_remote_vars`, `_cloudify_registry_raw_var`, the legacy runbook path, the legacy single-ID desired-input read-through, and the compatibility clauses in `plans/state-model-v2-non-breakage.md` section 5 and section 7.1.
 - The safety net moves to byte-exact golden fixtures captured before the legacy code is deleted, plus the existing contract proofs in `tests/red/`.
 - Grounded in a real cost measured tonight: the delegate implementing slice 3B was still carrying dual-path logic and its tests, which is exactly the bloat the direction removes.
+
+### 2026-09-13 - state model v2 recovery: Phase 4 attempt discarded, one v2 path, plan re-issued
+
+- Discarded the uncommitted Phase 4A attempt (archived to `~/tmp/cloudify-phase4a-rejected-20260913/`) for a flat non-JSON state file, a forgeable remote result sentinel, dropped package-instance identity, fabricated migration provenance and events deferred past state writes.
+- Phases 1-3 kept on `state-model-v2-phase1` as a repairable baseline; no runtime file changed in this slice.
+- ADR-023 accepted (one v2 path, temporary migration bridges, no compatibility readers or switches), with the v2 command surface recorded and ADR-022's unexpressible spellings superseded.
+- Docs realigned from a compatibility period to migration-and-removal; `REDESIGN.md`, `GLOSSARY.md`, `README.md`, `ROADMAP.md` and `schemas/v1` updated; both earlier plan documents archived and every live citation repointed.
+- Schemas: `heuristic` replaces `legacy-heuristic`; `application_commit` is nullable in manifest, run and package-state with the `development_override` cross-field rule; validator green at 15 valid / 23 invalid.
+- Execution plan re-issued as `plans/state-model-v2-recovery.md`, `PLAN.md` repointed; order R0 baseline, R1 Phase 2 repair, R2 Phase 3 audit, R3 fresh Phase 4 design, then Phases 4-9, each with independent SPEC and Technical `PASS` gates.

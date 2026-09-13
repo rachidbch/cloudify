@@ -57,6 +57,7 @@ A required design change needs a new append-only ADR and Rachid's consent before
 - [ ] A temporary migration reader must be the sole caller of the old format and must have a deletion task in this plan.
 - [ ] Deleting a migration reader or its fixtures must leave the surviving gates (especially `bash schemas/v1/validate.sh`) passing; name the replacement gate in the same task.
 - [ ] No code commit while a SPEC or Technical reviewer has actionable feedback on that slice.
+- [ ] Any slice that changes `lib/`, the `cloudify` router, `lib/shadows/` or `lib/shadow.sh` needs the project CRITICAL GATE first, in this order: a read-only description subagent writes the artifact explaining the bash mechanism at risk, then a plan states explicitly why the change cannot break it, then Rachid gives explicit consent, then the consent is recorded in `LOGS.md`. No tick may be claimed before all four.
 - [ ] When a review returns actionable feedback, fix the slice, rerun its focused tests and shellcheck, then request that review again from a fresh context.
 - [ ] `git status --short` is clean at every committed boundary.
 
@@ -82,6 +83,13 @@ Outcome: the branch contains committed Phases 1-3 only, the rejected Phase 4 wor
 ## Recovery Gate R1: make Phase 2 one real resolution
 
 Outcome: one private dispatch context contains everything every later consumer needs, and no consumer reopens a value source.
+
+### R1.0 CRITICAL GATE before any `lib/` edit
+
+- [ ] Spawn a read-only subagent whose only mission is to describe how the env-var forwarding path works end to end: `declare -f` payload extraction, the `envsubst` allow-list, single-quoted `$VAR` remoting, first-write-wins claiming, and where the registry record and snapshot are written.
+- [ ] Write that description as an artifact and cite it from the plan before touching code.
+- [ ] State explicitly why the context change cannot break forwarding or the shadows, naming the invariants preserved and what was traced.
+- [ ] Obtain explicit consent from Rachid and record it in `LOGS.md`.
 
 ### R1.1 Freeze the context contract before code
 
@@ -132,6 +140,11 @@ Outcome: one private dispatch context contains everything every later consumer n
 ## Recovery Gate R2: audit and trim Phase 3
 
 Outcome: application identity, desired inputs, phase selection and manifests match the specification with one implementation each.
+
+### R2.0 CRITICAL GATE before any `lib/` edit
+
+- [ ] Reuse the R1.0 description artifact, or extend it, to cover whatever Phase 3 code the audit will change.
+- [ ] State why each Phase 3 fix cannot break the forwarding path, the shadows or any recipe, and obtain Rachid's consent recorded in `LOGS.md`.
 
 ### R2.1 Manifest and state-root audit
 

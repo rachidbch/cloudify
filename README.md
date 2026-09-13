@@ -372,6 +372,68 @@ tests/
   helpers/            Test setup/teardown helpers
 ```
 
+## Core Mechanisms
+
+Four mechanisms carry every dispatch. They are load-bearing and easy to break; this is
+their rationale, so nobody has to rediscover it.
+
+### Shadow commands
+
+Recipes call `sudo`, `apt-get`, `add-apt-repository` and `git` as plain commands.
+Functions with the same names wrap them and inject the password, the idempotency check
+and the authentication. Rationale: a recipe stays a one-liner that behaves the same
+locally and over SSH. Details in "Shadow Command System" under the Developer Guide.
+
+### Value forwarding
+
+A dispatch forwards values to a target host. Six sources provide them, weakest first:
+the recipe's own default, global defaults, package defaults, application defaults, the
+deployment's desired inputs, and the caller's environment.
+
+Values are resolved once, exported into the dispatching shell, rendered into the payload
+by a single `envsubst` run, and shipped on stdin as single-quoted exports. The `envsubst`
+allow-list is an explicit list of names: only those substitute locally, so `$HOME` and
+`$(...)` are substituted on the target or stay inert. Neither the context path nor any
+value ever reaches a command line, so neither can appear in a process list.
+
+### The dispatch context
+
+Resolving once is the point. The payload, the registry record and the run snapshot must
+agree, so they all consume one artifact instead of each walking the sources.
+
+- The **parent** is the `cloudify` process you ran. It creates the context path, forks one
+dispatch job per target, waits for them, then writes each registry record.
+- The **child** is the backgrounded job for one target. It resolves the values into its
+own shell, fills the context, renders the payload and ships it.
+- The context is a **file** because it crosses from the child (writer) to the parent
+(reader). A fork only inherits downward, so a file is the only channel back.
+- **One context per target**, holding a value view per package dispatched to that target.
+- It is 0600 and ephemeral: never on a command line, removed when the dispatch ends.
+
+Why it exists: the design it replaces computed the same values twice, in two different
+walks, and wrote them to two places that nothing compared.
+
+### Why the first source wins
+
+The shell environment is both an input and an output. The caller's values live there, and
+resolved values are exported there. So when a source is about to set a name it must
+decide: did the caller set this, or an earlier source? The two cases need opposite
+handling - the caller wins, an earlier source means refuse - and in the shell they look
+identical, because the variable is set either way.
+
+That information exists only at the instant the value is written, so it is consumed then.
+The first source to provide a name claims it and records where it came from; every later
+source is refused without looking. The recorded source therefore cannot drift from the
+value, which is the property the context exists to guarantee. Allowing later writes would
+mean re-attributing the source on every overwrite, and one missed re-attribution is
+exactly the defect being prevented.
+
+The ladder order is **not** the precedence order. The caller's environment is visited last
+yet wins, because a source refuses to overwrite a name that is already set. Precedence,
+strongest first: caller environment, deployment desired inputs, application defaults and
+mapped inputs, packages (rightmost first, each before its dependencies), global defaults,
+recipe default.
+
 ## Developer Guide
 
 ### Prerequisites

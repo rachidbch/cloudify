@@ -157,6 +157,13 @@ The description artifact exists: `tmp/state-model-v2-forwarding-description.md` 
 
 ### Replace the incomplete context (R1.2)
 
+This slice changes a foundational mechanism (value forwarding), so no line of it is written until the design below has passed a fresh subagent review of forwarding and shadowing. Update this plan and the working notes first; implementation is gated.
+
+- [ ] Replace the two internal temp files with in-process associative arrays. The claim set and the provenance become arrays inside the context builder; the context file stays, because it is the only channel from the child that fills it to the parent that writes the registry record. A `grep -qx` per claimed name and the provenance parse-back both disappear.
+- [ ] Assert the assumption the arrays rest on: a claim set in an array is only shared while every reader that claims runs in the same shell. No reader may claim from inside a subshell or a command substitution, because a subshell would take a copy and its claims would be lost, silently turning first-wins into last-wins. State this at the declaration and prove it with a test that gives one name to two sources and requires the stronger one to be recorded.
+- [ ] Prove the change leaves shadowing untouched: no shadowed command (`sudo`, `apt-get`, `add-apt-repository`, `git`) and no file under `lib/shadows/` is read, called or modified by it.
+- [ ] Obtain a fresh subagent review of this design against the forwarding invariants and the shadow contract; `PASS` with no actionable feedback before any code.
+
 - [ ] Build each package view once from the source ladder at context creation.
 - [ ] Preserve install precedence exactly as `REDESIGN.md` states, strongest first: caller or step environment, deployment desired inputs, application defaults, package defaults, global defaults, recipe defaults.
 - [ ] Resolve application input mappings into the relevant package view only, never into one shared ambient namespace.
@@ -171,6 +178,7 @@ The description artifact exists: `tmp/state-model-v2-forwarding-description.md` 
 - [ ] Never read a resolved value back from the context to build the payload; values still flow resolver shell exports to one envsubst pass to single-quoted remote exports.
 - [ ] Keep collector exports in the calling shell and never capture them with command substitution.
 - [ ] Keep the payload on stdin and keep context paths and values off argv.
+- [ ] Write the context once, after the walk completes. A walk that writes values into the context as it goes silently becomes last-writer-wins and reintroduces the defect; add a structural test that fails if the context write moves inside the walk.
 
 ### Prove the root defect is gone (R1.3)
 
@@ -475,6 +483,7 @@ Outcome: code, language, docs and operator workflow describe one v2 system and t
 ### Documentation and skills
 
 - [ ] Update README application, deployment, values, context, state, claim, run, event, teardown and migration sections.
+- [ ] Keep the "Core Mechanisms" README section (shadow commands, value forwarding, the dispatch context, why the first source wins) accurate and lean; it is the place that stops these rationales being rediscovered.
 - [ ] Update `runbooks/README.md` with the final canonical tree, phases, mappings, binding persistence and commit drift.
 - [ ] Update package author docs with package instance and explicit secret declaration rules.
 - [ ] Update `GLOSSARY.md`: concepts for one path, migration bridge, host mutation lock, package instance and claim, with no compatibility-period or legacy-class entry.

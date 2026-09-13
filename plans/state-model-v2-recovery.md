@@ -68,15 +68,15 @@ Every code phase (R1, R2 and Phases 4 to 9) ends here, and no later phase starts
 R0 changes no runtime code and R3 writes no code, so those two run the reviews but skip the E2E lines.
 
 - [ ] Full unit suite green on the phase's final HEAD.
-- [ ] Full disposable end-to-end run green as an operator would run it: the two-host application workflow exercising install, verify, reconfigure, interruption, shared claim, conflict, first teardown and last teardown.
-- [ ] Full fleet E2E green: `tests/e2e/k3s-multi-cluster.bats` on throwaway tagged nodes, mutating the tailnet ACL only inside its own snapshot and restore.
-- [ ] Every disposable resource torn down and the tailnet and host policy proven restored, with no leftover tag, node or grant.
+- [ ] Full disposable end-to-end run green as an operator would run it: the two-host application workflow exercising install, verify, reconfigure, interruption, shared claim, conflict, first teardown and last teardown. This is the state-model blast radius, so it runs at every code phase.
+- [ ] Every disposable resource torn down and the host policy proven restored, with no leftover node, binding or claim.
 - [ ] Fresh-context SPEC review against `REDESIGN.md`, ADR-022, ADR-023, the schemas and this plan, returning exactly `PASS` with no actionable feedback.
 - [ ] Fresh-context Technical review on a different model covering correctness, modularity, DRY, KISS, maintainability, Bash safety, error paths and lock ordering, returning exactly `PASS` with no actionable feedback.
 - [ ] Fix every review finding and re-review from a fresh context; defer none to a later phase.
 - [ ] Commit and push only when every line above is green.
 
-If the fleet E2E is genuinely unrunnable for a phase, that is a blocker to raise with Rachid, not a line to tick with a substitute.
+The fleet E2E (`tests/e2e/k3s-multi-cluster.bats`, four throwaway nodes, live ACL mutation, up to fifteen minutes per node) is not a per-phase gate: it validates k3s UX rather than the state model, so it runs once at the Phase 9 final gate, where the tailnet and ACL restore is part of the exit criteria.
+If the two-host E2E is genuinely unrunnable for a phase, that is a blocker to raise with Rachid, not a line to tick with a substitute.
 
 ## Recovery Gate R0: clean baseline
 
@@ -149,7 +149,7 @@ Outcome: one private dispatch context contains everything every later consumer n
 - [ ] Prove the corrected resolution keeps payload and registry bytes identical to the pre-deletion goldens; treat any changed byte as a defect to explain, not a new golden to accept.
 - [ ] Run focused context, vars, remote, registry, runbook, replay and router suites.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
+- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
 
 ## Recovery Gate R2: audit and trim Phase 3
 
@@ -189,7 +189,7 @@ Outcome: application identity, desired inputs, phase selection and manifests mat
 - [ ] Run focused runbook, replay, target, deployment, state, vars and router suites.
 - [ ] Run a real L1 driver in `cloudai:cloudify` without dispatch.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
+- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
 
 ## Gate R3: fresh Phase 4 design before code
 
@@ -299,7 +299,7 @@ Outcome: one physical installation is represented once, every mutation has an im
 - [ ] Run focused package API, context, state, event, registry, router and runbook suites.
 - [ ] Run one real shared-dependency case only after L0 through L3 pass.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
+- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
 
 ## Phase 5: explicit secrets, ephemeral outputs and SSH identity
 
@@ -321,7 +321,7 @@ Outcome: classification is enforceable, no new artifact copies plaintext secrets
 - [ ] Cover key match, mismatch, first acceptance and approved rotation.
 - [ ] Run focused secret, vars, context, remote, state, event and runbook suites.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
+- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
 
 ## Phase 6: run lifecycle and repair detection
 
@@ -340,7 +340,7 @@ Outcome: runs are durable, interruptions and event-state gaps are reportable, an
 - [ ] Delete `deployment replay` when the run record path replaces it; do not keep an alias.
 - [ ] Run focused run, event, state, runbook and concurrency suites.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
+- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
 
 ## Phase 7: pinned provenance, safe teardown and upgrade
 
@@ -361,7 +361,7 @@ Outcome: teardown releases only owned resources and today's branch tip is never 
 - [ ] Add explicit upgrade or migration with stable-step preview and treatment for removed claims.
 - [ ] Run focused teardown, claim, provenance, runbook and router suites.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
+- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
 
 ## Phase 8: read surface, one-shot migration and deletion of bridges
 
@@ -386,7 +386,7 @@ Outcome: operators inspect state through commands, all known old data is migrate
 - [ ] Confirm repo-wide searches find no migration bridge, compatibility flag, old path parser or stale documentation outside append-only history.
 - [ ] Run focused migration, read-surface, state, run, event and secret suites.
 - [ ] Run `task lint` and the full unit suite.
-- [ ] Pass the Phase exit gate (SPEC review, Technical review, and both E2E runs) before committing.
+- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
 
 ## Phase 9: docs, skills and final acceptance
 

@@ -29,6 +29,16 @@ Its completed boxes do not authorize work and must not be copied here.
 - [x] The only temporary exceptions are one-shot migration commands for old desired inputs, registry records and snapshots; each is deleted after the inventory reports zero old artifacts.
 - [x] `lib/shadows/` and `lib/shadow.sh` remain untouched unless a new description, non-breakage argument and explicit consent allow a specific change.
 
+## One plan, and where everything else goes
+
+`PLAN.md` points at this file, and this file is the only plan. There is no second plan, no parallel plan, and no phase plan beside it.
+
+If something in this plan does not fly, stop and raise it with Rachid; do not fork a new plan, and do not keep executing around the problem.
+
+Temporary artifacts, including gate descriptions and non-breakage arguments, live in `tmp/` (gitignored). Their durable trace lives in `LOGS.md`: the artifact path, the invariants it asserted, what was traced, and the consent given. A later reader therefore finds the justification in `LOGS.md`, not in a transient file.
+
+Superseded plans move to `plans/archived/`. Nothing else is added to `plans/`.
+
 ## Authority order
 
 When two documents disagree, use this order:
@@ -38,10 +48,8 @@ When two documents disagree, use this order:
 3. `REDESIGN.md`.
 4. `GLOSSARY.md` for live concept definitions.
 5. `schemas/v1/*.schema.json` and `schemas/v1/identity.md`.
-6. `plans/state-model-v2-forwarding-description.md` for how forwarding actually works today.
-7. `plans/state-model-v2-phase2-non-breakage.md` for the current R1 non-breakage argument.
-8. This plan.
-9. Evidence only, never authority: the two archived attempts (`plans/archived/state-model-v2-attempt1.md`, `plans/archived/state-model-v2-phase2-attempt-design.md`), the superseded attempt-1 artifacts `plans/archived/state-model-v2-description.md` and `plans/archived/state-model-v2-non-breakage.md` (they describe the pre-repair tree, including `_cloudify_pkg_remote_vars`, which is now deleted), and the rejected patch under `~/tmp/cloudify-phase4a-rejected-20260913/`.
+6. This plan.
+7. Evidence only, never authority: the two archived attempts (`plans/archived/state-model-v2-attempt1.md`, `plans/archived/state-model-v2-phase2-attempt-design.md`), the superseded attempt-1 artifacts `plans/archived/state-model-v2-description.md` and `plans/archived/state-model-v2-non-breakage.md`, any gate artifact under `tmp/` (its durable trace is in `LOGS.md`), and the rejected patch under `~/tmp/cloudify-phase4a-rejected-20260913/`.
 
 No implementation may weaken a higher authority silently.
 
@@ -120,12 +128,12 @@ Outcome: one private dispatch context contains everything every later consumer n
 
 ### R1.0 CRITICAL GATE before any `lib/` edit
 
-The description artifact exists: `plans/state-model-v2-forwarding-description.md` (627 lines, written 2026-09-13 by a read-only subagent). It cites the forwarding path, the context, the registry and snapshot writers, the shadows, and `_cloudify_registry_context_raw` as the defect.
+The description artifact exists: `tmp/state-model-v2-forwarding-description.md` (627 lines, written 2026-09-13 by a read-only subagent; its durable trace is in `LOGS.md`). It cites the forwarding path, the context, the registry and snapshot writers, the shadows, and `_cloudify_registry_context_raw` as the defect.
 
 - [x] Spawn a read-only subagent whose only mission is to describe how the env-var forwarding path works end to end: `declare -f` payload extraction, the `envsubst` allow-list, single-quoted `$VAR` remoting, first-write-wins claiming, and where the registry record and snapshot are written.
 - [x] Write that description as an artifact and cite it from the plan before touching code.
 - [ ] Use the artifact's section "What a safe Phase 2 fix may and may not touch" as the starting invariant list, dropping the two invariants the artifact marks as superseded by design (the metadata-only context and the frozen allow-list) and following `REDESIGN.md` where they differ.
-- [x] State explicitly in the plan why the context change cannot break forwarding or the shadows: name each invariant preserved, each mechanism traced, and the test that re-asserts it. Written before the first `lib/` edit in `plans/state-model-v2-phase2-non-breakage.md`.
+- [x] State explicitly in the plan why the context change cannot break forwarding or the shadows: name each invariant preserved, each mechanism traced, and the test that re-asserts it. Written before the first `lib/` edit in `tmp/state-model-v2-phase2-non-breakage.md`, with its durable trace in `LOGS.md`.
 - [ ] Obtain explicit consent from Rachid and record it in `LOGS.md`.
 
 ### R1.1 Freeze the context contract before code

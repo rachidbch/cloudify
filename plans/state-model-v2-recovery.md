@@ -29,38 +29,45 @@ Its completed boxes do not authorize work and must not be copied here.
 - [x] The only temporary exceptions are one-shot migration commands for old desired inputs, registry records and snapshots; each is deleted after the inventory reports zero old artifacts.
 - [x] `lib/shadows/` and `lib/shadow.sh` remain untouched unless a new description, non-breakage argument and explicit consent allow a specific change.
 
-## One plan, and where everything else goes
+## Where things live
 
-`PLAN.md` points at this file, and this file is the only plan. There is no second plan, no parallel plan, and no phase plan beside it.
+Two files are normative and are the single source of truth:
 
-Four kinds of document, split by what they are for:
+- **The design** - `REDESIGN.md`: what the system must be.
+- **The plan** - this file, through `PLAN.md`: what to do, in what order, behind which gate.
 
-- **Spec** - what must be true, and why: `REDESIGN.md`, the data contracts in `schemas/v1/`, and the decisions in `ADR.md`. Tracked.
-- **Plan** - what to do, in what order, behind which gate: this file. Tracked.
-- **Explanation** - why the system works this way, for a reader: the "Core Mechanisms" section of `README.md`. Tracked.
-- **Per-slice gate evidence** - what was traced for this one change: `tmp/`, with the durable trace in `LOGS.md`. Untracked and transient.
+Everything else is a working note. Use them freely, put them wherever is convenient, throw them away. The only requirement is that any spec or plan change ends up in one of those two files.
 
-The test: a line stating what must be true, or why, belongs in a tracked file. A line stating what was checked for one change may live in `tmp/`. Never the reverse.
+Four things are neither, and must not be treated as working notes:
+
+- `schemas/v1/` - machine-enforced contracts. `validate.sh` runs them and the fixtures prove them, so they are normative in the executable sense.
+- `AGENTS.md` - process rules.
+- `LOGS.md` and `HISTORY.md` - required append-only records.
+- `GLOSSARY.md`, `README.md`, `ROADMAP.md` - derived explanation. Kept and useful, but they must never contradict the design.
+
+The condition that makes this safe: **a design change lands in `REDESIGN.md` in the same commit as the decision that authorizes it.** Otherwise the design drifts from the decisions and stops being the source of truth.
+
+And where two normative files disagree, that is a defect to fix, not a precedence question to settle.
 
 If something in this plan does not fly, stop and raise it with Rachid; do not fork a new plan, and do not keep executing around the problem.
 
 Superseded plans move to `plans/archived/`. Nothing else is added to `plans/`.
 
-## Authority order
+## Authority
 
-When two documents disagree, use this order:
+The design and the plan are the single source of truth. `REDESIGN.md` says what the system must be; this plan says what to do about it. Where they disagree with anything else, they win.
 
-1. `AGENTS.md` and `~/AGENTS.md`.
-2. ADR-023 for the one-path and migration decision, then ADR-022 for the state model.
-3. `REDESIGN.md`.
-4. `GLOSSARY.md` for live concept definitions.
-5. `schemas/v1/*.schema.json` and `schemas/v1/identity.md`.
-6. This plan.
-7. Evidence only, never authority: the two archived attempts (`plans/archived/state-model-v2-attempt1.md`, `plans/archived/state-model-v2-phase2-attempt-design.md`), the superseded attempt-1 artifacts `plans/archived/state-model-v2-description.md` and `plans/archived/state-model-v2-non-breakage.md`, any gate artifact under `tmp/` (its durable trace is in `LOGS.md`), and the rejected patch under `~/tmp/cloudify-phase4a-rejected-20260913/`.
+`AGENTS.md` outranks both for process: it governs how work is done, not what is built.
 
-No implementation may weaken a higher authority silently.
+ADR-022 and ADR-023 remain the accepted decisions behind the design and are the trail for why it changed. A design change updates `REDESIGN.md` and records the decision in an ADR in the same commit.
 
-A required design change needs a new append-only ADR and Rachid's consent before code.
+`schemas/v1/` is the executable form of part of the design. A disagreement between a schema and `REDESIGN.md` is a defect, not a precedence question.
+
+`GLOSSARY.md`, `README.md` and `ROADMAP.md` explain and must not contradict.
+
+Anything else - archived plans, superseded description artifacts, per-slice notes under `tmp/`, the rejected patch under `~/tmp/cloudify-phase4a-rejected-20260913/` - is evidence only, never authority.
+
+No implementation may weaken the design or the plan silently. A required change to either lands in `REDESIGN.md` and this plan with a decision recorded in an ADR, and needs Rachid's consent before code.
 
 ## Mandatory execution rules
 

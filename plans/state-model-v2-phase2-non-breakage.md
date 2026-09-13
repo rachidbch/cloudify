@@ -23,24 +23,33 @@ are deleted.
 
 ## 2. Files in scope
 
-- `lib/context.sh` - `cloudify_context_build` and its write block only.
+- `lib/context.sh` - `cloudify_context_build` and its write block, plus
+  `cloudify_context_read` (`lib/context.sh:364-376`). That reader does exact-key
+  flat matching (`"$field:"*`) and is called by the DEBUG rendering loop
+  (`lib/remote.sh:250-260`) for `value.<name>.source` and `value.<name>.secret`.
+  Once the context is JSON it returns nothing, so DEBUG would silently report
+  `source=recipe secret=false` for every name and misrender redaction. The reader
+  becomes a `jq` lookup that reads the name's source label and secret flag only,
+  never its value.
 - `lib/registry.sh` - delete `_cloudify_registry_context_raw`; point
   `cloudify_registry_record_build` at the context.
 - `lib/vars.sh` - capture the raw text at the single export decision in
   `_cloudify_vars_emit`, next to the provenance label it already records.
-- `lib/remote.sh` - `_cloudify_dispatch_vars` (`lib/remote.sh:116-142`) **name
-  extraction only**. Today the allow-list is recovered from the flat context with
+- `lib/remote.sh` - `_cloudify_dispatch_vars` (`lib/remote.sh:106-134`) **name
+  extraction only**, and the DEBUG rendering loop (`lib/remote.sh:250-260`) through
+  the reader above. Today the allow-list is recovered from the flat context with
   `sed -n 's/^value\.\([^.]*\)\.source:.*$/\1/p' "$CLOUDIFY_CONTEXT_FILE"`
-  (`lib/remote.sh:127`). Once the context is JSON that sed matches nothing, the
+  (`lib/remote.sh:123`). Once the context is JSON that sed matches nothing, the
   allow-list goes empty and payload forwarding silently stops exporting package
   values. The extraction changes; the payload template (`lib/remote.sh:24-77`),
   the single `envsubst` call (`:221-242`) and the stdin transport (`:270-274`) do
   not.
 - `lib/runbooks.sh` - the snapshot's resolver (`_cloudify_runbook_resolver_value`
   invoked from the seed block around `lib/runbooks.sh:1390`) still re-reads the
-  deployment, package and global stores through `_cloudify_vars_store_get`. It
-  must read the context instead, which is what R1.2 already requires.
-- `lib/utils.sh` and `cloudify` - the single-owner context epilogue described in
+  deployment, package and global stores through `_cloudify_vars_store_get`
+  (`lib/runbooks.sh:189-191`). It must read the context instead, which is what
+  R1.2 already requires.
+- `lib/utils.sh` and `cloudify` - the per-dispatch context removal described in
   section 4.
 
 Not in scope: the payload template, the `envsubst` invocation, the stdin
@@ -91,18 +100,17 @@ Each claim names the code that would have to change for it to fail.
    and plaintext remains forbidden in logs, manifests, package state, run records,
    events and debug output.
 
-   **The current removal is not single-owner, and R1 must fix that before it puts
-   plaintext in the file.** Two live leak paths exist today:
-   `_cloudify_registry_record_bg` returns early when `CLOUDIFY_DEPLOYMENT` is
-   unset (`lib/registry.sh:395-397`), which is the direct package command path, and
-   never reaches its `rm -f "$context"` (`lib/registry.sh:415-417`); and the only
-   backstop, `cleanup()` (`lib/utils.sh:74-87`), returns early under
+   **The current removal has a real leak, and R1 must fix it before it puts
+   plaintext in the file.** The wait loop removes a dispatch's context on the
+   failure path (`cloudify:821-824`) but on the success path delegates to
+   `_cloudify_registry_record_bg`, which returns early, removing nothing, when
+   `CLOUDIFY_DEPLOYMENT` is unset (`lib/registry.sh:395-397`). That is exactly the
+   direct package command path. Its `rm -f "$context"` sits after the loop
+   (`lib/registry.sh:418`) and is therefore never reached. The only backstop,
+   `cleanup()` (`lib/utils.sh:74-87`), returns early under
    `CLOUDIFY_LOG_LEVEL=DEBUG` (`lib/utils.sh:77-79`). So a successful
    `cloudify --on host install pkg` with DEBUG on leaves a plaintext file behind.
-   R1 therefore owns the fix: one EXIT and RETURN trap armed at context creation,
-   removing the file on success, failure and interruption, plus a test proving no
-   context file survives all three. Phase 4.3 inherits that owner and only has to
-   keep it working when the registry writer is deleted.
+   R1 owns the fix, described in section 4.
 
 9. **The shadows are unaffected.** Nothing in scope reads or writes
    `lib/shadows/*` or `lib/shadow.sh`, and no command they override changes
@@ -117,12 +125,30 @@ The context file now carries resolved plaintext where it previously carried only
 metadata. That is the redesign's intent (`REDESIGN.md:208`, `:302`, `:213`), and it
 is the reason the file is 0600, created by the parent, never named in argv, and
 removed by the parent on success, failure and interruption. Today's removal is not
-single-owner (section 3, item 8), so R1 must first install one owner: an EXIT and
-RETURN trap armed when the parent creates the context, covering both the direct
-package command path and the DEBUG path. The mitigation is threefold: one owner
-for removal, a test proving no context file survives a successful, a failed and an
-interrupted dispatch, and a scan proving no fixture secret appears in any log,
-manifest, state, run or event.
+complete (section 3, item 8), so R1 must first fix the ownership. The design is
+two-layered and deliberately flat:
+
+1. **Per dispatch, in the wait loop.** After `_cloudify_registry_record_bg`
+   returns on the success path, remove that pid's context unconditionally from
+   `_CLOUDIFY_BG_CONTEXT[$pid]`, mirroring what the failure path already does
+   (`cloudify:821-824`). This closes the direct package command leak, because it
+   no longer depends on the registry writer having run.
+2. **Once per process, in `main()`.** Arm one EXIT trap that iterates
+   `_CLOUDIFY_BG_CONTEXT[*]` and removes any file still present, so a signal, an
+   early `exit`, or an interrupted run cannot leave plaintext behind. This trap
+   must not be `DEBUG`-guarded, unlike `cleanup()` (`lib/utils.sh:77-79`).
+
+A RETURN trap armed when the parent creates the context (in
+`_cloudify_context_file_init`, `lib/remote.sh:94`) does **not** work: it fires the
+moment that function returns, before the backgrounded child has filled the file,
+and it is keyed to the single `CLOUDIFY_CONTEXT_FILE` variable while
+`_CLOUDIFY_BG_CONTEXT` holds one path per backgrounded dispatch, so earlier
+dispatches would still leak. RETURN is correct only for the self-created
+`cloudify_remote_sync` context, which already uses it (`lib/remote.sh:212-216`).
+
+The mitigation is threefold: the two layers above, a test proving no context file
+survives a successful, a failed and an interrupted dispatch, and a scan proving no
+fixture secret appears in any log, manifest, state, run or event.
 
 ## 5. What was traced, not assumed
 

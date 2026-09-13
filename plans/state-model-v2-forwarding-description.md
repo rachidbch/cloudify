@@ -602,6 +602,9 @@ store. This is the Phase 2 fix.
     form plus its provenance, per `REDESIGN.md:208` and `:302`. The file stays
     0600 and stays ephemeral; plaintext is permitted here and forbidden in logs,
     state, runs and events.
+  - `cloudify_context_read` (`lib/context.sh:364-376`) — exact-key flat matching
+    that the DEBUG loop depends on; becomes a `jq` lookup of a name's source label
+    and secret flag only.
   - `_cloudify_vars_sources_record` consumers if the provenance shape changes.
 - `lib/vars.sh`:
   - `_cloudify_vars_emit` (`lib/vars.sh:163-196`) and
@@ -634,7 +637,8 @@ specifically:
 1. The record's `var.<NAME>` equals the payload's forwarded value for every
    declared name, for every source label (environment, deployment, package,
    global, recipe), including the present-but-empty store value.
-2. The context file is 0600, is removed exactly once, and no plaintext or
+2. The context file is 0600, is removed on every exit path (wait loop on success
+   and failure, plus a non-`DEBUG`-guarded process EXIT trap), and no plaintext or
    resolved value from it reaches a log, a manifest, package state, a run record
    or an event. (Invariant #8 as superseded by design.)
 3. The context path still never appears in `ps`/ssh argv, and cleanup still

@@ -54,7 +54,7 @@ No `stdout`, `stderr`, rendered payload, or literal secret field exists, and `ad
 Each `KEY: value` line is one deployment input, and the current `@base64:`, `@@`, and `@<backend>:` encodings carry over as the value's source form.
 
 `~/.config/cloudify/deployments/<id>/runs/<UTC>.yaml` becomes the run record of `run.schema.json` for the same execution, and its `target.*` lines are the only current source of manifest bindings.
-The snapshot itself remains the replay source during the compatibility period and is not deleted by migration.
+The run snapshot remains the replay source and is not deleted by migration.
 
 `<bucket>/deployments/<id>/pkgs/<pkg>/config.yaml` becomes `<host-state-root>/cloudify/packages/<pkg>/<package_instance>/state.json` following `package-state.schema.json`.
 The bucket is `ivps node path <node>`, that path plus `<instance>`, or `<config-root>/registry/hosts/<ssh_host>`.
@@ -65,30 +65,30 @@ The deployment manifest has no current-format source: nothing on disk records a 
 
 Events have no current-format source: the existing log at `/tmp/cloudify/logs/<timestamp>.log` contains raw command output and is never converted into events.
 
-The legacy registry's independent `var.*` walk (`_cloudify_registry_raw_var`, `lib/registry.sh`) is the second value walk that `REDESIGN.md` removes, so a `var.<NAME>` field is observation data for migration, never intent and never a claim by itself.
+A `var.<NAME>` field is observation data for migration, never intent and never a claim by itself.
 
-## Migration mapping rules for one legacy value
+## Migration mapping rules for one stored value
 
 A raw stored value that begins with `@<backend>:` is a secret reference: `secret: true`, `declaration: explicit`, `reference` and `source_form` both hold the reference string, `redacted: false`, `digest: null`.
 
-A raw stored value whose name matches the legacy heuristic (`TOKEN`, `KEY`, `PASSWORD`, `SECRET`) and that is not a reference is a literal secret: the migration computes `digest: sha256(<plaintext>)`, drops the plaintext, and writes `secret: true`, `declaration: legacy-heuristic`, `source_form: null`, `redacted: true`.
+A raw stored value whose name matches the heuristic (`TOKEN`, `KEY`, `PASSWORD`, `SECRET`) and that is not a reference is a literal secret: the migration computes `digest: sha256(<plaintext>)`, drops the plaintext, and writes `secret: true`, `declaration: legacy-heuristic`, `source_form: null`, `redacted: true`.
 
 A raw stored value that begins with `@@` is an escaped literal and keeps its source form with `secret: false` unless the name heuristic applies.
 
 Any other raw stored value is a non-secret literal: `secret: false`, `declaration: none`, `source_form: <raw>`, `redacted: false`.
 
-The package instance is `default` for every legacy record, because the current format has no instance key.
+The package instance is `default` for every existing record, because the current format has no instance key.
 
-`installed_at` becomes `applied.at`, `version` becomes `applied.package_version`, and the legacy deployment ID becomes a claim only after the operator supplies the application and flavor explicitly.
+`installed_at` becomes `applied.at`, `version` becomes `applied.package_version`, and the single-string deployment ID becomes a claim only after the operator supplies the application and flavor explicitly.
 
 ## What cannot be derived from the current formats
 
-1. The application and flavor of a legacy single-string deployment ID, because the ID does not encode them and must never be split to guess.
+1. The application and flavor of a single-string deployment ID, because the ID does not encode them and must never be split to guess.
 2. The pinned application commit of an existing deployment, because nothing recorded a commit before manifests existed.
 3. Target bindings for a deployment whose runs left no snapshot, because the newest snapshot is the only recorded source of `target.*`.
 4. Writer identity, selected phases, run IDs, and event IDs of a past execution, because a snapshot has none of them and a missing record must not be invented.
 5. The durable `host_key` of an external host, because the fallback bucket is keyed by the mutable SSH alias and the accepted host-key fingerprint is not recorded anywhere yet.
-6. The secret classification of a legacy value, because current declaration files carry no secret marker; the heuristic rule above is the only available signal.
+6. The secret classification of a stored value, because current declaration files carry no secret marker; the heuristic rule above is the only available signal.
 7. Event history, because current logs carry raw output and are not event records.
 8. `output.*` lines, because they were never replay inputs and `REDESIGN.md` forbids copying them into runs or events.
 
@@ -145,5 +145,5 @@ Points where `REDESIGN.md` implies a field but does not specify it, with the lea
 13. `application_commit` is a 40-hex git commit and `development_override` is a separate boolean; `REDESIGN.md` requires an explicit development override that marks a deployment unreproducible but names neither the field nor the marker.
 14. The manifest has no `updated_at`; `REDESIGN.md` states only a creation time, and `last_run_id` plus `last_event_id` already order later changes.
 15. Component patterns are fully anchored, and the local interpreter evaluates `pattern` as an unanchored search, which is equivalent for an anchored pattern; `identity.md` specifies the byte length while the schema approximates it with a character length.
-16. A legacy deployment ID keeps the old rule set, so an existing ID that the v2 component rules reject must be renamed explicitly during migration.
+16. A single-string deployment ID keeps the old rule set, so an existing ID that the v2 component rules reject must be renamed explicitly when it is migrated.
 17. The migration report prints record metadata `status` and `version` in addition to names and paths, because the plan requires the inventory to be actionable without reading a value.

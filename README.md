@@ -56,8 +56,9 @@ Commands:
   credentials --check         Check credential status
   vars set <key> <value> [scope] [--stdin|--file <path>]  Set a var (scope: --global|--pkg <n>|--deployment <id>)
   vars show|list [--json]|delete <key> [scope]   Manage vars (masked unless --reveal)
-  deployment create|list|use|delete <id>         Manage deployments (ADR-011)
-  deployment run <id> [--dry-run]                Run the deployment's runbook
+  app run <application>[/<flavor>] [--name <name>]  Run the application's runbook (bare run: install then verify)
+  deployment list|show <id>                      List deployments; show one manifest and its run snapshots
+  deployment migrate <id> --application <app>    One-shot bridge: copy single-ID inputs to the nested path
   deployment replay <id> [--at <run>]            Re-run a recorded run from its snapshot
   node use <node>             Set the active node (prints the export command)
   packages | pkgs             List installable packages
@@ -152,7 +153,7 @@ cloudify credentials gitlab   # CLOUDIFY_GITLABUSER, CLOUDIFY_GITLABPWD
 cloudify credentials --check  # status check
 ```
 
-Git auth on hosts: the git shadow (GIT_ASKPASS + url.insteadOf) needs a TOKEN — GitHub rejects passwords since 2021. Set `CLOUDIFY_GITHUB_READONLY_TOKEN` (fine-grained PAT, Contents: read-only) for clones; the shadow prefers it over the legacy `CLOUDIFY_GITHUBPWD` slot.
+Git auth on hosts: the git shadow (GIT_ASKPASS + url.insteadOf) needs a TOKEN - GitHub rejects passwords since 2021. Set `CLOUDIFY_GITHUB_READONLY_TOKEN` (fine-grained PAT, Contents: read-only) for clones; the shadow prefers it over the earlier `CLOUDIFY_GITHUBPWD` slot.
 
 Or export directly (overrides file):
 
@@ -213,13 +214,19 @@ aborts the run — an empty value is never forwarded. Backends are shell files i
 `CLOUDIFY_INSTANCE` are framework-owned: a file store that tries to set one is
 warned about and skipped.
 
-**Deployment-wide vars (ADR-011):** `~/.config/cloudify/deployments/<id>/config.yaml`
-A deployment is an application across nodes (e.g. a k3s cluster). Set the per-shell context and manage vars via the CLI:
+**Deployment-wide vars (ADR-011):** the deployment is the application instance,
+so desired inputs live at
+`~/.config/cloudify/deployments/<application>/<flavor>/<name>/values.yaml`. It is
+written and read while an application reference is active
+(`CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, `CLOUDIFY_DEPLOYMENT_NAME`, as
+`cloudify app run` exports them); without one, `vars set --deployment <id>` fails
+closed and names the application command. A deployment is an application across
+nodes (e.g. a k3s cluster):
 
 ```bash
-cloudify deployment create my-cluster
-eval "$(cloudify deployment use my-cluster)"   # export CLOUDIFY_DEPLOYMENT=my-cluster
-cloudify vars set K3S_TOKEN secret
+export CLOUDIFY_APPLICATION=my-cluster CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=prod
+cloudify vars set FOO bar --deployment my-cluster
+cloudify app run my-cluster --name prod
 ```
 
 `vars show`/`vars list` mask secret-looking values (`PASSWORD|TOKEN|SECRET|KEY`) by default; add `--reveal` to print them. `vars show <key> --resolve` decodes a `@backend:locator` reference.
@@ -227,23 +234,23 @@ cloudify vars set K3S_TOKEN secret
 `cloudify --on <node> install <pkg>` then forwards the deployment vars to the host.
 Deployment values beat package and global values; the caller env still wins.
 
-`cloudify deployment delete <id>` trashes the deployment store dir and every
-observation record for that id (the node and instance buckets written after an
-install), so no record outlives its deployment.
-
-**Runbooks (`cloudify deployment run`).** A runbook is repo-tracked Markdown
-(`runbooks/<app>/<flavor>.md`, see `runbooks/README.md`): front-matter
-(`deployment`, `targets`) plus fenced `bash step=<type> [target=] [pkg=] [id=]`
+**Runbooks (`cloudify app run`).** A runbook is repo-tracked Markdown
+(`runbooks/<app>/<flavor>/runbook.md`, see `runbooks/README.md`): front-matter
+(`deployment`, `targets`) plus fenced `bash step=<type> [target=] [pkg=] [id=] [phase=]`
 blocks, `<type>` in `launch|install|configure|verify|uninstall|run|human-gate`.
-`deployment run <id>` binds each target (`--target name=addr` wins, else the
-deployment var `TARGET_<NAME>`), preflights the required vars of every
-pkg-consuming step, then runs the steps in document order, stopping at the first
-failure. A step sees `CLOUDIFY_DEPLOYMENT`, `TARGET_<NAME>`,
-`CLOUDIFY_OUTPUTS_FILE` (append `name=value`; later steps read `OUT_<name>`) and
-`STEP_ID/STEP_TYPE/STEP_TARGET/STEP_PKG`. Every run writes
+`cloudify app run <application>[/<flavor>] [--name <name>]` resolves the
+canonical runbook from the reference, exports the application identity, binds
+each target (`--target name=addr` wins, else the deployment var `TARGET_<NAME>`),
+preflights the required vars of every pkg-consuming step in the selected phases,
+then runs those steps, stopping at the first failure. A step sees
+`CLOUDIFY_DEPLOYMENT`, `TARGET_<NAME>`, `CLOUDIFY_OUTPUTS_FILE` (append
+`name=value`; later steps read `OUT_<name>`) and
+`STEP_ID/STEP_TYPE/STEP_TARGET/STEP_PKG/STEP_PHASE`. Every run writes
 `${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml` (0600): `status`, timestamps,
 `runbook`, `target.<name>`, the raw `value.<NAME>` lines and `output.<name>`.
 `--dry-run` prints the plan (seeded value NAMES, never values) and runs nothing.
+The lower-level `cloudify_deployment_run` engine keeps `--runbook <path>` for a
+runbook outside the tree and for replay.
 
 `cloudify deployment replay <id> [--at <run>]` re-runs a recorded run: it seeds
 the environment from the snapshot (target bindings, and each `value.<NAME>`
@@ -351,7 +358,7 @@ pkg/
 inventory/
   <host>/@<tag>       Host tag files for grouping
 runbooks/
-  <app>/<flavor>.md   Deployment procedure (front-matter + typed shell steps)
+  <app>/<flavor>/runbook.md  Deployment procedure (front-matter + typed shell steps)
 schemas/
   v1/                 State model v2 machine contracts: identity rules, the manifest,
                       package state, run and event JSON schemas, fixtures, and

@@ -1,0 +1,47 @@
+    export CLOUDIFY_IS_LOCAL=false;
+    export CLOUDIFY_DISABLE_COLORS='true';
+    export CLOUDIFY_FORCE_COLORS=true;
+    export DEBIAN_FRONTEND=noninteractive;
+    export NEEDRESTART_MODE=a;
+    export CLOUDIFY_SKIPCREDENTIALS=true;
+    export DEBUG='false';
+    export CLOUDIFY_LOG_LEVEL='INFO';
+    export CLOUDIFY_NO_DEFAULTS='';
+    export CLOUDIFY_LOCAL_BIN="$HOME/.local/bin";
+    export CLOUDIFY_LOCAL_USER='testuser';
+    export CLOUDIFY_LOCAL_PWD='dummy';
+    export CLOUDIFY_HOSTPWD='dummy';
+    export CLOUDIFY_GITHUBUSER='';
+    export CLOUDIFY_GITHUBPWD='';
+    export CLOUDIFY_GITHUB_READONLY_TOKEN='';
+    export CLOUDIFY_GITLABUSER='';
+    export CLOUDIFY_GITLABPWD='';
+    export CLOUDIFY_RCLONE_REMOTE='';
+    export CLOUDIFY_RCLONE_REMOTE_REGION='';
+    export CLOUDIFY_RCLONE_REMOTE_ENDPOINT='';
+    export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID='';
+    export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='';
+    export RESTIC_PASSWORD='';
+    : 
+    export FIX_MULTILINE='line-one
+line-two';
+    export CLOUDIFY_CLEAR_DATA='';
+    export CLOUDIFY_FORCE='';
+    export CLOUDIFY_NO_VERIFY='';
+    export PKG_VERIFY_TIMEOUT='';
+    if '' || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -'' 2> /dev/null)" ]]; then
+        command -v git > /dev/null 2>&1 || apt-get install -y -qq git;
+        bash -c "$(curl -sL 'https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh')" < /dev/null;
+    fi;
+    mkdir -p /tmp/cloudify/logs;
+    if [ -n 'golden.log' ]; then
+        CLOUDIFY_LOG_FILE="/tmp/cloudify/logs/golden.log";
+    else
+        CLOUDIFY_LOG_FILE="/tmp/cloudify/logs/$(date +%Y%m%d-%H%M%S).log";
+    fi;
+    export CLOUDIFY_LOG_FILE;
+    : > "$CLOUDIFY_LOG_FILE";
+    ln -sf "$CLOUDIFY_LOG_FILE" /tmp/cloudify/logs/latest.log;
+    cloudify init < /dev/null;
+    exec > >(tee -a "$CLOUDIFY_LOG_FILE") 2>&1;
+    :; cloudify install foo </dev/null

@@ -18,7 +18,7 @@
 #   cloudify_runbook_inputs <path>           one declared application input name per line
 #   cloudify_runbook_map <path>              one PACKAGE_VAR \t APPLICATION_INPUT per line
 #   cloudify_runbook_find <id> [root]        path of the single matching runbook
-#   cloudify_runbook_find_app <app> [flavor] canonical path, else legacy path
+#   cloudify_runbook_find_app <app> [flavor] canonical path
 #   cloudify_runbook_bind_targets <path> [--target name=addr]...
 #                                            name \t node \t instance \t ssh_host
 #   cloudify_runbook_preflight <path> [--target name=addr]... [--phase <phase>]...
@@ -32,12 +32,8 @@
 #   cloudify_app_run <application>[/<flavor>] [--name <name>] [run args...]
 #   cloudify_app_reserved <verb>                the Phase 4 reservation message
 #
-# Canonical application runbooks live at
-# runbooks/<application>/<flavor>/runbook.md and derive their identity from the
-# path; the legacy runbooks/<application>/<flavor>.md stays discoverable through
-# the front-matter `deployment:` field for one compatibility period (a
-# deprecation warning when a run/human-gate step has no phase). Only the legacy
-# path requires `deployment:`.
+# Application runbooks live at runbooks/<application>/<flavor>/runbook.md and
+# derive their identity from the path. There is no other discoverable path.
 #
 # Application inputs (frozen syntax): front-matter `inputs: NAME[, NAME...]`
 # declares application input names and `map: PACKAGE_VAR=APPLICATION_INPUT[, ...]`
@@ -49,10 +45,9 @@
 #
 # Phases: `phase=install|reconfigure|verify|teardown` is accepted on any step;
 # the default is install for launch/install, reconfigure for configure, verify
-# for verify and teardown for uninstall. `run` and `human-gate` must declare a
-# phase in a canonical runbook. A bare canonical run selects install then
-# verify; a legacy runbook with no --phase keeps executing every step in
-# document order (compatibility). `--yes` never selects teardown.
+# for verify and teardown for uninstall. `run` and `human-gate` have no default
+# and must declare a phase. A bare run selects install then verify. `--yes`
+# never selects teardown.
 #
 # cloudify_runbook_execute also honours CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES (a run
 # snapshot path): the new snapshot records that file's `value.*` lines instead of
@@ -60,8 +55,7 @@
 # replayable after the store changes. Otherwise the snapshot keeps every
 # deployment-store key and corrects/adds the declared names of the run's step
 # packages with the source form the payload would use (one resolution built once
-# per run). CLOUDIFY_LEGACY_VARS=1 keeps the deployment-store-only record.
-# Snapshots are
+# per run). Snapshots are
 # ${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml (0600, atomic); a name already
 # taken (a run and its immediate replay share a second) gets a -2, -3, ... suffix.
 #
@@ -143,7 +137,7 @@ function _cloudify_runbook_pkg_type() {
 # module is loaded, else the same implementation through its lib/vars.sh
 # wrapper (a unit test that loads neither). Both delegate to
 # lib/vars.sh:_cloudify_vars_source_label, so preflight and dispatch cannot
-# select different sources. The wrapper's legacy spelling (`env`) is normalized
+# select different sources. The wrapper's display spelling (`env`) is normalized
 # to the canonical one (`environment`) here: the selection is identical either
 # way, and `_cloudify_vars_source_of` keeps its own spelling for display.
 function _cloudify_runbook_source_label() {
@@ -192,7 +186,7 @@ function _cloudify_runbook_resolver_value() {
     local name="$1" label="$2" pkg="$3" value _input
     case "$label" in
         environment) value="${!name:-}" ;;
-        deployment) value=$(_cloudify_vars_store_get "$(_cloudify_deployment_config "${CLOUDIFY_DEPLOYMENT:-}")" "$name") ;;
+        deployment) value=$(_cloudify_vars_store_get "$(_cloudify_deployment_config || true)" "$name") ;;
         package) value=$(_cloudify_vars_store_get "$(cloudify_vars_pkg_file "$pkg")" "$name") ;;
         global) value=$(_cloudify_vars_store_get "$(cloudify_vars_global_file)" "$name") ;;
         application)
@@ -209,23 +203,13 @@ function _cloudify_runbook_resolver_value() {
     printf '%s' "$value"
 }
 
-# _cloudify_runbook_canonical_shape <path> - rc 0 when the path has the canonical
-# shape .../<application>/<flavor>/runbook.md. Shape only; the components are
-# validated by cloudify_runbook_identity when the identity is actually used.
-function _cloudify_runbook_canonical_shape() {
-    local path="${1:-}"
-    [[ -n "$path" && "$path" == */runbook.md ]] || return 1
-    [[ "$path" == */*/*/* ]] || return 1
-    return 0
-}
-
 # cloudify_runbook_identity <path> - "application\tflavor" derived from the
 # canonical path, or rc 1 when the path is not canonical. Dies (fail closed) on a
-# path component the identity rules reject; a canonical path is never silently
-# treated as a legacy one.
+# path component the identity rules reject.
 function cloudify_runbook_identity() {
     local path="${1:-}" app flavor
-    _cloudify_runbook_canonical_shape "$path" || return 1
+    [[ -n "$path" && "$path" == */runbook.md ]] || return 1
+    [[ "$path" == */*/*/* ]] || return 1
     flavor="${path%/*}"; flavor="${flavor##*/}"
     app="${path%/*}"; app="${app%/*}"; app="${app##*/}"
     [[ -n "$app" && -n "$flavor" ]] || return 1
@@ -310,7 +294,7 @@ function _cloudify_runbook_export_app_spec() {
         app="${identity%%$'\t'*}"
         flavor="${identity#*$'\t'}"
     fi
-    # A canonical path is authoritative. A legacy path carries no identity, so an
+    # The path is the identity. A path that is not canonical carries none, so an
     # explicit application reference already exported by `cloudify app run`
     # (which stated the application and flavor) stays in place instead of being
     # clobbered with an empty tuple.
@@ -358,7 +342,7 @@ function _cloudify_runbook_export_app_spec() {
         else
             dep=""
             [[ -n "$deployment" ]] &&
-                dep=$(_cloudify_vars_store_get "$(_cloudify_deployment_config "$deployment")" "$name")
+                dep=$(_cloudify_vars_store_get "$(_cloudify_deployment_config || true)" "$name")
             def=""
             [[ -n "$app" && -n "$flavor" ]] &&
                 def=$(_cloudify_vars_store_get "$(cloudify_vars_app_file "$app" "$flavor")" "$name")
@@ -380,30 +364,12 @@ function _cloudify_runbook_export_app_spec() {
     return 0
 }
 
-# _cloudify_runbook_warn_legacy_phases <path> <parse-out> - the legacy-compat
-# deprecation warning. Emitted by the engine (never by cloudify_runbook_parse,
-# whose stdout is a machine contract), and only for a legacy path.
-function _cloudify_runbook_warn_legacy_phases() {
-    local path="${1:-}" parse_out="${2:-}" line type phase
-    _cloudify_runbook_canonical_shape "$path" && return 0
-    while IFS= read -r line; do
-        [[ -n "$line" ]] || continue
-        type="${line%%$'\t'*}"
-        case "$type" in run | human-gate) ;; *) continue ;; esac
-        phase="${line##*$'\t'}"
-        [[ -n "$phase" ]] && continue
-        log_warn "Runbook '$path': legacy path; step '$type' has no phase= (deprecated; canonical runbooks require it)."
-    done <<< "$parse_out"
-    return 0
-}
-
 # cloudify_runbook_phases_for <path> [<phase>...] - the phases a run selects.
-# Explicit phases win (validated). With none: a canonical runbook selects install
-# then verify (a bare application run), a legacy runbook selects all four for
-# display but the engine keeps document order (compatibility). Teardown is never
-# selected by a bare run, so `--yes` cannot reach it.
+# Explicit phases win (validated). With none, a run selects install then verify
+# (a bare run). Teardown is never selected by a bare run, so `--yes` cannot
+# reach it.
 function cloudify_runbook_phases_for() {
-    local path="${1:-}" p
+    local p
     shift || true
     if [[ $# -gt 0 ]]; then
         for p in "$@"; do
@@ -413,17 +379,12 @@ function cloudify_runbook_phases_for() {
         done
         return 0
     fi
-    if _cloudify_runbook_canonical_shape "$path"; then
-        printf 'install\nverify\n'
-    else
-        printf '%s\n' "${_CLOUDIFY_RUNBOOK_PHASES[@]}"
-    fi
+    printf 'install\nverify\n'
 }
 
 # _cloudify_runbook_select_steps <path> <parse-out> [<phase>...] - the steps a
-# run executes. No explicit phase and a legacy path: identity, document order
-# (compatibility). Otherwise the selected phases in canonical order, document
-# order preserved inside each phase.
+# run executes: the selected phases in canonical order, document order preserved
+# inside each phase.
 function _cloudify_runbook_select_steps() {
     local path="${1:-}" parse_out="${2:-}"
     shift 2 || true
@@ -432,10 +393,6 @@ function _cloudify_runbook_select_steps() {
     # Capture first: a `die` inside a process substitution would be swallowed.
     phases_out=$(cloudify_runbook_phases_for "$path" "$@") || return 1
     while IFS= read -r p; do [[ -n "$p" ]] && phases+=("$p"); done <<< "$phases_out"
-    if [[ $# -eq 0 ]] && ! _cloudify_runbook_canonical_shape "$path"; then
-        printf '%s\n' "$parse_out"
-        return 0
-    fi
     local phase
     for phase in "${_CLOUDIFY_RUNBOOK_PHASES[@]}"; do
         for p in ${phases[@]+"${phases[@]}"}; do
@@ -578,15 +535,11 @@ function _cloudify_runbook_meta_parse() {
         esac
     done <<< "$fm"
     if [[ -z "$deployment" ]]; then
-        if _cloudify_runbook_canonical_shape "$path"; then
-            # Canonical identity comes from the path; `deployment:` is only the
-            # legacy store id and may be supplied by the caller environment.
-            deployment="${CLOUDIFY_DEPLOYMENT:-}"
-            [[ -n "$deployment" ]] ||
-                die "Runbook '$path': canonical runbook has no 'deployment:' front-matter and CLOUDIFY_DEPLOYMENT is not set."
-        else
-            die "Runbook '$path': front-matter is missing 'deployment:'."
-        fi
+        # `deployment:` is optional: the caller environment may name it (an
+        # application run exports it).
+        deployment="${CLOUDIFY_DEPLOYMENT:-}"
+        [[ -n "$deployment" ]] ||
+            die "Runbook '$path': no 'deployment:' front-matter and CLOUDIFY_DEPLOYMENT is not set."
     fi
 
     local -a targets=()
@@ -629,9 +582,9 @@ function _cloudify_runbook_deployment_of() {
 # silently ignored. A step prints "type\tid\ttarget\tpkg\tbody-b64", or dies
 # with the runbook path + the fence's line number.
 function _cloudify_runbook_emit_step() {
-    local path="$1" line="$2" info="$3" body="$4" index="$5" canonical="$6"
-    local -n _declared="$7"
-    local -n _seen="$8"
+    local path="$1" line="$2" info="$3" body="$4" index="$5"
+    local -n _declared="$6"
+    local -n _seen="$7"
 
     local -a tokens=()
     IFS=$' \t\n' read -ra tokens <<< "$info" || true
@@ -667,8 +620,8 @@ function _cloudify_runbook_emit_step() {
 
     # Phase: the declared phase, else the type's default. Unknown phases and a
     # typed step whose explicit phase contradicts its own operation are rejected
-    # here, before execution. run/human-gate have no default, so a canonical
-    # runbook must declare one (a legacy path may omit it, warned by the engine).
+    # here, before execution. run/human-gate have no default, so they must
+    # declare one.
     local phase="" default_phase=""
     if [[ -n "$declared_phase" ]]; then
         _cloudify_runbook_phase_known "$declared_phase" ||
@@ -681,8 +634,8 @@ function _cloudify_runbook_emit_step() {
         phase="$default_phase"
     elif [[ -n "$declared_phase" ]]; then
         phase="$declared_phase"
-    elif [[ "$canonical" == "1" ]]; then
-        die "Runbook '$path': line $line: canonical step '$type' must declare phase= (install|reconfigure|verify|teardown)."
+    else
+        die "Runbook '$path': line $line: step '$type' must declare phase= (install|reconfigure|verify|teardown)."
     fi
 
     [[ -n "$id" ]] || id=$(printf '%02d' "$index")
@@ -722,10 +675,6 @@ function cloudify_runbook_parse() {
     local meta targets_csv
     meta=$(_cloudify_runbook_meta_parse "$path")
     targets_csv="${meta#*$'\t'}"
-    # Canonical identity comes from the path; the flag lets the parser require an
-    # explicit phase on run/human-gate steps there (and only there).
-    local canonical=0
-    _cloudify_runbook_canonical_shape "$path" && canonical=1
     local -a declared_list=()
     if [[ -n "$targets_csv" ]]; then
         IFS=',' read -ra declared_list <<< "$targets_csv" || true
@@ -760,7 +709,7 @@ function cloudify_runbook_parse() {
             in_block=false
             index=$((index + 1))
             _cloudify_runbook_emit_step "$path" "$open_line" "$info" "$body" "$index" \
-                "$canonical" declared seen_ids
+                declared seen_ids
             continue
         fi
         body="${body:+$body$'\n'}$line"
@@ -769,55 +718,32 @@ function cloudify_runbook_parse() {
     return 0
 }
 
-# cloudify_runbook_find_app <application> [<flavor>] - dual discovery: the
-# canonical runbooks/<application>/<flavor>/runbook.md first, then the legacy
-# runbooks/<application>/<flavor>.md during the compatibility period.
+# cloudify_runbook_find_app <application> [<flavor>] - the canonical
+# runbooks/<application>/<flavor>/runbook.md, or a die.
 function cloudify_runbook_find_app() {
-    local app="${1:-}" flavor="${2:-default}" root canonical legacy
+    local app="${1:-}" flavor="${2:-default}" root canonical
     [[ -n "$app" ]] || die "Usage: cloudify_runbook_find_app <application> [<flavor>]"
     _cloudify_identity_check_component "application" "$app"
     _cloudify_identity_check_component "flavor" "$flavor"
     root=$(_cloudify_runbook_root)
     canonical="$root/$app/$flavor/runbook.md"
-    legacy="$root/$app/$flavor.md"
-    if [[ -f "$canonical" ]]; then
-        printf '%s\n' "$canonical"
-        return 0
-    fi
-    if [[ -f "$legacy" ]]; then
-        printf '%s\n' "$legacy"
-        return 0
-    fi
-    die "No runbook found for application '$app/$flavor' under '$root'."
+    [[ -f "$canonical" ]] || die "No runbook found for application '$app/$flavor' under '$root'."
+    printf '%s\n' "$canonical"
 }
 
 # _cloudify_runbook_tuple_for <path> [<deployment-name>] - the application
-# identity of a runbook: application \t flavor \t deployment name. The
-# application and flavor come from the path (canonical runbooks/<app>/<flavor>/
-# runbook.md or the legacy runbooks/<app>/<flavor>.md); the deployment name
-# defaults to `default`. Never derived from the front-matter `deployment:` ID,
-# which stays an opaque legacy store id. rc 1 when the path has no application
-# shape, so a plain fixture runbook keeps the legacy behavior and gets no
-# manifest. A path component the identity rules reject dies (fail closed).
+# identity of a runbook: application \t flavor \t deployment name, derived from
+# the canonical path. The deployment name defaults to `default`. Never derived
+# from the front-matter `deployment:` ID, which stays an opaque run id. rc 1 when
+# the path is not canonical, so a plain fixture runbook gets no manifest. A path
+# component the identity rules reject dies (fail closed).
 function _cloudify_runbook_tuple_for() {
-    local path="${1:-}" name="${2:-default}" app="" flavor="" root identity
+    local path="${1:-}" name="${2:-default}" app="" flavor="" identity
     [[ -n "$path" ]] || return 1
     [[ -n "$name" ]] || return 1
-    if _cloudify_runbook_canonical_shape "$path"; then
-        identity=$(cloudify_runbook_identity "$path") || return 1
-        app="${identity%%$'\t'*}"
-        flavor="${identity#*$'\t'}"
-    else
-        root=$(_cloudify_runbook_root)
-        [[ "$path" == "$root"/*/*.md ]] || return 1
-        flavor="${path##*/}"
-        flavor="${flavor%.md}"
-        app="${path%/*}"
-        app="${app##*/}"
-        [[ -n "$app" && -n "$flavor" ]] || return 1
-        _cloudify_identity_check_component "runbook application" "$app"
-        _cloudify_identity_check_component "runbook flavor" "$flavor"
-    fi
+    identity=$(cloudify_runbook_identity "$path") || return 1
+    app="${identity%%$'\t'*}"
+    flavor="${identity#*$'\t'}"
     _cloudify_identity_check_component "application" "$app"
     _cloudify_identity_check_component "flavor" "$flavor"
     _cloudify_identity_check_component "deployment name" "$name"
@@ -980,21 +906,9 @@ function cloudify_app_run() {
     deployment=$(_cloudify_runbook_deployment_of "$runbook")
     if [[ -z "$deployment" ]]; then
         deployment="$app.$flavor.$name"
-        log_debug "$where: runbook has no front-matter deployment id; using '$deployment' as the compatibility store id."
+        log_debug "$where: runbook has no front-matter deployment id; using '$deployment' as the run id."
     fi
     export CLOUDIFY_DEPLOYMENT="$deployment"
-
-    # An old single-ID store with no nested counterpart is still read
-    # (read-through). Tell the operator the explicit migration path; the ID is
-    # never split to guess the tuple.
-    if declare -F _cloudify_deployment_legacy_config >/dev/null 2>&1; then
-        local legacy nested
-        legacy=$(_cloudify_deployment_legacy_config "$deployment")
-        nested=$(cloudify_deployment_values_file "$app" "$flavor" "$name")
-        if [[ -f "$legacy" && ! -f "$nested" ]]; then
-            log_warn "$where: desired inputs are read from the legacy store '$legacy'; move future writes to the nested path with: cloudify deployment migrate $deployment --application $app --flavor $flavor --name $name"
-        fi
-    fi
 
     cloudify_deployment_run "$deployment" --runbook "$runbook" ${fwd[@]+"${fwd[@]}"}
 }
@@ -1073,7 +987,7 @@ function cloudify_runbook_bind_targets() {
     for name in ${targets[@]+"${targets[@]}"}; do
         addr="${bindings[$name]:-}"
         if [[ -z "$addr" ]]; then
-            addr=$(_cloudify_vars_store_get "$(_cloudify_deployment_config "$deployment")" "TARGET_${name^^}")
+            addr=$(_cloudify_vars_store_get "$(_cloudify_deployment_config || true)" "TARGET_${name^^}")
         fi
         if [[ -z "$addr" ]]; then
             unbound+=("$name")
@@ -1127,7 +1041,7 @@ function cloudify_runbook_preflight() {
     cloudify_runbook_bind_targets "$path" ${bind_args[@]+"${bind_args[@]}"} > /dev/null
 
     # The deployment store of the runbook's own deployment is part of the ladder,
-    # so source_of must see it (the router exits after `deployment run`).
+    # so source_of must see it (the router exits after the engine returns).
     export CLOUDIFY_DEPLOYMENT="$deployment"
     # The application spec must be visible to the source label (a mapped input is
     # resolved), and it is validated before any step.
@@ -1135,7 +1049,6 @@ function cloudify_runbook_preflight() {
 
     local parse_out steps_out
     parse_out=$(cloudify_runbook_parse "$path") || return 1
-    _cloudify_runbook_warn_legacy_phases "$path" "$parse_out"
     steps_out=$(_cloudify_runbook_select_steps "$path" "$parse_out" ${cli_phases[@]+"${cli_phases[@]}"}) || return 1
 
     local -a missing=()
@@ -1179,9 +1092,8 @@ function cloudify_runbook_preflight() {
 #                           [--migrate-targets]
 # find + parse + bind + preflight + print the plan; without --dry-run it creates
 # the deployment manifest as `applying` (before the first mutating step) and
-# then dispatches cloudify_runbook_execute. Phase selection is opt-in; a
-# canonical runbook with no --phase selects install then verify, a legacy one
-# runs every step (compatibility).
+# then dispatches cloudify_runbook_execute. Phase selection is opt-in; a bare
+# run selects install then verify.
 function cloudify_deployment_run() {
     local id="" runbook="" from="" dry=0 yes=0 migrate_targets=0
     local -a target_bindings=() cli_targets=()
@@ -1191,38 +1103,38 @@ function cloudify_deployment_run() {
             --runbook)
                 shift
                 runbook="${1:-}"
-                [[ -n "$runbook" ]] || die "deployment run: --runbook needs a path."
+                [[ -n "$runbook" ]] || die "deployment: --runbook needs a path."
                 ;;
             --target)
                 shift
-                [[ -n "${1:-}" && "$1" == *=* ]] || die "deployment run: --target expects name=addr."
+                [[ -n "${1:-}" && "$1" == *=* ]] || die "deployment: --target expects name=addr."
                 target_bindings+=("$1")
                 cli_targets+=("$1")
                 ;;
             --from)
                 shift
                 from="${1:-}"
-                [[ -n "$from" ]] || die "deployment run: --from needs a step id."
+                [[ -n "$from" ]] || die "deployment: --from needs a step id."
                 ;;
             --phase)
                 shift
                 _cloudify_runbook_phase_known "${1:-}" ||
-                    die "deployment run: unknown phase '${1:-}' (expected: ${_CLOUDIFY_RUNBOOK_PHASES[*]})."
+                    die "deployment: unknown phase '${1:-}' (expected: ${_CLOUDIFY_RUNBOOK_PHASES[*]})."
                 cli_phases+=("$1")
                 ;;
             --migrate-targets) migrate_targets=1 ;;
             --dry-run) dry=1 ;;
             --yes) yes=1 ;; # non-interactive human-gate confirmation
-            -*) die "deployment run: unknown flag '$1'." ;;
+            -*) die "deployment: unknown flag '$1'." ;;
             *)
-                [[ -z "$id" ]] || die "deployment run: unexpected argument '$1'."
+                [[ -z "$id" ]] || die "deployment: unexpected argument '$1'."
                 id="$1"
                 ;;
         esac
         shift
     done
     [[ -n "$id" ]] ||
-        die "Usage: cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--phase <phase>]... [--dry-run] [--yes] [--migrate-targets]"
+        die "Usage: cloudify_deployment_run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--phase <phase>]... [--dry-run] [--yes] [--migrate-targets]"
 
     if [[ -n "$runbook" ]]; then
         [[ -f "$runbook" ]] || die "Runbook '$runbook' not found."
@@ -1237,9 +1149,8 @@ function cloudify_deployment_run() {
         die "Runbook '$runbook' declares deployment '$deployment', not '$id'."
 
     # Application identity. An explicit reference exported by `cloudify app run`
-    # wins; otherwise the runbook path is the identity (canonical or legacy
-    # <app>/<flavor>.md). A path with no application shape has no v2 identity,
-    # so no manifest is written and every legacy behavior is untouched.
+    # wins; otherwise the canonical runbook path is the identity. A path with no
+    # canonical shape has no identity, so no manifest is written.
     local tuple="" app="" flavor="" name="" manifest=0 b
     if tuple=$(_cloudify_runbook_tuple_for "$runbook" "${CLOUDIFY_DEPLOYMENT_NAME:-default}" 2>/dev/null); then
         IFS=$'\t' read -r app flavor name <<< "$tuple"
@@ -1279,15 +1190,11 @@ function cloudify_deployment_run() {
 
     if [[ -n "$from" ]] &&
         ! awk -F'\t' -v want="$from" '$2 == want { found = 1 } END { exit !found }' <<< "$steps_out"; then
-        die "deployment run: no step with id '$from' (--from) in the selected phases."
+        die "deployment: no step with id '$from' (--from) in the selected phases."
     fi
 
-    local selected_phases
-    if (( ${#cli_phases[@]} > 0 )) || _cloudify_runbook_canonical_shape "$runbook"; then
-        selected_phases=$(cloudify_runbook_phases_for "$runbook" ${cli_phases[@]+"${cli_phases[@]}"} | paste -sd, -)
-    else
-        selected_phases="<all, legacy document order>"
-    fi
+    local selected_phases=""
+    selected_phases=$(cloudify_runbook_phases_for "$runbook" ${cli_phases[@]+"${cli_phases[@]}"} | paste -sd, -)
     if ((manifest)); then
         msg "Application: $app/$flavor"
         msg "Deployment: $name"
@@ -1445,8 +1352,7 @@ function cloudify_runbook_execute() {
     # Without a replay the record keeps every deployment-store key it always
     # kept and corrects/adds the declared names the resolver knows, with the same
     # source form the payload would use (one resolution, design section 6.4).
-    # The resolver view is built ONCE, here, never per step and never printed;
-    # CLOUDIFY_LEGACY_VARS=1 keeps the deployment-store-only record.
+    # The resolver view is built ONCE, here, never per step and never printed.
     local -a value_lines=()
     local cfg
     if [[ -n "${CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES:-}" ]]; then
@@ -1460,38 +1366,36 @@ function cloudify_runbook_execute() {
     else
         local -a _rv_order=()
         local -A _rv_value=()
-        if [[ "${CLOUDIFY_LEGACY_VARS:-}" != "1" ]]; then
-            local -A _rv_pkg=() _rv_seen=()
-            local _rl _rtype _rrest _rpkg _rname _rlabel _rvalue
-            while IFS= read -r _rl; do
-                [[ -n "$_rl" ]] || continue
-                _rtype="${_rl%%$'\t'*}"
-                _cloudify_runbook_pkg_type "$_rtype" || continue
-                _rrest="${_rl#*$'\t'}"     # drop type -> id\ttarget\tpkg\tbody
-                _rrest="${_rrest#*$'\t'}"  # drop id -> target\tpkg\tbody
-                _rrest="${_rrest#*$'\t'}"  # drop target -> pkg\tbody\tphase
-                _rpkg="${_rrest%%$'\t'*}"
-                [[ -n "$_rpkg" ]] || continue
-                [[ -n "${_rv_pkg[$_rpkg]:-}" ]] && continue
-                _rv_pkg["$_rpkg"]=1
-                while IFS= read -r _rname; do
-                    [[ -n "$_rname" ]] || continue
-                    [[ -n "${_rv_seen[$_rname]:-}" ]] && continue
-                    _rv_seen["$_rname"]=1
-                    _rlabel=$(_cloudify_runbook_source_label "$_rname" "$_rpkg")
-                    case "$_rlabel" in
-                        recipe | recipe-default) continue ;;
-                    esac
-                    _rvalue=$(_cloudify_runbook_resolver_value "$_rname" "$_rlabel" "$_rpkg") || continue
-                    _rv_order+=("$_rname")
-                    _rv_value["$_rname"]="$_rvalue"
-                done < <(_cloudify_runbook_declared_names "$_rpkg")
-            done <<< "$steps_out"
-        fi
+        local -A _rv_pkg=() _rv_seen=()
+        local _rl _rtype _rrest _rpkg _rname _rlabel _rvalue
+        while IFS= read -r _rl; do
+            [[ -n "$_rl" ]] || continue
+            _rtype="${_rl%%$'\t'*}"
+            _cloudify_runbook_pkg_type "$_rtype" || continue
+            _rrest="${_rl#*$'\t'}"     # drop type -> id\ttarget\tpkg\tbody
+            _rrest="${_rrest#*$'\t'}"  # drop id -> target\tpkg\tbody
+            _rrest="${_rrest#*$'\t'}"  # drop target -> pkg\tbody\tphase
+            _rpkg="${_rrest%%$'\t'*}"
+            [[ -n "$_rpkg" ]] || continue
+            [[ -n "${_rv_pkg[$_rpkg]:-}" ]] && continue
+            _rv_pkg["$_rpkg"]=1
+            while IFS= read -r _rname; do
+                [[ -n "$_rname" ]] || continue
+                [[ -n "${_rv_seen[$_rname]:-}" ]] && continue
+                _rv_seen["$_rname"]=1
+                _rlabel=$(_cloudify_runbook_source_label "$_rname" "$_rpkg")
+                case "$_rlabel" in
+                    recipe | recipe-default) continue ;;
+                esac
+                _rvalue=$(_cloudify_runbook_resolver_value "$_rname" "$_rlabel" "$_rpkg") || continue
+                _rv_order+=("$_rname")
+                _rv_value["$_rname"]="$_rvalue"
+            done < <(_cloudify_runbook_declared_names "$_rpkg")
+        done <<< "$steps_out"
 
         local -A _vline=() _vseen=()
         local -a _vorder=()
-        cfg=$(_cloudify_deployment_config "$deployment")
+        cfg=$(_cloudify_deployment_config) || cfg=""
         if [[ -f "$cfg" ]]; then
             local vline vkey
             while IFS= read -r vline; do
@@ -1666,7 +1570,7 @@ function cloudify_runbook_execute() {
 # @base64:/@backend: reference must be resolved here, or the step would receive
 # the literal) and exported, so the normal ladder forwards exactly the recorded
 # values. The runbook defaults to the snapshot's. Then the same engine as
-# `deployment run` runs (preflight + steps + a new run snapshot). Seeded values
+# `deployment replay` runs (preflight + steps + a new run snapshot). Seeded values
 # are referred to by name only: never printed, never part of argv.
 function cloudify_deployment_replay() {
     local id="" at="" runbook="" from="" dry=0 yes=0 migrate_targets=0

@@ -1,9 +1,8 @@
 #!/usr/bin/env bats
-# Slice 2B-i wiring: the remote payload and the local dispatch take their value
-# names and exported literals from cloudify_context_build (lib/context.sh)
-# instead of the legacy _cloudify_pkg_remote_vars walker, and the payload TEXT
-# stays byte-identical for every fixture case in the matrix below. The
-# CLOUDIFY_LEGACY_VARS=1 rollback switch restores the walker unchanged.
+# Wiring: the remote payload and the local dispatch take their value names and
+# exported literals from cloudify_context_build (lib/context.sh), the only value
+# path; the legacy _cloudify_pkg_remote_vars walker is gone. The payload TEXT is
+# pinned byte-exact by tests/unit/golden-fixtures.bats.
 #
 # The real transport is exercised: a stubbed ssh reads the payload from stdin
 # (never argv) and records both the payload and the ssh argument string.
@@ -37,14 +36,14 @@ setup() {
     IVPS_LIST_RC=0
 
     export DEP="wiring-dep"
-    cloudify_deployment_create "$DEP" >/dev/null
     export CLOUDIFY_DEPLOYMENT="$DEP"
+    export CLOUDIFY_APPLICATION="wiringapp" CLOUDIFY_FLAVOR="default" CLOUDIFY_DEPLOYMENT_NAME="default"
 
     CAP_DIR="$CLOUDIFY_TMP/capture"
     mkdir -p "$CAP_DIR"
     export CAP_DIR
 
-    unset CLOUDIFY_CONTEXT_FILE CLOUDIFY_LEGACY_VARS
+    unset CLOUDIFY_CONTEXT_FILE
     unset FIX_ENV_ONLY FIX_DEP_ONLY FIX_PKG_ONLY FIX_GLOBAL_ONLY FIX_REF_SECRET
     unset FIX_MULTILINE FIX_SHARED FIX_DEP_VALUE FIX_ALPHA_ONLY
 
@@ -92,146 +91,31 @@ declare_pkg() {
     printf '%s\n' "$@" > "$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
 }
 
-recipe_for() {
-    local pkg="$1"
-    shift
-    printf 'pkg_depends %s\n' "$*" > "$CLOUDIFY_DIR/pkg/$pkg/install.sh"
-}
-
-set_deployment() { _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" "$1" "$2"; }
+set_deployment() { _cloudify_vars_file_set "$(_cloudify_deployment_config)" "$1" "$2"; }
 set_pkg() { cloudify_vars_pkg_write "$1" "$2" "$3"; }
 set_global() { cloudify_vars_global_write "$1" "$2"; }
 
 reset_stores() {
     rm -f "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     rm -rf "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
-    : > "$(_cloudify_deployment_config "$DEP")"
+    local store
+    store=$(_cloudify_deployment_config)
+    mkdir -p "$(dirname "$store")"
+    : > "$store"
 }
 
 b64() { printf '%s' "$1" | base64 -w0; }
 
 # --- harness ----------------------------------------------------------------
 
-# capture <legacy|context> <name> <remote command words...>
+# capture <name> <remote command words...>
 # One dispatch per subshell, so the resolved exports never leak into the test
-# shell and both runs start from the same stores and caller environment.
+# shell.
 capture() {
-    local mode="$1" name="$2"
-    shift 2
-    if [[ "$mode" == legacy ]]; then
-        ( export CLOUDIFY_LEGACY_VARS=1
-          CAP_OUT="$CAP_DIR/$name.legacy"
-          cloudify_remote_sync somehost "$@" ) > "$CAP_DIR/$name.log" 2>&1
-    else
-        ( CAP_OUT="$CAP_DIR/$name.context"
-          cloudify_remote_sync somehost "$@" ) > "$CAP_DIR/$name.log" 2>&1
-    fi
-}
-
-# assert_identical <name> - the two captured payloads are byte-equal
-assert_identical() {
     local name="$1"
-    [ -f "$CAP_DIR/$name.legacy.payload" ]
-    [ -f "$CAP_DIR/$name.context.payload" ]
-    if ! cmp -s "$CAP_DIR/$name.legacy.payload" "$CAP_DIR/$name.context.payload"; then
-        diff -u "$CAP_DIR/$name.legacy.payload" "$CAP_DIR/$name.context.payload" || true
-        return 1
-    fi
-    step "payload $name: $(wc -c < "$CAP_DIR/$name.legacy.payload") bytes, byte-identical"
-}
-
-# assert_case <name> <expected export line> - the line is present in BOTH
-# payloads (no false 'both empty' pass) and the two files are byte-equal.
-assert_case() {
-    local name="$1" expected="$2"
-    grep -qF "$expected" "$CAP_DIR/$name.legacy.payload"
-    grep -qF "$expected" "$CAP_DIR/$name.context.payload"
-    assert_identical "$name"
-}
-
-# --- the fixture matrix: legacy payload == context payload -------------------
-
-@test "matrix caller env only: payload byte-identical" {
-    declare_pkg foo FIX_ENV_ONLY
-    reset_stores
-    export FIX_ENV_ONLY=env-value
-    capture legacy env install foo
-    capture context env install foo
-    unset FIX_ENV_ONLY
-    assert_case env "export FIX_ENV_ONLY='env-value'"
-}
-
-@test "matrix deployment store only: payload byte-identical" {
-    declare_pkg foo FIX_DEP_ONLY
-    reset_stores
-    set_deployment FIX_DEP_ONLY deployment-value
-    capture legacy dep install foo
-    capture context dep install foo
-    assert_case dep "export FIX_DEP_ONLY='deployment-value'"
-}
-
-@test "matrix package yaml only: payload byte-identical" {
-    declare_pkg foo FIX_PKG_ONLY
-    reset_stores
-    set_pkg foo FIX_PKG_ONLY package-value
-    capture legacy pkg install foo
-    capture context pkg install foo
-    assert_case pkg "export FIX_PKG_ONLY='package-value'"
-}
-
-@test "matrix global only: payload byte-identical" {
-    declare_pkg foo FIX_GLOBAL_ONLY
-    reset_stores
-    set_global FIX_GLOBAL_ONLY global-value
-    capture legacy global install foo
-    capture context global install foo
-    assert_case global "export FIX_GLOBAL_ONLY='global-value'"
-}
-
-@test "matrix @base64 reference in the deployment store: payload byte-identical" {
-    declare_pkg foo FIX_REF_SECRET
-    reset_stores
-    set_deployment FIX_REF_SECRET "@base64:$(b64 'admin-secret')"
-    capture legacy ref install foo
-    capture context ref install foo
-    assert_case ref "export FIX_REF_SECRET='admin-secret'"
-}
-
-@test "matrix multiline stored value: payload byte-identical" {
-    declare_pkg foo FIX_MULTILINE
-    reset_stores
-    set_deployment FIX_MULTILINE $'line-one\nline-two'
-    capture legacy multiline install foo
-    capture context multiline install foo
-    grep -qF "export FIX_MULTILINE='line-one" "$CAP_DIR/multiline.context.payload"
-    grep -qF "line-two'" "$CAP_DIR/multiline.context.payload"
-    assert_identical multiline
-}
-
-@test "matrix two packages, rightmost wins: payload byte-identical" {
-    declare_pkg alpha FIX_SHARED
-    declare_pkg beta FIX_SHARED
-    reset_stores
-    set_pkg alpha FIX_SHARED from-alpha
-    set_pkg beta FIX_SHARED from-beta
-    capture legacy rightmost install alpha beta
-    capture context rightmost install alpha beta
-    assert_case rightmost "export FIX_SHARED='from-beta'"
-    ! grep -qF 'from-alpha' "$CAP_DIR/rightmost.legacy.payload"
-    ! grep -qF 'from-alpha' "$CAP_DIR/rightmost.context.payload"
-}
-
-@test "matrix package with a dependency: payload byte-identical" {
-    declare_pkg alpha FIX_ALPHA_ONLY
-    declare_pkg dep FIX_DEP_VALUE
-    recipe_for alpha dep
-    reset_stores
-    set_pkg alpha FIX_ALPHA_ONLY alpha-value
-    set_pkg dep FIX_DEP_VALUE dep-value
-    capture legacy dependency install alpha
-    capture context dependency install alpha
-    assert_case dependency "export FIX_ALPHA_ONLY='alpha-value'"
-    grep -qF "export FIX_DEP_VALUE='dep-value'" "$CAP_DIR/dependency.context.payload"
+    shift
+    ( CAP_OUT="$CAP_DIR/$name.context"
+      cloudify_remote_sync somehost "$@" ) > "$CAP_DIR/$name.log" 2>&1
 }
 
 # --- transport: nothing new in ssh argv, no path, no value ------------------
@@ -240,7 +124,7 @@ assert_case() {
     declare_pkg foo FIX_DEP_ONLY
     reset_stores
     set_deployment FIX_DEP_ONLY deployment-value
-    capture context argv-check install foo
+    capture argv-check install foo
     local argv stripped
     argv=$(cat "$CAP_DIR/argv-check.context.argv")
     stripped=$(printf '%s' "$argv" | sed -E \
@@ -260,7 +144,7 @@ assert_case() {
     : > "$ctx"
     chmod 600 "$ctx"
     export CLOUDIFY_CONTEXT_FILE="$ctx"
-    capture context kept install foo
+    capture kept install foo
     unset CLOUDIFY_CONTEXT_FILE
 
     subrubric "the child filled the parent's file"
@@ -294,32 +178,6 @@ assert_case() {
     unset FIX_DEP_ONLY CLOUDIFY_CONTEXT_FILE
 }
 
-@test "_cloudify_dispatch_vars honours CLOUDIFY_LEGACY_VARS for the same dispatch" {
-    declare_pkg foo FIX_DEP_ONLY
-    reset_stores
-    set_deployment FIX_DEP_ONLY deployment-value
-    set_pkg foo FIX_DEP_ONLY package-value
-    unset FIX_DEP_ONLY
-    local ctx="$CAP_DIR/switch-ctx.yaml"
-    : > "$ctx"
-    chmod 600 "$ctx"
-    export CLOUDIFY_CONTEXT_FILE="$ctx"
-
-    _cloudify_dispatch_vars "$CAP_DIR/switch-context.names" install "$DEP" install foo
-    local ctx_value="$FIX_DEP_ONLY"
-    unset FIX_DEP_ONLY
-    export CLOUDIFY_LEGACY_VARS=1
-    _cloudify_dispatch_vars "$CAP_DIR/switch-legacy.names" install "$DEP" install foo
-    unset CLOUDIFY_LEGACY_VARS CLOUDIFY_CONTEXT_FILE
-    local legacy_value="$FIX_DEP_ONLY"
-    unset FIX_DEP_ONLY
-
-    step "context='$ctx_value' legacy='$legacy_value'"
-    [ "$ctx_value" = "deployment-value" ]
-    [ "$legacy_value" = "$ctx_value" ]
-    cmp -s "$CAP_DIR/switch-context.names" "$CAP_DIR/switch-legacy.names"
-}
-
 @test "cloudify_remote creates the context file in the parent and exports its path" {
     cloudify_remote_sync() { :; }
     _CLOUDIFY_BG_PIDS=()
@@ -332,19 +190,6 @@ assert_case() {
     [[ "$CLOUDIFY_CONTEXT_FILE" == "$CLOUDIFY_TMP/"* ]]
     [ -f "$CLOUDIFY_CONTEXT_FILE" ]
     [ "$(stat -c '%a' "$CLOUDIFY_CONTEXT_FILE")" = "600" ]
-}
-
-@test "CLOUDIFY_LEGACY_VARS=1 leaves the context path unset (rollback)" {
-    cloudify_remote_sync() { :; }
-    _CLOUDIFY_BG_PIDS=()
-    _CLOUDIFY_BG_HOSTS=()
-    unset CLOUDIFY_CONTEXT_FILE
-    export CLOUDIFY_LEGACY_VARS=1
-
-    cloudify_remote somehost "install foo"
-    unset CLOUDIFY_LEGACY_VARS
-
-    [ -z "${CLOUDIFY_CONTEXT_FILE:-}" ]
 }
 
 # --- router wiring (the router always runs main, so it is not sourcable) ----
@@ -441,8 +286,8 @@ EOF
     subrubric "remote dispatch records the parent's path too"
     grep -q '"${CLOUDIFY_CONTEXT_FILE:-}"' "$router"
 
-    subrubric "lib/remote.sh keeps the walker only behind the legacy switch"
-    grep -q '_cloudify_pkg_remote_vars "\$action" "${pkgs\[@\]}"' "$BATS_TEST_DIRNAME/../../lib/remote.sh"
+    subrubric "the legacy walker is gone from lib/remote.sh"
+    ! grep -q '_cloudify_pkg_remote_vars' "$BATS_TEST_DIRNAME/../../lib/remote.sh"
     grep -q 'cloudify_context_build' "$BATS_TEST_DIRNAME/../../lib/remote.sh"
 }
 
@@ -483,7 +328,7 @@ EOF
     : > "$ctx"
     chmod 600 "$ctx"
     export CLOUDIFY_CONTEXT_FILE="$ctx"
-    capture context preflight install preflight-pkg
+    capture preflight install preflight-pkg
     unset CLOUDIFY_CONTEXT_FILE
 
     local name expected
@@ -507,13 +352,13 @@ EOF
     local pkg="dbgtest"
     mkdir -p "$CLOUDIFY_DIR/pkg/$pkg"
     printf 'FIX_DBG_TOKEN\nFIX_DBG_PLAIN\n' > "$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" FIX_DBG_TOKEN "fixture-dbg-secret"
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" FIX_DBG_PLAIN "fixture-dbg-plain"
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" FIX_DBG_TOKEN "fixture-dbg-secret"
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" FIX_DBG_PLAIN "fixture-dbg-plain"
     export CLOUDIFY_DEPLOYMENT="$DEP"
     unset FIX_DBG_TOKEN FIX_DBG_PLAIN
 
     # `capture` redirects the dispatch's stdout/stderr into its own log file.
-    DEBUG=true capture context dbg install "$pkg" || true
+    DEBUG=true capture dbg install "$pkg" || true
     local out="$CAP_DIR/dbg.log"
     [ -f "$out" ]
 

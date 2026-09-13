@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # lib/deployments.sh — Deployment-wide state (ADR-011)
-# A deployment is a first-class cloud-global entity — an application across nodes.
-# Context: per-shell CLOUDIFY_DEPLOYMENT env var (parallel-safe, no shared file).
+# The application reference (CLOUDIFY_APPLICATION, CLOUDIFY_FLAVOR,
+# CLOUDIFY_DEPLOYMENT_NAME) names the desired-inputs store;
+# CLOUDIFY_DEPLOYMENT stays the run id, kept per shell (parallel-safe, no shared
+# file).
 # Precedence: caller-env > per-(node,pkg) > deployment-wide.
 
 [[ -n "${_CLOUDIFY_DEPLOYMENTS_LOADED:-}" ]] && return 0
 _CLOUDIFY_DEPLOYMENTS_LOADED=1
 
-# Deployment-store var read/write helpers + legacy aliases live in lib/vars.sh.
+# Deployment-store var read/write helpers live in lib/vars.sh.
 # shellcheck source=/dev/null
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/vars.sh"
 
@@ -15,8 +17,8 @@ CLOUDIFY_DEPLOYMENTS_DIR="${CLOUDIFY_CREDENTIALS_DIR:-$HOME/.config/cloudify}/de
 
 # --- Internal helpers ---
 
-# _cloudify_deployment_dir <id> — canonical path to the legacy deployment dir.
-# Rejects unsafe ids.
+# _cloudify_deployment_dir <id> - the single-ID deployment directory (run
+# snapshots, and the migration source). Rejects unsafe ids.
 _cloudify_deployment_dir() {
     local id="$1"
     [[ -z "$id" ]] && die "Deployment id is required"
@@ -24,8 +26,11 @@ _cloudify_deployment_dir() {
     echo "${CLOUDIFY_DEPLOYMENTS_DIR}/${id}"
 }
 
-# _cloudify_deployment_legacy_config <id> — the legacy single-ID config.yaml.
-_cloudify_deployment_legacy_config() {
+# _cloudify_deployment_id_config <id> - the single-ID store
+# <config-root>/deployments/<id>/config.yaml. It is not a live store: the only
+# reader is `cloudify deployment migrate`, which copies it once into the nested
+# path.
+_cloudify_deployment_id_config() {
     echo "$(_cloudify_deployment_dir "$1")/config.yaml"
 }
 
@@ -42,47 +47,35 @@ function cloudify_deployment_values_file() {
 }
 
 # _cloudify_deployment_tuple_active — rc 0 when the calling process carries an
-# explicit application reference (cloudify app run). Only then do nested paths
-# replace the legacy single-ID store.
+# explicit application reference (cloudify app run, or the three exports). It
+# names both the application identity and the store.
 function _cloudify_deployment_tuple_active() {
     [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" && -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]]
 }
 
-# _cloudify_deployment_write_config <id> — where a new value is written: the
-# nested values.yaml once an explicit application reference is supplied, else
-# the legacy config.yaml.
-function _cloudify_deployment_write_config() {
-    if _cloudify_deployment_tuple_active; then
-        cloudify_deployment_values_file "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME"
-        return 0
-    fi
-    _cloudify_deployment_legacy_config "${1:-}"
+# _cloudify_deployment_config - the ONE desired-inputs store this process reads
+# and writes: the nested values.yaml of the active application reference. rc 1
+# with no output when no reference is active; the single-ID
+# <id>/config.yaml is not a store, only the migration source.
+function _cloudify_deployment_config() {
+    _cloudify_deployment_tuple_active || return 1
+    cloudify_deployment_values_file "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME"
 }
 
-# _cloudify_deployment_config <id> — the desired-inputs store READ for this
-# process. With an explicit application reference: the nested values.yaml when
-# it exists, else the legacy config.yaml (read-through), else the nested path so
-# a writer has a target. Without one: the legacy config.yaml, exactly as before.
-function _cloudify_deployment_config() {
-    local id="${1:-}" nested legacy
-    if _cloudify_deployment_tuple_active; then
-        nested=$(cloudify_deployment_values_file "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME")
-        legacy=$(_cloudify_deployment_legacy_config "$id")
-        if [[ -f "$nested" ]]; then printf '%s\n' "$nested"; return 0; fi
-        if [[ -f "$legacy" ]]; then printf '%s\n' "$legacy"; return 0; fi
-        printf '%s\n' "$nested"
-        return 0
-    fi
-    _cloudify_deployment_legacy_config "$id"
+# _cloudify_deployment_require <id> - fail closed in the calling shell when no
+# application reference is active, naming the command that supplies one.
+function _cloudify_deployment_require() {
+    _cloudify_deployment_tuple_active ||
+        die "deployment '${1:-}': desired inputs live at deployments/<application>/<flavor>/<name>/values.yaml; no application reference is active (use 'cloudify app run <application>[/<flavor>]', or export CLOUDIFY_APPLICATION, CLOUDIFY_FLAVOR and CLOUDIFY_DEPLOYMENT_NAME)."
 }
 
 # _cloudify_deployment_ensure <id> — create the store dir + empty file if
-# absent. Idempotent. With an explicit application reference this is the nested
-# path, so no legacy directory is created alongside it.
+# absent. Idempotent. Fails closed when no application reference is active.
 _cloudify_deployment_ensure() {
     local id="$1"
     local dir config
-    config=$(_cloudify_deployment_write_config "$id")
+    _cloudify_deployment_require "$id"
+    config=$(_cloudify_deployment_config) || return 1
     dir=$(dirname "$config")
     mkdir -p "$dir"
     [[ -f "$config" ]] || touch "$config"
@@ -92,51 +85,9 @@ _cloudify_deployment_ensure() {
 
 # --- Public API (called by router) ---
 
-# cloudify_deployment_create <id> — idempotent create
-cloudify_deployment_create() {
-    local id="$1"
-    local dir config
-    dir=$(_cloudify_deployment_dir "$id")
-    config=$(_cloudify_deployment_legacy_config "$id")
-    if [[ -d "$dir" ]]; then
-        log_info "Deployment '$id' already exists."
-        return 0
-    fi
-    mkdir -p "$dir"
-    touch "$config"
-    chmod 700 "$dir"
-    chmod 600 "$config" 2>/dev/null || true
-    log_info "Deployment '$id' created ($dir)."
-    echo "To use: export CLOUDIFY_DEPLOYMENT=$id"
-}
-
-# cloudify_deployment_delete <id> — trash the deployment dir + its registry records
-cloudify_deployment_delete() {
-    local id="$1"
-    local dir
-    dir=$(_cloudify_deployment_dir "$id")
-    if [[ -d "$dir" ]]; then
-        trash-put "$dir" 2>/dev/null || {
-            # fallback: just rm if trash-cli unavailable
-            rm -rf "$dir"
-            log_warn "trash-put unavailable, removed directly."
-        }
-        log_info "Deployment '$id' deleted."
-    else
-        log_info "Deployment '$id' does not exist."
-    fi
-    # Records live outside the deployment store (lib/registry.sh); clean them too
-    # so a deleted deployment leaves nothing behind. Indexed so the module can be
-    # absent when only lib/deployments.sh is sourced (tests, standalone reuse).
-    if declare -F cloudify_registry_delete_deployment >/dev/null; then
-        cloudify_registry_delete_deployment "$id"
-    fi
-    return 0
-}
-
-# cloudify_deployment_list — list all deployment ids, then every current
-# manifest (REDESIGN: `cloudify deployments` lists current manifests, not
-# historical run files).
+# cloudify_deployment_list - list the deployment directories (a directory per
+# run id, holding its run snapshots), then every current manifest (REDESIGN:
+# `cloudify deployments` lists current manifests, not historical run files).
 cloudify_deployment_list() {
     local d count=0
     if [[ -d "$CLOUDIFY_DEPLOYMENTS_DIR" ]]; then
@@ -158,17 +109,7 @@ cloudify_deployment_list() {
     [[ $count -gt 0 ]] || echo "(no deployments)"
 }
 
-# cloudify_deployment_use <id> — print the export command (can't set parent shell env)
-cloudify_deployment_use() {
-    local id="$1"
-    local dir
-    dir=$(_cloudify_deployment_dir "$id")
-    [[ -d "$dir" ]] || { log_error "Deployment '$id' not found. Create it first: cloudify deployment create $id"; return 1; }
-    echo "export CLOUDIFY_DEPLOYMENT=$id"
-    echo "# Run: eval \"\$(cloudify deployment use $id)\""
-}
-
-# --- Var management lives in lib/vars.sh (canonical) + legacy aliases ---
+# --- Var management lives in lib/vars.sh ---
 
 #== Current state read surface ==
 
@@ -176,7 +117,7 @@ cloudify_deployment_use() {
 # deployment this process refers to, or rc 1 when no application identity is
 # available. An explicit application reference wins; otherwise the tuple comes
 # from the runbook that declares <id> (the path is the identity), never from
-# splitting the legacy ID.
+# splitting the deployment ID.
 function _cloudify_deployment_tuple_of() {
     local id="${1:-}" runbook
     if _cloudify_deployment_tuple_active; then
@@ -191,7 +132,7 @@ function _cloudify_deployment_tuple_of() {
 
 # cloudify_deployment_show <id> — the read surface for one deployment. Prints
 # the manifest (identity, status, bindings, commit, replayability) when one
-# exists, and always lists the compatibility snapshots. Never a value.
+# exists, and always lists the run snapshots. Never a value.
 function cloudify_deployment_show() {
     local id="${1:-}" tuple app flavor name runs_dir snapshots newest
     [[ -n "$id" ]] || die "Usage: cloudify deployment show <id>"
@@ -206,7 +147,7 @@ function cloudify_deployment_show() {
             printf 'status: <no manifest>\n'
         fi
     else
-        printf 'application: <unknown: no canonical or legacy runbook declares this deployment>\n'
+        printf 'application: <unknown: no canonical runbook declares this deployment>\n'
     fi
 
     runs_dir="$CLOUDIFY_DEPLOYMENTS_DIR/$id/runs"
@@ -217,7 +158,12 @@ function cloudify_deployment_show() {
     else
         printf 'snapshots: 0\n'
     fi
-    printf 'inputs: %s\n' "$(_cloudify_deployment_config "$id")"
+    local inputs
+    if inputs=$(_cloudify_deployment_config); then
+        printf 'inputs: %s\n' "$inputs"
+    else
+        printf 'inputs: <none: no application reference>\n'
+    fi
     return 0
 }
 
@@ -327,11 +273,12 @@ function _cloudify_deployment_input_keys() {
 
 # cloudify_deployment_migrate <id> --application <app> [--flavor <flavor>]
 #                                 [--name <deployment>] [--dry-run] [--force]
-# Copy one legacy single-ID desired-inputs store into the nested path. The
-# application and flavor must be stated by the operator: the legacy ID is never
-# split or guessed. Idempotent: an identical destination is a no-op; a
-# different one is refused unless --force. The legacy store is never deleted, so
-# a rollback needs no reverse transformation.
+# One-shot bridge, deleted after the existing stores are moved: copy the
+# single-ID desired-inputs store into the nested path. This is the ONLY reader
+# of <config-root>/deployments/<id>/config.yaml. The application and flavor must
+# be stated by the operator: the deployment ID is never split or guessed.
+# Idempotent: an identical destination is a no-op; a different one is refused
+# unless --force. The single-ID store is never deleted.
 function cloudify_deployment_migrate() {
     local id="" app="" flavor="default" name="default" dry=0 force=0
     while [[ $# -gt 0 ]]; do
@@ -352,15 +299,15 @@ function cloudify_deployment_migrate() {
     [[ -n "$id" ]] ||
         die "Usage: cloudify deployment migrate <id> --application <application> [--flavor <flavor>] [--name <deployment>] [--dry-run] [--force]"
     [[ -n "$app" ]] ||
-        die "deployment migrate: --application is required (the legacy ID '$id' is never split to guess the tuple)."
+        die "deployment migrate: --application is required (the deployment ID '$id' is never split to guess the tuple)."
     _cloudify_identity_check_component "application" "$app"
     _cloudify_identity_check_component "flavor" "$flavor"
     _cloudify_identity_check_component "deployment name" "$name"
 
     local source target keys count plan adds conflicts add_count conflict_count
-    source=$(_cloudify_deployment_legacy_config "$id")
+    source=$(_cloudify_deployment_id_config "$id")
     target=$(cloudify_deployment_values_file "$app" "$flavor" "$name")
-    [[ -f "$source" ]] || die "deployment migrate '$id': no legacy inputs at '$source'."
+    [[ -f "$source" ]] || die "deployment migrate '$id': no single-ID inputs at '$source'."
 
     printf 'application: %s/%s\n' "$app" "$flavor"
     printf 'deployment_name: %s\n' "$name"
@@ -385,7 +332,7 @@ function cloudify_deployment_migrate() {
     fi
 
     if [[ "$conflict_count" -gt 0 ]] && ((!force)); then
-        die "deployment migrate '$id': the destination '$target' already holds different values for: $conflicts. Refusing to overwrite them; re-run with --force to take the legacy store's values for those keys."
+        die "deployment migrate '$id': the destination '$target' already holds different values for: $conflicts. Refusing to overwrite them; re-run with --force to take the single-ID store's values for those keys."
     fi
 
     if ((dry)); then
@@ -395,6 +342,6 @@ function cloudify_deployment_migrate() {
 
     _cloudify_deployment_values_apply "$source" "$target" "$force"
     printf 'result: migrated (%s key names added%s)\n' "$add_count" \
-        "${conflicts:+; $conflicts overwritten from the legacy store}"
+        "${conflicts:+; $conflicts overwritten from the single-ID store}"
     return 0
 }

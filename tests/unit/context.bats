@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
 # Tests for lib/context.sh - one resolved dispatch context (state model v2,
-# Phase 2 slice 2A). Additive: nothing here is wired into the payload, registry
-# writer, snapshot or router yet.
+# Phase 2 slice 2A). It IS the wired path: the payload, the registry writer and
+# the run snapshot all read the one resolution it performs.
 #
-# The build and the legacy walker both export into the CALLING shell, so every
-# equivalence test invokes them directly in the bats shell (never inside
-# `$(...)`) and asserts the export survived, exactly like remote-vars.bats.
+# The build and the dispatch path (`_collect`) both export into the CALLING
+# shell, so tests invoke them directly in the bats shell (never inside
+# `$(...)`) and assert the export survived, exactly like remote-vars.bats.
 
 setup() {
     source tests/helpers/common.bash
@@ -29,8 +29,8 @@ setup() {
 
     export DEP="ctx-dep"
     export CLOUDIFY_DEPLOYMENT="$DEP"
+    export CLOUDIFY_APPLICATION="ctxapp" CLOUDIFY_FLAVOR="default" CLOUDIFY_DEPLOYMENT_NAME="default"
     export CLOUDIFY_CONTEXT_TARGET=$'local\t\tlocalhost'
-    cloudify_deployment_create "$DEP" >/dev/null
     cloudify_init_log
 
     CTX="$CLOUDIFY_TMP/context.yaml"
@@ -41,10 +41,39 @@ teardown() {
     teardown_test_env
 }
 
+# _collect <action> [pkg...] - the surviving dispatch entry point. Prints the
+# forwarded names on stdout and the warnings on stderr, exactly as the retired
+# walker did. Called in the parent shell (never `$(...)`): the resolved
+# literals are exported into THIS shell.
+_collect() {
+    local action="$1" phase=verify
+    shift
+    case "$action" in
+        install | --install | configure | --configure | uninstall | --uninstall | u) phase=install ;;
+    esac
+    local names ctx_own=""
+    names=$(mktemp)
+    if [[ -z "${CLOUDIFY_CONTEXT_FILE:-}" ]]; then
+        _cloudify_context_file_init
+        ctx_own="$CLOUDIFY_CONTEXT_FILE"
+    fi
+    if [[ "$phase" == "install" ]]; then
+        _cloudify_dispatch_vars "$names" "$action" "${CLOUDIFY_DEPLOYMENT:-}" install "$@"
+    else
+        _cloudify_dispatch_vars "$names" "$action" "" verify
+    fi
+    cat "$names"
+    rm -f "$names"
+    if [[ -n "$ctx_own" ]]; then
+        rm -f "$ctx_own"
+        unset CLOUDIFY_CONTEXT_FILE
+    fi
+}
+
 # --- fixtures ---------------------------------------------------------------
 
 # declare_pkg <pkg> <names...> - bare (required) declarations, the shape the
-# walker and the registry both enumerate.
+# dispatch and the registry both enumerate.
 declare_pkg() {
     local pkg="$1"
     shift
@@ -59,14 +88,17 @@ recipe_for() {
     printf 'pkg_depends %s\n' "$*" > "$CLOUDIFY_DIR/pkg/$pkg/install.sh"
 }
 
-set_deployment() { _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" "$1" "$2"; }
+set_deployment() { _cloudify_vars_file_set "$(_cloudify_deployment_config)" "$1" "$2"; }
 set_pkg() { cloudify_vars_pkg_write "$1" "$2" "$3"; }
 set_global() { cloudify_vars_global_write "$1" "$2"; }
 
 reset_stores() {
     rm -f "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     rm -rf "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
-    : > "$(_cloudify_deployment_config "$DEP")"
+    local store
+    store=$(_cloudify_deployment_config)
+    mkdir -p "$(dirname "$store")"
+    : > "$store"
 }
 
 # candidate_file <pkg...> - the candidate name set the build consumes.
@@ -113,7 +145,7 @@ candidate_file() {
 
 # --- the ladder -------------------------------------------------------------
 
-@test "context build exports the same value as the legacy walker for every source combination" {
+@test "context build exports the expected value for every source combination" {
     rubric "one declared name (SPEC) against 9 source combinations"
     declare_pkg foo SPEC
     local cand
@@ -121,10 +153,9 @@ candidate_file() {
     [ "$(wc -l < "$cand")" -eq 1 ]
 
     local -a cases=(env deployment package global all file_only package_global none empty_env)
-    local case legacy context
+    local case expected context
 
-    # apply_case re-creates the case's stores and caller env; it is run twice so
-    # the legacy walk and the context build start from the same state.
+    # apply_case re-creates the case's stores and caller env.
     apply_case() {
         reset_stores
         unset SPEC
@@ -156,18 +187,26 @@ candidate_file() {
         esac
     }
 
+    # expected_for is the ladder's declared winner for the case: recipe default
+    # < global < package < application < deployment < environment.
+    expected_for() {
+        case "$1" in
+            env | all) printf 'env-value\n' ;;
+            deployment | file_only | empty_env) printf 'deployment-value\n' ;;
+            package | package_global) printf 'package-value\n' ;;
+            global) printf 'global-value\n' ;;
+            none) printf '\n' ;;
+        esac
+    }
+
     for case in "${cases[@]}"; do
         subrubric "case=$case"
         apply_case "$case"
-        # Legacy walker, in this shell: its exports are the value channel (inv 1).
-        _cloudify_pkg_remote_vars install foo > /dev/null 2>&1
-        legacy="${SPEC:-}"
-
-        apply_case "$case"
+        expected="$(expected_for "$case")"
         cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
         context="${SPEC:-}"
-        step "legacy='$legacy' context='$context'"
-        [ "$legacy" = "$context" ]
+        step "expected='$expected' context='$context'"
+        [ "$context" = "$expected" ]
         unset SPEC
     done
 }
@@ -212,8 +251,8 @@ candidate_file() {
     export AMBIENT_UNDECLARED=do-not-forward
     unset SPEC
 
-    # The legacy gate this must preserve: the claimed name list.
-    _cloudify_pkg_remote_vars install foo > "$CLOUDIFY_TMP/names" 2>/dev/null
+    # The declaration/name gate this must preserve: the claimed name list.
+    _collect install foo > "$CLOUDIFY_TMP/names" 2>/dev/null
     grep -q '^SPEC$' "$CLOUDIFY_TMP/names"
     ! grep -q 'AMBIENT_UNDECLARED' "$CLOUDIFY_TMP/names"
     unset SPEC
@@ -258,7 +297,7 @@ candidate_file() {
     local cand
     cand=$(candidate_file foo)
     reset_stores
-    printf 'SPEC: @nosuch:locator\n' >> "$(_cloudify_deployment_config "$DEP")"
+    printf 'SPEC: @nosuch:locator\n' >> "$(_cloudify_deployment_config)"
     unset SPEC
     rm -f "$CTX"
 
@@ -278,7 +317,7 @@ candidate_file() {
     local cand
     cand=$(candidate_file foo)
 
-    _cloudify_pkg_remote_vars install foo > "$CLOUDIFY_TMP/names" 2> "$CLOUDIFY_TMP/warn"
+    _collect install foo > "$CLOUDIFY_TMP/names" 2> "$CLOUDIFY_TMP/warn"
     ! grep -q '^CLOUDIFY_FORCE$' "$CLOUDIFY_TMP/names"
     grep -q 'framework-owned' "$CLOUDIFY_TMP/warn"
 
@@ -292,7 +331,7 @@ candidate_file() {
 @test "cloudify_context_source_of agrees with _cloudify_vars_source_of" {
     declare_pkg foo SPEC
     local -a cases=(env deployment package global none)
-    local case legacy mapped ctx
+    local case spelling mapped ctx
     map_source() {
         case "$1" in
             env) printf 'environment\n' ;;
@@ -310,10 +349,10 @@ candidate_file() {
             global) set_global SPEC global-value ;;
             none) : ;;
         esac
-        legacy="$(_cloudify_vars_source_of SPEC foo)"
-        mapped="$(map_source "$legacy")"
+        spelling="$(_cloudify_vars_source_of SPEC foo)"
+        mapped="$(map_source "$spelling")"
         ctx="$(cloudify_context_source_of SPEC foo)"
-        step "case=$case legacy=$legacy mapped=$mapped context=$ctx"
+        step "case=$case vars_spelling=$spelling mapped=$mapped context=$ctx"
         [ "$mapped" = "$ctx" ]
         unset SPEC
     done
@@ -338,7 +377,7 @@ candidate_file() {
 
 # --- rightmost package + dependency recursion -------------------------------
 
-@test "rightmost package wins and dependency recursion matches the legacy walker" {
+@test "rightmost package wins and dependency recursion resolves through the context" {
     declare_pkg alpha SHARED A_ONLY
     declare_pkg beta SHARED B_ONLY
     declare_pkg dep SHARED DEP_ONLY
@@ -358,24 +397,18 @@ candidate_file() {
     subrubric "the shared dependency is visited once"
     [ "$(grep -c '^DEP_ONLY' "$cand")" -eq 1 ]
 
-    _cloudify_pkg_remote_vars install alpha beta > "$CLOUDIFY_TMP/names" 2>/dev/null
-    local legacy_shared="$SHARED"
-    unset SHARED A_ONLY B_ONLY DEP_ONLY
-
     cloudify_context_build install "$DEP" install "$cand" alpha beta > /dev/null
     subrubric "values"
     [ "$SHARED" = "from-beta" ]
-    [ "$SHARED" = "$legacy_shared" ]
     [ "$A_ONLY" = "a-val" ]
     [ "$B_ONLY" = "b-val" ]
     [ "$DEP_ONLY" = "dep-val" ]
 
-    subrubric "resolved value names equal the legacy claimed names"
-    local -a ctx_names legacy_names
+    subrubric "resolved value names are exactly the four claimed names"
+    local -a ctx_names
     mapfile -t ctx_names < <(sed -n 's/^value\.\([A-Z_][A-Z0-9_]*\)\.source:.*$/\1/p' "$CTX" | sort -u)
-    mapfile -t legacy_names < <(sort -u "$CLOUDIFY_TMP/names")
-    step "context=${ctx_names[*]} legacy=${legacy_names[*]}"
-    [ "${ctx_names[*]}" = "${legacy_names[*]}" ]
+    step "context=${ctx_names[*]}"
+    [ "${ctx_names[*]}" = "A_ONLY B_ONLY DEP_ONLY SHARED" ]
 }
 
 # --- no plaintext secrets ---------------------------------------------------
@@ -643,34 +676,23 @@ candidate_file() {
     unset A B APP_IN CLOUDIFY_APP_MAP CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR
 }
 
-@test "nested inputs: the deployment source reads the nested store, with read-through to the legacy one" {
-    rubric "one file, one label, one value: nested store once it exists, legacy before that"
+@test "nested inputs: the deployment source reads the nested store" {
+    rubric "one file, one label, one value: the nested store of the active application reference"
     declare_pkg nestedpkg DEP_ONLY
 
-    # No nested file yet: the legacy single-ID store is the read-through source.
-    set_deployment DEP_ONLY from-legacy
+    set_deployment DEP_ONLY from-nested
     unset DEP_ONLY
-    export CLOUDIFY_APPLICATION=myapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=default
     cloudify_context_build install "$DEP" install "$(candidate_file nestedpkg)" nestedpkg > /dev/null
-    [ "$DEP_ONLY" = "from-legacy" ]
+    [ "$DEP_ONLY" = "from-nested" ]
     # The build exported the value; the label is read with it unset, so the
     # environment rank cannot mask the store that provided it.
     unset DEP_ONLY
     [ "$(cloudify_context_source_of DEP_ONLY nestedpkg)" = "deployment" ]
-
-    # The nested values.yaml exists: it is now the store the ladder reads.
-    local nested
-    nested=$(cloudify_deployment_values_file myapp default default)
-    mkdir -p "$(dirname "$nested")"
-    printf 'DEP_ONLY: from-nested\n' > "$nested"
-    unset DEP_ONLY
-    cloudify_context_build install "$DEP" install "$(candidate_file nestedpkg)" nestedpkg > /dev/null
-    [ "$DEP_ONLY" = "from-nested" ]
     [ "$(cloudify_context_read "$CTX" value.DEP_ONLY.source)" = "deployment" ]
 
     # The registry record's deployment-source read resolves the same file, so the
     # payload and the record cannot disagree.
-    [ "$(_cloudify_vars_store_get "$(_cloudify_deployment_config "$DEP")" DEP_ONLY)" = "from-nested" ]
+    [ "$(_cloudify_vars_store_get "$(_cloudify_deployment_config)" DEP_ONLY)" = "from-nested" ]
 
-    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME DEP_ONLY
+    unset DEP_ONLY
 }

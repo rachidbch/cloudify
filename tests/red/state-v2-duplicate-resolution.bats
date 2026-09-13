@@ -48,7 +48,7 @@ setup() {
     cloudify_init_log
 
     DEP="red-dep"
-    cloudify_deployment_create "$DEP" >/dev/null
+    export CLOUDIFY_APPLICATION="redapp" CLOUDIFY_FLAVOR="default" CLOUDIFY_DEPLOYMENT_NAME="red-dep"
 
     CAPTURE_DIR="$(mktemp -d "$CLOUDIFY_TMP/capture.XXXXXX")"
     export CAPTURE_DIR
@@ -127,7 +127,7 @@ _payload_value() {
     _declare redpkg SHARED_INPUT
     printf 'SHARED_INPUT: global-value\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     cloudify_vars_pkg_write redpkg SHARED_INPUT package-value
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" SHARED_INPUT deployment-value
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" SHARED_INPUT deployment-value
     export CLOUDIFY_DEPLOYMENT="$DEP"
     export SHARED_INPUT=caller-value
 
@@ -175,7 +175,7 @@ EOF
     rubric "application input APP_SHARED_INPUT mapped to PKG_A_TARGET and PKG_B_TARGET"
     _declare redpkg-a PKG_A_TARGET
     _declare redpkg-b PKG_B_TARGET
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" APP_SHARED_INPUT mapped-value
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" APP_SHARED_INPUT mapped-value
     export CLOUDIFY_DEPLOYMENT="$DEP"
     unset PKG_A_TARGET PKG_B_TARGET
 

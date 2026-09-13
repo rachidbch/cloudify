@@ -1,14 +1,12 @@
 #!/usr/bin/env bats
-# State model v2 - Phase 1 characterization (workstream B).
+# State model v2 characterization (workstream B), green as-is.
 #
-# Pins TODAY's behaviour of the duplicate-resolution defect, green as-is:
-#   - one dispatch resolves one declared name twice: the forwarding walker
-#     (lib/remote.sh:_cloudify_pkg_remote_vars, env > deployment > package >
-#     global with a first-claim ledger) builds the payload, and the registry
-#     writer (lib/registry.sh:_cloudify_registry_raw_var + record_build) walks
-#     the same name again with its own implementation. The run snapshot
-#     (lib/runbooks.sh:cloudify_runbook_execute) records value.* from the
-#     deployment store alone.
+# Pins the duplicate-resolution defect's history: pre-Phase-2, one dispatch
+# resolved one declared name twice (the forwarding walker built the payload and
+# the registry writer walked the same name again with its own implementation).
+# Both walkers are deleted; the dispatch context (lib/context.sh, reached
+# through lib/remote.sh:_cloudify_dispatch_vars) is now the ONE resolution, and
+# the registry writer reads its values from that context.
 #   - case 1.1 (one pkg, one target, four conflicting sources): Phase 2 made the
 #     snapshot agree with the payload and the registry, so all three now carry
 #     the caller value. The assertions below pin that agreement; the pre-Phase-2
@@ -21,7 +19,7 @@
 # mapped to two package variable names) lives in tests/red/, which the default
 # suite does not glob.
 #
-# Every assertion is against the real code path: the real walker, the real
+# Every assertion is against the real code path: the real dispatch, the real
 # record builder and the real runbook engine. Nothing here is re-implemented.
 
 setup() {
@@ -53,7 +51,7 @@ setup() {
     cloudify_init_log
 
     DEP="char-dep"
-    cloudify_deployment_create "$DEP" >/dev/null
+    export CLOUDIFY_APPLICATION=charapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=char-dep
 
     # One captured payload per dispatch, keyed by ssh host: the ssh stub reads
     # the payload from stdin (the real transport) and writes it to a file. No
@@ -74,8 +72,8 @@ teardown() {
     teardown_test_env
 }
 
-# _declare <pkg> <name>... - a bare (required) declaration, the shape the walker
-# and the registry both enumerate.
+# _declare <pkg> <name>... - a bare (required) declaration, the shape the
+# dispatch and the registry both enumerate.
 _declare() {
     local pkg="$1"
     shift
@@ -117,13 +115,13 @@ _snapshot_value() {
     _declare charpkg SHARED_INPUT
     printf 'SHARED_INPUT: global-value\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     cloudify_vars_pkg_write charpkg SHARED_INPUT package-value
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" SHARED_INPUT deployment-value
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" SHARED_INPUT deployment-value
     export CLOUDIFY_DEPLOYMENT="$DEP"
     export SHARED_INPUT=caller-value
     # A placeholder secret that is never declared: it must not leak anywhere.
     export CLOUDIFY_CHAR_UNMAPPED_SECRET=placeholder-secret-must-not-leak
 
-    subrubric "forwarding walker -> remote payload"
+    subrubric "dispatch -> remote payload"
     cloudify_remote_sync charhost install charpkg >/dev/null 2>&1
     local payload="$CAPTURE_DIR/payload-charhost"
     [ -f "$payload" ]
@@ -176,7 +174,7 @@ EOF
     rubric "one deployment input shared by two first installs, with no prior package state"
     _declare charpkg-a SHARED_APP_INPUT
     _declare charpkg-b SHARED_APP_INPUT
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" SHARED_APP_INPUT shared-app-value
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" SHARED_APP_INPUT shared-app-value
     export CLOUDIFY_DEPLOYMENT="$DEP"
     unset SHARED_APP_INPUT
 
@@ -219,7 +217,7 @@ EOF
 
     subrubric "no application input exists to couple the two packages"
     step "deployment store holds no input line"
-    ! grep -q . "$(_cloudify_deployment_config "$DEP")"
+    ! grep -q . "$(_cloudify_deployment_config)"
 
     subrubric "each package keeps its own default"
     cloudify_remote_sync host-a install charpkg-a >/dev/null 2>&1

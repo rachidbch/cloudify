@@ -2,7 +2,7 @@
 # lib/context.sh - one resolved dispatch context (state model v2, Phase 2 slice 2A)
 #
 # Owns value RESOLUTION only. It reproduces the existing five-source ladder
-# (lib/remote.sh:_cloudify_pkg_remote_vars) exactly by delegating to the same
+# (lib/remote.sh:_cloudify_dispatch_vars) exactly by delegating to the same
 # readers in lib/vars.sh in the same visit order, and then records METADATA
 # about each resolved name in a mode-0600 context file. No plaintext value, no
 # resolved value and no payload text ever reaches that file.
@@ -22,9 +22,10 @@
 #
 # Interface:
 #   cloudify_context_build <action> <deployment> <phase> <declared-names-file> <packages...>
-#     Exports every resolved runtime literal into the CALLING shell (same
-#     channel as the legacy walker: never `$(...)`), never prints a value on
-#     stdout, and writes the metadata context to $CLOUDIFY_CONTEXT_FILE.
+#     Exports every resolved runtime literal into the CALLING shell (never
+#     through `$(...)`, which would lose the exports in a subshell), never
+#     prints a value on stdout, and writes the metadata context to
+#     $CLOUDIFY_CONTEXT_FILE.
 #   cloudify_context_source_of <name> <pkg>
 #     Pure: prints environment|deployment|package|global|recipe, never exports.
 #   cloudify_context_read <context-file> <field>

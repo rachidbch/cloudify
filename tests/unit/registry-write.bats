@@ -29,6 +29,7 @@ setup() {
     IVPS_NODE_PATH_RC=0
 
     DEP="xfce-gui"
+    export CLOUDIFY_APPLICATION=regapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=xfce-gui
     NODE="cloudai"
     INSTANCE=""
     HOST="cloudify"
@@ -39,7 +40,7 @@ setup() {
     declare -gA _CLOUDIFY_BG_PKGS=()
     declare -gA _CLOUDIFY_BG_TARGET=()
     declare -gA _CLOUDIFY_BG_CONTEXT=()
-    unset CLOUDIFY_DEPLOYMENT CLOUDIFY_LEGACY_VARS
+    unset CLOUDIFY_DEPLOYMENT
 }
 
 teardown() {
@@ -96,34 +97,11 @@ _ctx() {
     printf '%s\n' "$ctx"
 }
 
-# _reset_stores - empty every var store so one matrix case cannot leak into the
-# next.
+# _reset_stores - empty every var store so one case cannot leak into the next.
 _reset_stores() {
     rm -f "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     rm -rf "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
-    rm -f "$(_cloudify_deployment_config "$DEP")"
-}
-
-# _norm <record-text> - blank the write-time timestamps, which depend on the
-# clock and not on the value source, before comparing two records.
-_norm() {
-    sed -E 's/^(installed_at|configured_at|removed_at):.*/\1: <ts>/' <<< "$1"
-}
-
-# _equiv <label> <pkg> - build the record twice (legacy walker vs dispatch
-# context) and require equal record texts. Prints both records on mismatch.
-_equiv() {
-    local label="$1" pkg="$2" ctx legacy context
-    ctx=$(_ctx "$pkg")
-    legacy=$(CLOUDIFY_LEGACY_VARS=1 cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" "$pkg" 2>/dev/null)
-    context=$(cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" "$pkg" "$ctx" 2>/dev/null)
-    rm -f "$ctx"
-    if [[ "$(_norm "$legacy")" != "$(_norm "$context")" ]]; then
-        printf '\ncase %s: legacy record:\n%s\ncase %s: context record:\n%s\n' \
-            "$label" "$legacy" "$label" "$context" >&2
-        return 1
-    fi
-    step "case $label: equal ($(grep -c '^var\.' <<< "$context" || true) var line(s))"
+    rm -f "$(_cloudify_deployment_config)"
 }
 
 # ---------------------------------------------------------------
@@ -217,9 +195,9 @@ _equiv() {
 }
 
 # ---------------------------------------------------------------
-# var snapshot (context-free calls: the legacy value source, kept reachable
-# behind CLOUDIFY_LEGACY_VARS=1; the context-driven path is covered by the
-# equivalence + context-record tests above)
+# var snapshot (context-free calls: the direct _cloudify_registry_record_build
+# call builds its own context through the same resolver as a dispatch, never a
+# second walk)
 # ---------------------------------------------------------------
 
 @test "var snapshot: raw precedence env > deployment > package > global" {
@@ -229,7 +207,7 @@ _equiv() {
     printf 'V: global\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     mkdir -p "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
     printf 'V: package\n' > "$CLOUDIFY_CREDENTIALS_DIR/pkgs/decl-pkg.yaml"
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" V deployment
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" V deployment
 
     export V=env
     run cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" decl-pkg
@@ -239,7 +217,7 @@ _equiv() {
     run cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" decl-pkg
     [ "$(_field var.V "$output")" = "deployment" ]
 
-    rm -f "$(_cloudify_deployment_config "$DEP")"
+    rm -f "$(_cloudify_deployment_config)"
     run cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" decl-pkg
     [ "$(_field var.V "$output")" = "package" ]
 
@@ -344,75 +322,6 @@ _equiv() {
 # Context-driven record (slice 2B-ii)
 # ---------------------------------------------------------------
 
-@test "equivalence: the context-driven record equals the legacy record for the matrix" {
-    rubric "every var.<NAME> row is identical whether it comes from _cloudify_registry_raw_var or the dispatch context"
-    IVPS_NODES=(cloudai)
-
-    # 1. caller env only
-    _declare eq-env 'EQ_ENV'
-    _reset_stores
-    export EQ_ENV=env-value
-    _equiv "caller env only" eq-env || return 1
-    unset EQ_ENV
-
-    # 2. deployment store only
-    _declare eq-dep 'EQ_DEP'
-    _reset_stores
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" EQ_DEP deployment-value
-    _equiv "deployment only" eq-dep || return 1
-
-    # 3. package yaml only
-    _declare eq-pkg 'EQ_PKG'
-    _reset_stores
-    cloudify_vars_pkg_write eq-pkg EQ_PKG package-value
-    _equiv "package only" eq-pkg || return 1
-
-    # 4. global store only
-    _declare eq-global 'EQ_GLOBAL'
-    _reset_stores
-    cloudify_vars_global_write EQ_GLOBAL global-value
-    _equiv "global only" eq-global || return 1
-
-    # 5. caller env plus a conflicting deployment value (the red case)
-    _declare eq-conflict 'EQ_CONFLICT'
-    _reset_stores
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" EQ_CONFLICT deployment-value
-    export EQ_CONFLICT=caller-value
-    _equiv "caller env beats deployment" eq-conflict || return 1
-    unset EQ_CONFLICT
-
-    # 6. a @base64: reference from a store
-    _declare eq-ref 'EQ_REF'
-    _reset_stores
-    cloudify_vars_pkg_write eq-ref EQ_REF '@base64:aGVsbG8='
-    _equiv "@base64 reference" eq-ref || return 1
-
-    # 7. a multiline stored value
-    _declare eq-multi 'EQ_MULTI'
-    _reset_stores
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" EQ_MULTI $'line one\nline two'
-    _equiv "multiline stored value" eq-multi || return 1
-
-    # 8. a declared name no source provides
-    _declare eq-gone 'EQ_GONE'
-    _reset_stores
-    unset EQ_GONE
-    _equiv "declared but unprovided" eq-gone || return 1
-
-    # 9. an undeclared ambient name never enters either record
-    _declare eq-ambient 'EQ_DECLARED'
-    _reset_stores
-    export EQ_DECLARED=declared-value EQ_AMBIENT=ambient-leak
-    _equiv "undeclared ambient name" eq-ambient || return 1
-    local ctx
-    ctx=$(_ctx eq-ambient)
-    run cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" eq-ambient "$ctx"
-    rm -f "$ctx"
-    [[ "$output" != *"EQ_AMBIENT"* ]]
-    unset EQ_DECLARED EQ_AMBIENT
-    _reset_stores
-}
-
 @test "context record: the reference form is recorded verbatim (raw, inv 18)" {
     rubric "a store's @base64: text reaches var.<NAME> unchanged, from the context"
     IVPS_NODES=(cloudai)
@@ -471,20 +380,4 @@ _equiv() {
     [ "$status" -eq 0 ]
     [ ! -e "$ctx" ]
     [ -f "$IVPS_NODE_ROOT/cloudai/deployments/$DEP/pkgs/ctx-owned/config.yaml" ]
-}
-
-@test "wait loop: CLOUDIFY_LEGACY_VARS=1 writes the record with no context" {
-    rubric "rollback switch -> the pre-Phase-2 walker, unchanged (design section 6.7)"
-    IVPS_NODES=(cloudai)
-    _declare legacy-pkg 'LEGACY_VAR'
-    export LEGACY_VAR=legacy-value CLOUDIFY_DEPLOYMENT="$DEP" CLOUDIFY_LEGACY_VARS=1
-    _CLOUDIFY_BG_ACTION[13]=install
-    _CLOUDIFY_BG_PKGS[13]=legacy-pkg
-    _CLOUDIFY_BG_TARGET[13]=$'cloudai\t\tcloudify'
-    _CLOUDIFY_BG_CONTEXT[13]=""
-
-    run _cloudify_registry_record_bg 13
-    [ "$status" -eq 0 ]
-    grep -q "^var.LEGACY_VAR: legacy-value$" \
-        "$IVPS_NODE_ROOT/cloudai/deployments/$DEP/pkgs/legacy-pkg/config.yaml"
 }

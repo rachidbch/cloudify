@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # lib/vars.sh — five-source var helpers (ADR-007 + ADR-011)
 #
-# One read/write helper per var source. The collector
-# (_cloudify_pkg_remote_vars, lib/remote.sh) is a thin precedence walker over
-# these helpers. Target precedence (weakest -> strongest), extended by the
-# state model v2 application inputs:
+# One read/write helper per var source. The collector (lib/context.sh:
+# cloudify_context_build, reached through lib/remote.sh:_cloudify_dispatch_vars)
+# is a thin precedence walker over these helpers. Target precedence (weakest ->
+# strongest), extended by the state model v2 application inputs:
 #   recipe default < global < package < application < deployment < caller env
 # `application` covers an application default (apps/<app>/<flavor>/defaults.yaml)
 # and the mapped application input; its own value resolves as
@@ -52,7 +52,7 @@ _cloudify_vars_reserved() {
 }
 
 # Claim a name in the walker ledger. Returns 1 when a stronger source already
-# claimed it. With no ledger set, always returns 0 (legacy direct-call mode).
+# claimed it. With no ledger set, always returns 0 (direct-call mode).
 _cloudify_vars_claim() {
     local name="$1"
     [[ -n "${_CLOUDIFY_VARS_LEDGER:-}" ]] || return 0
@@ -351,15 +351,16 @@ cloudify_vars_pkg_write() {
 
 # cloudify_vars_deployment_read [<id>]
 # Read the ONE desired-inputs store this process resolves from: the nested
-# values.yaml once it exists, else the legacy single-ID config.yaml
-# (read-through chosen by lib/deployments.sh:_cloudify_deployment_config). One
-# file means one label and one value, so the payload and the registry record
-# cannot disagree (Phase 2 one-resolution rule). Neither file is deleted.
+# values.yaml of the active application reference
+# (lib/deployments.sh:_cloudify_deployment_config). One file means one label and
+# one value, so the payload and the registry record cannot disagree (Phase 2
+# one-resolution rule). Without an application reference there is no deployment
+# source at all. Nothing is deleted.
 cloudify_vars_deployment_read() {
     local id="${1:-${CLOUDIFY_DEPLOYMENT:-}}"
     [[ -n "$id" ]] || return 0
     local config
-    config=$(_cloudify_deployment_config "$id")
+    config=$(_cloudify_deployment_config) || return 0
     [[ -f "$config" ]] || return 0
     local print=""
     [[ -z "${_CLOUDIFY_VARS_LEDGER:-}" ]] && print=1
@@ -380,53 +381,42 @@ cloudify_vars_deployment_read() {
 cloudify_vars_deployment_write() {
     local key="$1" value="$2" id="${3:-${CLOUDIFY_DEPLOYMENT:-}}"
     [[ -n "$key" ]] || die "Usage: cloudify vars set <key> <value>"
-    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
-    _cloudify_vars_deployment_nested_write_guard "$id"
+    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id>."
     _cloudify_deployment_ensure "$id"
-    _cloudify_vars_file_set "$(_cloudify_deployment_write_config "$id")" "$key" "$value"
-}
-
-# _cloudify_vars_deployment_nested_write_guard <id> - fail closed rather than
-# shadow the legacy store. With an explicit application reference, a write goes
-# to the nested values.yaml; if the legacy single-ID store still holds keys the
-# nested store does not (or holds different values), writing now would make the
-# nested store the one the resolver reads while the legacy keys disappear from
-# the ladder. The operator migrates first, explicitly, and the message names the
-# exact command.
-function _cloudify_vars_deployment_nested_write_guard() {
-    local id="${1:-}" file legacy plan
-    [[ -n "$id" ]] || return 0
-    declare -F _cloudify_deployment_tuple_active >/dev/null 2>&1 || return 0
-    declare -F _cloudify_deployment_values_merge >/dev/null 2>&1 || return 0
-    _cloudify_deployment_tuple_active || return 0
-    file=$(_cloudify_deployment_write_config "$id")
-    legacy=$(_cloudify_deployment_legacy_config "$id")
-    [[ -f "$legacy" ]] || return 0
-    plan=$(_cloudify_deployment_values_merge "$legacy" "$file")
-    printf '%s\n' "$plan" | grep -q '^\(add\|conflict\)' || return 0
-    die "deployment '$id': desired inputs still live in the legacy store '$legacy'; migrate them to '$file' first: cloudify deployment migrate $id --application $CLOUDIFY_APPLICATION --flavor $CLOUDIFY_FLAVOR --name $CLOUDIFY_DEPLOYMENT_NAME"
+    local file
+    file=$(_cloudify_deployment_config) || return 1
+    _cloudify_vars_file_set "$file" "$key" "$value"
 }
 
 cloudify_vars_deployment_delete() {
     local key="$1" id="${2:-${CLOUDIFY_DEPLOYMENT:-}}"
     [[ -n "$key" ]] || die "Usage: cloudify vars delete <key>"
-    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
-    _cloudify_vars_store_delete "$(_cloudify_deployment_config "$id")" "$key"
+    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id>."
+    _cloudify_deployment_require "$id"
+    local file
+    file=$(_cloudify_deployment_config) || return 1
+    _cloudify_vars_store_delete "$file" "$key"
 }
 
 cloudify_vars_deployment_list() {
     local mode="" id
     if [[ "${1:-}" == "--json" ]]; then mode="--json"; shift; fi
     id="${1:-${CLOUDIFY_DEPLOYMENT:-}}"
-    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
-    _cloudify_vars_store_list "$(_cloudify_deployment_config "$id")" "$mode"
+    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id>."
+    _cloudify_deployment_require "$id"
+    local file
+    file=$(_cloudify_deployment_config) || return 1
+    _cloudify_vars_store_list "$file" "$mode"
 }
 
 cloudify_vars_deployment_show() {
     local key="$1" id="${2:-${CLOUDIFY_DEPLOYMENT:-}}"
     [[ -n "$key" ]] || die "Usage: cloudify vars show <key>"
-    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
-    _cloudify_vars_store_get "$(_cloudify_deployment_config "$id")" "$key"
+    [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id>."
+    _cloudify_deployment_require "$id"
+    local file
+    file=$(_cloudify_deployment_config) || return 1
+    _cloudify_vars_store_get "$file" "$key"
 }
 
 # --- env source (strongest; candidate names only — no ambient var enters) ---
@@ -523,8 +513,9 @@ _cloudify_vars_scope_file() {
             cloudify_vars_pkg_file "$arg" ;;
         deployment | ambient)
             id="${arg:-${CLOUDIFY_DEPLOYMENT:-}}"
-            [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id> or 'eval \"\$(cloudify deployment use <id>)\"'."
-            _cloudify_deployment_config "$id" ;;
+            [[ -n "$id" ]] || die "CLOUDIFY_DEPLOYMENT is not set. Use --deployment <id>."
+            _cloudify_deployment_require "$id"
+            _cloudify_deployment_config ;;
         *) die "vars: unknown scope '$scope'." ;;
     esac
 }
@@ -568,11 +559,13 @@ _cloudify_vars_parse_args() {
 
 # _cloudify_vars_deployment_has_key <id> <key> — rc 0 when the ONE store this
 # process resolves from holds the key. Never a value, never a second walk; the
-# label check and the value read therefore see the same file.
+# label check and the value read therefore see the same file. rc 1 when no
+# application reference is active.
 function _cloudify_vars_deployment_has_key() {
-    local id="${1:-}" key="${2:-}"
+    local id="${1:-}" key="${2:-}" file
     [[ -n "$id" && -n "$key" ]] || return 1
-    grep -q "^${key}:" "$(_cloudify_deployment_config "$id")" 2>/dev/null
+    file=$(_cloudify_deployment_config) || return 1
+    grep -q "^${key}:" "$file" 2>/dev/null
 }
 
 # _cloudify_vars_source_label <name> <pkg> — THE first-providing source label,
@@ -637,8 +630,9 @@ function _cloudify_vars_app_input_has_value() {
 }
 
 # _cloudify_vars_source_of <name> <pkg> — walker-order source, read-only, no
-# export. Keeps its legacy spelling (`env`, `recipe-default`), which runbook
-# preflight and its tests pin; only the label computation is shared.
+# export. Keeps the display spelling (`env`, `recipe-default`) that runbook
+# preflight and `cloudify vars declared --sources` pin; only the label
+# computation is shared.
 _cloudify_vars_source_of() {
     local label
     label=$(_cloudify_vars_source_label "${1:-}" "${2:-}")
@@ -684,16 +678,10 @@ cloudify_vars_declared() {
     done < "$decl"
 }
 
-# --- legacy public aliases (R7) ---
+# --- public aliases (R7) ---
 
 cloudify_vars_set() { cloudify_vars_deployment_write "$@"; }
 cloudify_vars_delete() { cloudify_vars_deployment_delete "$@"; }
 cloudify_vars_list() { cloudify_vars_deployment_list "$@"; }
 cloudify_vars_show() { cloudify_vars_deployment_show "$@"; }
 _cloudify_deployment_read_vars() { cloudify_vars_deployment_read "$@"; }
-
-# --- state source (branch 7: replay input, read-only) ---
-
-cloudify_vars_state_read() {
-    return 0
-}

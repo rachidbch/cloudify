@@ -85,113 +85,6 @@ function cloudify_remote_payload_template() {
     :
 }
 
-# Collect remote var names for the given command args with recursive dependency walk.
-# Usage: _cloudify_pkg_remote_vars install pkg1 pkg2  (or --install pkg1 pkg2)
-#
-# Thin precedence walker over the five-source helpers (lib/vars.sh). Target
-# precedence, weakest -> strongest:
-#   recipe default < global < package < deployment < caller env
-# The walker sets a claim ledger (_CLOUDIFY_VARS_LEDGER); readers are
-# non-clobbering, so the FIRST source to claim a name wins. That is why the
-# walker visits sources strongest-first (env survives because file reads never
-# overwrite a set caller value).
-#
-# I1: exports ARE the value channel — this function is always invoked with a
-# redirect, never `$()`. Output: claimed var names, one per line (deduplicated).
-function _cloudify_pkg_remote_vars() {
-    # shellcheck disable=SC2206  # intentional word-splitting of $@ for "install pkg1 pkg2"
-    local args=($@)
-    local config_dir
-    config_dir=$(cloudify_vars_config_dir)
-    local in_install=false arg
-
-    TMPFILE=$(mktemp /tmp/cloudify-pkg-vars-XXXXXX)
-    local declared_file
-    declared_file=$(mktemp /tmp/cloudify-pkg-declared-XXXXXX)
-    _CLOUDIFY_VARS_LEDGER="$TMPFILE"
-    _CLOUDIFY_VARS_DECLARED="$declared_file"
-    # Only clean up when THIS function returns. Under functrace (set -T, used by
-    # bats) a RETURN trap also fires on nested function returns, which would
-    # delete TMPFILE mid-walk and break every subsequent claim.
-    trap '[[ "${FUNCNAME[0]:-}" == "_cloudify_pkg_remote_vars" ]] && { rm -f "$TMPFILE" "$declared_file"; unset _CLOUDIFY_VARS_LEDGER _CLOUDIFY_VARS_DECLARED; }' RETURN
-
-    # -- Detect a phase that dispatches package vars (install/configure/uninstall) --
-    for arg in "${args[@]}"; do
-        [[ "$arg" == "install" || "$arg" == "--install" || "$arg" == "configure" || "$arg" == "--configure" || "$arg" == "uninstall" || "$arg" == "--uninstall" || "$arg" == "u" ]] && { in_install=true; break; }
-    done
-
-    if $in_install; then
-        # -- Collect named packages (args after install/configure that aren't flags) --
-        local -a pkgs=()
-        local saw_install=false
-        for arg in "${args[@]}"; do
-            if [[ "$arg" == "install" || "$arg" == "--install" || "$arg" == "configure" || "$arg" == "--configure" || "$arg" == "uninstall" || "$arg" == "--uninstall" || "$arg" == "u" ]]; then
-                saw_install=true; continue
-            fi
-            $saw_install && [[ "$arg" != -* ]] && pkgs+=("$arg")
-        done
-
-        # -- Deployment (application values): stronger than package/global --
-        if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]]; then
-            cloudify_vars_deployment_read "$CLOUDIFY_DEPLOYMENT" > /dev/null
-        fi
-
-        # -- Packages: rightmost CLI arg first, parent before deps (I4) --
-        declare -A _visited_pkgs
-        _recurse_pkg_vars() {
-            local pkg="$1"
-            [[ -n "${_visited_pkgs[$pkg]:-}" ]] && return 0
-            _visited_pkgs[$pkg]=1
-
-            cloudify_vars_pkg_read "$pkg" > /dev/null
-
-            local recipe deps
-            recipe=$(cloudify_package_recipe_path "$pkg" 2>/dev/null) || return 0
-            # `|| true`: grep exits 1 when a recipe has no pkg_depends line, which
-            # under errexit+pipefail would abort the whole walk.
-            deps=$(grep '^[[:space:]]*pkg_depends ' "$recipe" 2>/dev/null \
-                | sed 's/.*pkg_depends //' | tr ' ' '\n' || true)
-            local dep
-            for dep in $deps; do
-                [[ -n "$dep" ]] && _recurse_pkg_vars "$dep"
-            done
-        }
-
-        # Right-to-left: last CLI arg = highest priority
-        local i
-        for ((i = ${#pkgs[@]} - 1; i >= 0; i--)); do
-            _recurse_pkg_vars "${pkgs[i]}"
-        done
-
-        # -- Global (weakest file source) --
-        cloudify_vars_global_read "$config_dir/remote-vars.yaml" > /dev/null
-
-        # -- Caller env (strongest): candidate set = declaration + file stores --
-        if [[ -s "$declared_file" ]]; then
-            local -a _declared_names=()
-            local _dname _dpkg
-            local _dname _dpkg _dkind
-            while IFS=$'\t' read -r _dname _dpkg _dkind; do
-                [[ -n "$_dname" ]] && _declared_names+=("$_dname")
-            done < "$declared_file"
-            if (( ${#_declared_names[@]} )); then
-                cloudify_vars_env_read "${_declared_names[@]}" > /dev/null
-            fi
-            # Genuine warn only: a declared name with no value from any source (L12)
-            while IFS=$'\t' read -r _dname _dpkg _dkind; do
-                [[ -n "$_dname" ]] || continue
-                [[ "${_dkind:-required}" == required ]] || continue
-                [[ -n "${!_dname:-}" ]] || log_warn "Var $_dname (declared in pkg $_dpkg .remote-vars) is unset in caller env — not forwarded."
-            done < "$declared_file"
-        fi
-    else
-        # Non-install (verify-only/exec): global only (I11)
-        cloudify_vars_global_read "$config_dir/remote-vars.yaml" > /dev/null
-    fi
-
-    sort -u "$TMPFILE" 2>/dev/null
-}
-
 # _cloudify_context_file_init - create THIS dispatch's context file and export
 # CLOUDIFY_CONTEXT_FILE. The PARENT calls it before the child starts (the
 # backgrounded cloudify_remote_sync, or the local install subshell) so the
@@ -210,17 +103,10 @@ function _cloudify_context_file_init() {
 # CALLING shell (inv 1: always invoked with a redirect, never `$(...)`), then
 # write the claimed names, sorted, one per line, to <names-file>. Resolution
 # itself lives in lib/context.sh; this is only the dispatch-facing wrapper.
-# CLOUDIFY_LEGACY_VARS=1 restores the pre-Phase-2 walker, so a rollback needs no
-# data change (design section 6.7).
 function _cloudify_dispatch_vars() {
     local names_file="$1" action="$2" deployment="$3" phase="$4"
     shift 4
     local -a pkgs=("$@")
-
-    if [[ "${CLOUDIFY_LEGACY_VARS:-}" == "1" ]]; then
-        _cloudify_pkg_remote_vars "$action" "${pkgs[@]}" > "$names_file"
-        return 0
-    fi
 
     if [[ -z "${CLOUDIFY_CONTEXT_FILE:-}" ]]; then
         die "_cloudify_dispatch_vars: CLOUDIFY_CONTEXT_FILE is not set."
@@ -252,9 +138,7 @@ function cloudify_remote() {
     # The PARENT owns the context path: the backgrounded sync fills the file and
     # the router records the path with the dispatch metadata, so it never
     # reaches a command line (inv 2, design section 5).
-    if [[ "${CLOUDIFY_LEGACY_VARS:-}" != "1" ]]; then
-        _cloudify_context_file_init
-    fi
+    _cloudify_context_file_init
     (cloudify_remote_sync "$@") &
     _CLOUDIFY_BG_PIDS+=($!)
     _CLOUDIFY_BG_HOSTS[$!]="$1"

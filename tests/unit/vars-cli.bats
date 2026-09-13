@@ -21,6 +21,35 @@ teardown() {
     teardown_test_env
 }
 
+# _collect <action> [pkg...] - the surviving dispatch entry point. Prints the
+# forwarded names on stdout and the warnings on stderr, exactly as the retired
+# walker did. Called in the parent shell (never `$(...)`): the resolved
+# literals are exported into THIS shell.
+_collect() {
+    local action="$1" phase=verify
+    shift
+    case "$action" in
+        install | --install | configure | --configure | uninstall | --uninstall | u) phase=install ;;
+    esac
+    local names ctx_own=""
+    names=$(mktemp)
+    if [[ -z "${CLOUDIFY_CONTEXT_FILE:-}" ]]; then
+        _cloudify_context_file_init
+        ctx_own="$CLOUDIFY_CONTEXT_FILE"
+    fi
+    if [[ "$phase" == "install" ]]; then
+        _cloudify_dispatch_vars "$names" "$action" "${CLOUDIFY_DEPLOYMENT:-}" install "$@"
+    else
+        _cloudify_dispatch_vars "$names" "$action" "" verify
+    fi
+    cat "$names"
+    rm -f "$names"
+    if [[ -n "$ctx_own" ]]; then
+        rm -f "$ctx_own"
+        unset CLOUDIFY_CONTEXT_FILE
+    fi
+}
+
 # --- T1/T2: declaration kinds ---
 
 @test "declaration: bare NAME is required, NAME=value defaulted, NAME= optional" {
@@ -32,7 +61,7 @@ OPT_VAR=
 EOF
     printf 'REQ_VAR: g\nDEF_VAR: g\nOPT_VAR: g\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     unset REQ_VAR DEF_VAR OPT_VAR
-    _cloudify_pkg_remote_vars install kinds > /dev/null 2>&1
+    _collect install kinds > /dev/null 2>&1
     [ "$REQ_VAR" = "g" ]
     [ "$DEF_VAR" = "g" ]
     [ "$OPT_VAR" = "g" ]
@@ -42,7 +71,7 @@ EOF
     mkdir -p "$CLOUDIFY_DIR/pkg/kinds"
     printf 'DEF_ONLY=mirror-default\n' > "$CLOUDIFY_DIR/pkg/kinds/.remote-vars"
     unset DEF_ONLY
-    _cloudify_pkg_remote_vars install kinds > /dev/null 2>&1
+    _collect install kinds > /dev/null 2>&1
     [ -z "${DEF_ONLY:-}" ]
 }
 
@@ -50,7 +79,7 @@ EOF
     mkdir -p "$CLOUDIFY_DIR/pkg/kinds"
     printf 'REQ_VAR\nDEF_VAR=mirror\nOPT_VAR=\n' > "$CLOUDIFY_DIR/pkg/kinds/.remote-vars"
     unset REQ_VAR DEF_VAR OPT_VAR
-    _cloudify_pkg_remote_vars install kinds > /dev/null 2> "$CLOUDIFY_TMP/err"
+    _collect install kinds > /dev/null 2> "$CLOUDIFY_TMP/err"
     grep -q "REQ_VAR" "$CLOUDIFY_TMP/err"
     ! grep -q "DEF_VAR" "$CLOUDIFY_TMP/err"
     ! grep -q "OPT_VAR" "$CLOUDIFY_TMP/err"
@@ -61,7 +90,7 @@ EOF
     printf 'TAB_VAR\t\r\n' > "$CLOUDIFY_DIR/pkg/kinds/.remote-vars"
     printf 'TAB_VAR: g\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     unset TAB_VAR
-    _cloudify_pkg_remote_vars install kinds > /dev/null 2>&1
+    _collect install kinds > /dev/null 2>&1
     [ "$TAB_VAR" = "g" ]
 }
 
@@ -69,7 +98,7 @@ EOF
     mkdir -p "$CLOUDIFY_DIR/pkg/kinds"
     printf 'BARE\n' > "$CLOUDIFY_DIR/pkg/kinds/.remote-vars"
     export BARE=fromenv
-    _cloudify_pkg_remote_vars install kinds > /dev/null 2>&1
+    _collect install kinds > /dev/null 2>&1
     [ "$BARE" = "fromenv" ]
 }
 
@@ -151,7 +180,7 @@ EOF
     [ "$status" -ne 0 ]
     run cloudify_vars_pkg_write mypkg lower value
     [ "$status" -ne 0 ]
-    cloudify_deployment_create dep
+    export CLOUDIFY_APPLICATION=cli-app CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=dep
     export CLOUDIFY_DEPLOYMENT=dep
     run cloudify_vars_deployment_write lower value
     [ "$status" -eq 0 ]
@@ -309,13 +338,12 @@ run_router() {
     mkdir -p "$CLOUDIFY_DIR/pkg/upkg"
     cloudify_vars_pkg_write upkg UP_VAR fromyaml
     unset UP_VAR
-    _cloudify_pkg_remote_vars uninstall upkg > /dev/null 2>&1
+    _collect uninstall upkg > /dev/null 2>&1
     [ "$UP_VAR" = "fromyaml" ]
 }
 
-@test "router: --stdin and --file still write the deployment store" {
-    run_router deployment create stdin-dep
-    [ "$status" -eq 0 ]
+@test "router: --stdin and --file write the deployment store of the active application reference" {
+    export CLOUDIFY_APPLICATION=stdinapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=stdin-dep
 
     printf 's3cr3t' > "$CLOUDIFY_TMP/secret-file"
     run_router vars set FROM_STDIN --stdin --deployment stdin-dep < "$CLOUDIFY_TMP/secret-file"
@@ -323,7 +351,7 @@ run_router() {
     run_router vars set FROM_FILE --file "$CLOUDIFY_TMP/secret-file" --deployment stdin-dep
     [ "$status" -eq 0 ]
 
-    local store="$CLOUDIFY_CREDENTIALS_DIR/deployments/stdin-dep/config.yaml"
+    local store="$CLOUDIFY_CREDENTIALS_DIR/deployments/stdinapp/default/stdin-dep/values.yaml"
     [ "$(grep '^FROM_STDIN:' "$store" | sed 's/^FROM_STDIN: //')" = "s3cr3t" ]
     [ "$(grep '^FROM_FILE:' "$store" | sed 's/^FROM_FILE: //')" = "s3cr3t" ]
     [ "$(stat -c '%a' "$store")" = "600" ]

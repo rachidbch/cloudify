@@ -156,9 +156,9 @@ function cloudify_registry_list() {
 }
 
 # _cloudify_registry_delete_record_tree <dir> — trash a record dir.
-# Only a dir holding a `pkgs/` subdir is a registry record dir: the guard keeps
-# `deployment delete` away from an unrelated same-named directory. rc 1 (no
-# side effect) when the dir is absent or not a record dir.
+# Only a dir holding a `pkgs/` subdir is a registry record dir: the guard keeps a
+# sweep away from an unrelated same-named directory. rc 1 (no side effect) when
+# the dir is absent or not a record dir.
 function _cloudify_registry_delete_record_tree() {
     local dir="${1:-}"
     [[ -d "$dir/pkgs" ]] || return 1
@@ -172,7 +172,8 @@ function _cloudify_registry_delete_record_tree() {
 
 # cloudify_registry_delete_deployment <deployment>
 # Remove every registry record dir for a deployment. Records live OUTSIDE the
-# deployment store, so `cloudify deployment delete` calls this (T4).
+# deployment store; the Phase 7 application teardown calls this once it removes
+# the store (T4).
 #
 # Candidate bucket roots (globbed, never shelling out to ivps):
 #   - every node dir under ${IVPS_CONFIG_DIR:-<xdg>/ivps}/nodes
@@ -207,7 +208,7 @@ function cloudify_registry_delete_deployment() {
 # A record is a flat `key: value` file (house style), first line a comment,
 # stable field order. The writer MERGES with any existing record so earlier
 # timestamps survive: the registry is observation, so an uninstall is a
-# timestamp (`removed_at`), never a delete (T4 owns `deployment delete`).
+# timestamp (`removed_at`), never a delete.
 #
 # `var.<NAME>` holds the RAW value from the first providing source
 # (env > deployment store > package store > global store) at write time, so a
@@ -216,9 +217,9 @@ function cloudify_registry_delete_deployment() {
 # cannot live on one line is stored as `@base64:` (the var-store encoding).
 # `version` has no source yet and stays empty.
 #
-# The value source is the dispatch context when one is given, so the record and
-# the payload are one resolution; `CLOUDIFY_LEGACY_VARS=1` and a context-free
-# direct call fall back to `_cloudify_registry_raw_var`.
+# The value source is the dispatch context, so the record and the payload are
+# one resolution. A context-free direct call (a red proof, a diagnostic) builds
+# its own context through the SAME resolver, never a second value walk.
 
 # _cloudify_registry_now — UTC ISO8601, second precision
 function _cloudify_registry_now() {
@@ -250,33 +251,6 @@ function _cloudify_registry_declared_names() {
     done < "$decl"
 }
 
-# _cloudify_registry_raw_var <name> <pkg> <deployment>
-# Raw value from the first providing source (env > deployment > package >
-# global); rc 1 when no source provides it. Read-only: never resolves.
-#
-# LEGACY + direct-call value source. `CLOUDIFY_LEGACY_VARS=1` keeps it as the
-# record's only value source (design section 6.7 rollback), and a direct
-# `cloudify_registry_record_build` call with no dispatch context still uses it
-# (tests, diagnostics). A real dispatch never reaches it without the switch:
-# _cloudify_registry_record_bg refuses (warn, no record) when the context is
-# missing, so there is never a second walk behind the new path.
-function _cloudify_registry_raw_var() {
-    local name="$1" pkg="$2" deployment="$3" value
-    if [[ -n "${!name:-}" ]]; then
-        printf '%s' "${!name}"
-        return 0
-    fi
-    if [[ -n "$deployment" ]]; then
-        value=$(_cloudify_vars_store_get "$(_cloudify_deployment_config "$deployment")" "$name")
-        if [[ -n "$value" ]]; then printf '%s' "$value"; return 0; fi
-    fi
-    value=$(_cloudify_vars_store_get "$(cloudify_vars_pkg_file "$pkg")" "$name")
-    if [[ -n "$value" ]]; then printf '%s' "$value"; return 0; fi
-    value=$(_cloudify_vars_store_get "$(cloudify_vars_global_file)" "$name")
-    if [[ -n "$value" ]]; then printf '%s' "$value"; return 0; fi
-    return 1
-}
-
 # _cloudify_registry_context_raw <context-file> <name> <pkg> <deployment>
 # The raw, unresolved value for <name> as the dispatch context recorded it.
 # A `reference` form carries the store's `@<backend>:<locator>` text verbatim;
@@ -284,7 +258,7 @@ function _cloudify_registry_raw_var() {
 # names (never the ladder, never a second walk). rc 1 when the context has no
 # block for the name, i.e. no source provided it. Read-only: never resolves.
 function _cloudify_registry_context_raw() {
-    local context="$1" name="$2" pkg="$3" deployment="$4" source form ref
+    local context="$1" name="$2" pkg="$3" deployment="$4" source form ref store=""
     source=$(cloudify_context_read "$context" "value.$name.source") || return 1
     form=$(cloudify_context_read "$context" "value.$name.form") || form=literal
     if [[ "$form" == "reference" ]]; then
@@ -295,7 +269,10 @@ function _cloudify_registry_context_raw() {
     fi
     case "$source" in
         environment) printf '%s' "${!name:-}" ;;
-        deployment) _cloudify_vars_store_get "$(_cloudify_deployment_config "$deployment")" "$name" ;;
+        deployment)
+            store=$(_cloudify_deployment_config) || store=""
+            _cloudify_vars_store_get "$store" "$name"
+            ;;
         package) _cloudify_vars_store_get "$(cloudify_vars_pkg_file "$pkg")" "$name" ;;
         global) _cloudify_vars_store_get "$(cloudify_vars_global_file)" "$name" ;;
         *) return 1 ;;
@@ -306,13 +283,35 @@ function _cloudify_registry_context_raw() {
 # Print the merged record on stdout. Reads the existing record (if any) to
 # carry timestamps + version over; writes nothing.
 #
-# `var.<NAME>` values come from the dispatch context when one is given (the
-# router's per-pid `_CLOUDIFY_BG_CONTEXT`, read through cloudify_context_read),
-# so the record's source and the payload's source are one resolution. Value and
-# field order are unchanged: the names still come from pkg/<pkg>/.remote-vars in
-# declaration order, and the value is still the raw, unresolved form (inv 18).
+# `var.<NAME>` values come from the dispatch context (the router's per-pid
+# `_CLOUDIFY_BG_CONTEXT`, read through cloudify_context_read, or the one given
+# here), so the record's source and the payload's source are one resolution.
+# A context-free direct call builds its own context through the SAME resolver:
+# never a second value walk. Value and field order are unchanged: the names
+# still come from pkg/<pkg>/.remote-vars in declaration order, and the value is
+# still the raw, unresolved form (inv 18).
 function cloudify_registry_record_build() {
     local action="${1:-}" deployment="${2:-}" node="${3:-}" instance="${4:-}" ssh_host="${5:-}" pkg="${6:-}" context="${7:-}"
+    local own_context=""
+    if [[ -z "$context" ]]; then
+        own_context=$(mktemp "$CLOUDIFY_TMP/cloudify-registry-context-XXXXXX") \
+            || die "Registry: cannot create a context file under $CLOUDIFY_TMP."
+        chmod 600 "$own_context"
+        trap '[[ "${FUNCNAME[0]:-}" == "cloudify_registry_record_build" ]] && rm -f "${own_context:-}"' RETURN
+        local cand_file
+        cand_file=$(mktemp) || die "Registry: cannot create a candidate name file."
+        local _dname
+        while IFS= read -r _dname; do
+            [[ -n "$_dname" ]] && printf '%s\t%s\trequired\n' "$_dname" "$pkg" >> "$cand_file"
+        done < <(_cloudify_registry_declared_names "$pkg")
+        # Env-prefix form (house style): the resolver reads the path from the
+        # environment for this one command, so the caller's own
+        # CLOUDIFY_CONTEXT_FILE is never clobbered.
+        CLOUDIFY_CONTEXT_FILE="$own_context" \
+            cloudify_context_build install "$deployment" install "$cand_file" "$pkg" > /dev/null
+        rm -f "$cand_file"
+        context="$own_context"
+    fi
     local status installed_at configured_at removed_at
     local -A existing=()
     local text line key value name raw
@@ -346,24 +345,16 @@ function cloudify_registry_record_build() {
     _cloudify_registry_field package "$pkg"
     _cloudify_registry_field version "${existing[version]:-}"
 
-    # Context-driven unless the rollback switch or a context-free direct call.
-    local value_source="legacy"
-    if [[ "${CLOUDIFY_LEGACY_VARS:-}" != "1" && -n "$context" ]]; then
-        value_source="context"
-    fi
-
+    # Value source: the context, always. A name with no context block is
+    # skipped: no source provided it.
     local -A seen=()
     while IFS= read -r name; do
         [[ -n "$name" ]] || continue
         [[ -n "${seen[$name]:-}" ]] && continue
         seen["$name"]=1
-        if [[ "$value_source" == "context" ]]; then
-            raw=$(_cloudify_registry_context_raw "$context" "$name" "$pkg" "$deployment") || continue
-            if [[ "$(cloudify_context_read "$context" "value.$name.secret" 2>/dev/null || true)" == "true" ]]; then
-                PKG_DEBUG "Registry: var.$name is marked secret; the record keeps its raw, unresolved form."
-            fi
-        else
-            raw=$(_cloudify_registry_raw_var "$name" "$pkg" "$deployment") || continue
+        raw=$(_cloudify_registry_context_raw "$context" "$name" "$pkg" "$deployment") || continue
+        if [[ "$(cloudify_context_read "$context" "value.$name.secret" 2>/dev/null || true)" == "true" ]]; then
+            PKG_DEBUG "Registry: var.$name is marked secret; the record keeps its raw, unresolved form."
         fi
         if [[ "$raw" == *$'\n'* ]]; then
             raw="@base64:$(printf '%s' "$raw" | base64 -w0)"
@@ -393,8 +384,7 @@ function cloudify_registry_record_apply() {
 #
 # The record's values come from the dispatch's context file, so a dispatch whose
 # context is missing or unreadable writes NO record and warns: never a second
-# walk (design section 5). CLOUDIFY_LEGACY_VARS=1 keeps the pre-Phase-2 walker
-# and needs no context (design section 6.7).
+# walk (design section 5).
 function _cloudify_registry_record_bg() {
     local pid="$1"
     local action="${_CLOUDIFY_BG_ACTION[$pid]:-}"
@@ -407,13 +397,9 @@ function _cloudify_registry_record_bg() {
         return 0
     fi
     local context="${_CLOUDIFY_BG_CONTEXT[$pid]:-}"
-    if [[ "${CLOUDIFY_LEGACY_VARS:-}" != "1" ]]; then
-        if [[ -z "$context" || ! -r "$context" ]]; then
-            log_warn "Registry: dispatch context '${context:-<unset>}' is missing or unreadable - no record written for '${_CLOUDIFY_BG_PKGS[$pid]:-}' (never a second value walk)."
-            return 0
-        fi
-    else
-        context=""
+    if [[ -z "$context" || ! -r "$context" ]]; then
+        log_warn "Registry: dispatch context '${context:-<unset>}' is missing or unreadable - no record written for '${_CLOUDIFY_BG_PKGS[$pid]:-}' (never a second value walk)."
+        return 0
     fi
     local target="${_CLOUDIFY_BG_TARGET[$pid]:-}" node instance ssh_host rest pkg
     node="${target%%$'\t'*}"

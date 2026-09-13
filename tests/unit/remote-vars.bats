@@ -3,7 +3,7 @@
 # The parallel test is the regression guard: a shared on-disk values file
 # would make two concurrent collections race and cross-contaminate.
 #
-# Note: _cloudify_pkg_remote_vars is called in the parent shell (exports must
+# Note: _collect is called in the parent shell (exports must
 # survive for envsubst below), so tests call it directly, not via `run`.
 
 setup() {
@@ -22,6 +22,35 @@ teardown() {
     teardown_test_env
 }
 
+# _collect <action> [pkg...] - the surviving dispatch entry point. Prints the
+# forwarded names on stdout and the warnings on stderr, exactly as the retired
+# walker did. Called in the parent shell (never `$(...)`): the resolved
+# literals are exported into THIS shell.
+_collect() {
+    local action="$1" phase=verify
+    shift
+    case "$action" in
+        install | --install | configure | --configure | uninstall | --uninstall | u) phase=install ;;
+    esac
+    local names ctx_own=""
+    names=$(mktemp)
+    if [[ -z "${CLOUDIFY_CONTEXT_FILE:-}" ]]; then
+        _cloudify_context_file_init
+        ctx_own="$CLOUDIFY_CONTEXT_FILE"
+    fi
+    if [[ "$phase" == "install" ]]; then
+        _cloudify_dispatch_vars "$names" "$action" "${CLOUDIFY_DEPLOYMENT:-}" install "$@"
+    else
+        _cloudify_dispatch_vars "$names" "$action" "" verify
+    fi
+    cat "$names"
+    rm -f "$names"
+    if [[ -n "$ctx_own" ]]; then
+        rm -f "$ctx_own"
+        unset CLOUDIFY_CONTEXT_FILE
+    fi
+}
+
 # Fixture: a package declaring K3S_TOKEN in .remote-vars, no yaml on disk.
 make_fixture() {
     mkdir -p "$CLOUDIFY_DIR/pkg/foo"
@@ -31,7 +60,7 @@ make_fixture() {
 @test "declared name takes its value from caller env" {
     make_fixture
     export K3S_TOKEN=abc123
-    _cloudify_pkg_remote_vars install foo > "$CLOUDIFY_TMP/names" 2>&1
+    _collect install foo > "$CLOUDIFY_TMP/names" 2>&1
     grep -q "K3S_TOKEN" "$CLOUDIFY_TMP/names"
     [ "$K3S_TOKEN" = "abc123" ]
 }
@@ -50,7 +79,7 @@ make_fixture() {
 @test "declared-but-unset name produces a visible warning" {
     make_fixture
     unset K3S_TOKEN
-    _cloudify_pkg_remote_vars install foo > "$CLOUDIFY_TMP/out" 2>&1
+    _collect install foo > "$CLOUDIFY_TMP/out" 2>&1
     grep -qi "K3S_TOKEN" "$CLOUDIFY_TMP/out"
 }
 
@@ -59,7 +88,7 @@ make_fixture() {
     mkdir -p "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
     printf 'SOME_VAR: fromyaml\n' > "$CLOUDIFY_CREDENTIALS_DIR/pkgs/foo.yaml"
     unset SOME_VAR
-    _cloudify_pkg_remote_vars install foo > /dev/null 2>&1
+    _collect install foo > /dev/null 2>&1
     [ "$SOME_VAR" = "fromyaml" ]
 }
 
@@ -67,7 +96,7 @@ make_fixture() {
     mkdir -p "$CLOUDIFY_DIR/pkg/foo"
     printf 'ALWAYS_VAR: fromglobal\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     unset ALWAYS_VAR
-    _cloudify_pkg_remote_vars install foo > /dev/null 2>&1
+    _collect install foo > /dev/null 2>&1
     [ "$ALWAYS_VAR" = "fromglobal" ]
 }
 
@@ -76,16 +105,16 @@ make_fixture() {
     mkdir -p "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
     printf 'K3S_TOKEN: fromyaml\n' > "$CLOUDIFY_CREDENTIALS_DIR/pkgs/foo.yaml"
     export K3S_TOKEN=fromenv
-    _cloudify_pkg_remote_vars install foo > /dev/null 2>&1
+    _collect install foo > /dev/null 2>&1
     [ "$K3S_TOKEN" = "fromenv" ]
 }
 
 @test "parallel collections each keep their own env value (no shared-file race)" {
     make_fixture
-    ( export K3S_TOKEN=token-A; _cloudify_pkg_remote_vars install foo >/dev/null 2>&1; \
+    ( export K3S_TOKEN=token-A; _collect install foo >/dev/null 2>&1; \
         echo "K3S_TOKEN=$K3S_TOKEN" > "$CLOUDIFY_TMP/env-A" ) &
     local p1=$!
-    ( export K3S_TOKEN=token-B; _cloudify_pkg_remote_vars install foo >/dev/null 2>&1; \
+    ( export K3S_TOKEN=token-B; _collect install foo >/dev/null 2>&1; \
         echo "K3S_TOKEN=$K3S_TOKEN" > "$CLOUDIFY_TMP/env-B" ) &
     local p2=$!
     wait "$p1"

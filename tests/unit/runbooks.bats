@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Branch 7 T6a: playable runbooks — parse, discovery, target binding, preflight
-# and `deployment run --dry-run`. No step is executed (that is T6b).
+# and `cloudify_deployment_run --dry-run`. No step is executed (that is T6b).
 #
 # The machine contract under test:
 #   cloudify_runbook_parse  -> type \t id \t target \t pkg \t body-b64
@@ -155,10 +155,10 @@ _declare() {
 deployment: demo
 targets: guest
 ---
-```bash step=run
+```bash step=run phase=install
 ivps expose-direct localhost 8080
 ```
-```bash step=run target=guest
+```bash step=run target=guest phase=verify
 echo "$TARGET_GUEST"
 ```
 EOF
@@ -382,11 +382,13 @@ EOF
 }
 
 @test "bind: falls back to the deployment-store var TARGET_<NAME>" {
-    rubric "no --target -> TARGET_GUEST from the runbook's deployment store"
-    _cloudify_vars_file_set "$(_cloudify_deployment_config demo-bind)" TARGET_GUEST "cloudai:xfce-test"
+    rubric "no --target -> TARGET_GUEST from the deployment store of the active application reference"
+    export CLOUDIFY_APPLICATION=bindapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=default
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" TARGET_GUEST "cloudai:xfce-test"
     run cloudify_runbook_bind_targets "$RUNBOOKS/guest-only.md"
     [ "$status" -eq 0 ]
     [ "$output" = "$(printf 'guest\tcloudai\txfce-test\txfce-test')" ]
+    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
 }
 
 @test "bind: an unbound target dies listing it" {
@@ -421,17 +423,19 @@ EOF
 @test "preflight: all required vars resolved passes silently" {
     rubric "required name provided by the deployment store -> rc 0, no output"
     _declare demo-pkg 'REQUIRED_VAR' 'OPTIONAL_VAR='
-    _cloudify_vars_file_set "$(_cloudify_deployment_config demo-bind)" REQUIRED_VAR provided
+    export CLOUDIFY_APPLICATION=bindapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=default
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" REQUIRED_VAR provided
     run cloudify_runbook_preflight "$RUNBOOKS/guest-only.md" --target guest=cloudai:xfce-test
     [ "$status" -eq 0 ]
     [ -z "$output" ]
+    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
 }
 
 # ---------------------------------------------------------------
-# deployment run (T6a: plan only)
+# cloudify_deployment_run (T6a: plan only)
 # ---------------------------------------------------------------
 
-@test "deployment run: --from rejects an unknown step id" {
+@test "deployment_run: --from rejects an unknown step id" {
     rubric "a --from typo fails before anything could run"
     run cloudify_deployment_run demo --dry-run --runbook "$RUNBOOKS/valid.md" --from nope \
         --target guest=cloudai:xfce-test --target gateway=cloudai:guac
@@ -439,32 +443,31 @@ EOF
     [[ "$output" == *"no step with id 'nope'"* ]]
 }
 
-@test "real router: deployment run --dry-run prints the plan and exits 0" {
+@test "real router: app run --dry-run prints the plan and exits 0" {
     rubric "router path -> find/parse/bind/preflight/plan, nothing executed"
     _create_ivps_stub
     local cf="$CLOUDIFY_TMP/router"
-    mkdir -p "$cf/pkg" "$cf/inventory" "$cf/tmp" "$cf/creds"
+    mkdir -p "$cf/pkg" "$cf/inventory" "$cf/tmp" "$cf/creds" "$cf/runbooks/demo/default"
+    cp "$RUNBOOKS/valid.md" "$cf/runbooks/demo/default/runbook.md"
 
     PATH="$STUB_DIR:$PATH" run bash -c "
         export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true
         export CLOUDIFY_DIR='$cf' CLOUDIFY_TMP='$cf/tmp' CLOUDIFY_CREDENTIALS_DIR='$cf/creds'
         export CLOUDIFY_REMOTE_USER=root CLOUDIFY_REMOTE_PWD=test
-        cd '$PWD' && bash cloudify deployment run demo --dry-run \
-            --runbook '$RUNBOOKS/valid.md' \
+        cd '$PWD' && bash cloudify app run demo --dry-run \
             --target guest=cloudai:xfce-test --target gateway=cloudai:guac 2>&1
     "
     [ "$status" -eq 0 ]
+    [[ "$output" == *"Application: demo/default"* ]]
     [[ "$output" == *"Deployment: demo"* ]]
     [[ "$output" == *"guest -> node=cloudai instance=xfce-test ssh=xfce-test"* ]]
     [[ "$output" == *"check-guest"* ]]
     [[ "$output" == *"human-gate"* ]]
 }
 
-@test "real router: deployment run executes the steps after the plan" {
-    rubric "router path -> find/parse/bind/preflight/plan then execute, snapshot written"
+@test "deployment_run: the engine executes the steps after the plan" {
+    rubric "parse/bind/preflight/plan then execute, snapshot written"
     _create_ivps_stub
-    local cf="$CLOUDIFY_TMP/router-exec"
-    mkdir -p "$cf/pkg" "$cf/inventory" "$cf/tmp" "$cf/creds"
     local rb="$CLOUDIFY_TMP/exec-runbook.md"
     _make_runbook "$rb" <<EOF
 ---
@@ -472,23 +475,17 @@ deployment: demo
 targets: guest
 ---
 \`\`\`bash step=install target=guest pkg=demo-pkg id=one
-echo ran >> "$cf/tmp/exec-marker"
+echo ran >> "$CLOUDIFY_TMP/exec-marker"
 \`\`\`
 EOF
 
-    PATH="$STUB_DIR:$PATH" run bash -c "
-        export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true
-        export CLOUDIFY_DIR='$cf' CLOUDIFY_TMP='$cf/tmp' CLOUDIFY_CREDENTIALS_DIR='$cf/creds'
-        export CLOUDIFY_REMOTE_USER=root CLOUDIFY_REMOTE_PWD=test
-        cd '$PWD' && bash cloudify deployment run demo \
-            --runbook '$rb' \
-            --target guest=cloudai:xfce-test --yes 2>&1
-    "
+    run cloudify_deployment_run demo --runbook "$rb" \
+        --target guest=cloudai:xfce-test --yes
     [ "$status" -eq 0 ]
     [[ "$output" == *"Deployment: demo"* ]]
     [[ "$output" == *"succeeded"* ]]
-    [ -f "$cf/tmp/exec-marker" ]
-    [ -n "$(ls "$cf/creds/deployments/demo/runs/"*.yaml 2>/dev/null)" ]
+    [ -f "$CLOUDIFY_TMP/exec-marker" ]
+    [ -n "$(ls "$CLOUDIFY_DEPLOYMENTS_DIR/demo/runs/"*.yaml 2>/dev/null)" ]
 }
 
 # ---------------------------------------------------------------
@@ -500,7 +497,7 @@ EOF
     local f="$CLOUDIFY_DIR/runbooks/myapp/prod/runbook.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: legacy-id
+deployment: demo-id
 targets: guest
 ---
 EOF
@@ -508,12 +505,12 @@ EOF
     [ "$status" -eq 0 ]
     [ "$output" = "$(printf 'myapp\tprod')" ]
 
-    run cloudify_runbook_identity "$CLOUDIFY_TMP/legacy.md"
+    run cloudify_runbook_identity "$CLOUDIFY_TMP/plain.md"
     [ "$status" -ne 0 ]
 }
 
-@test "meta: a canonical runbook does not require deployment: front-matter" {
-    rubric "deployment: stays required only for the legacy path"
+@test "meta: deployment: front-matter is optional, CLOUDIFY_DEPLOYMENT fills it" {
+    rubric "one rule for every runbook path"
     local f="$CLOUDIFY_DIR/runbooks/myapp/default/runbook.md"
     _make_runbook "$f" <<'EOF'
 ---
@@ -567,8 +564,8 @@ EOF
     [ "$(_field "${lines[4]}" 5)" = "teardown" ]
 }
 
-@test "parse: a canonical run/human-gate step must declare a phase" {
-    rubric "canonical path -> phase= required on run and human-gate"
+@test "parse: a run/human-gate step must declare a phase" {
+    rubric "run and human-gate have no default phase"
     local f="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
     _make_runbook "$f" <<'EOF'
 ---
@@ -583,7 +580,7 @@ EOF
     [ "$status" -ne 0 ]
     [[ "$output" == *"must declare phase="* ]]
 
-    local g="$CLOUDIFY_TMP/legacy-run.md"
+    local g="$CLOUDIFY_TMP/run-no-phase.md"
     _make_runbook "$g" <<'EOF'
 ---
 deployment: demo
@@ -594,8 +591,8 @@ echo hi
 ```
 EOF
     run cloudify_runbook_parse "$g"
-    [ "$status" -eq 0 ]
-    [ -z "$(_field "${lines[0]}" 5)" ]
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"must declare phase="* ]]
 }
 
 @test "parse: unknown phases and contradictory type-phase pairs are rejected" {
@@ -724,19 +721,12 @@ EOF
     [[ "$output" == *"unknown phase 'bogus'"* ]]
 }
 
-@test "find_app: canonical path first, legacy path during the compatibility period" {
-    rubric "dual discovery"
+@test "find_app: the canonical path is the only discoverable runbook" {
+    rubric "runbooks/<application>/<flavor>/runbook.md"
     local canonical="$CLOUDIFY_DIR/runbooks/myapp/default/runbook.md"
-    local legacy="$CLOUDIFY_DIR/runbooks/myapp/prod.md"
     _make_runbook "$canonical" <<'EOF'
 ---
 deployment: one
-targets: guest
----
-EOF
-    _make_runbook "$legacy" <<'EOF'
----
-deployment: two
 targets: guest
 ---
 EOF
@@ -745,8 +735,8 @@ EOF
     [ "$output" = "$canonical" ]
 
     run cloudify_runbook_find_app myapp prod
-    [ "$status" -eq 0 ]
-    [ "$output" = "$legacy" ]
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No runbook found for application"* ]]
 
     run cloudify_runbook_find_app missing default
     [ "$status" -ne 0 ]
@@ -786,7 +776,7 @@ EOF
 # --- Tuple derivation ---
 
 @test "tuple: application and flavor come from the path, name defaults to default" {
-    rubric "canonical runbook.md and the legacy <app>/<flavor>.md"
+    rubric "runbooks/<application>/<flavor>/runbook.md"
     local canonical="$CLOUDIFY_DIR/runbooks/myapp/prod/runbook.md"
     _make_runbook "$canonical" <<'EOF'
 ---
@@ -801,18 +791,8 @@ EOF
     run _cloudify_runbook_tuple_for "$canonical" "named"
     [ "$output" = "$(printf 'myapp\tprod\tnamed')" ]
 
-    local legacy="$CLOUDIFY_DIR/runbooks/legacyapp/dev.md"
-    _make_runbook "$legacy" <<'EOF'
----
-deployment: legacy-dep
-targets: guest
----
-EOF
-    run _cloudify_runbook_tuple_for "$legacy"
-    [ "$status" -eq 0 ]
-    [ "$output" = "$(printf 'legacyapp\tdev\tdefault')" ]
-
-    # A plain fixture path carries no application identity: no manifest.
+    # A runbook outside the canonical shape carries no application identity: no
+    # manifest.
     run _cloudify_runbook_tuple_for "$RUNBOOKS/valid.md"
     [ "$status" -ne 0 ]
 
@@ -963,26 +943,6 @@ EOF
     [ "$(cloudify_deployment_values_file alpha default default)" != "$(cloudify_deployment_values_file beta default default)" ]
 }
 
-@test "manifest: a legacy <app>/<flavor>.md runbook still runs and gets a manifest" {
-    rubric "legacy path compatibility"
-    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
-    local legacy="$CLOUDIFY_DIR/runbooks/legacyapp/dev.md"
-    _make_runbook "$legacy" <<'EOF'
----
-deployment: legacy-dep
-targets: guest
----
-```bash step=install target=guest pkg=demo
-true
-```
-EOF
-    _clean_tree
-    run cloudify_app_run legacyapp/dev --target guest=cloudai:xfce-test
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Application: legacyapp/dev"* ]]
-    [ "$(cloudify_manifest_field legacyapp dev default status)" = "active" ]
-}
-
 # --- Bindings ---
 
 @test "bindings: a rerun without --target reuses the recorded binding" {
@@ -1072,7 +1032,8 @@ true
 EOF
     _declare instpkg REQ_INSTALL
     _declare teardownpkg REQ_TEARDOWN
-    _cloudify_vars_file_set "$(_cloudify_deployment_config phase-dep)" REQ_INSTALL yes
+    export CLOUDIFY_APPLICATION=phaseapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=default
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" REQ_INSTALL yes
 
     # A bare canonical run selects install then verify: the teardown-only
     # requirement is never inspected.

@@ -4,13 +4,11 @@ Deployment procedures an agent or human executes with ONLY `ivps` and `cloudify`
 
 ## Tree and identity
 
-Canonical: `runbooks/<application>/<flavor>/runbook.md`.
+Canonical: `runbooks/<application>/<flavor>/runbook.md`. It is the only discoverable runbook path.
 The application identity (`<application>/<flavor>`) is derived from the path, not from the file body.
 The default flavor is `default`.
-Legacy: `runbooks/<application>/<flavor>.md` stays discoverable for one compatibility period.
-The legacy `deployment:` front-matter field stays required only for legacy paths.
-A `run` or `human-gate` step in a legacy runbook with no phase emits a deprecation warning at run time.
-A canonical runbook must declare an explicit `phase=` on every `run` and `human-gate` step.
+A `run` or `human-gate` step must declare an explicit `phase=`.
+A run whose `deployment:` front-matter is absent falls back to `CLOUDIFY_DEPLOYMENT`.
 
 Rules:
 - No ad-hoc scripts, no host commands: only `ivps` and `cloudify`.
@@ -52,14 +50,14 @@ The value is captured once, at emit time; no store is read twice, and the dispat
 
 `cloudify app run <application>[/<flavor>] [--name <name>]` is the application surface.
 The flavor defaults to `default` and the deployment name defaults to `default`, so `cloudify app run k3s` means `k3s/default --name default`.
-It prints the full reference (`Application: k3s/default`) and the deployment name in every plan and error, exports `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR` and `CLOUDIFY_DEPLOYMENT_NAME` for the child dispatches, and then runs the runbook exactly as `cloudify deployment run` does (bare run: install then verify; teardown is never selected).
+It prints the full reference (`Application: k3s/default`) and the deployment name in every plan and error, exports `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR` and `CLOUDIFY_DEPLOYMENT_NAME` for the child dispatches, and then runs the runbook (bare run: install then verify; teardown is never selected).
 A three-segment reference (`a/b/c`) is rejected rather than guessed.
-`cloudify deployment run <id>` and `cloudify deployment replay <id>` stay the compatibility aliases; direct package commands are unchanged.
+`cloudify deployment replay <id>` re-runs a recorded run through the same engine.
 `app reconfigure`, `app verify` and `app teardown` are reserved until Phase 4 has physical package state and claims, and say so.
 
 The deployment's current state lives at `<state-root>/deployments/<application>/<flavor>/<deployment>/manifest.json`, where `<state-root>` is `${XDG_STATE_HOME:-$HOME/.local/state}/cloudify`.
-`cloudify deployment show <id>` prints the manifest (identity, status, bindings, application commit, replayability) and the compatibility snapshots.
-`cloudify deployments` lists both legacy deployment ids and current manifests.
+`cloudify deployment show <id>` prints the manifest (identity, status, bindings, application commit, replayability) and the run snapshots.
+`cloudify deployments` lists the deployment directories and the current manifests.
 
 The manifest is created under one `flock` per deployment, before the first mutating step, and holds exactly the `schemas/v1/deployment-manifest.schema.json` fields:
 identity, application commit, development override, lifecycle status, creation time, target bindings, and the last run and event IDs (null until Phase 6 writes run and event records).
@@ -73,31 +71,29 @@ A caller-supplied `--target` that differs is a rebinding and needs `--migrate-ta
 The manifest records the Cloudify commit of the runbook and recipes in use.
 A dirty or unidentified tree is refused unless `CLOUDIFY_DEVELOPMENT_OVERRIDE=1` is set; the run is then recorded with `development_override: true` and is never labelled replayable.
 
-## Desired inputs: the nested path, read-through and migration
+## Desired inputs: the nested path, and the one-shot migration
 
 Desired inputs live at `<config-root>/deployments/<application>/<flavor>/<deployment>/values.yaml` (0700 directories, 0600 files), flat `KEY: value` like every other store.
-Until that file exists, a read falls through to the legacy single-ID store `<config-root>/deployments/<id>/config.yaml`, so an existing deployment still resolves, still runs and still replays with no data transformation.
-A write goes to the legacy store until an explicit application reference is supplied, and to the nested path afterwards.
-The nested write fails closed while the legacy store still holds keys the nested store lacks, and names the migration command, so a partial nested store can never shadow the legacy store silently.
+It is the only desired-inputs store: a read and a write both resolve it from the active application reference (`CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, `CLOUDIFY_DEPLOYMENT_NAME`, which `cloudify app run` exports).
+Without an application reference there is no deployment source: `cloudify vars set --deployment <id>` fails closed and names the application command, and the dispatch ladder forwards no deployment value.
 
-`cloudify deployment migrate <id> --application <app> [--flavor <flavor>] [--name <name>] [--dry-run] [--force]` moves the legacy inputs to the nested path.
+`cloudify deployment migrate <id> --application <app> [--flavor <flavor>] [--name <name>] [--dry-run] [--force]` is a temporary one-shot bridge, deleted once the existing stores are moved: it is the only reader of the old single-ID store `<config-root>/deployments/<id>/config.yaml` and copies it once into the nested path.
 It prints an inventory-only report (names and paths, never a value) and a merge plan (`add`/`conflict`, names only), so `--dry-run` shows exactly what would change.
-The legacy ID is never split to guess the tuple: application and flavor must be stated.
-The copy is idempotent (a key already present with the same value is a no-op), never deletes a key, and never deletes the legacy store, so a rollback needs no reverse transformation.
+The deployment ID is never split to guess the tuple: application and flavor must be stated.
+The copy is idempotent (a key already present with the same value is a no-op) and never deletes a key or the single-ID store.
 A key the destination holds with a different value is refused unless `--force`.
 
 ## Phases
 
 The machine phase names are `install`, `reconfigure`, `verify`, `teardown`.
 Default phase per step type: `launch` and `install` -> `install`; `configure` -> `reconfigure`; `verify` -> `verify`; `uninstall` -> `teardown`.
-`run` and `human-gate` have no default and must declare `phase=` in a canonical runbook.
+`run` and `human-gate` have no default and must declare `phase=`.
 An unknown phase, or a typed step whose explicit phase contradicts its own operation, is rejected before execution.
-A bare canonical run selects `install` then `verify`.
+A bare run selects `install` then `verify`.
 Teardown and reconfigure are explicit: `--phase teardown`, `--phase reconfigure`.
 `--yes` confirms a `human-gate`; it never selects teardown.
 Preflight inspects only the selected phases, so a teardown-only value cannot block an install run.
 Document order is preserved inside each selected phase; phases run in the order `install`, `reconfigure`, `verify`, `teardown`.
-A legacy runbook with no `--phase` keeps executing every step in document order.
 
 ## How a child dispatch gets the mapping
 
@@ -121,11 +117,11 @@ The map carries names only: no value is added to the environment beyond the inpu
 Remove exactly what the run added, in this order:
 
 1. Software legs (`uninstall`, `unexpose`) - they need ssh and any grant alive.
-2. `cloudify deployment delete <id>` - store + registry records.
+2. The observation records: `cloudify_registry_delete_deployment <id>` sweeps the node and instance buckets once application teardown removes the store (Phase 7).
 3. Policy then identity: `ivps acl revoke` before `ivps tag delete` (the API rejects a tag still in use).
 4. Instances: never the operator-provided ones; only those the runbook launched.
 
-Never in the forward run: a teardown section after a `human-gate` is reachable by `deployment run --yes` (gate auto-confirmed, then teardown).
+Never in the forward run: a teardown section after a `human-gate` is reachable by `app run --yes` (gate auto-confirmed, then teardown).
 Run it with `--phase teardown` (canonical) or `--from <first-teardown-id>` and explicit `id=` on teardown steps.
 Keep the ivps snapshot; prove the policy flipped (`ivps acl show`).
 
@@ -133,8 +129,9 @@ Validation: the amnesiac test. A fresh agent session, given only the cloudify sk
 
 ## Engine
 
-`cloudify deployment run <id>` executes a runbook (found by front-matter `deployment:`, or `--runbook <path>`).
-Front-matter declares the deployment (legacy) and its named targets; each step is a fence whose info string types it and, for `run`/`human-gate` in a canonical runbook, names its phase:
+`cloudify app run <application>[/<flavor>] [--name <name>]` executes the application's canonical runbook.
+The lower-level `cloudify_deployment_run` engine takes `--runbook <path>`, which `cloudify deployment replay` uses to re-run a recorded runbook outside the tree.
+Front-matter declares the deployment and its named targets; each step is a fence whose info string types it and names its phase for `run`/`human-gate`:
 
     ```bash step=install target=guest pkg=xfce id=install-xfce
     cloudify --on "$TARGET_GUEST" install xfce
@@ -143,8 +140,7 @@ Front-matter declares the deployment (legacy) and its named targets; each step i
 Types: `launch|install|configure|verify|uninstall|run|human-gate`. Every step but `human-gate` and `run` needs `target=`; the four package types need `pkg=` and preflight its required vars. `run` is a generic passthrough (arbitrary operator shell, e.g. `ivps expose-direct`).
 Targets bind with `--target name=addr`, else the deployment var `TARGET_<NAME>`.
 `--dry-run` prints the plan (including the selected phases) and runs nothing (and creates no manifest).
-An application-shaped runbook (canonical or legacy) also writes the deployment manifest; a path with no application shape carries no identity and writes no manifest.
-`cloudify_runbook_find_app <application> [<flavor>]` is the dual-discovery primitive: the canonical path first, then the legacy one.
+A canonical runbook also writes the deployment manifest; a path outside the tree carries no identity and writes no manifest.
 
 Each run writes a 0600 snapshot in `${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/` (target bindings, raw values by name, step outputs).
 `cloudify deployment replay <id> [--at <run>]` re-runs one: the snapshot's bindings and values are seeded (references resolved) and the same engine runs, so a repeated run sees the recorded values even if the store changed.

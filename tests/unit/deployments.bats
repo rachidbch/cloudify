@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for lib/deployments.sh (ADR-011)
+# Tests for lib/deployments.sh (ADR-011, state model v2 Phase 3)
 
 setup() {
     source tests/helpers/common.bash
@@ -19,10 +19,9 @@ teardown() {
 # --- Function definitions ---
 
 @test "deployment functions are defined after sourcing" {
-    [ "$(type -t cloudify_deployment_create)" = "function" ]
-    [ "$(type -t cloudify_deployment_delete)" = "function" ]
     [ "$(type -t cloudify_deployment_list)" = "function" ]
-    [ "$(type -t cloudify_deployment_use)" = "function" ]
+    [ "$(type -t cloudify_deployment_show)" = "function" ]
+    [ "$(type -t cloudify_deployment_migrate)" = "function" ]
     [ "$(type -t cloudify_vars_set)" = "function" ]
     [ "$(type -t cloudify_vars_delete)" = "function" ]
     [ "$(type -t cloudify_vars_list)" = "function" ]
@@ -33,7 +32,7 @@ teardown() {
 @test "module guard prevents double-sourcing" {
     source lib/deployments.sh
     source lib/deployments.sh
-    [ "$(type -t cloudify_deployment_create)" = "function" ]
+    [ "$(type -t cloudify_deployment_list)" = "function" ]
 }
 
 # --- Deployment dir helpers ---
@@ -55,58 +54,32 @@ teardown() {
     [ "$status" -ne 0 ]
 }
 
-# --- Deployment CRUD ---
+# --- Deployment list ---
 
-@test "cloudify_deployment_create creates dir and config, is idempotent" {
-    run cloudify_deployment_create my-cluster
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -q "my-cluster"
-    [ -d "$CLOUDIFY_DEPLOYMENTS_DIR/my-cluster" ]
-    [ -f "$CLOUDIFY_DEPLOYMENTS_DIR/my-cluster/config.yaml" ]
-    # Idempotent: no error on re-create
-    run cloudify_deployment_create my-cluster
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -q "already exists"
-}
-
-@test "cloudify_deployment_delete removes deployment dir" {
-    cloudify_deployment_create my-cluster
-    run cloudify_deployment_delete my-cluster
-    [ "$status" -eq 0 ]
-    [ ! -d "$CLOUDIFY_DEPLOYMENTS_DIR/my-cluster" ]
-}
-
-@test "cloudify_deployment_delete is no-op for nonexistent" {
-    run cloudify_deployment_delete nonexistent
-    [ "$status" -eq 0 ]
-}
-
-@test "cloudify_deployment_list shows created deployments" {
+@test "cloudify_deployment_list lists current manifests" {
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    source lib/state.sh
     run cloudify_deployment_list
     echo "$output" | grep -q "(no deployments)"
-    cloudify_deployment_create prod
-    cloudify_deployment_create dev
+
+    local bindings="$CLOUDIFY_TMP/bindings.tsv"
+    printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\tcloudify\n' > "$bindings"
+    cloudify_manifest_write myapp default prod applying 0123456789abcdef0123456789abcdef01234567 false "$bindings"
     run cloudify_deployment_list
-    echo "$output" | grep -q "prod"
-    echo "$output" | grep -q "dev"
-}
-
-@test "cloudify_deployment_use prints export command" {
-    cloudify_deployment_create my-cluster
-    run cloudify_deployment_use my-cluster
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -q "export CLOUDIFY_DEPLOYMENT=my-cluster"
-}
-
-@test "cloudify_deployment_use errors on nonexistent" {
-    run cloudify_deployment_use nonexistent
-    [ "$status" -ne 0 ]
+    echo "$output" | grep -q "myapp/default --name prod"
 }
 
 # --- Var management ---
 
+# An explicit application reference: the three tuple components exported, which
+# is what `cloudify app run` does before any child dispatch. The deployment ID
+# stays the run label; the store is the nested path.
+_app_ref() {
+    export CLOUDIFY_APPLICATION="$1" CLOUDIFY_FLAVOR="$2" CLOUDIFY_DEPLOYMENT_NAME="$3"
+}
+
 @test "vars: set/get/delete cycle" {
-    cloudify_deployment_create testdep
+    _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
 
     # Set var
@@ -126,7 +99,7 @@ teardown() {
 }
 
 @test "vars: set overwrites existing key" {
-    cloudify_deployment_create testdep
+    _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
     cloudify_vars_set K3S_TOKEN "old-token"
     run cloudify_vars_set K3S_TOKEN "new-token"
@@ -139,7 +112,7 @@ teardown() {
 }
 
 @test "vars: multiple vars coexist" {
-    cloudify_deployment_create testdep
+    _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
     cloudify_vars_set K3S_TOKEN "token-abc"
     cloudify_vars_set K3S_URL "https://server:6443"
@@ -156,8 +129,16 @@ teardown() {
     echo "$output" | grep -q "CLOUDIFY_DEPLOYMENT"
 }
 
+@test "vars: set without an application reference fails closed" {
+    export CLOUDIFY_DEPLOYMENT=testdep
+    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
+    run cloudify_vars_set FOO bar
+    [ "$status" -ne 0 ]
+    echo "$output" | grep -q "application reference"
+}
+
 @test "vars: list (no vars)" {
-    cloudify_deployment_create testdep
+    _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
     run cloudify_vars_list
     [ "$status" -eq 0 ]
@@ -165,7 +146,7 @@ teardown() {
 }
 
 @test "vars: list --json produces valid JSON" {
-    cloudify_deployment_create testdep
+    _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
     cloudify_vars_set K3S_TOKEN "token-abc"
     cloudify_vars_set CLUSTER_NAME "my-prod"
@@ -183,7 +164,7 @@ teardown() {
 }
 
 @test "vars: delete nonexistent is no-op" {
-    cloudify_deployment_create testdep
+    _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
     run cloudify_vars_delete DOES_NOT_EXIST
     [ "$status" -eq 0 ]
@@ -192,9 +173,12 @@ teardown() {
 # --- Deployment-wide var reading (remote integration) ---
 
 @test "_cloudify_deployment_read_vars reads and exports vars, returns names" {
-    cloudify_deployment_create testdep
-    # Write config directly (simulating vars set)
-    cat > "$CLOUDIFY_DEPLOYMENTS_DIR/testdep/config.yaml" <<'EOF'
+    _app_ref testapp default testdep
+    # Write the store directly (simulating vars set)
+    local store
+    store=$(_cloudify_deployment_config)
+    mkdir -p "$(dirname "$store")"
+    cat > "$store" <<'EOF'
 K3S_TOKEN: secret-123
 K3S_URL: https://server:6443
 EOF
@@ -226,7 +210,7 @@ EOF
 # --- Var values with special characters ---
 
 @test "vars: values with spaces and special chars" {
-    cloudify_deployment_create testdep
+    _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
     cloudify_vars_set GREETING "hello world"
     cloudify_vars_set URL "https://example.com/path?foo=bar&baz=qux"
@@ -237,7 +221,7 @@ EOF
 }
 
 @test "vars: empty value is stored as empty" {
-    cloudify_deployment_create testdep
+    _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
     cloudify_vars_set EMPTY ""
     run cloudify_vars_show EMPTY
@@ -247,31 +231,27 @@ EOF
 # --- Two deployments track independent vars ---
 
 @test "vars: two deployments have independent state" {
-    cloudify_deployment_create dep-a
-    cloudify_deployment_create dep-b
     export CLOUDIFY_DEPLOYMENT=dep-a
+    _app_ref testapp default dep-a
     cloudify_vars_set TOKEN "token-a"
     export CLOUDIFY_DEPLOYMENT=dep-b
+    _app_ref testapp default dep-b
     cloudify_vars_set TOKEN "token-b"
     # Verify isolation
     export CLOUDIFY_DEPLOYMENT=dep-a
+    _app_ref testapp default dep-a
     run cloudify_vars_show TOKEN
     [ "$output" = "token-a" ]
     export CLOUDIFY_DEPLOYMENT=dep-b
+    _app_ref testapp default dep-b
     run cloudify_vars_show TOKEN
     [ "$output" = "token-b" ]
 }
 
 # ---------------------------------------------------------------
-# Nested desired inputs, read-through, migration and the read
-# surface (state model v2 Phase 3 slice 3B)
+# Nested desired inputs, migration and the read surface
+# (state model v2 Phase 3)
 # ---------------------------------------------------------------
-
-# An explicit application reference: the three tuple components exported, which
-# is what `cloudify app run` does before any child dispatch.
-_app_ref() {
-    export CLOUDIFY_APPLICATION="$1" CLOUDIFY_FLAVOR="$2" CLOUDIFY_DEPLOYMENT_NAME="$3"
-}
 
 @test "nested inputs: values file path is one validated component per level" {
     run cloudify_deployment_values_file myapp default prod
@@ -286,57 +266,39 @@ _app_ref() {
     [ "$status" -ne 0 ]
 }
 
-@test "nested inputs: no explicit application reference keeps the legacy store" {
-    cloudify_deployment_create legacy-dep
-    [ "$(_cloudify_deployment_config legacy-dep)" = "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml" ]
-    [ "$(_cloudify_deployment_write_config legacy-dep)" = "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml" ]
-
-    export CLOUDIFY_DEPLOYMENT=legacy-dep
-    cloudify_vars_set LEGACY_KEY legacy-value
-    run cloudify_vars_show LEGACY_KEY
-    [ "$output" = "legacy-value" ]
-    [ -f "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml" ]
-}
-
-@test "nested inputs: read-through uses the legacy store until the nested file exists" {
-    cloudify_deployment_create legacy-dep
-    export CLOUDIFY_DEPLOYMENT=legacy-dep
-    cloudify_vars_set FROM_LEGACY read-through
-
+@test "nested inputs: the store is the nested path of the application reference" {
     _app_ref myapp default prod
-    # No nested file yet: the read resolves through the legacy single-ID store.
-    [ "$(_cloudify_deployment_config legacy-dep)" = "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml" ]
-    [ "$(_cloudify_deployment_read_vars legacy-dep >/dev/null; printf ok)" = "ok" ]
-    run cloudify_vars_deployment_show FROM_LEGACY legacy-dep
-    [ "$output" = "read-through" ]
-}
+    [ "$(_cloudify_deployment_config)" = "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/prod/values.yaml" ]
 
-@test "nested inputs: a write after an explicit application reference goes to the nested path only" {
-    cloudify_deployment_create legacy-dep
-    export CLOUDIFY_DEPLOYMENT=legacy-dep
-    cloudify_vars_set OLD_KEY old-value
-
-    _app_ref myapp default prod
-    # The legacy store still holds OLD_KEY: the write guard refuses until the operator migrates.
-    run cloudify_vars_deployment_write NEW_KEY new-value legacy-dep
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"migrate"* ]]
-    [ ! -f "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/prod/values.yaml" ]
-
-    # After the explicit migration the nested store is authoritative.
-    run cloudify_deployment_migrate legacy-dep --application myapp --flavor default --name prod
-    [ "$status" -eq 0 ]
-    run cloudify_vars_deployment_write NEW_KEY new-value legacy-dep
-    [ "$status" -eq 0 ]
+    export CLOUDIFY_DEPLOYMENT=myapp.default.prod
+    cloudify_vars_set FROM_NESTED nested-value
+    run cloudify_vars_show FROM_NESTED
+    [ "$output" = "nested-value" ]
     [ -f "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/prod/values.yaml" ]
-    run grep -c '^NEW_KEY:' "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml"
-    [ "$output" = "0" ]
-    run grep '^OLD_KEY:' "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-dep/config.yaml"
-    [ "$output" = "OLD_KEY: old-value" ]
+}
+
+@test "nested inputs: without an application reference there is no store" {
+    export CLOUDIFY_DEPLOYMENT=myapp.default.prod
+    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
+    run _cloudify_deployment_config
+    [ "$status" -ne 0 ]
+    [ -z "$output" ]
+    run cloudify_vars_show FROM_NESTED
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"application reference"* ]]
+}
+
+# A single-ID store as `deployment migrate` finds it (the pre-nested layout).
+_write_single_id_store() {
+    local id="$1"
+    shift
+    mkdir -p "$CLOUDIFY_DEPLOYMENTS_DIR/$id"
+    printf '%s\n' "$@" > "$CLOUDIFY_DEPLOYMENTS_DIR/$id/config.yaml"
+    chmod 600 "$CLOUDIFY_DEPLOYMENTS_DIR/$id/config.yaml"
 }
 
 @test "migrate: requires an explicit application and flavor, never splits the ID" {
-    cloudify_deployment_create legacy-app
+    _write_single_id_store legacy-app 'PUBLIC_HOST: demo.example.com'
     run cloudify_deployment_migrate legacy-app
     [ "$status" -ne 0 ]
     [[ "$output" == *"--application is required"* ]]
@@ -348,10 +310,7 @@ _app_ref() {
 }
 
 @test "migrate: dry run writes nothing and prints names and paths, never a value" {
-    cloudify_deployment_create legacy-app
-    export CLOUDIFY_DEPLOYMENT=legacy-app
-    cloudify_vars_set API_TOKEN "PLACEHOLDER_MIGRATE_SECRET"
-    cloudify_vars_set PUBLIC_HOST "demo.example.com"
+    _write_single_id_store legacy-app 'API_TOKEN: PLACEHOLDER_MIGRATE_SECRET' 'PUBLIC_HOST: demo.example.com'
 
     run cloudify_deployment_migrate legacy-app --application myapp --flavor default --name default --dry-run
     [ "$status" -eq 0 ]
@@ -366,11 +325,8 @@ _app_ref() {
     [ ! -f "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default/values.yaml" ]
 }
 
-@test "migrate: copies idempotently, keeps the legacy store, mode 0600" {
-    cloudify_deployment_create legacy-app
-    export CLOUDIFY_DEPLOYMENT=legacy-app
-    cloudify_vars_set API_TOKEN "@@literal-at-sign"
-    cloudify_vars_set PUBLIC_HOST "demo.example.com"
+@test "migrate: copies idempotently, keeps the single-ID store, mode 0600" {
+    _write_single_id_store legacy-app 'API_TOKEN: @@literal-at-sign' 'PUBLIC_HOST: demo.example.com'
 
     run cloudify_deployment_migrate legacy-app --application myapp --flavor default --name default
     [ "$status" -eq 0 ]
@@ -380,8 +336,8 @@ _app_ref() {
     [ "$(stat -c '%a' "$target")" = "600" ]
     [ "$(stat -c '%a' "$(dirname "$target")")" = "700" ]
 
-    # The legacy store is untouched: a rollback needs no reverse transformation.
-    run grep -c '^API_TOKEN:' "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-app/config.yaml"
+    # The single-ID store is untouched: a rollback needs no reverse transformation.
+    run grep -c '^PUBLIC_HOST:' "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-app/config.yaml"
     [ "$output" = "1" ]
 
     run cloudify_deployment_migrate legacy-app --application myapp --flavor default --name default
@@ -391,14 +347,10 @@ _app_ref() {
 }
 
 @test "migrate: a conflicting destination key is refused unless --force" {
-    cloudify_deployment_create legacy-app
-    export CLOUDIFY_DEPLOYMENT=legacy-app
-    cloudify_vars_set PUBLIC_HOST "legacy.example.com"
+    _write_single_id_store legacy-app 'PUBLIC_HOST: legacy.example.com'
 
-    _app_ref myapp default default
     mkdir -p "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default"
     printf 'PUBLIC_HOST: nested.example.com\n' > "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default/values.yaml"
-    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
 
     run cloudify_deployment_migrate legacy-app --application myapp --flavor default --name default
     [ "$status" -ne 0 ]
@@ -413,7 +365,7 @@ _app_ref() {
     [ "$output" = "PUBLIC_HOST: legacy.example.com" ]
 }
 
-@test "show: prints the manifest and the compatibility snapshots, never a value" {
+@test "show: prints the manifest and the run snapshots, never a value" {
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
     source lib/state.sh
     _app_ref myapp default default
@@ -434,20 +386,14 @@ _app_ref() {
     [[ "$output" == *"replayable: yes"* ]]
     [[ "$output" == *"snapshots: 1"* ]]
     [[ "$output" == *"binding guest: cloudai:cloudify"* ]]
+    [[ "$output" == *"inputs: $CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/default/values.yaml"* ]]
     # the read surface carries names, paths and bindings, never an applied value
     [[ "$output" != *"value."* ]]
 }
 
-@test "list: current manifests are listed alongside legacy deployment ids" {
-    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
-    source lib/state.sh
-    cloudify_deployment_create legacy-listed
-    local bindings="$CLOUDIFY_TMP/bindings.tsv"
-    printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\tcloudify\n' > "$bindings"
-    cloudify_manifest_write myapp default default applying 0123456789abcdef0123456789abcdef01234567 false "$bindings"
-
-    run cloudify_deployment_list
+@test "show: no application reference prints no inputs path" {
+    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
+    run cloudify_deployment_show unknown-dep
     [ "$status" -eq 0 ]
-    [[ "$output" == *"legacy-listed"* ]]
-    [[ "$output" == *"myapp/default --name default"* ]]
+    [[ "$output" == *"inputs: <none: no application reference>"* ]]
 }

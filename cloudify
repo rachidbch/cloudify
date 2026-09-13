@@ -37,19 +37,14 @@ function usage() {
         cloudify vars show <key> [scope] [--resolve] [--reveal]  show a var (masked unless --reveal)
         cloudify vars list|ls [--json] [scope] [--reveal]        list vars (masked unless --reveal)
         cloudify vars declared <pkg> [--sources] [--reveal]      show a package's declared vars
-        cloudify deployment create|new <id>            create a deployment
-        cloudify deployment delete|del <id>            delete a deployment (+ its node/instance records)
         cloudify deployment list|ls                    list deployments and their manifests
-        cloudify deployment use <id>                   print export command
         cloudify deployment show <id>                  manifest status, bindings, commit, replayability
         cloudify deployment migrate <id> --application <app> [--flavor <flavor>] [--name <name>] [--dry-run] [--force]
-                                                       copy the legacy single-ID inputs to the nested path (inventory-only report)
+                                                       one-shot bridge: copy the single-ID inputs to the nested path
+                                                       (temporary, delete this command once stores are migrated)
         cloudify app run <application>[/<flavor>] [--name <name>] [--target name=addr]...
                                                        run the application (bare run: install then verify);
                                                        --name defaults to 'default', --flavor defaults to 'default'
-        cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--phase <phase>]... [--yes]
-                                                       run a runbook (--dry-run: plan only; a canonical runbook with no
-                                                       --phase selects install then verify; --yes never selects teardown)
         cloudify deployment replay <id> [--at <run>] [--runbook <path>] [--target name=addr]...
                                                        re-run a recorded run (--at: path, basename or timestamp prefix;
                                                        default: newest; --dry-run: plan only)
@@ -247,7 +242,7 @@ function _cloudify_execute_package_action() {
     # and _cloudify_note_bg records the path for the registry write. verify is
     # excluded on purpose: it resolves its own package yaml and writes no record
     # (inv 33, 32).
-    if [[ "$action" != "verify" && "${CLOUDIFY_LEGACY_VARS:-}" != "1" ]]; then
+    if [[ "$action" != "verify" ]]; then
         _cloudify_context_file_init
     fi
     if [[ "$action" == "install" ]]; then
@@ -579,8 +574,8 @@ function main() {
                             [[ -n "$var_val" ]] || die "Usage: cloudify vars set <key> <value> [--stdin|--file <path>]" ;;
                     esac
                     if [[ "$_CV_SCOPE" == deployment || "$_CV_SCOPE" == ambient ]]; then
-                        # With an explicit application reference the write goes to the
-                        # nested values.yaml, never to the legacy single-ID store.
+                        # The write goes to the nested values.yaml of the active
+                        # application reference; without one it fails closed.
                         cloudify_vars_deployment_write "$var_key" "$var_val" "$_CV_SCOPE_ARG"
                     else
                         var_file=$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")
@@ -636,16 +631,6 @@ function main() {
         deployment | deploy | dep)
             shift
             case "${1:-}" in
-                create | new)
-                    shift
-                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment create <id>"
-                    cloudify_deployment_create "$1"
-                    ;;
-                delete | del | rm)
-                    shift
-                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment delete <id>"
-                    cloudify_deployment_delete "$1"
-                    ;;
                 list | ls)
                     cloudify_deployment_list
                     ;;
@@ -658,21 +643,12 @@ function main() {
                     shift
                     cloudify_deployment_migrate "$@"
                     ;;
-                use)
-                    shift
-                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment use <id>"
-                    cloudify_deployment_use "$1"
-                    ;;
-                run)
-                    shift
-                    cloudify_deployment_run "$@"
-                    ;;
                 replay)
                     shift
                     cloudify_deployment_replay "$@"
                     ;;
                 *)
-                    die "Usage: cloudify deployment <create|delete|list|use|show|migrate|run|replay> [args]"
+                    die "Usage: cloudify deployment <list|show|migrate|replay> [args]"
                     ;;
             esac
             break

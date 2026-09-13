@@ -4,6 +4,15 @@ Read-only description of the code as it exists today. Purpose: the mandatory
 precondition artifact for the project CRITICAL GATE before any `lib/` change.
 File:line citations are against the current checkout.
 
+**Status and authority.** This is a *descriptive* artifact. It records what the
+code does today, including behaviour the redesign deliberately changes. Where it
+conflicts with `REDESIGN.md`, ADR-022 or ADR-023, those documents win. A later
+phase's CRITICAL GATE step may **supersede** an invariant below, not only append
+to it; when it does, the superseding step must restate the invariant it replaces
+and say why. Two invariants are already superseded by design: #8 (the context is
+no longer metadata-only; see `REDESIGN.md:302`) and re-assert item 4 (the
+envsubst allow-list gains names, e.g. the Phase 4 frame nonce).
+
 ---
 
 ## 1. The payload path
@@ -476,10 +485,14 @@ Each is stated as "X must remain true", with the code that would break it.
    remotely. Breakage: switching to unconstrained `envsubst` (no allow-list),
    which would substitute `$HOME`/`$PATH`/etc. locally and corrupt the payload.
 
-8. **The context file is metadata-only and 0600.** It holds source/form/secret/
-   reference/digest, never a plaintext or resolved value. Code:
-   `lib/context.sh:322-346` (write block), `lib/context.sh:200-203,348-349`
-   (0600). Breakage: adding a `value.<NAME>.value` line or chmod loosening.
+8. **The context file is 0600, ephemeral, and removed only after the parent has
+   recorded the outcome.** It may carry each declared value's resolved runtime
+   form, because the target process needs it (`REDESIGN.md:302`, `:208`), and the
+   file must never survive the dispatch. What must never hold a plaintext or
+   resolved value is a log, a manifest, package state, a run record or an event.
+   Code today: `lib/context.sh:322-346` (write block),
+   `lib/context.sh:200-203,348-349` (0600). Breakage: chmod loosening, or letting
+   the file outlive the dispatch (`lib/registry.sh:415-417` removes it today).
 
 9. **The registry record and the payload share one resolution.** The record's
    `var.<NAME>` raw value must come from the dispatch context; a dispatch with a
@@ -585,9 +598,10 @@ store. This is the Phase 2 fix.
     (`lib/registry.sh:388-419`) if the carried raw value changes where it lives.
 - `lib/context.sh`:
   - `cloudify_context_build` (`lib/context.sh:181`) and its write block
-    (`lib/context.sh:322-346`) — only to add a *metadata-safe* raw-value channel
-    (e.g. a replayable reference or a per-name raw literal) WITHOUT adding
-    plaintext to the 0600 context file.
+    (`lib/context.sh:322-346`) — to carry each declared name's resolved runtime
+    form plus its provenance, per `REDESIGN.md:208` and `:302`. The file stays
+    0600 and stays ephemeral; plaintext is permitted here and forbidden in logs,
+    state, runs and events.
   - `_cloudify_vars_sources_record` consumers if the provenance shape changes.
 - `lib/vars.sh`:
   - `_cloudify_vars_emit` (`lib/vars.sh:163-196`) and
@@ -614,14 +628,18 @@ store. This is the Phase 2 fix.
 
 ### Invariants to re-assert after the fix
 
-Re-run and re-assert invariants #1, #2, #4, #5, #8, #9, and #10 above, and
+Re-run and re-assert invariants #1, #2, #4, #5, #9, and #10 above, and
 specifically:
 
 1. The record's `var.<NAME>` equals the payload's forwarded value for every
    declared name, for every source label (environment, deployment, package,
    global, recipe), including the present-but-empty store value.
-2. The context file still contains no plaintext or resolved literal.
+2. The context file is 0600, is removed exactly once, and no plaintext or
+   resolved value from it reaches a log, a manifest, package state, a run record
+   or an event. (Invariant #8 as superseded by design.)
 3. The context path still never appears in `ps`/ssh argv, and cleanup still
    happens exactly once (success / failure / self-created).
-4. The envsubst allow-list is unchanged and still produces a byte-identical
-   payload for the same inputs (verify with the `/tmp` simulation of section 1).
+4. The envsubst allow-list still substitutes exactly the names it should. If a
+   phase adds a name (for example the Phase 4 frame nonce), that phase must state
+   the addition and re-prove byte-identical payloads for the unchanged inputs;
+   the "allow-list unchanged" wording holds only while no phase has added one.

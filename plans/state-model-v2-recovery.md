@@ -60,7 +60,7 @@ A required design change needs a new append-only ADR and Rachid's consent before
 - [ ] When a review returns actionable feedback, fix the slice, rerun its focused tests and shellcheck, then request that review again from a fresh context.
 - [ ] `git status --short` is clean at every committed boundary.
 
-Test levels are fixed. L0 is shellcheck plus syntax. L1 is a real-target driver suite at `tests/unit/drivers/context.bats`, `tests/unit/drivers/state.bats`, `tests/unit/drivers/event.bats` and `tests/unit/drivers/runbook.bats`, created in R1 and R2, that runs the real code against a real target without dispatching a package. L2 is one no-verify mutation of the disposable package `fixture-split` (already in `pkg/`) with an inspection of Cloudify's own log. L3 is `PKG_VERIFY_TIMEOUT=30 cloudify verify fixture-split`. L4 is the scoped bats acceptance harness. Every level names a concrete artifact, so none can be satisfied by a no-op.
+Test levels are fixed. L0 is shellcheck plus syntax. L1 is a real-target driver suite that runs the real code against a real target without dispatching a package, landing one file per slice: `tests/unit/drivers/context.bats` in R1, `tests/unit/drivers/state.bats` and `tests/unit/drivers/runbook.bats` in R2, `tests/unit/drivers/event.bats` in Phase 4.1 alongside the event writer it drives, and a run-record driver in Phase 6. L2 is one no-verify mutation of the disposable package `fixture-split` (already in `pkg/`) with an inspection of Cloudify's own log. L3 is `PKG_VERIFY_TIMEOUT=30 cloudify verify fixture-split`. L4 is the scoped bats acceptance harness. Every level names a concrete artifact, and no driver is created before the code it drives, so none can be satisfied by an empty green file.
 
 ## Phase exit gate (every code phase)
 
@@ -107,13 +107,14 @@ The description artifact exists: `plans/state-model-v2-forwarding-description.md
 
 - [x] Spawn a read-only subagent whose only mission is to describe how the env-var forwarding path works end to end: `declare -f` payload extraction, the `envsubst` allow-list, single-quoted `$VAR` remoting, first-write-wins claiming, and where the registry record and snapshot are written.
 - [x] Write that description as an artifact and cite it from the plan before touching code.
-- [ ] State explicitly why the context change cannot break forwarding or the shadows, naming the invariants preserved and what was traced. Use the artifact's section "What a safe Phase 2 fix may and may not touch" as the invariant list.
+- [ ] Use the artifact's section "What a safe Phase 2 fix may and may not touch" as the starting invariant list, dropping the two invariants the artifact marks as superseded by design (the metadata-only context and the frozen allow-list) and following `REDESIGN.md` where they differ.
+- [x] State explicitly in the plan why the context change cannot break forwarding or the shadows: name each invariant preserved, each mechanism traced, and the test that re-asserts it. Written before the first `lib/` edit in `plans/state-model-v2-phase2-non-breakage.md`.
 - [ ] Obtain explicit consent from Rachid and record it in `LOGS.md`.
 
 ### R1.1 Freeze the context contract before code
 
 - [ ] Create `tests/e2e/two-host-application.bats` with every scenario named and the phase that unlocks each one, so the per-phase E2E gate has a real artifact from R1 onward.
-- [ ] Create the L1 driver suite `tests/unit/drivers/context.bats`, `tests/unit/drivers/state.bats`, `tests/unit/drivers/event.bats` and `tests/unit/drivers/runbook.bats`, running the real code on a real target without dispatching a package.
+- [ ] Create `tests/unit/drivers/context.bats`, the L1 driver that runs the real context code on a real target without dispatching a package. The state, runbook, event and run-record drivers land with the code they drive, in R2, Phase 4.1 and Phase 6, so no driver can be created empty and pass green.
 - [ ] Add `schemas/v1/dispatch-context.schema.json` and valid and invalid fixtures.
 - [ ] Add `dispatch-context` to `schemas/v1/validate.sh`'s artifact list and update `schemas/v1/README.md` file list, field lists, validator description and `schema_version` rule for the fifth schema.
 - [ ] Use actual JSON for the context so the schema and the file cannot disagree, with `schema_version: 1` like every other machine-owned artifact.

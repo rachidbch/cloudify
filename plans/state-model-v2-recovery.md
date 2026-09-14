@@ -160,7 +160,6 @@ The context keeps its current flat `key: value` format. Converting it to JSON wi
 The full per-name field set is deferred with the JSON context contract. The separate package-view requirement remains open for a decision before it is moved.
 - [ ] Include dispatch identity, resolved target identity and address, application commit, run ID, stable step ID, package instance and phase.
 - [ ] Fields without a producer stay null: run ID until Phase 6, stable step ID outside a runbook, and application commit outside an application run; package instance is the specified `default` until explicit multi-instance support lands.
-- [ ] Include a separate declared-value view for each top-level package and every dependency that may execute.
 - [ ] Define and test the exact projections from each context value into `package-state.applied.values`, `package-state.last_attempt.requested` and event `values` before any writer uses them.
 - [x] Secret classification origin is exactly `explicit`, `heuristic` or `none`; the stale `legacy-heuristic` term is removed from schemas, fixtures and docs.
 - [ ] Permit resolved plaintext transiently in both this 0600 ephemeral context and collector shell exports, as `REDESIGN.md` requires; neither channel may be removed before payload execution.
@@ -186,12 +185,11 @@ The gain was one `grep -qx` per claimed name and one parse-back. Not worth that 
 
 - [ ] Prove the repair leaves shadowing untouched: no shadowed command (`sudo`, `apt-get`, `add-apt-repository`, `git`) and no file under `lib/shadows/` is read, called or modified by it.
 
-- [ ] Build each package view once from the source ladder at context creation.
+- [ ] Build the dispatch's value set once from the source ladder at context creation.
 - [ ] Do not change the context builder's internal temp files: the claim ledger and the provenance file stay files. See the rejected option above for why.
 - [ ] Add the raw source form to what the builder records per name, beside the existing provenance record, so the registry record and the snapshot can be built from the context without reopening a store.
 - [ ] Preserve install precedence exactly as `REDESIGN.md` states, strongest first: caller or step environment, deployment desired inputs, application defaults, package defaults, global defaults, recipe defaults.
-- [ ] Resolve application input mappings into the relevant package view only, never into one shared ambient namespace.
-- [ ] Preserve separate defaults when two packages use the same variable name differently.
+- [ ] Resolve application input mappings only into names a package in the dispatch declares, never into an arbitrary ambient name.
 - [ ] Preserve file-store secret reference resolution and caller-environment literal timing.
 - [ ] Compute literal-secret digests while the resolved plaintext is in the private context.
 - [ ] Update the JSON-context readers that currently parse flat lines: the allow-list name extraction in `lib/remote.sh:_cloudify_dispatch_vars` (`lib/remote.sh:123`) and `cloudify_context_read` (`lib/context.sh:364-376`), which the DEBUG rendering loop calls for `value.<name>.source` and `value.<name>.secret` (`lib/remote.sh:250-260`). Today's `sed` and flat key match find nothing once the context is JSON, which would empty the allow-list and silently stop forwarding package values, and would make DEBUG report `source=recipe secret=false` for every name. Change the extraction and the reader only, never the payload template, the `envsubst` call or the stdin transport.
@@ -207,7 +205,7 @@ The gain was one `grep -qx` per claimed name and one parse-back. Not worth that 
 ### Prove the root defect is gone (R1.3)
 
 - [ ] Create a context, then mutate or trash every source file; payload, registry and snapshot must still use the original context answer.
-- [ ] Give a top-level package and dependency the same name with different package defaults; each package view must keep its own answer.
+- [ ] Prove the rule: when a top-level package and a dependency declare the same name, the named package's value wins and the dependency's does not (`tests/unit/context.bats`, "rightmost package wins and dependency recursion resolves through the context").
 - [ ] Cover environment, desired input, application default, package default, global default and recipe default independently.
 - [ ] Cover required, optional and declared-default names.
 - [ ] Cover plain, escaped-at, backend reference, multiline, spaces, quotes, colons and shell metacharacters.
@@ -283,7 +281,7 @@ Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-s
 - [ ] Pass every non-frame stdout byte through unchanged.
 - [ ] Keep local results in a private file and remote results in the framed stdout tail after the child command exits.
 - [ ] Include outcome, parent, package instance and phase for every attempted top-level package and dependency, with no values.
-- [ ] Reconcile results against every precomputed package view and fail closed on an unexpected package.
+- [ ] Reconcile results against every precomputed top-level package and dependency and fail closed on an unexpected package.
 - [ ] Freeze lock, state, event and result-frame tests before implementation.
 - [ ] Obtain independent SPEC and Technical design reviews, both `PASS` with no actionable feedback; this gate writes no code, so it runs the reviews only and skips the E2E lines.
 - [ ] Obtain explicit Rachid consent for the reviewed Phase 4 design before code.
@@ -302,7 +300,7 @@ This phase touches the remote result transport and the host lock in `lib/remote.
 
 ### State and event substrate (4.1)
 
-- [ ] Complete the deferred JSON dispatch-context contract from `ROADMAP.md` before state and event writers consume it: schema, full per-name fields, package views and `jq` validation.
+- [ ] Complete the deferred JSON dispatch-context contract from `ROADMAP.md` before state and event writers consume it: schema, full per-name fields and `jq` validation.
 - [ ] Tighten `schemas/v1/package-state.schema.json` so every new applied, attempt, health and claim object carries a non-null event ID, add the matching fixtures, and keep `bash schemas/v1/validate.sh` green.
 
 - [ ] Add collision-resistant run and event IDs without a new runtime dependency.

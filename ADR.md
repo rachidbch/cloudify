@@ -356,3 +356,18 @@ Decision:
 Consequences: operators must migrate known old artifacts before relying on v2 state.
 Rollback is a Git revert plus restoration from a pre-migration backup, not a permanent runtime switch.
 `REDESIGN.md` and the live plan use this decision; ADR-022 remains authoritative for the state model itself.
+
+## ADR-024: Values are dispatch-global; a package scopes a name by prefixing it
+
+Status: accepted 2026-09-14 (corrects the per-package value-view wording in `REDESIGN.md`; ADR-022 point 3 stands unchanged).
+
+Context: `REDESIGN.md` described the dispatch context as holding "a separate declared-value view for each top-level package and every dependency that may execute". That reads as per-package resolution, which is neither implemented nor desirable. One dispatch resolves every package's values into one set of names, and the first source to provide a name keeps it. Global scope is a feature: a configuration-only package declares a value and depends on the package it configures, so installing the configuration package forwards its value and the software package's recipe reads it. Per-package resolution would break that override, and the forwarded payload is one set of environment variables on the host, so it cannot carry two values for one name.
+
+Decision:
+
+1. One dispatch resolves its top-level packages and every dependency that may execute into one namespace, one value per name. There is no per-package value view.
+2. The named package is resolved before the packages it pulls in, so its value wins. That is the configuration-package pattern, pinned by `tests/unit/context.bats` ("rightmost package wins and dependency recursion resolves through the context").
+3. A package that needs a name no other package shares scopes it by prefixing the name with the package name in upper case, for example `CLOUDIFY_GUACAMOLE_DB_PASSWORD` or `CLOUDIFY_XFCE_RDP_PORT`.
+4. The context records resolved values and their provenance, not a per-package structure.
+
+Consequences: configuration-only packages keep working by depending on what they configure. Two packages that declare the same name share one value, and the one resolved first wins; a collision is prevented by prefixing. The plan and the context contract no longer require per-package views.

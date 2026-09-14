@@ -191,7 +191,7 @@ Folding an event log is not a substitute for inspecting a live host.
 ## One value resolution per dispatch
 
 A dispatch is one target's job. It carries one or more top-level packages and never spans two targets.
-One dispatch context therefore holds a value view per top-level package it carries.
+One dispatch context therefore holds the resolved values for every package the dispatch carries - the top-level packages and the dependencies they pull in - in one namespace.
 
 Resolution happens once and the context is written once, after resolution completes.
 A context written incrementally while resolution is still running is the last-writer-wins defect and is forbidden: later sources would overwrite earlier ones and the recorded source would drift from the value.
@@ -203,7 +203,8 @@ Records and events use a value's source form. Only the payload uses the resolved
 
 Before execution, Cloudify expands the static dependency graph and builds one private dispatch context.
 
-The context contains a separate declared-value view for each top-level package and every dependency that may execute.
+Values are dispatch-global: every top-level package and every dependency that may execute resolves into one namespace, and the first source to provide a name keeps it for the whole dispatch.
+The named package is resolved before the packages it pulls in, so its value wins over theirs - which is how one package configures another. A package that needs a variable no other package shares prefixes the name with the package name in upper case.
 
 The context contains:
 

@@ -1024,3 +1024,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ### 2026-09-14 - plan reconciliation: full context field set moved to JSON context work
 
 - The initial full context contract was conflated with the reduced flat context. Moved its field-set checkbox from the Phase 2 repair to the state and event substrate, where the deferred JSON context work belongs. Separate package views remain an open decision.
+
+### 2026-09-14 - per-package value-view spec purged; variable scope recorded
+
+- The design and the plan carried a per-package value-view requirement that was never implemented and contradicts the global-scope feature. Replaced with the real rule (one namespace per dispatch; the named package wins over the packages it pulls in; prefix a variable with the package name to scope it), recorded as ADR-024, documented in the README, and purged from the plan.

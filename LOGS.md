@@ -394,3 +394,10 @@
 ## 2026-09-14 - plan reconciliation: full context field set moved out of Phase 2
 
 - Confirmed the initial full context contract is owned by the deferred JSON context work. Moved the full per-name field-set checkbox from the Phase 2 repair (R1.1) to the state and event substrate (4.1), where the JSON schema, package views and `jq` validation belong. The separate package-view requirement remains open for discussion; no code changed.
+
+## 2026-09-14 - wrong spec purged: values are dispatch-global
+
+- Confirmed with Rachid: variable scope is dispatch-global by design. A configuration-only package declares a value and depends on the package it configures, so installing it forwards the configuration value and the software package's recipe reads it; the named package is resolved before the packages it pulls in, so its value wins. Pinned by `tests/unit/context.bats` ("rightmost package wins and dependency recursion resolves through the context").
+- Purged the per-package value-view wording from the plan (six lines) and from `REDESIGN.md` (two sentences: "holds a value view per top-level package" and "a separate declared-value view for each top-level package"). The plan now states the rule and points at the test instead.
+- Recorded the rule as ADR-024 and added a "Variable scope: one dispatch, one namespace" subsection to the README package-dev section, including the uppercase package-name prefixing convention that makes a variable package-scoped.
+- No code changed.

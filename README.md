@@ -407,7 +407,7 @@ dispatch job per target, waits for them, then writes each registry record.
 own shell, fills the context, renders the payload and ships it.
 - The context is a **file** because it crosses from the child (writer) to the parent
 (reader). A fork only inherits downward, so a file is the only channel back.
-- **One context per target**, holding a value view per package dispatched to that target.
+- **One context per target**, holding the resolved values for every package that target's dispatch carries, in one namespace.
 - It is 0600 and ephemeral: never on a command line, removed when the dispatch ends.
 
 Why it exists: the design it replaces computed the same values twice, in two different
@@ -597,6 +597,24 @@ their own — no last-write-wins race. The classic per-pkg yaml
 (`~/.config/cloudify/pkgs/<pkg>.yaml`) and the global `remote-vars.yaml` remain
 supported; the full five-source ladder is documented under "Package
 Configuration" above.
+
+#### Variable scope: one dispatch, one namespace
+
+A **dispatch** is one target's job. It resolves the values of every package it
+carries - the top-level packages and the dependencies they pull in - into **one
+set of names**, and forwards that set to the host as environment variables. There
+is one value per name for the whole dispatch.
+
+Global scope is deliberate: it is how one package configures another. If
+`myapp-config` declares `PORT` and depends on `myapp` (`pkg_depends myapp`), then
+`cloudify --on <host> install myapp-config` resolves `PORT` from the configuration
+package and forwards it, and `myapp`'s recipe reads the configured value. The named
+package is resolved before the packages it pulls in, so its value wins.
+
+The consequence: two packages that declare the same name share one value, and the
+one resolved first wins. To give a variable a package-scoped value, prefix it with
+the package name in upper case, e.g. `CLOUDIFY_GUACAMOLE_DB_PASSWORD` or
+`CLOUDIFY_XFCE_RDP_PORT`.
 
 #### Lifecycle (install / configure / uninstall)
 

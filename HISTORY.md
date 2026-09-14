@@ -1020,3 +1020,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Root cause: `ivps list` renders an unanswered node as a `<node> TIMEOUT` row and exits 0; the resolver kept only `<node>:<instance>` rows, so a timed-out node's instances vanished and it claimed "instance is not on node".
 - Fixed with Rachid's 2x2 frame (in ivps? x timed out?): (in ivps, timed out) -> Timeout for an instance target; (not in ivps, timed out) -> Error instead of a silently wrong external host; node targets exempt (metadata, no live probe); one probe retry before deciding.
 - Six red-first tests in tests/unit/targets.bats; ladder green: lint, focused resolver suites 144 ok, real resolver on the live inventory, full unit 644 ok, two-host E2E 4/4.
+
+### 2026-09-14 - plan reconciliation: full context field set moved to JSON context work
+
+- The initial full context contract was conflated with the reduced flat context. Moved its field-set checkbox from the Phase 2 repair to the state and event substrate, where the deferred JSON context work belongs. Separate package views remain an open decision.

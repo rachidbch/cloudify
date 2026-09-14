@@ -157,7 +157,7 @@ The context keeps its current flat `key: value` format. Converting it to JSON wi
 - [x] Create `tests/e2e/two-host-application.bats` with every scenario named and the phase that unlocks each one. Done for the Phase 2 repair: 4 scenarios green, 4 later-phase scenarios skipped by name.
 - [x] The L1 driver is not a new file. `tests/unit/context-wiring.bats` already runs the real code against a real machine without dispatching a package, so a `tests/unit/drivers/context.bats` would duplicate it and add a file rather than coverage. Later slices add a driver only if nothing existing covers the new wiring.
 - [ ] Add one field per name: the raw source form, the exact text the registry record and the snapshot must contain. It is carried in the context's transport encoding `t:<text>` or `b:<base64>` (chosen by `_cloudify_vars_raw_encode`, so a raw text that itself looks encoded is never mistaken for the transport); the record and snapshot decode it and keep their own existing `@base64:` convention for multiline values. Nothing else about the format changes.
-- [ ] Freeze the per-name field set: declaration kind, source label, source form, raw source form, resolved runtime form, secret classification origin.
+The full per-name field set is deferred with the JSON context contract. The separate package-view requirement remains open for a decision before it is moved.
 - [ ] Include dispatch identity, resolved target identity and address, application commit, run ID, stable step ID, package instance and phase.
 - [ ] Fields without a producer stay null: run ID until Phase 6, stable step ID outside a runbook, and application commit outside an application run; package instance is the specified `default` until explicit multi-instance support lands.
 - [ ] Include a separate declared-value view for each top-level package and every dependency that may execute.
@@ -302,6 +302,7 @@ This phase touches the remote result transport and the host lock in `lib/remote.
 
 ### State and event substrate (4.1)
 
+- [ ] Complete the deferred JSON dispatch-context contract from `ROADMAP.md` before state and event writers consume it: schema, full per-name fields, package views and `jq` validation.
 - [ ] Tighten `schemas/v1/package-state.schema.json` so every new applied, attempt, health and claim object carries a non-null event ID, add the matching fixtures, and keep `bash schemas/v1/validate.sh` green.
 
 - [ ] Add collision-resistant run and event IDs without a new runtime dependency.

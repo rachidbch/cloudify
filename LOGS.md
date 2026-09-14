@@ -418,3 +418,8 @@
 
 - Rachid corrected the framing: the plan tracks planned work; `ROADMAP.md` tracks work to be seen in a vague future. The JSON dispatch-context contract is roadmapped (nothing depends on it), so it must not appear as a scheduled task. Removed the Phase 4 task that had promoted it, and restored the piece that is genuinely planned: the projections from each context value into `package-state.applied.values`, `package-state.last_attempt.requested` and event `values`, which the Phase 4 writers need.
 - `ROADMAP.md` now says the slice is deliberately unscheduled rather than "the first step of Phase 4". The R1 references to "the deferred JSON context work" stay as pointers.
+
+## 2026-09-14 - JSON context proposal completed in ROADMAP
+
+- The JSON context work now has one complete entry, in `ROADMAP.md` only: a proposal, explicitly unscheduled and not accepted. Added the open design question it must settle first (resolution record versus dispatch descriptor) and the full field set (declaration kind, source label, source form, raw source form, resolved runtime form, secret classification origin), with the dispatch fields of the chosen shape typed nullable while they have no producer. Renamed "How" to "Proposed steps" and extended the validation step to reject a missing expected field or an unexpected field.
+- The plan keeps only pointers to it. No code changed.

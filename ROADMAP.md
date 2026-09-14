@@ -72,7 +72,9 @@ operator discipline (`--from <id>`), which lives nowhere in the artifact.
 
 - [ ] Hosts pull the branch tip, so reconfigure or teardown cannot claim to execute the application commit recorded in state. Phase 7 of `PLAN.md` must pin remote execution and fail on commit drift before historical teardown is enabled. Automatic rebuild and command replay are deferred by ADR-022.
 
-## Dispatch context as a JSON contract (state-model v2, deferred)
+## Dispatch context as a JSON contract (state-model v2, proposal)
+
+Status: a proposal for discussion. Not scheduled, not accepted, and nothing depends on it.
 
 ### What
 
@@ -81,9 +83,27 @@ Convert the private dispatch context from its flat `key: value` format to JSON, 
 `schemas/v1/validate.sh`, and make local `jq` the one parent-side JSON encoder and validator.
 The context is ephemeral and nothing persisted reads it, so there is no migration.
 
+### The open design question (settle this before any code)
+
+The context is, in production, a **resolution record**. The payload's allow-list, the registry
+record, the run snapshot and the DEBUG rendering read only `value.<NAME>.*`; no production
+consumer reads the identity fields. `ADR-024` settled the value scope (one namespace per
+dispatch; the named package wins) and left those identity fields unused.
+
+So this proposal has two shapes. The choice is the first thing to settle:
+
+1. **Resolution record.** The context carries the resolved values and their provenance, plus
+the identity fields that already exist: `action`, `deployment`, `phase`, `target`. JSON adds
+the full per-name field set, machine checking and native multi-line values.
+2. **Dispatch descriptor.** The context also describes the dispatch: application commit, run
+and step IDs, package identity and package instance, each typed nullable while it has no
+producer. The original design's field list implies this shape, and it would let every writer
+read one file. Cost: the context grows a field whenever a writer needs one, and the parent
+already holds every one of those facts.
+
 ### Why
 
-Three gains. The contract becomes machine-checked instead of checked by hand, so a malformed
+Three gains, under either shape. The contract becomes machine-checked instead of checked by hand, so a malformed
 context fails loudly rather than silently emptying the payload's name allow-list. Multi-line
 values become native, so the `@base64:` convention is no longer needed inside the context
 (it stays in the registry record and the run snapshot, which are user-visible). And one
@@ -105,12 +125,11 @@ message**. The Phase 2 repair does not need the format change: it needs one adde
 raw source form, which the flat format carries equally well. So the format change was split
 out rather than ridden along with a repair to the most breakage-prone code in the repository.
 
-### How
+### Proposed steps
 
 One slice, its own consent and its own review. It is deliberately unscheduled: nothing depends on it, because the state and event writers take identity from the parent (`ADR-024`) and read only the context's values, which the flat format already carries. It is a quality improvement waiting for a slot, not a prerequisite of any phase.
 
-1. Write `schemas/v1/dispatch-context.schema.json` covering every field the context carries,
-   with fields that have no producer yet typed nullable. Add valid and invalid fixtures.
+1. Fix the field set and write `schemas/v1/dispatch-context.schema.json`: for each declared value, its declaration kind, source label, source form, raw source form, resolved runtime form and secret classification origin, plus the dispatch fields of the chosen shape, with every field that has no producer yet typed nullable. Add valid and invalid fixtures.
 2. Add `dispatch-context` to the artifact list in `schemas/v1/validate.sh` and update
    `schemas/v1/README.md`: file list, field lists, validator description, and the
    `schema_version` rule that currently covers four schemas.
@@ -125,7 +144,7 @@ One slice, its own consent and its own review. It is deliberately unscheduled: n
    keeping those eight cases byte-identical with `cmp`.
 6. Replace `context_version: 1` with `schema_version: 1`, and drop the `@base64:` convention
    inside the context once the value can carry a newline natively.
-7. Validate the context before payload construction and before any mutation.
+7. Validate the context before payload construction and before any mutation, and reject a context with a missing expected field or an unexpected field.
 
 Acceptance: the eight payload golden cases and the nine registry record golden cases stay
 byte-identical; each converted reader has a test that fails when it returns nothing; the

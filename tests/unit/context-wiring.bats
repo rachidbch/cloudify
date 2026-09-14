@@ -136,7 +136,7 @@ capture() {
     [[ "$argv" != *"deployment-value"* ]]
 }
 
-@test "the parent-created context file is filled by the child, mode 600, no plaintext" {
+@test "the parent-created context file is filled by the child, mode 600, and carries the reference not the plaintext" {
     declare_pkg foo FIX_REF_SECRET
     reset_stores
     set_deployment FIX_REF_SECRET "@base64:$(b64 'fixture-secret-xyz')"
@@ -153,8 +153,9 @@ capture() {
     [ "$(cloudify_context_read "$ctx" value.FIX_REF_SECRET.source)" = "deployment" ]
     [ "$(cloudify_context_read "$ctx" value.FIX_REF_SECRET.form)" = "reference" ]
     [ "$(cloudify_context_read "$ctx" value.FIX_REF_SECRET.reference)" = "@base64:$(b64 'fixture-secret-xyz')" ]
+    [ "$(cloudify_context_read "$ctx" value.FIX_REF_SECRET.raw)" = "t:@base64:$(b64 'fixture-secret-xyz')" ]
 
-    subrubric "metadata only: the literal appears nowhere in the file or the log"
+    subrubric "the raw form carried is the reference; the resolved literal appears nowhere in the file or the log"
     ! grep -q 'fixture-secret-xyz' "$ctx"
     ! grep -rq 'fixture-secret-xyz' "$CLOUDIFY_TMP/logs"
 }
@@ -211,11 +212,14 @@ echo "\${LOCAL_VAR:-unset}" > "$CLOUDIFY_TMP/local-var-out"
 EOF
     printf 'LOCAL_VAR: fromyaml\n' > "$cfg/pkgs/localtest.yaml"
 
-    # The router pins CLOUDIFY_TMP (cloudify constants, overriding the env), so
-    # the dispatch context lands there. Only files this run creates are captured.
+    # The router pins CLOUDIFY_TMP (cloudify constants, overriding the env), and
+    # the dispatch context now lives in the swept context subdirectory
+    # (CLOUDIFY_CONTEXT_DIR = $CLOUDIFY_TMP/context). Only files this run
+    # creates are captured.
     local ctx_root before_file saved ctx_path ctx_pid ctx
     ctx_root=$(sed -n 's/^export CLOUDIFY_TMP=//p' "$CLOUDIFY_SCRIPT_DIR/cloudify" | head -1)
-    # The router creates this on its first run (cloudify:123), so a fresh
+    ctx_root="$ctx_root/context"
+    # The router creates this on its first run (cloudify_init_paths), so a fresh
     # container must not make this test depend on an earlier run having done it.
     mkdir -p "$ctx_root"
     [ -d "$ctx_root" ]
@@ -289,6 +293,10 @@ EOF
 
     subrubric "remote dispatch records the parent's path too"
     grep -q '"${CLOUDIFY_CONTEXT_FILE:-}"' "$router"
+
+    subrubric "the swept context directory is pinned and emptied on exit"
+    grep -q 'export CLOUDIFY_CONTEXT_DIR=' "$router"
+    grep -q 'rm -rf "$CLOUDIFY_CONTEXT_DIR"' "$BATS_TEST_DIRNAME/../../lib/utils.sh"
 
     subrubric "the legacy walker is gone from lib/remote.sh"
     ! grep -q '_cloudify_pkg_remote_vars' "$BATS_TEST_DIRNAME/../../lib/remote.sh"

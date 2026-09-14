@@ -411,9 +411,9 @@ candidate_file() {
     [ "${ctx_names[*]}" = "A_ONLY B_ONLY DEP_ONLY SHARED" ]
 }
 
-# --- no plaintext secrets ---------------------------------------------------
+# --- secrets: raw form in the context, plaintext out of the log ------------
 
-@test "no secret plaintext reaches the context file or the log" {
+@test "a literal secret's raw form is carried in the context, absent from the log, and swept on cleanup" {
     declare_pkg foo FIXTURE_SECRET
     reset_stores
     set_deployment FIXTURE_SECRET "fixture-secret-value-xyz"
@@ -425,9 +425,18 @@ candidate_file() {
     [ "$FIXTURE_SECRET" = "fixture-secret-value-xyz" ]
     [ "$(cloudify_context_read "$CTX" value.FIXTURE_SECRET.secret)" = "true" ]
     [ -n "$(cloudify_context_read "$CTX" value.FIXTURE_SECRET.digest)" ]
-    subrubric "the literal appears nowhere in the metadata file or the log"
-    ! grep -q "fixture-secret-value-xyz" "$CTX"
+
+    subrubric "the raw source form IS the plaintext and lives in the context (the record needs it)"
+    [ "$(cloudify_context_read "$CTX" value.FIXTURE_SECRET.raw)" = "t:fixture-secret-value-xyz" ]
+
+    subrubric "the log never carries the plaintext"
     ! grep -rq "fixture-secret-value-xyz" "$CLOUDIFY_TMP/logs"
+
+    subrubric "the dispatch context does not survive cleanup, even with DEBUG"
+    declare -gA _CLOUDIFY_BG_CONTEXT=()
+    _CLOUDIFY_BG_CONTEXT[999]="$CTX"
+    CLOUDIFY_LOG_LEVEL=DEBUG cleanup
+    [ ! -e "$CTX" ]
 }
 
 @test "an explicit secret declaration marker classifies a non-heuristic name" {

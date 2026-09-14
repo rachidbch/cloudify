@@ -283,8 +283,10 @@ function cloudify_registry_record_build() {
     local action="${1:-}" deployment="${2:-}" node="${3:-}" instance="${4:-}" ssh_host="${5:-}" pkg="${6:-}" context="${7:-}"
     local own_context=""
     if [[ -z "$context" ]]; then
-        own_context=$(mktemp "$CLOUDIFY_TMP/cloudify-registry-context-XXXXXX") \
-            || die "Registry: cannot create a context file under $CLOUDIFY_TMP."
+        local _ctx_dir="${CLOUDIFY_CONTEXT_DIR:-$CLOUDIFY_TMP}"
+        mkdir -p "$_ctx_dir" 2>/dev/null || true
+        own_context=$(mktemp "$_ctx_dir/cloudify-registry-context-XXXXXX") \
+            || die "Registry: cannot create a context file under $_ctx_dir."
         chmod 600 "$own_context"
         trap '[[ "${FUNCNAME[0]:-}" == "cloudify_registry_record_build" ]] && rm -f "${own_context:-}"' RETURN
         local cand_file

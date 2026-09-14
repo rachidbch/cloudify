@@ -90,6 +90,15 @@ function cleanup() {
     # forms, are removed here rather than left for the DEBUG skip below.
     [[ -n "${CLOUDIFY_CONTEXT_FILE:-}" && -e "${CLOUDIFY_CONTEXT_FILE:-}" ]] \
         && rm -f "$CLOUDIFY_CONTEXT_FILE"
+    # The swept context directory: every context file (dispatch, runbook, and
+    # the builder's dot-prefixed temps) lives here, so emptying the directory
+    # removes them all without name enumeration. This is the bound for the
+    # resolved values the context carries; it runs before the DEBUG return.
+    if [[ -n "${CLOUDIFY_CONTEXT_DIR:-}" && -d "$CLOUDIFY_CONTEXT_DIR" ]]; then
+        rm -rf "$CLOUDIFY_CONTEXT_DIR"
+    fi
+    # Fallback for a caller that built a context outside the directory (tests,
+    # direct lib callers without the router's CLOUDIFY_CONTEXT_DIR).
     if [[ -n "${CLOUDIFY_TMP:-}" && -d "$CLOUDIFY_TMP" ]]; then
         find "$CLOUDIFY_TMP" -maxdepth 1 -name '.cloudify-*' -exec rm -f {} + 2>/dev/null || true
     fi

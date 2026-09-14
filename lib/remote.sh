@@ -92,8 +92,10 @@ function cloudify_remote_payload_template() {
 # it. The path never travels as an argument, so it never enters ssh argv
 # (design section 5, inv 2).
 function _cloudify_context_file_init() {
-    CLOUDIFY_CONTEXT_FILE=$(mktemp "$CLOUDIFY_TMP/cloudify-context-XXXXXX") \
-        || die "Cannot create a dispatch context file under $CLOUDIFY_TMP."
+    local _ctx_dir="${CLOUDIFY_CONTEXT_DIR:-$CLOUDIFY_TMP}"
+    mkdir -p "$_ctx_dir" 2>/dev/null || true
+    CLOUDIFY_CONTEXT_FILE=$(mktemp "$_ctx_dir/cloudify-context-XXXXXX") \
+        || die "Cannot create a dispatch context file under $_ctx_dir."
     chmod 600 "$CLOUDIFY_CONTEXT_FILE"
     export CLOUDIFY_CONTEXT_FILE
 }

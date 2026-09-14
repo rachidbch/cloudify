@@ -184,7 +184,9 @@ function _cloudify_runbook_pkg_context() {
     local action="${1:-}" deployment="${2:-}" phase="${3:-}" pkg="${4:-}" \
         file cand
     [[ -n "$pkg" ]] || return 1
-    file=$(mktemp "$CLOUDIFY_TMP/cloudify-runbook-context-XXXXXX") || return 1
+    local _ctx_dir="${CLOUDIFY_CONTEXT_DIR:-$CLOUDIFY_TMP}"
+    mkdir -p "$_ctx_dir" 2>/dev/null || true
+    file=$(mktemp "$_ctx_dir/cloudify-runbook-context-XXXXXX") || return 1
     chmod 600 "$file" 2>/dev/null || true
     cand=$(mktemp "$CLOUDIFY_TMP/cloudify-runbook-candidates-XXXXXX") || { rm -f "$file"; return 1; }
     cloudify_context_candidate_names "$pkg" > "$cand" 2>/dev/null || true
@@ -222,7 +224,7 @@ function _cloudify_runbook_resolver_value() {
             [[ -n "$context" && -r "$context" ]] || return 1
             _enc=$(cloudify_context_read "$context" "value.$name.raw") || return 1
             [[ -n "$_enc" ]] || return 1
-            value=$(_cloudify_vars_raw_decode "$_enc")
+            value=$(_cloudify_vars_raw_decode "$_enc") || return 1
             ;;
         *) return 1 ;;
     esac
@@ -1435,6 +1437,12 @@ function cloudify_runbook_execute() {
 
         local -A _vline=() _vseen=()
         local -a _vorder=()
+        # Carry forward the lines already in the deployment desired-inputs file,
+        # so no existing snapshot line disappears when a later run rewrites it.
+        # This is a copy of prior raw lines, not a value-resolution walk: every
+        # declared name's value is resolved from the context below
+        # (_cloudify_runbook_resolver_value), and that resolver view overrides
+        # the carried-forward line.
         cfg=$(_cloudify_deployment_config) || cfg=""
         if [[ -f "$cfg" ]]; then
             local vline vkey

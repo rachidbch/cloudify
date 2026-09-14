@@ -73,6 +73,7 @@ export CLOUDIFY_LOCAL_BIN="$HOME"/.local/bin
 export CLOUDIFY_RECIPE_FILENAME="init.sh"
 export CLOUDIFY_BOOTSTRAP_URL="https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh"
 export CLOUDIFY_TMP=/tmp/cloudify
+export CLOUDIFY_CONTEXT_DIR="${CLOUDIFY_TMP}/context"
 
 #== ENVIRONMENT
 : "${CLOUDIFY_IS_LOCAL:=true}" && export CLOUDIFY_IS_LOCAL
@@ -124,6 +125,11 @@ function cloudify_init_paths() {
 
     # Ensure tmp folder exists
     [[ -d "$CLOUDIFY_TMP" ]] || mkdir -p "$CLOUDIFY_TMP"
+    # The swept context directory: every dispatch context, the runbook context
+    # and the builder's temps live here, and cleanup() empties it on exit
+    # (lib/utils.sh), so no name enumeration can miss a context file.
+    [[ -d "$CLOUDIFY_CONTEXT_DIR" ]] || mkdir -p "$CLOUDIFY_CONTEXT_DIR"
+    chmod 700 "$CLOUDIFY_CONTEXT_DIR" 2>/dev/null || true
 
     # Initialize log file for this session
     cloudify_init_log

@@ -196,6 +196,31 @@ record_of() {
     [ -z "$output" ]
 }
 
+@test "validate: an empty b: raw is rejected (the encoder never produces one)" {
+    declare_pkg eb64pkg SPEC
+    set_deployment SPEC a-value
+    build_ctx eb64pkg
+
+    sed 's/^value.SPEC.raw: .*/value.SPEC.raw: b:/' "$CTX" > "$CTX.bad"
+
+    run cloudify_context_validate "$CTX.bad"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"empty base64 raw form"* ]]
+}
+
+@test "snapshot resolver: a corrupt b: raw fails closed rather than resolving empty" {
+    subrubric "the fail-closed guard must fire on the context read, not silently return empty"
+    declare_pkg corruptpkg PLAIN_NAME
+    set_deployment PLAIN_NAME a-value
+    build_ctx corruptpkg
+
+    sed 's/^value.PLAIN_NAME.raw: .*/value.PLAIN_NAME.raw: b:!!!!not-base64!!!!/' "$CTX" > "$CTX.bad"
+
+    run _cloudify_runbook_resolver_value PLAIN_NAME deployment corruptpkg "$CTX.bad"
+    [ "$status" -ne 0 ]
+    [ -z "$output" ]
+}
+
 @test "validate: an unexpected line is rejected" {
     declare_pkg oddpkg SPEC
     set_deployment SPEC a-value
@@ -219,4 +244,19 @@ record_of() {
     CLOUDIFY_LOG_LEVEL=DEBUG cleanup
 
     [ ! -e "$ctx" ]
+}
+
+@test "cleanup: the swept context directory removes a runbook context too" {
+    subrubric "the runbook context holds raw source forms; name enumeration must not miss it"
+    local cdir="$CLOUDIFY_TMP/context"
+    mkdir -p "$cdir"
+    local rb="$cdir/cloudify-runbook-context-TEST123"
+    printf 'value.X.raw: t:secret\n' > "$rb"
+
+    export CLOUDIFY_CONTEXT_DIR="$cdir"
+    CLOUDIFY_LOG_LEVEL=DEBUG cleanup
+    unset CLOUDIFY_CONTEXT_DIR
+
+    [ ! -e "$rb" ]
+    [ ! -e "$cdir" ]
 }

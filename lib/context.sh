@@ -30,8 +30,8 @@
 #   cloudify_context_build <action> <deployment> <phase> <declared-names-file> <packages...>
 #     Exports every resolved runtime literal into the CALLING shell (never
 #     through `$(...)`, which would lose the exports in a subshell), never
-#     prints a value on stdout, and writes the metadata context to
-#     $CLOUDIFY_CONTEXT_FILE.
+#     prints a value on stdout, and writes the dispatch context (including
+#     each declared value's raw source form) to $CLOUDIFY_CONTEXT_FILE.
 #   cloudify_context_source_of <name> <pkg>
 #     Pure: prints environment|deployment|package|global|recipe, never exports.
 #   cloudify_context_read <context-file> <field>
@@ -60,9 +60,6 @@
 # `.remote-vars` (a shape every existing declaration reader already ignores, so
 # it is backward compatible), the explicit `@<backend>:<locator>` reference form,
 # plus the name heuristic as defense in depth.
-#
-# Slice 2A is additive: nothing here is wired into the payload, the registry
-# writer, the snapshot or the router dispatch yet.
 
 [[ -n "${_CLOUDIFY_CONTEXT_LOADED:-}" ]] && return 0
 _CLOUDIFY_CONTEXT_LOADED=1
@@ -186,7 +183,8 @@ _cloudify_context_cleanup_tmp() {
 
 # cloudify_context_build <action> <deployment> <phase> <declared-names-file> <packages...>
 # Exports each resolved runtime literal into the calling shell and writes the
-# metadata-only context file to $CLOUDIFY_CONTEXT_FILE. Prints nothing on stdout.
+# dispatch context file (each declared value's source form, raw source form and
+# resolved runtime form) to $CLOUDIFY_CONTEXT_FILE. Prints nothing on stdout.
 function cloudify_context_build() {
     local action="${1:-}" deployment="${2:-}" phase="${3:-}" declared_file="${4:-}"
     shift 4 2>/dev/null || true
@@ -197,9 +195,14 @@ function cloudify_context_build() {
     fi
     local context_dir
     context_dir=$(dirname "$CLOUDIFY_CONTEXT_FILE")
-    if [[ ! -d "$context_dir" ]]; then
-        die "cloudify_context_build: context directory '$context_dir' does not exist."
-    fi
+    # The context dir is created by the parent (_cloudify_context_file_init)
+    # and by cloudify_init_paths, but cleanup() can run early (an ERR trap in a
+    # subshell, e.g. a failing `comm` inside a command substitution) and empty
+    # it. Recreate it rather than dying, exactly as the pre-swept-dir code
+    # recreated a wiped context file. This keeps the build self-healing without
+    # weakening the fail-loud validation below.
+    mkdir -p "$context_dir" \
+        || die "cloudify_context_build: cannot create context directory '$context_dir'."
 
     local ledger visited order sources out
     ledger=$(mktemp) || die "cloudify_context_build: cannot create a claim ledger."
@@ -408,7 +411,9 @@ function cloudify_context_validate() {
             || die "context '$file': value '$_sn' has no raw source form."
         case "$raw" in
             t:*) ;;
-            b:*) printf '%s' "${raw#b:}" | base64 -d >/dev/null 2>&1 \
+            b:*) [[ -n "${raw#b:}" ]] \
+                    || die "context '$file': value '$_sn' has an empty base64 raw form." \
+                ; printf '%s' "${raw#b:}" | base64 -d >/dev/null 2>&1 \
                     || die "context '$file': value '$_sn' has a malformed base64 raw form." ;;
             *) die "context '$file': value '$_sn' has a malformed raw form." ;;
         esac

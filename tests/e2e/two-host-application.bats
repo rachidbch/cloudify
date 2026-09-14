@@ -196,9 +196,14 @@ teardown_file() {
     unset CLOUDIFY_LOG_LEVEL
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 
-    # Catches both the context file and the builder's dot-prefixed temps, which
-    # hold the raw source forms when a build dies mid-walk.
-    run bash -c "find '$CLOUDIFY_TMP' -maxdepth 1 \\( -name '*context*' -o -name '.cloudify-*' \\) | wc -l"
+    # Catches the context file, the builder's dot-prefixed temps (which hold the
+    # raw source forms when a build dies mid-walk) and the runbook context. The
+    # router pins CLOUDIFY_TMP to /tmp/cloudify (overriding the env), and every
+    # context file lives in the swept context directory under it, so a recursive
+    # scan from the router's own tmp root must find none.
+    local ctx_root
+    ctx_root=$(sed -n 's/^export CLOUDIFY_TMP=//p' "$(command -v cloudify)" | head -1)
+    run bash -c "find '$ctx_root' \\( -name '*context*' -o -name '.cloudify-*' \\) 2>/dev/null | wc -l"
     [ "$output" -eq 0 ] || { echo "context files left behind: $output"; return 1; }
 }
 

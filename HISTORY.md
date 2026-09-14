@@ -995,3 +995,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Verified: lint rc 0; full unit suite 631 ok 0 not ok; ten proofs including two mutation proofs (resolve once, destroy the sources, the record and the snapshot still report the original value); a new two-host end-to-end gate `tests/e2e/two-host-application.bats`, 4 scenarios green with later-phase scenarios skipped by name.
 - Both independent reviews of the repair returned FAIL twice. Of the re-review findings, 3 are real (the decoder's non-zero return is ignored; the validator accepts an empty `b:` body; a stale docstring), 2 come from an abandoned "no plaintext in the context" rule the tests still assert, and 1 is a symptom of a name-based cleanup drain instead of the agreed swept context directory.
 - Rule confirmed by Rachid: non-vault secrets may sit in the context; the protection is the context's location and lifetime, not keeping plaintext out. When a rule changes, the tests and comments that assert it must change in the same commit, or every reviewer re-derives the old rule.
+
+### 2026-09-14 - Phase 2 repair exit gate closed
+
+- Fixed the six re-review findings (decode fail-closed, empty `b:` rejection, docstring, the swept context directory, and the two dead-rule test rewrites), then closed the SPEC re-review's two blockers and three notes (registry `own_context` into the swept dir, e2e probe widened, carry-forward documented, stale sentence deleted, plan wording corrected).
+- Both independent reviews returned PASS with file:line evidence: SPEC on claude, Technical on codex. Full unit suite 634 ok / 0 not ok; lint rc 0.
+- The live two-host E2E caught a regression the swept directory introduced: a pre-existing `set -E` + ERR-trap fires `cleanup()` inside a subshell when `comm -12` gets unsorted input, removing the context directory mid-dispatch; the build now recreates it. E2E green (4 scenarios, 4 skipped by name, hosts torn down).
+- The `comm` unsorted-input landmine (`lib/packages.sh`, `lib/hosts.sh`) is recorded for a separate gated fix; it is out of this slice's scope.

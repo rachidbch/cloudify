@@ -1002,3 +1002,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Both independent reviews returned PASS with file:line evidence: SPEC on claude, Technical on codex. Full unit suite 634 ok / 0 not ok; lint rc 0.
 - The live two-host E2E caught a regression the swept directory introduced: a pre-existing `set -E` + ERR-trap fires `cleanup()` inside a subshell when `comm -12` gets unsorted input, removing the context directory mid-dispatch; the build now recreates it. E2E green (4 scenarios, 4 skipped by name, hosts torn down).
 - The `comm` unsorted-input landmine (`lib/packages.sh`, `lib/hosts.sh`) is recorded for a separate gated fix; it is out of this slice's scope.
+
+### 2026-09-14 - comm -12 unsorted-intersection fixed (separate gated slice)
+
+- Root cause: `comm -12` intersected two unsorted `find` lists, returning a wrong intersection and a non-zero exit that, under `set -E` + `trap cleanup ERR`, fired `cleanup()` mid-dispatch and wiped the context directory.
+- Fix (CRITICAL GATE, consent given): `| grep -v '^$' | sort` on both `comm` inputs in `lib/packages.sh` and `lib/hosts.sh`. Two red-first tests assert the full intersection and no sort warnings.
+- Ladder green: lint, L1 driver, L2 install with 0 sort warnings, full unit 636 ok, two-host E2E 4/4 with hosts torn down.

@@ -110,6 +110,24 @@ create_mock_pkg() {
     [[ "$output" != *"nondefault"* ]]
 }
 
+@test "multi-tag intersection sorts comm input (no warnings) and returns every match" {
+    # `comm -12` requires sorted input. The old code fed it unsorted `find`
+    # order, so it emitted "not in sorted order" on stderr and dropped members
+    # of the intersection.
+    create_mock_pkg zebra @web @default
+    create_mock_pkg apple @web @default
+    create_mock_pkg mango @web
+    create_mock_pkg kiwi @web @default
+
+    run cloudify_list_packages_by_tags @web @default
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"not in sorted order"* ]]
+    [[ "$output" == *"zebra"* ]]
+    [[ "$output" == *"apple"* ]]
+    [[ "$output" == *"kiwi"* ]]
+    [[ "$output" != *"mango"* ]]
+}
+
 @test "module guard prevents double-sourcing" {
     source lib/packages.sh
     source lib/packages.sh

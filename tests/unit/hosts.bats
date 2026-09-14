@@ -133,6 +133,23 @@ STUB
     [[ "$output" != *"anotherhost"* ]]
 }
 
+@test "multi-tag intersection sorts comm input (no warnings) and returns every match" {
+    # `comm -12` requires sorted input; unsorted `find` order made it warn and
+    # drop members. The two lists must DIFFER for the drop to manifest.
+    mkdir -p "$CLOUDIFY_DIR/inventory/zebra/@default" "$CLOUDIFY_DIR/inventory/zebra/@db"
+    mkdir -p "$CLOUDIFY_DIR/inventory/apple/@default" "$CLOUDIFY_DIR/inventory/apple/@db"
+    mkdir -p "$CLOUDIFY_DIR/inventory/mango/@default"
+    mkdir -p "$CLOUDIFY_DIR/inventory/kiwi/@default" "$CLOUDIFY_DIR/inventory/kiwi/@db"
+
+    run cloudify_list_hosts_by_tags @default @db
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"not in sorted order"* ]]
+    [[ "$output" == *"zebra"* ]]
+    [[ "$output" == *"apple"* ]]
+    [[ "$output" == *"kiwi"* ]]
+    [[ "$output" != *"mango"* ]]
+}
+
 @test "cloudify_list_hosts_by_tags rejects on remote host" {
     _create_mock_inventory
     CLOUDIFY_IS_LOCAL=false

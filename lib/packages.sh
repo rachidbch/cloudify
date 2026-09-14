@@ -74,9 +74,13 @@ function cloudify_list_packages_by_tags() {
                     packages_list=$current_packages_list
                 else
                     # 'comm' is a standard linux utility that compares FILES line by line
-                    # It is used here to find the intersection of 2 LISTS
-                    # The 'echo ... | tr ...' is here to transform lists in simili-files that can be fed to comm command
-                    packages_list=$(comm -12 <(echo "$packages_list" | tr ' ' '\n') <(echo "$current_packages_list" | tr ' ' '\n'))
+                    # It is used here to find the intersection of 2 LISTS, and it
+                    # REQUIRES sorted input (unsorted input drops members, warns and
+                    # exits non-zero, which under `set -E` + the ERR trap fires a
+                    # destructive cleanup mid-run). `grep -v '^$'` drops the empty
+                    # line the `tr '\n' ' '` producers leave behind; `sort` makes
+                    # the input sorted and the intersection correct.
+                    packages_list=$(comm -12 <(echo "$packages_list" | tr ' ' '\n' | grep -v '^$' | sort) <(echo "$current_packages_list" | tr ' ' '\n' | grep -v '^$' | sort))
                 fi
             fi
         done

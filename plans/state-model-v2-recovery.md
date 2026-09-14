@@ -216,7 +216,7 @@ The gain was one `grep -qx` per claimed name and one parse-back. Not worth that 
 - [ ] Prove the corrected resolution keeps payload and registry bytes identical to the pre-deletion goldens; treat any changed byte as a defect to explain, not a new golden to accept.
 - [x] Run focused context, vars, remote, registry, runbook, replay and router suites. Green.
 - [x] Run `task lint` and the full unit suite: lint rc 0, 619 ok, 0 not ok.
-- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
+- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing. The two-host end-to-end run is green (4 scenarios); both reviews returned FAIL and their findings are logged in `LOGS.md`. Not met.
 
 ## Audit and trim the Phase 3 foundations (R2)
 

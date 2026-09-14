@@ -93,26 +93,15 @@ _cloudify_context_secret_names() {
 }
 
 # _cloudify_context_emit_declared <pkg> - the declaration mirror of a package,
-# one `NAME<TAB>PKG<TAB>KIND` line per declared name, in declaration order.
-# Same three shapes as lib/vars.sh:cloudify_vars_pkg_read.
+# one `NAME<TAB>PKG<TAB>KIND` line per declared name, in declaration order. The
+# shapes live in the one enumerator (lib/vars.sh:cloudify_vars_declared_names).
 _cloudify_context_emit_declared() {
-    local pkg="${1:-}" decl line name mirror kind
-    [[ -n "$pkg" && -n "${CLOUDIFY_DIR:-}" ]] || return 0
-    decl="$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
-    [[ -f "$decl" ]] || return 0
-    while IFS= read -r line; do
-        line="$(_cloudify_vars_trim "$line")"
-        [[ -z "$line" || "$line" == \#* ]] && continue
-        if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
-            name="${BASH_REMATCH[1]}"; mirror="${BASH_REMATCH[2]}"
-            if [[ -n "$mirror" ]]; then kind=defaulted; else kind=optional; fi
-        elif [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)$ ]]; then
-            name="${BASH_REMATCH[1]}"; kind=required
-        else
-            continue
-        fi
+    local pkg="${1:-}" name kind
+    [[ -n "$pkg" ]] || return 0
+    while IFS=$'\t' read -r name kind _; do
+        [[ -n "$name" ]] || continue
         printf '%s\t%s\t%s\n' "$name" "$pkg" "$kind"
-    done < "$decl"
+    done < <(cloudify_vars_declared_names "$pkg")
 }
 
 # _cloudify_context_report <message> - best-effort diagnostic; never a value.

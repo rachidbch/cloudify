@@ -231,24 +231,15 @@ function _cloudify_registry_field() {
     if [[ -n "$2" ]]; then printf '%s: %s\n' "$1" "$2"; else printf '%s:\n' "$1"; fi
 }
 
-# _cloudify_registry_declared_names <pkg> — declared names, declaration order
+# _cloudify_registry_declared_names <pkg> — declared names, declaration order.
+# The shapes live in the one enumerator (lib/vars.sh:cloudify_vars_declared_names).
 function _cloudify_registry_declared_names() {
-    local pkg="${1:-}" decl line name
-    [[ -n "$pkg" && -n "${CLOUDIFY_DIR:-}" ]] || return 0
-    decl="$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
-    [[ -f "$decl" ]] || return 0
-    while IFS= read -r line; do
-        line="$(_cloudify_vars_trim "$line")"
-        [[ -z "$line" || "$line" == \#* ]] && continue
-        if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
-            name="${BASH_REMATCH[1]}"
-        elif [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)$ ]]; then
-            name="${BASH_REMATCH[1]}"
-        else
-            continue
-        fi
+    local pkg="${1:-}" name
+    [[ -n "$pkg" ]] || return 0
+    while IFS=$'\t' read -r name _ _; do
+        [[ -n "$name" ]] || continue
         printf '%s\n' "$name"
-    done < "$decl"
+    done < <(cloudify_vars_declared_names "$pkg")
 }
 
 # _cloudify_registry_context_raw <context-file> <name>

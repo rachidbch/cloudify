@@ -85,21 +85,13 @@ _cloudify_deployment_ensure() {
 
 # --- Public API (called by router) ---
 
-# cloudify_deployment_list - list the deployment directories (a directory per
-# run id, holding its run snapshots), then every current manifest (REDESIGN:
-# `cloudify deployments` lists current manifests, not historical run files).
+# cloudify_deployment_list - the current manifests. A legacy single-ID run
+# directory or a desired-inputs directory is not a deployment on its own; only
+# the manifest the run wrote is (REDESIGN: list current manifests, not
+# historical run files).
 cloudify_deployment_list() {
-    local d count=0
-    if [[ -d "$CLOUDIFY_DEPLOYMENTS_DIR" ]]; then
-        for d in "$CLOUDIFY_DEPLOYMENTS_DIR"/*/; do
-            [[ -d "$d" ]] || continue
-            local name; name=$(basename "$d")
-            echo "$name"
-            count=$((count + 1))
-        done
-    fi
+    local app flavor dep path count=0
     if declare -F cloudify_state_list_manifests >/dev/null; then
-        local app flavor dep path
         while IFS=$'\t' read -r app flavor dep path; do
             [[ -n "$app" ]] || continue
             printf '%s/%s --name %s (%s)\n' "$app" "$flavor" "$dep" "$path"

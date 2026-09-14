@@ -22,11 +22,11 @@ teardown() {
     [ "$(type -t cloudify_deployment_list)" = "function" ]
     [ "$(type -t cloudify_deployment_show)" = "function" ]
     [ "$(type -t cloudify_deployment_migrate)" = "function" ]
-    [ "$(type -t cloudify_vars_set)" = "function" ]
-    [ "$(type -t cloudify_vars_delete)" = "function" ]
-    [ "$(type -t cloudify_vars_list)" = "function" ]
-    [ "$(type -t cloudify_vars_show)" = "function" ]
-    [ "$(type -t _cloudify_deployment_read_vars)" = "function" ]
+    [ "$(type -t cloudify_vars_deployment_write)" = "function" ]
+    [ "$(type -t cloudify_vars_deployment_delete)" = "function" ]
+    [ "$(type -t cloudify_vars_deployment_list)" = "function" ]
+    [ "$(type -t cloudify_vars_deployment_show)" = "function" ]
+    [ "$(type -t cloudify_vars_deployment_read)" = "function" ]
 }
 
 @test "module guard prevents double-sourcing" {
@@ -69,6 +69,21 @@ teardown() {
     echo "$output" | grep -q "myapp/default --name prod"
 }
 
+@test "cloudify_deployment_list never prints a bare directory as a deployment" {
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    source lib/state.sh
+    # A legacy single-ID run directory and a nested desired-inputs tree: neither
+    # is a deployment on its own.
+    mkdir -p "$CLOUDIFY_DEPLOYMENTS_DIR/legacy-id/runs"
+    mkdir -p "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/prod"
+    : > "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/prod/values.yaml"
+    run cloudify_deployment_list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"(no deployments)"* ]]
+    [[ "$output" != *"legacy-id"* ]]
+    [[ "$output" != *"myapp"* ]]
+}
+
 # --- Var management ---
 
 # An explicit application reference: the three tuple components exported, which
@@ -83,48 +98,48 @@ _app_ref() {
     export CLOUDIFY_DEPLOYMENT=testdep
 
     # Set var
-    run cloudify_vars_set K3S_TOKEN "my-secret-token"
+    run cloudify_vars_deployment_write K3S_TOKEN "my-secret-token"
     [ "$status" -eq 0 ]
 
     # Show var
-    run cloudify_vars_show K3S_TOKEN
+    run cloudify_vars_deployment_show K3S_TOKEN
     [ "$status" -eq 0 ]
     [ "$output" = "my-secret-token" ]
 
     # Delete var
-    run cloudify_vars_delete K3S_TOKEN
+    run cloudify_vars_deployment_delete K3S_TOKEN
     [ "$status" -eq 0 ]
-    run cloudify_vars_show K3S_TOKEN
+    run cloudify_vars_deployment_show K3S_TOKEN
     [ -z "$output" ]
 }
 
 @test "vars: set overwrites existing key" {
     _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
-    cloudify_vars_set K3S_TOKEN "old-token"
-    run cloudify_vars_set K3S_TOKEN "new-token"
+    cloudify_vars_deployment_write K3S_TOKEN "old-token"
+    run cloudify_vars_deployment_write K3S_TOKEN "new-token"
     [ "$status" -eq 0 ]
-    run cloudify_vars_show K3S_TOKEN
+    run cloudify_vars_deployment_show K3S_TOKEN
     [ "$output" = "new-token" ]
     # No duplicate lines
-    run cloudify_vars_list
+    run cloudify_vars_deployment_list
     [ "$(echo "$output" | grep -c "K3S_TOKEN")" -eq 1 ]
 }
 
 @test "vars: multiple vars coexist" {
     _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
-    cloudify_vars_set K3S_TOKEN "token-abc"
-    cloudify_vars_set K3S_URL "https://server:6443"
-    run cloudify_vars_show K3S_TOKEN
+    cloudify_vars_deployment_write K3S_TOKEN "token-abc"
+    cloudify_vars_deployment_write K3S_URL "https://server:6443"
+    run cloudify_vars_deployment_show K3S_TOKEN
     [ "$output" = "token-abc" ]
-    run cloudify_vars_show K3S_URL
+    run cloudify_vars_deployment_show K3S_URL
     [ "$output" = "https://server:6443" ]
 }
 
 @test "vars: set requires CLOUDIFY_DEPLOYMENT" {
     unset CLOUDIFY_DEPLOYMENT
-    run cloudify_vars_set FOO bar
+    run cloudify_vars_deployment_write FOO bar
     [ "$status" -ne 0 ]
     echo "$output" | grep -q "CLOUDIFY_DEPLOYMENT"
 }
@@ -132,7 +147,7 @@ _app_ref() {
 @test "vars: set without an application reference fails closed" {
     export CLOUDIFY_DEPLOYMENT=testdep
     unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
-    run cloudify_vars_set FOO bar
+    run cloudify_vars_deployment_write FOO bar
     [ "$status" -ne 0 ]
     echo "$output" | grep -q "application reference"
 }
@@ -140,7 +155,7 @@ _app_ref() {
 @test "vars: list (no vars)" {
     _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
-    run cloudify_vars_list
+    run cloudify_vars_deployment_list
     [ "$status" -eq 0 ]
     echo "$output" | grep -q "(no vars)"
 }
@@ -148,9 +163,9 @@ _app_ref() {
 @test "vars: list --json produces valid JSON" {
     _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
-    cloudify_vars_set K3S_TOKEN "token-abc"
-    cloudify_vars_set CLUSTER_NAME "my-prod"
-    run cloudify_vars_list --json
+    cloudify_vars_deployment_write K3S_TOKEN "token-abc"
+    cloudify_vars_deployment_write CLUSTER_NAME "my-prod"
+    run cloudify_vars_deployment_list --json
     [ "$status" -eq 0 ]
     echo "$output" | grep -q '"K3S_TOKEN"'
     echo "$output" | grep -q '"token-abc"'
@@ -166,13 +181,13 @@ _app_ref() {
 @test "vars: delete nonexistent is no-op" {
     _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
-    run cloudify_vars_delete DOES_NOT_EXIST
+    run cloudify_vars_deployment_delete DOES_NOT_EXIST
     [ "$status" -eq 0 ]
 }
 
 # --- Deployment-wide var reading (remote integration) ---
 
-@test "_cloudify_deployment_read_vars reads and exports vars, returns names" {
+@test "cloudify_vars_deployment_read reads and exports vars, returns names" {
     _app_ref testapp default testdep
     # Write the store directly (simulating vars set)
     local store
@@ -184,25 +199,25 @@ K3S_URL: https://server:6443
 EOF
     # Capture stdout (var names) — can't use `run` because exports must survive
     local names
-    names=$(_cloudify_deployment_read_vars testdep)
+    names=$(cloudify_vars_deployment_read testdep)
     # Returns var names
     echo "$names" | grep -qx "K3S_TOKEN"
     echo "$names" | grep -qx "K3S_URL"
     # Exported values (function is called WITHOUT run, so exports survive)
     # Re-call directly to export
-    _cloudify_deployment_read_vars testdep >/dev/null
+    cloudify_vars_deployment_read testdep >/dev/null
     [ "${K3S_TOKEN:-}" = "secret-123" ]
     [ "${K3S_URL:-}" = "https://server:6443" ]
 }
 
-@test "_cloudify_deployment_read_vars no-ops for nonexistent deployment" {
-    run _cloudify_deployment_read_vars nonexistent
+@test "cloudify_vars_deployment_read no-ops for nonexistent deployment" {
+    run cloudify_vars_deployment_read nonexistent
     [ "$status" -eq 0 ]
     [ -z "$output" ]
 }
 
-@test "_cloudify_deployment_read_vars no-ops for empty id" {
-    run _cloudify_deployment_read_vars ""
+@test "cloudify_vars_deployment_read no-ops for empty id" {
+    run cloudify_vars_deployment_read ""
     [ "$status" -eq 0 ]
     [ -z "$output" ]
 }
@@ -212,19 +227,19 @@ EOF
 @test "vars: values with spaces and special chars" {
     _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
-    cloudify_vars_set GREETING "hello world"
-    cloudify_vars_set URL "https://example.com/path?foo=bar&baz=qux"
-    run cloudify_vars_show GREETING
+    cloudify_vars_deployment_write GREETING "hello world"
+    cloudify_vars_deployment_write URL "https://example.com/path?foo=bar&baz=qux"
+    run cloudify_vars_deployment_show GREETING
     [ "$output" = "hello world" ]
-    run cloudify_vars_show URL
+    run cloudify_vars_deployment_show URL
     [ "$output" = "https://example.com/path?foo=bar&baz=qux" ]
 }
 
 @test "vars: empty value is stored as empty" {
     _app_ref testapp default testdep
     export CLOUDIFY_DEPLOYMENT=testdep
-    cloudify_vars_set EMPTY ""
-    run cloudify_vars_show EMPTY
+    cloudify_vars_deployment_write EMPTY ""
+    run cloudify_vars_deployment_show EMPTY
     [ -z "$output" ]
 }
 
@@ -233,18 +248,18 @@ EOF
 @test "vars: two deployments have independent state" {
     export CLOUDIFY_DEPLOYMENT=dep-a
     _app_ref testapp default dep-a
-    cloudify_vars_set TOKEN "token-a"
+    cloudify_vars_deployment_write TOKEN "token-a"
     export CLOUDIFY_DEPLOYMENT=dep-b
     _app_ref testapp default dep-b
-    cloudify_vars_set TOKEN "token-b"
+    cloudify_vars_deployment_write TOKEN "token-b"
     # Verify isolation
     export CLOUDIFY_DEPLOYMENT=dep-a
     _app_ref testapp default dep-a
-    run cloudify_vars_show TOKEN
+    run cloudify_vars_deployment_show TOKEN
     [ "$output" = "token-a" ]
     export CLOUDIFY_DEPLOYMENT=dep-b
     _app_ref testapp default dep-b
-    run cloudify_vars_show TOKEN
+    run cloudify_vars_deployment_show TOKEN
     [ "$output" = "token-b" ]
 }
 
@@ -271,8 +286,8 @@ EOF
     [ "$(_cloudify_deployment_config)" = "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/prod/values.yaml" ]
 
     export CLOUDIFY_DEPLOYMENT=myapp.default.prod
-    cloudify_vars_set FROM_NESTED nested-value
-    run cloudify_vars_show FROM_NESTED
+    cloudify_vars_deployment_write FROM_NESTED nested-value
+    run cloudify_vars_deployment_show FROM_NESTED
     [ "$output" = "nested-value" ]
     [ -f "$CLOUDIFY_DEPLOYMENTS_DIR/myapp/default/prod/values.yaml" ]
 }
@@ -283,7 +298,7 @@ EOF
     run _cloudify_deployment_config
     [ "$status" -ne 0 ]
     [ -z "$output" ]
-    run cloudify_vars_show FROM_NESTED
+    run cloudify_vars_deployment_show FROM_NESTED
     [ "$status" -ne 0 ]
     [[ "$output" == *"application reference"* ]]
 }

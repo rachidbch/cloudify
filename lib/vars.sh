@@ -336,10 +336,45 @@ cloudify_vars_global_write() {
 
 # --- package source ---
 
+# _cloudify_vars_decl_line <line> - one .remote-vars line as `name<TAB>kind<TAB>mirror`,
+# or nothing. Pure: no claim, no export, no store read. The three shapes are bare
+# NAME (required), NAME= (optional) and NAME=value (defaulted, the mirror text is
+# a display/kind marker, never a value). A `#` comment, a blank line and any other
+# shape print nothing. Name characters are `[A-Z_][A-Z0-9_]*` only.
+_cloudify_vars_decl_line() {
+    local line="${1:-}" name="" kind="" mirror=""
+    line="$(_cloudify_vars_trim "$line")"
+    [[ -z "$line" || "$line" == \#* ]] && return 0
+    if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
+        name="${BASH_REMATCH[1]}"; mirror="${BASH_REMATCH[2]}"
+        if [[ -n "$mirror" ]]; then kind=defaulted; else kind=optional; fi
+    elif [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)$ ]]; then
+        name="$line"; kind=required
+    else
+        return 0
+    fi
+    printf '%s\t%s\t%s\n' "$name" "$kind" "$mirror"
+}
+
+# cloudify_vars_declared_names <pkg> - the declared names of a package's
+# .remote-vars, declaration order, one `name<TAB>kind<TAB>mirror` line each. The
+# ONE declaration enumerator: every consumer that needs names or kinds reads this,
+# and only cloudify_vars_pkg_read (below) claims and proves provenance.
+function cloudify_vars_declared_names() {
+    local pkg="${1:-}" decl line
+    [[ -n "$pkg" && -n "${CLOUDIFY_DIR:-}" ]] || return 0
+    decl="$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
+    [[ -f "$decl" ]] || return 0
+    while IFS= read -r line; do
+        _cloudify_vars_decl_line "$line"
+    done < "$decl"
+}
+
 # cloudify_vars_pkg_read <pkg> [yaml-file]
 # Declared names come from pkg/<pkg>/.remote-vars (values from caller env);
 # values come from the per-package yaml. Declared names are recorded for the
-# walker's deferred warn (L12) via _CLOUDIFY_VARS_DECLARED.
+# walker's deferred warn (L12) via _CLOUDIFY_VARS_DECLARED. This is the only
+# declaration reader that claims a name or records provenance.
 cloudify_vars_pkg_read() {
     local pkg="$1"
     [[ -n "$pkg" ]] || return 0
@@ -348,18 +383,9 @@ cloudify_vars_pkg_read() {
 
     local decl="$CLOUDIFY_DIR/pkg/${pkg}/.remote-vars"
     if [[ -f "$decl" ]]; then
-        local name kind mirror
-        while IFS= read -r line; do
-            line="$(_cloudify_vars_trim "$line")"
-            [[ -z "$line" || "$line" == \#* ]] && continue
-            if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
-                name="${BASH_REMATCH[1]}"; mirror="${BASH_REMATCH[2]}"
-                if [[ -n "$mirror" ]]; then kind=defaulted; else kind=optional; fi
-            elif [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)$ ]]; then
-                name="${BASH_REMATCH[1]}"; kind=required
-            else
-                continue
-            fi
+        local name kind
+        while IFS=$'\t' read -r name kind _; do
+            [[ -n "$name" ]] || continue
             if [[ -n "${_CLOUDIFY_VARS_DECLARED:-}" ]]; then
                 printf '%s\t%s\t%s\n' "$name" "$pkg" "$kind" >> "$_CLOUDIFY_VARS_DECLARED"
             fi
@@ -374,7 +400,7 @@ cloudify_vars_pkg_read() {
                 # is recording.
                 _cloudify_vars_sources_record "$name" environment "" "${!name:-}"
             fi
-        done < "$decl"
+        done < <(cloudify_vars_declared_names "$pkg")
     fi
 
     _cloudify_load_yaml_vars "${2:-$(cloudify_vars_pkg_file "$pkg")}" no-clobber "$print" package
@@ -476,14 +502,6 @@ cloudify_vars_env_read() {
 
 # --- generic flat-store ops + scope/arg helpers (branch 1b) ---
 
-_cloudify_vars_json_escape() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s=$(printf '%s' "$s" | tr -d '\000-\037')
-    printf '%s' "$s"
-}
-
 # _cloudify_vars_is_secret_name <name> — the masking heuristic (name-based).
 _cloudify_vars_is_secret_name() {
     [[ "$1" =~ (PASSWORD|TOKEN|SECRET|KEY) ]]
@@ -501,25 +519,30 @@ _cloudify_vars_store_get() {
 # _cloudify_vars_store_list <file> [--json] [mask] — raw by default; mask=1 replaces
 # secret-looking values with *** (the router passes it unless --reveal).
 _cloudify_vars_store_list() {
-    local file="$1" mode="${2:-}" mask="${3:-}" line k v kt first=true
+    local file="$1" mode="${2:-}" mask="${3:-}" line k v kt
     if [[ ! -f "$file" || ! -s "$file" ]]; then
         if [[ "$mode" == "--json" ]]; then echo "{}"; else echo "(no vars)"; fi
         return 0
     fi
     if [[ "$mode" == "--json" ]]; then
-        echo "{"
-        while IFS= read -r line; do
-            line="$(_cloudify_vars_trim "$line")"
-            [[ -z "$line" || "$line" == \#* || "$line" != *:* ]] && continue
-            k="$(_cloudify_vars_trim "${line%%:*}")"
-            v="$(_cloudify_vars_trim "${line#*:}")"
-            [[ -n "$k" ]] || continue
-            [[ -n "$mask" ]] && _cloudify_vars_is_secret_name "$k" && v="***"
-            if $first; then first=false; else echo ","; fi
-            printf '  "%s": "%s"' "$(_cloudify_vars_json_escape "$k")" "$(_cloudify_vars_json_escape "$v")"
-        done < "$file"
-        echo
-        echo "}"
+        # One JSON encoder (jq). The shell only splits the flat lines and masks;
+        # a key line and its value are two input lines, so a value may hold any
+        # character a single store line can hold.
+        jq -R -s '
+            split("\n")
+            | .[0:length - 1]
+            | [range(0; length; 2) as $i | {key: .[$i], value: (.[$i + 1] // "")}]
+            | from_entries' < <(
+            while IFS= read -r line; do
+                line="$(_cloudify_vars_trim "$line")"
+                [[ -z "$line" || "$line" == \#* || "$line" != *:* ]] && continue
+                k="$(_cloudify_vars_trim "${line%%:*}")"
+                v="$(_cloudify_vars_trim "${line#*:}")"
+                [[ -n "$k" ]] || continue
+                [[ -n "$mask" ]] && _cloudify_vars_is_secret_name "$k" && v="***"
+                printf '%s\n%s\n' "$k" "$v"
+            done < "$file"
+        )
     elif [[ -n "$mask" ]]; then
         while IFS= read -r line; do
             if [[ "$line" == *:* && "$line" != \#* ]]; then
@@ -684,24 +707,14 @@ _cloudify_vars_source_of() {
 
 # cloudify_vars_declared <pkg> [--sources] — the declaration mirror, three kinds.
 cloudify_vars_declared() {
-    local pkg="$1" sources="" reveal="" decl line name kind mirror src shown
+    local pkg="$1" sources="" reveal="" name kind mirror src shown
     [[ "${2:-}" == "1" || "${2:-}" == "--sources" ]] && sources=1
     [[ "${3:-}" == "1" || "${3:-}" == "--reveal" ]] && reveal=1
     [[ -n "$pkg" ]] || die "Usage: cloudify vars declared <pkg> [--sources]"
     [[ -d "$CLOUDIFY_DIR/pkg/$pkg" ]] || die "Unknown package '$pkg'."
-    decl="$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
-    if [[ ! -f "$decl" ]]; then echo "(no declared vars)"; return 0; fi
-    while IFS= read -r line; do
-        line="$(_cloudify_vars_trim "$line")"
-        [[ -z "$line" || "$line" == \#* ]] && continue
-        if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
-            name="${BASH_REMATCH[1]}"; mirror="${BASH_REMATCH[2]}"
-            if [[ -n "$mirror" ]]; then kind=defaulted; else kind=optional; fi
-        elif [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)$ ]]; then
-            name="${BASH_REMATCH[1]}"; kind=required; mirror=""
-        else
-            continue
-        fi
+    if [[ ! -f "$CLOUDIFY_DIR/pkg/$pkg/.remote-vars" ]]; then echo "(no declared vars)"; return 0; fi
+    while IFS=$'\t' read -r name kind mirror; do
+        [[ -n "$name" ]] || continue
         case "$kind" in
             required) shown="$name" ;;
             optional) shown="$name=" ;;
@@ -714,13 +727,6 @@ cloudify_vars_declared() {
         else
             printf '%s\n' "$shown"
         fi
-    done < "$decl"
+    done < <(cloudify_vars_declared_names "$pkg")
 }
 
-# --- public aliases (R7) ---
-
-cloudify_vars_set() { cloudify_vars_deployment_write "$@"; }
-cloudify_vars_delete() { cloudify_vars_deployment_delete "$@"; }
-cloudify_vars_list() { cloudify_vars_deployment_list "$@"; }
-cloudify_vars_show() { cloudify_vars_deployment_show "$@"; }
-_cloudify_deployment_read_vars() { cloudify_vars_deployment_read "$@"; }

@@ -393,8 +393,3 @@ function cloudify_print_done() {
     msg "${GREEN}  Station cloudified!${RESET}"
     msg "${GREEN}********************************************************************************${RESET}"
 }
-
-# Alias: legacy name kept for backwards compatibility
-function add_in_hosts() {
-    cloudify_add_in_hosts "$@"
-}

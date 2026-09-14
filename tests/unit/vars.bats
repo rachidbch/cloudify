@@ -177,6 +177,46 @@ EOF
     [ "$DECLARED_VAR" = "fromenv" ]
 }
 
+@test "declared names: one enumerator pins the three shapes, the trim and the order" {
+    rubric "cloudify_vars_declared_names is the single .remote-vars parser"
+    mkdir -p "$CLOUDIFY_DIR/pkg/demo"
+    cat > "$CLOUDIFY_DIR/pkg/demo/.remote-vars" <<'EOF'
+# a comment
+
+REQUIRED_ONE
+OPTIONAL_ONE=
+DEFAULTED_ONE=mirror-value
+DEFAULTED_EQUALS=a=b
+lowercase_ignored
+NOT A NAME
+  REQUIRED_TWO  
+EOF
+    run cloudify_vars_declared_names demo
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s\n' "${lines[@]}" | cut -f1)" = "$(printf '%s\n' REQUIRED_ONE OPTIONAL_ONE DEFAULTED_ONE DEFAULTED_EQUALS REQUIRED_TWO)" ]
+    [ "$(printf '%s\n' "${lines[@]}" | cut -f2)" = "$(printf '%s\n' required optional defaulted defaulted required)" ]
+    [ "$(printf '%s\n' "${lines[@]}" | cut -f3 | sed -n 4p)" = "a=b" ]
+
+    # No declarations is empty output, never an error.
+    mkdir -p "$CLOUDIFY_DIR/pkg/empty"
+    run cloudify_vars_declared_names empty
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run cloudify_vars_declared_names missing
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "declared names: the context candidate mirror matches the enumerator" {
+    rubric "_cloudify_context_emit_declared reads the one enumerator"
+    source lib/context.sh
+    mkdir -p "$CLOUDIFY_DIR/pkg/demo"
+    printf 'ALPHA\nBETA=\nGAMMA=x\n' > "$CLOUDIFY_DIR/pkg/demo/.remote-vars"
+    run _cloudify_context_emit_declared demo
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'ALPHA\tdemo\trequired\nBETA\tdemo\toptional\nGAMMA\tdemo\tdefaulted')" ]
+}
+
 # --- deployment source ---
 
 @test "cloudify_vars_deployment_write then read round-trips" {

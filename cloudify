@@ -191,8 +191,8 @@ function _cloudify_note_bg() {
     _CLOUDIFY_BG_ACTION[$pid]="$action"
     _CLOUDIFY_BG_PKGS[$pid]="$pkg_list"
     _CLOUDIFY_BG_TARGET[$pid]="$target"
-    # The dispatch context path (slice 2B-i). Recorded only: the registry writer
-    # still builds its record the Phase 1 way until slice 2B-ii consumes it.
+    # The dispatch context path (one per dispatch). The registry writer and the
+    # run snapshot both read this context; neither reopens a value store.
     _CLOUDIFY_BG_CONTEXT[$pid]="$context"
 }
 
@@ -648,7 +648,7 @@ function main() {
                     [[ -n "${1:-}" ]] || die "Usage: cloudify deployment show <id>"
                     cloudify_deployment_show "$1"
                     ;;
-                migrate | migration)
+                migrate)
                     shift
                     cloudify_deployment_migrate "$@"
                     ;;

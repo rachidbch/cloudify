@@ -154,25 +154,15 @@ function _cloudify_runbook_source_label() {
 }
 
 # _cloudify_runbook_declared_names <pkg> - declared names from
-# pkg/<pkg>/.remote-vars, declaration order, one per line (the same three shapes
-# lib/vars.sh:cloudify_vars_pkg_read enumerates).
+# pkg/<pkg>/.remote-vars, declaration order, one per line. The shapes live in the
+# one enumerator (lib/vars.sh:cloudify_vars_declared_names).
 function _cloudify_runbook_declared_names() {
-    local pkg="${1:-}" decl line name
-    [[ -n "$pkg" && -n "${CLOUDIFY_DIR:-}" ]] || return 0
-    decl="$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
-    [[ -f "$decl" ]] || return 0
-    while IFS= read -r line; do
-        line="$(_cloudify_vars_trim "$line")"
-        [[ -z "$line" || "$line" == \#* ]] && continue
-        if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
-            name="${BASH_REMATCH[1]}"
-        elif [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)$ ]]; then
-            name="${BASH_REMATCH[1]}"
-        else
-            continue
-        fi
+    local pkg="${1:-}" name kind
+    [[ -n "$pkg" ]] || return 0
+    while IFS=$'\t' read -r name kind _; do
+        [[ -n "$name" ]] || continue
         printf '%s\n' "$name"
-    done < "$decl"
+    done < <(cloudify_vars_declared_names "$pkg")
 }
 
 # _cloudify_runbook_pkg_context <action> <deployment> <phase> <pkg> - resolve one
@@ -553,18 +543,11 @@ function _cloudify_runbook_frontmatter() {
 # Targets may be comma- or space-separated in the source; the CSV is always
 # comma-separated, deduplicated, in declaration order.
 function _cloudify_runbook_meta_parse() {
-    local path="${1:-}" fm line key val deployment="" targets_raw=""
-    fm=$(_cloudify_runbook_frontmatter "$path") ||
+    local path="${1:-}" deployment targets_raw
+    _cloudify_runbook_frontmatter "$path" >/dev/null ||
         die "Runbook '$path': missing front-matter (expected the opening '---' and a closing '---')."
-    while IFS= read -r line; do
-        [[ "$line" == *:* ]] || continue
-        key="$(_cloudify_vars_trim "${line%%:*}")"
-        val="$(_cloudify_vars_trim "${line#*:}")"
-        case "$key" in
-            deployment) deployment="$val" ;;
-            targets) targets_raw="$val" ;;
-        esac
-    done <<< "$fm"
+    deployment=$(_cloudify_runbook_fm_value "$path" deployment)
+    targets_raw=$(_cloudify_runbook_fm_value "$path" targets)
     if [[ -z "$deployment" ]]; then
         # `deployment:` is optional: the caller environment may name it (an
         # application run exports it).
@@ -594,17 +577,10 @@ function _cloudify_runbook_meta_parse() {
     printf '%s\t%s\n' "$deployment" "$csv"
 }
 
-# _cloudify_runbook_deployment_of <path> — front-matter deployment id, or empty
+# _cloudify_runbook_deployment_of <path> — front-matter deployment id, or empty.
+# One reader with _cloudify_runbook_meta_parse: the same first-match key reader.
 function _cloudify_runbook_deployment_of() {
-    local path="${1:-}" fm line key
-    fm=$(_cloudify_runbook_frontmatter "$path") || return 0
-    while IFS= read -r line; do
-        key="$(_cloudify_vars_trim "${line%%:*}")"
-        [[ "$key" == "deployment" ]] || continue
-        printf '%s' "$(_cloudify_vars_trim "${line#*:}")"
-        return 0
-    done <<< "$fm"
-    return 0
+    _cloudify_runbook_fm_value "${1:-}" deployment
 }
 
 # _cloudify_runbook_emit_step <path> <line> <info> <body> <index> <declared-ref> \
@@ -1087,7 +1063,7 @@ function cloudify_runbook_preflight() {
 
     local -a missing=()
     local seen_missing=""
-    local line type rest pkg decl dline name src
+    local line type rest pkg name kind src
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
         type="${line%%$'\t'*}"
@@ -1097,14 +1073,9 @@ function cloudify_runbook_preflight() {
         rest="${rest#*$'\t'}"      # drop target -> pkg\tbody
         pkg="${rest%%$'\t'*}"
         [[ -n "$pkg" ]] || continue
-        decl="$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
-        [[ -f "$decl" ]] || continue
-        while IFS= read -r dline; do
-            dline="$(_cloudify_vars_trim "$dline")"
-            [[ -z "$dline" || "$dline" == \#* ]] && continue
-            [[ "$dline" == *=* ]] && continue # NAME=/NAME=value are not required
-            [[ "$dline" =~ ^[A-Z_][A-Z0-9_]*$ ]] || continue
-            name="$dline"
+        [[ -f "$CLOUDIFY_DIR/pkg/$pkg/.remote-vars" ]] || continue
+        while IFS=$'\t' read -r name kind _; do
+            [[ "$kind" == "required" ]] || continue # NAME=/NAME=value are not required
             src=$(_cloudify_runbook_source_label "$name" "$pkg")
             case "$src" in
                 recipe | recipe-default) ;;
@@ -1113,7 +1084,7 @@ function cloudify_runbook_preflight() {
             [[ ",$seen_missing," == *",$pkg:$name,"* ]] && continue
             seen_missing="${seen_missing:+$seen_missing,}$pkg:$name"
             missing+=("$pkg: $name")
-        done < "$decl"
+        done < <(cloudify_vars_declared_names "$pkg")
     done <<< "$steps_out"
 
     if [[ ${#missing[@]} -gt 0 ]]; then

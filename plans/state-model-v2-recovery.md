@@ -104,7 +104,7 @@ The clean baseline (R0) changes no runtime code and the Phase 4 design gate (R3)
 - [x] Fresh-context Technical review on a different model covering correctness, modularity, DRY, KISS, maintainability, Bash safety, error paths and lock ordering, returning exactly `PASS` with no actionable feedback. (codex, 2026-09-14, PASS with file:line evidence.)
 - [x] Require every reviewer to show its work: alongside `PASS`, a checklist mapping each `REDESIGN.md` success criterion and each listed Technical concern to concrete file:line evidence. A bare `PASS` without that mapping is not a `PASS` and must be sent back. (Both reviewers returned the mapping.)
 - [x] Fix every review finding and re-review from a fresh context; defer none to a later phase. (Both blockers and all notes fixed, then re-reviewed to PASS.)
-- [ ] Commit and push only when every line above is green.
+- [x] Commit and push only when every line above is green. (Committed `29f4890`, pushed to `state-model-v2-phase1`.)
 
 The fleet E2E (`tests/e2e/k3s-multi-cluster.bats`, four throwaway nodes, live ACL mutation, up to fifteen minutes per node) is not a per-phase gate: it validates k3s UX rather than the state model, so it runs once at the Phase 9 final gate, where the tailnet and ACL restore is part of the exit criteria.
 If the two-host E2E is genuinely unrunnable for a phase, that is a blocker to raise with Rachid, not a line to tick with a substitute.

@@ -98,13 +98,14 @@ _cloudify_vars_raw_encode() {
 }
 
 # _cloudify_vars_raw_decode <transport form> - the raw source value again.
-# Prints the text unchanged when the form is unrecognised, so a value written by
-# an older dispatch is never lost; cloudify_context_validate is what rejects a
-# malformed context, loudly, before anything consumes it.
+# A `b:` body that does not decode is an error, not something to echo back: the
+# transport marker is unambiguous, so an undecodable body means corruption, and
+# passing the base64 text on would write it into the record. Prints the text
+# unchanged only when the form carries no marker at all.
 _cloudify_vars_raw_decode() {
     local enc="${1:-}"
     case "$enc" in
-        b:*) printf '%s' "${enc#b:}" | base64 -d 2>/dev/null || printf '%s' "${enc#b:}" ;;
+        b:*) printf '%s' "${enc#b:}" | base64 -d 2>/dev/null ;;
         t:*) printf '%s' "${enc#t:}" ;;
         *) printf '%s' "$enc" ;;
     esac
@@ -220,8 +221,9 @@ _cloudify_vars_emit() {
     export "$name"="$value"
     # Reference text only, same shape _cloudify_resolve_var_value accepts: it
     # decodes `@base64:...` to plaintext, so the exported literal alone cannot
-    # reveal the form. A literal raw is never written here, so the provenance
-    # file holds no plaintext value.
+    # reveal the form. The RAW text is recorded separately, and for a literal
+    # value that raw text is the plaintext itself; see _cloudify_vars_raw_encode
+    # and the context file's own note on why that is deliberate.
     if [[ "$raw" == @* && "$raw" != @@* ]]; then
         _ref="${raw#@}"
         [[ "$_ref" == *:* && "$_ref" != :* && "$_ref" != *: ]] && ref="$raw"

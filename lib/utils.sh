@@ -84,6 +84,15 @@ function cleanup() {
             [[ -n "$_ctx" && -e "$_ctx" ]] && rm -f "$_ctx"
         done
     fi
+    # The context of the dispatch in flight. A build that dies mid-walk never
+    # reaches its own cleanup (Bash does not run a RETURN trap on exit), so both
+    # the context and the builder's dot-prefixed temps, which hold the raw source
+    # forms, are removed here rather than left for the DEBUG skip below.
+    [[ -n "${CLOUDIFY_CONTEXT_FILE:-}" && -e "${CLOUDIFY_CONTEXT_FILE:-}" ]] \
+        && rm -f "$CLOUDIFY_CONTEXT_FILE"
+    if [[ -n "${CLOUDIFY_TMP:-}" && -d "$CLOUDIFY_TMP" ]]; then
+        find "$CLOUDIFY_TMP" -maxdepth 1 -name '.cloudify-*' -exec rm -f {} + 2>/dev/null || true
+    fi
 
     if [[ "${CLOUDIFY_LOG_LEVEL:-INFO}" == "DEBUG" ]]; then
         return 0

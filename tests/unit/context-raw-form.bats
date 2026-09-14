@@ -164,7 +164,7 @@ record_of() {
     [[ "$output" == *"no raw source form"* ]]
 }
 
-@test "validate: a malformed raw form is rejected" {
+@test "validate: an unrecognised raw prefix is rejected" {
     declare_pkg badpkg SPEC
     set_deployment SPEC a-value
     build_ctx badpkg
@@ -174,6 +174,26 @@ record_of() {
     run cloudify_context_validate "$CTX.bad"
     [ "$status" -ne 0 ]
     [[ "$output" == *"malformed raw form"* ]]
+}
+
+@test "validate: a b: raw whose body is not base64 is rejected" {
+    # The marker is unambiguous, so an undecodable body is corruption. Accepting it
+    # would write the base64 text straight into the record.
+    declare_pkg b64pkg SPEC
+    set_deployment SPEC a-value
+    build_ctx b64pkg
+
+    sed 's/^value.SPEC.raw: .*/value.SPEC.raw: b:!!!!not-base64!!!!/' "$CTX" > "$CTX.bad"
+
+    run cloudify_context_validate "$CTX.bad"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"malformed base64 raw form"* ]]
+}
+
+@test "decode: a corrupt b: body yields nothing rather than the base64 text" {
+    run _cloudify_vars_raw_decode 'b:!!!!not-base64!!!!'
+    [ "$status" -ne 0 ]
+    [ -z "$output" ]
 }
 
 @test "validate: an unexpected line is rejected" {

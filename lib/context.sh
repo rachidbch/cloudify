@@ -3,9 +3,15 @@
 #
 # Owns value RESOLUTION only. It reproduces the existing five-source ladder
 # (lib/remote.sh:_cloudify_dispatch_vars) exactly by delegating to the same
-# readers in lib/vars.sh in the same visit order, and then records METADATA
-# about each resolved name in a mode-0600 context file. No plaintext value, no
-# resolved value and no payload text ever reaches that file.
+# readers in lib/vars.sh in the same visit order, and then records each resolved
+# name in a mode-0600 context file: its provenance AND its raw source form.
+#
+# The context DOES carry plaintext: the raw source form of a literal value is its
+# text, and a literal secret's text is a secret. That is deliberate - it is what
+# lets the registry record and the run snapshot be built without reopening a
+# source - and it is why the file is 0600, never named on a command line, and
+# removed when the dispatch ends. It must never be logged, copied into a
+# manifest, package state, a run record or an event.
 #
 # Every label and every reference text in that file is captured at the single
 # export decision inside those readers (lib/vars.sh:_cloudify_vars_emit, via
@@ -35,7 +41,7 @@
 #     `NAME<TAB>PKG<TAB>KIND` line per declared name (same shape as the walker's
 #     _CLOUDIFY_VARS_DECLARED mirror, so it can be passed as <declared-names-file>).
 #
-# Context file (flat `KEY: value`, metadata only):
+# Context file (flat `KEY: value`):
 #   context_version: 1
 #   action, deployment, phase, target (node<TAB>instance<TAB>ssh_host), top_kind
 #   value.<NAME>.source   environment|deployment|package|global|recipe
@@ -43,6 +49,9 @@
 #   value.<NAME>.secret   true|false
 #   value.<NAME>.reference  the @<backend>:<locator> text when form=reference
 #   value.<NAME>.digest   sha256:<hex> of a literal secret
+#   value.<NAME>.raw      the raw source form, `t:<text>` or `b:<base64>`, i.e.
+#                        the exact text the registry record and the run snapshot
+#                        must contain. See lib/vars.sh:_cloudify_vars_raw_encode.
 #
 # The target triple travels in CLOUDIFY_CONTEXT_TARGET, else _CLOUDIFY_CUR_TARGET
 # (the router's per-dispatch triple), so it never becomes a command argument.
@@ -398,7 +407,9 @@ function cloudify_context_validate() {
         raw=$(cloudify_context_read "$file" "value.$_sn.raw") \
             || die "context '$file': value '$_sn' has no raw source form."
         case "$raw" in
-            t:*|b:*) ;;
+            t:*) ;;
+            b:*) printf '%s' "${raw#b:}" | base64 -d >/dev/null 2>&1 \
+                    || die "context '$file': value '$_sn' has a malformed base64 raw form." ;;
             *) die "context '$file': value '$_sn' has a malformed raw form." ;;
         esac
     done < <(sed -n 's/^value\.\([^.]*\)\.source:.*$/\1/p' "$file")

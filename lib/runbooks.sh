@@ -1422,7 +1422,11 @@ function cloudify_runbook_execute() {
                 case "$_rlabel" in
                     recipe | recipe-default) continue ;;
                 esac
-                _rvalue=$(_cloudify_runbook_resolver_value "$_rname" "$_rlabel" "$_rpkg" "$_rctx") || continue
+                # Fail closed. A declared name that resolves to nothing would leave
+                # the snapshot silently missing a value, which is how a replay
+                # ends up seeding a different run than the one that happened.
+                _rvalue=$(_cloudify_runbook_resolver_value "$_rname" "$_rlabel" "$_rpkg" "$_rctx") \
+                    || die "runbook execute: cannot recover a value for '$_rname' in package '$_rpkg' for the run's snapshot."
                 _rv_order+=("$_rname")
                 _rv_value["$_rname"]="$_rvalue"
             done < <(_cloudify_runbook_declared_names "$_rpkg")

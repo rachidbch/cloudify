@@ -196,7 +196,9 @@ teardown_file() {
     unset CLOUDIFY_LOG_LEVEL
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 
-    run bash -c "find '$CLOUDIFY_TMP' -name 'cloudify-*context*' | wc -l"
+    # Catches both the context file and the builder's dot-prefixed temps, which
+    # hold the raw source forms when a build dies mid-walk.
+    run bash -c "find '$CLOUDIFY_TMP' -maxdepth 1 \\( -name '*context*' -o -name '.cloudify-*' \\) | wc -l"
     [ "$output" -eq 0 ] || { echo "context files left behind: $output"; return 1; }
 }
 

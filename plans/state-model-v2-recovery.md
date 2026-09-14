@@ -237,14 +237,14 @@ Outcome: application identity, desired inputs, phase selection and manifests mat
 - [ ] Keep only `runbooks/<application>/<flavor>/runbook.md` discovery.
 - [ ] Keep only nested desired inputs at `deployments/<application>/<flavor>/<deployment>/values.yaml`.
 - [ ] Keep existing `cloudify deployment migrate` as the sole reader of the old single-ID desired-input file and mark it for deletion in the read surface phase (Phase 8); the migration step (4.7) introduces `cloudify state migrate-registry` as the sole old-registry reader.
-- [ ] Prove `inputs:` and `map:` use one parser and mappings feed only the relevant package context view.
+- [ ] Prove `inputs:` and `map:` use one parser and that a mapping feeds only names a package in the dispatch declares.
 - [ ] Prove bare `app run` selects install then verify and can never select teardown through `--yes`.
 - [ ] Prove selected-phase preflight checks only the selected phases.
 - [ ] Prove target bindings persist and ordinary reruns cannot silently rebind them.
 - [ ] Prove direct package commands bypass application manifests as specified.
 - [ ] Delete dead aliases, duplicate parsers, duplicate path builders and stale compatibility language.
 - [ ] Reduce `lib/runbooks.sh`, `lib/state.sh`, `lib/context.sh`, `lib/deployments.sh` and `lib/vars.sh` where the same fact is parsed or formatted more than once; inline each duplicate into one existing parser rather than adding another abstraction layer.
-- [ ] Replace `lib/state.sh`'s hand-rolled JSON encoder, field reader and bindings parser (`_cloudify_manifest_render`, `_cloudify_manifest_field_file`, `_cloudify_manifest_parse_bindings`) and its optional-jq shell fallback with `jq`, so "one parent-side encoder and validator" is true repo-wide rather than only for the context.
+- [ ] Replace `lib/state.sh`'s hand-rolled JSON encoder, field reader and bindings parser (`_cloudify_manifest_render`, `_cloudify_manifest_field_file`, `_cloudify_manifest_parse_bindings`) and its optional-jq shell fallback with `jq`, so the JSON artifacts (the deployment manifest, run records, package state) share one encoder and one validator.
 - [ ] Replace the all-zeros `_CLOUDIFY_MANIFEST_NULL_COMMIT` sentinel with real `null` in the manifest and run records, now that the schemas allow it, and make the shell manifest validator accept null only with `development_override: true`.
 
 ### Phase 3 gate (R2.3)
@@ -297,7 +297,7 @@ This phase touches the remote result transport and the host lock in `lib/remote.
 
 ### State and event substrate (4.1)
 
-- [ ] Complete the deferred JSON dispatch-context contract from `ROADMAP.md` before state and event writers consume it: the schema; the full per-name fields (declaration kind, resolved runtime form, secret classification origin); the identity fields whose producers land later (application commit, run and step IDs, package instance) with the rule that a field without a producer stays null; the projections from each context value into `package-state.applied.values`, `package-state.last_attempt.requested` and event `values`; the `jq` readers that replace the flat-line parsers (the allow-list extraction in `lib/remote.sh`, `cloudify_context_read`, and the DEBUG loop); and validation strictness (every expected field present, no unexpected field).
+- [ ] Complete the deferred JSON dispatch-context contract from `ROADMAP.md` as this phase's first step, before its state and event writers run, under its own consent and review. Nothing else in this phase depends on it: the writers take identity from the parent (`ADR-024`) and read only the context's values, which the flat format already carries: the schema; the full per-name fields (declaration kind, resolved runtime form, secret classification origin); the identity fields whose producers land later (application commit, run and step IDs, package instance) with the rule that a field without a producer stays null; the projections from each context value into `package-state.applied.values`, `package-state.last_attempt.requested` and event `values`; the `jq` readers that replace the flat-line parsers (the allow-list extraction in `lib/remote.sh`, `cloudify_context_read`, and the DEBUG loop); and validation strictness (every expected field present, no unexpected field).
 - [ ] Tighten `schemas/v1/package-state.schema.json` so every new applied, attempt, health and claim object carries a non-null event ID, add the matching fixtures, and keep `bash schemas/v1/validate.sh` green.
 
 - [ ] Add collision-resistant run and event IDs without a new runtime dependency.

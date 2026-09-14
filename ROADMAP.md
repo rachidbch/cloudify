@@ -107,9 +107,7 @@ out rather than ridden along with a repair to the most breakage-prone code in th
 
 ### How
 
-One slice, its own consent and its own review, most usefully after the Phase 2 repair lands
-and before the state and event writers of Phase 4 start consuming the context, so they can
-rely on a validated contract. Do not block Phase 4 on it.
+One slice, its own consent and its own review, scheduled as the first step of the Phase 4 state and event substrate, before its writers run. Nothing else in Phase 4 depends on it: the state and event writers take identity from the parent (`ADR-024`) and read only the context's values, which the flat format already carries, so this is a quality slice rather than a dependency.
 
 1. Write `schemas/v1/dispatch-context.schema.json` covering every field the context carries,
    with fields that have no producer yet typed nullable. Add valid and invalid fixtures.

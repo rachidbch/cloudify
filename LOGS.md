@@ -408,3 +408,8 @@
 - Verified and ticked the proof boxes against the repo's own tests, not a report: shadowing untouched (`git diff 667d96f..HEAD -- lib/shadows lib/shadow.sh pkg/` empty), the precedence ladder (walker tests), the single-resolution proofs, application mappings, file-store references, digests, context-removal ownership, the snapshot resolver, argv hygiene, the two "no second walk" proofs, the value-shape matrix, the secret scan, the leak proofs, and the byte-exact goldens (eight payload, nine registry cases).
 - The plan's test count was stale (634); corrected to 644, and the exit gate now names the current run.
 - No code changed. Remaining `- [ ]` lines in the Phase 2 section are the Mandatory execution rules (standing rules, not tasks).
+
+## 2026-09-14 - JSON context slice: stale phrasings and its scheduling resolved
+
+- Phase 3 (R2) does not change the context's format; it audits the manifest, desired inputs, phase selection and runbook discovery, and dedups. Two of its lines presumed the JSON context: "mappings feed only the relevant package context view" (wrong-spec wording) and "one parent-side encoder and validator ... rather than only for the context" (the context has no `jq` encoder in the flat format). Both corrected.
+- The deferral target was contradictory: the plan's 4.1 line made the conversion a prerequisite of the state and event writers, while `ROADMAP.md` said "Do not block Phase 4 on it". Resolved: it is the first step of the state and event substrate, under its own consent and review, and nothing else in Phase 4 depends on it, because the writers take identity from the parent (ADR-024) and read only the context's values, which the flat format already carries.

@@ -1032,3 +1032,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ### 2026-09-14 - Phase 2 checklist reconciled
 
 - Moved the deferred context work (full field set, later-producer identity fields, state/event projections, JSON readers, validator strictness) onto the state and event substrate line. Verified and ticked the Phase 2 proof boxes against the repo's tests. Corrected the stale test count (634 to 644).
+
+### 2026-09-14 - JSON context slice: phrasings and scheduling resolved
+
+- Phase 3's audit carried two stale phrasings that presumed the JSON context; corrected. The JSON context conversion's scheduling was contradictory (a 4.1 prerequisite versus "do not block Phase 4"); resolved as the first step of the state and event substrate, nothing else depending on it.

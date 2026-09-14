@@ -15,13 +15,12 @@
 #      lifecycle status, created_at, last run and event IDs. Never an applied
 #      package value.
 #
-# Validation. The reference validator is schemas/v1/validate.sh plus its checker
-# schemas/v1/lib/schema-check.jq, but validate.sh has no single-file mode and jq
-# is not a Cloudify runtime dependency (only pkg_install_release needs it). So
-# this module calls the reference checker when jq and the checker are present,
-# and always fails closed on the same rules the schema states, expressed with
-# the frozen identity predicates from lib/vars.sh. A unit test proves a manifest
-# written here passes the reference checker, so the two cannot drift silently.
+# Validation. `jq` is a hard prerequisite of this module: the manifest is
+# rendered with `jq -n` and validated against schemas/v1/deployment-manifest.schema.json
+# with the one schema checker, schemas/v1/lib/schema-check.jq, before the atomic
+# rename. There is no shell fallback and no second copy of the schema rules, so a
+# jq-less host fails loudly before any mutation instead of silently skipping
+# validation.
 #
 # Run and event IDs stay null here: Phase 6 owns run and event records, and this
 # slice must not fabricate a run record. A run killed between steps leaves
@@ -61,8 +60,14 @@ _CLOUDIFY_STATE_LOADED=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/vars.sh"
 
 _CLOUDIFY_LOCK_TIMEOUT_DEFAULT=30
-_CLOUDIFY_MANIFEST_STATUSES="applying active degraded"
-_CLOUDIFY_MANIFEST_NULL_COMMIT="0000000000000000000000000000000000000000"
+
+# The one schema directory, anchored at this module so the checker is found no
+# matter what CLOUDIFY_DIR points at (a scratch tree in tests, the repo in a real
+# run). CLOUDIFY_SCHEMA_DIR overrides it.
+if [[ -z "${CLOUDIFY_SCHEMA_DIR:-}" ]]; then
+    CLOUDIFY_SCHEMA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/schemas/v1"
+fi
+export CLOUDIFY_SCHEMA_DIR
 
 #== State root ==
 
@@ -204,218 +209,113 @@ function cloudify_state_list_manifests() {
 
 #== Manifest rendering and validation ==
 
-# _cloudify_json_escape <text> - JSON string body (no surrounding quotes).
-function _cloudify_json_escape() {
-    local s="${1:-}"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    printf '%s' "$s"
-}
-
-# _cloudify_json_unescape <text> - inverse of the two escapes above.
-function _cloudify_json_unescape() {
-    local s="${1:-}"
-    s="${s//\\\"/\"}"
-    s="${s//\\\\/\\}"
-    printf '%s' "$s"
-}
-
-# _cloudify_manifest_field_file <file> <key> - one top-level scalar field. The
-# manifest is rendered one field per line, so this reads our own format, never a
-# general JSON parser.
+# _cloudify_manifest_field_file <file> <key> - one top-level scalar field, read
+# with jq. rc 1 when the file or the field is absent. A JSON null prints as
+# `null`, a boolean as `true`/`false`.
 function _cloudify_manifest_field_file() {
-    local file="${1:-}" key="${2:-}" line raw
+    local file="${1:-}" key="${2:-}" out
     [[ -f "$file" && -n "$key" ]] || return 1
-    while IFS= read -r line; do
-        [[ "$line" == "  \"${key}\":"* ]] || continue
-        raw="${line#*: }"
-        raw="${raw%,}"
-        case "$raw" in
-            '"'*'"')
-                raw="${raw#\"}"
-                raw="${raw%\"}"
-                _cloudify_json_unescape "$raw"
-                ;;
-            *) printf '%s' "$raw" ;;
-        esac
-        return 0
-    done < "$file"
-    return 1
+    out=$(jq -r --arg k "$key" \
+        'if has($k) then .[$k] else error("no such field: " + $k) end' "$file" 2>/dev/null) ||
+        return 1
+    printf '%s\n' "$out"
 }
 
-# _cloudify_manifest_parse_bindings <file> - print one
-# `slot<TAB>address<TAB>node<TAB>instance<TAB>ssh_host` per binding. Fails closed
-# (die) on a malformed block. Prints nothing when there are no bindings.
+# _cloudify_manifest_parse_bindings <file> - one
+# `slot<TAB>address<TAB>node<TAB>instance<TAB>ssh_host` per binding, read with jq.
+# The schema already guarantees every binding carries the four keys, so a null
+# node, instance or ssh_host prints empty.
 function _cloudify_manifest_parse_bindings() {
-    local file="${1:-}" line in_bindings=0 current="" address="" node="" instance="" ssh_host=""
-    while IFS= read -r line; do
-        if [[ "$in_bindings" == "0" ]]; then
-            [[ "$line" == '  "bindings": {' ]] && in_bindings=1
-            continue
-        fi
-        [[ "$line" == '  },' || "$line" == '  }' ]] && break
-        if [[ "$line" =~ ^\ \ \ \ \"(.*)\":\ \{$ ]]; then
-            current="$(_cloudify_json_unescape "${BASH_REMATCH[1]}")"
-            address=""
-            node=""
-            instance=""
-            ssh_host=""
-            continue
-        fi
-        case "$line" in
-            *'"address": '*)
-                address="${line#*\"address\": }"
-                address="${address%,}"
-                address="${address#\"}"
-                address="${address%\"}"
-                ;;
-            *'"node": '*)
-                node="${line#*\"node\": }"
-                node="${node%,}"
-                [[ "$node" == "null" ]] || { node="${node#\"}"; node="${node%\"}"; }
-                ;;
-            *'"instance": '*)
-                instance="${line#*\"instance\": }"
-                instance="${instance%,}"
-                [[ "$instance" == "null" ]] || { instance="${instance#\"}"; instance="${instance%\"}"; }
-                ;;
-            *'"ssh_host": '*)
-                ssh_host="${line#*\"ssh_host\": }"
-                [[ "$ssh_host" == "null" ]] || { ssh_host="${ssh_host#\"}"; ssh_host="${ssh_host%\"}"; }
-                ;;
-            '    }' | '    },')
-                [[ -n "$current" ]] || die "manifest '$file': a binding block closed without a name."
-                [[ -n "$address" ]] || die "manifest '$file': binding '$current' has no address."
-                _cloudify_identity_valid_component "$address" ||
-                    die "manifest '$file': binding '$current' address '$address' is not a valid address token."
-                [[ -n "$node" || -n "$ssh_host" ]] ||
-                    die "manifest '$file': binding '$current' has neither node nor ssh_host."
-                printf '%s\t%s\t%s\t%s\t%s\n' "$current" "$address" "$node" "$instance" "$ssh_host"
-                current=""
-                ;;
-        esac
-    done < "$file"
-    return 0
+    local file="${1:-}"
+    [[ -f "$file" ]] || return 1
+    jq -r '.bindings | to_entries[]
+        | [.key, .value.address,
+           (.value.node // ""), (.value.instance // ""), (.value.ssh_host // "")]
+        | @tsv' "$file" 2>/dev/null
 }
 
-# _cloudify_manifest_render <file> - print the manifest on stdout.
+# _cloudify_manifest_render ... - print the manifest on stdout with jq, the one
+# encoder. An empty commit prints as JSON null (`development_override` true is
+# what the schema requires beside it); empty last run/event IDs print as null.
 function _cloudify_manifest_render() {
     local app="$1" flavor="$2" name="$3" status="$4" commit="$5" dev="$6"
     local created="$7" last_run="$8" last_event="$9" bindings="${10}"
-    local slot address node instance ssh_host first=1
-    printf '{\n'
-    printf '  "schema_version": 1,\n'
-    printf '  "application": "%s",\n' "$(_cloudify_json_escape "$app")"
-    printf '  "flavor": "%s",\n' "$(_cloudify_json_escape "$flavor")"
-    printf '  "deployment": "%s",\n' "$(_cloudify_json_escape "$name")"
-    printf '  "application_commit": "%s",\n' "$commit"
-    printf '  "development_override": %s,\n' "$dev"
-    printf '  "status": "%s",\n' "$status"
-    printf '  "created_at": "%s",\n' "$created"
-    printf '  "bindings": {\n'
-    while IFS=$'\t' read -r slot address node instance ssh_host; do
-        [[ -n "$slot" ]] || continue
-        [[ "$first" == "1" ]] || printf ',\n'
-        first=0
-        printf '    "%s": {\n' "$(_cloudify_json_escape "$slot")"
-        printf '      "address": "%s",\n' "$(_cloudify_json_escape "$address")"
-        if [[ -n "$node" ]]; then
-            printf '      "node": "%s",\n' "$(_cloudify_json_escape "$node")"
-        else
-            printf '      "node": null,\n'
-        fi
-        if [[ -n "$instance" ]]; then
-            printf '      "instance": "%s",\n' "$(_cloudify_json_escape "$instance")"
-        else
-            printf '      "instance": null,\n'
-        fi
-        if [[ -n "$ssh_host" ]]; then
-            printf '      "ssh_host": "%s"\n' "$(_cloudify_json_escape "$ssh_host")"
-        else
-            printf '      "ssh_host": null\n'
-        fi
-        printf '    }'
-    done < "$bindings"
-    printf '\n  },\n'
-    if [[ -n "$last_run" ]]; then
-        printf '  "last_run_id": "%s",\n' "$last_run"
-    else
-        printf '  "last_run_id": null,\n'
-    fi
-    if [[ -n "$last_event" ]]; then
-        printf '  "last_event_id": "%s"\n' "$last_event"
-    else
-        printf '  "last_event_id": null\n'
-    fi
-    printf '}\n'
+    jq -n \
+        --arg app "$app" --arg flavor "$flavor" --arg name "$name" \
+        --arg status "$status" --arg commit "$commit" --argjson dev "$dev" \
+        --arg created "$created" --arg last_run "$last_run" --arg last_event "$last_event" \
+        --rawfile bindings "$bindings" '
+        ($bindings
+         | split("\n")
+         | map(select(length > 0) | split("\t"))
+         | map({key: .[0], value: {
+                  address: .[1],
+                  node:     (if (.[2] // "") == "" then null else .[2] end),
+                  instance: (if (.[3] // "") == "" then null else .[3] end),
+                  ssh_host: (if (.[4] // "") == "" then null else .[4] end)}})
+         | from_entries) as $b
+        | {
+            schema_version: 1,
+            application: $app,
+            flavor: $flavor,
+            deployment: $name,
+            application_commit: (if $commit == "" then null else $commit end),
+            development_override: $dev,
+            status: $status,
+            created_at: $created,
+            bindings: $b,
+            last_run_id: (if $last_run == "" then null else $last_run end),
+            last_event_id: (if $last_event == "" then null else $last_event end)
+          }'
 }
 
-# _cloudify_manifest_reference_check <file> - the reference validator when it is
-# usable (jq present and the checker in the tree). Prints the rejection reason.
-# rc 0 accepted, 1 unusable, 2 rejected.
+# _cloudify_manifest_shape_hint <file> - name the missing and unexpected
+# top-level fields, read from the schema's own `required` and `properties` (not a
+# second copy of the rules). Prints nothing when the shape is fine.
+function _cloudify_manifest_shape_hint() {
+    local file="${1:-}" schema="$CLOUDIFY_SCHEMA_DIR/deployment-manifest.schema.json"
+    jq -nr --slurpfile s "$schema" --slurpfile i "$file" '
+        ($s[0].required // []) as $req
+        | ($i[0] | keys) as $keys
+        | (($req - $keys) | if length > 0 then "missing: " + join(", ") else empty end),
+          (($keys - (($s[0].properties // {}) | keys))
+           | if length > 0 then "unexpected: " + join(", ") else empty end)
+    ' 2>/dev/null
+}
+
+# _cloudify_manifest_reference_check <file> - the one validator. Prints the
+# rejection reason. rc 0 accepted, 1 the checker is unusable (jq or the schema
+# tree is missing), 2 rejected.
 function _cloudify_manifest_reference_check() {
-    local file="${1:-}" checker schema out
+    local file="${1:-}" checker schema hint
     command -v jq >/dev/null 2>&1 || return 1
-    checker="${CLOUDIFY_DIR:-}/schemas/v1/lib/schema-check.jq"
-    schema="${CLOUDIFY_DIR:-}/schemas/v1/deployment-manifest.schema.json"
+    checker="$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq"
+    schema="$CLOUDIFY_SCHEMA_DIR/deployment-manifest.schema.json"
     [[ -f "$checker" && -f "$schema" ]] || return 1
-    if out=$(jq -e --slurpfile schema "$schema" -f "$checker" "$file" 2>&1); then
+    if ! jq -e . "$file" >/dev/null 2>&1; then
+        printf '%s\n' 'not valid JSON'
+        return 2
+    fi
+    if jq -e --slurpfile schema "$schema" -f "$checker" "$file" >/dev/null 2>&1; then
         return 0
     fi
-    printf '%s\n' "$out"
+    hint=$(_cloudify_manifest_shape_hint "$file")
+    printf '%s\n' "rejected by the schema${hint:+ ($(printf '%s' "$hint" | paste -sd'; ' -))}"
     return 2
 }
 
-# cloudify_manifest_validate_file <file> - fail closed. Always runs the shell
-# checks the schema states, then the reference checker when it is usable.
+# cloudify_manifest_validate_file <file> - fail closed with the one validator:
+# the schema checker against schemas/v1/deployment-manifest.schema.json. No shell
+# copy of the schema rules. jq is a hard prerequisite.
 function cloudify_manifest_validate_file() {
-    local file="${1:-}" value key status_run comp bindings keys expected
+    local file="${1:-}" rc=0 reason=""
     [[ -f "$file" ]] || die "manifest: '$file' not found."
-
-    value=$(_cloudify_manifest_field_file "$file" schema_version) || die "manifest '$file': no schema_version."
-    [[ "$value" == "1" ]] || die "manifest '$file': schema_version '$value' is not 1."
-
-    for comp in application flavor deployment; do
-        value=$(_cloudify_manifest_field_file "$file" "$comp") || die "manifest '$file': no $comp."
-        _cloudify_identity_valid_component "$value" ||
-            die "manifest '$file': $comp '$value' violates the identity rules."
-    done
-
-    value=$(_cloudify_manifest_field_file "$file" application_commit) || die "manifest '$file': no application_commit."
-    [[ "$value" =~ ^[0-9a-f]{40}$ ]] ||
-        die "manifest '$file': application_commit '$value' is not 40 lowercase hex characters."
-    value=$(_cloudify_manifest_field_file "$file" development_override) || die "manifest '$file': no development_override."
-    [[ "$value" == "true" || "$value" == "false" ]] ||
-        die "manifest '$file': development_override '$value' is not a boolean."
-    value=$(_cloudify_manifest_field_file "$file" status) || die "manifest '$file': no status."
-    status_run=""
-    for status_run in $_CLOUDIFY_MANIFEST_STATUSES; do
-        [[ "$value" == "$status_run" ]] && break
-    done
-    [[ "$value" == "$status_run" ]] || die "manifest '$file': status '$value' is not one of: $_CLOUDIFY_MANIFEST_STATUSES."
-    value=$(_cloudify_manifest_field_file "$file" created_at) || die "manifest '$file': no created_at."
-    [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
-        die "manifest '$file': created_at '$value' is not a UTC second timestamp."
-
-    for key in last_run_id last_event_id; do
-        value=$(_cloudify_manifest_field_file "$file" "$key") || die "manifest '$file': no $key."
-        [[ "$value" == "null" || "$value" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] ||
-            die "manifest '$file': $key '$value' is neither null nor a sortable ID."
-    done
-
-    bindings=$(_cloudify_manifest_parse_bindings "$file")
-    [[ -n "$bindings" ]] || die "manifest '$file': bindings is empty (the schema requires at least one)."
-
-    keys=$(sed -n 's/^  "\([^"]*\)":.*/\1/p' "$file" | sort)
-    expected=$(printf '%s\n' schema_version application flavor deployment application_commit \
-        development_override status created_at bindings last_run_id last_event_id | sort)
-    [[ "$keys" == "$expected" ]] ||
-        die "manifest '$file': top-level fields are not exactly the schema fields (got: $(printf '%s' "$keys" | paste -sd, -))."
-
-    local rc=0 reason=""
     reason=$(_cloudify_manifest_reference_check "$file") || rc=$?
+    if [[ "$rc" == "1" ]]; then
+        die "manifest '$file': validation needs jq and the schema checker under '$CLOUDIFY_SCHEMA_DIR' (install it: apt-get install -y jq)."
+    fi
     if [[ "$rc" == "2" ]]; then
-        die "manifest '$file': the reference validator rejected it:"$'\n'"$reason"
+        die "manifest '$file': $reason."
     fi
     return 0
 }
@@ -455,19 +355,13 @@ function _cloudify_manifest_render_write() {
 function cloudify_manifest_write() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" status="${4:-}"
     local commit="${5:-}" dev="${6:-}" bindings="${7:-}"
-    local dir manifest lock status_run
+    local dir manifest lock
     [[ -n "${app}${flavor}${name}" ]] || die "manifest: application, flavor and deployment name are all required."
-    status_run=""
-    for status_run in $_CLOUDIFY_MANIFEST_STATUSES; do
-        [[ "$status" == "$status_run" ]] && break
-    done
-    [[ "$status" == "$status_run" ]] ||
-        die "manifest: status '$status' is not one of: $_CLOUDIFY_MANIFEST_STATUSES."
-    [[ "$commit" =~ ^[0-9a-f]{40}$ ]] ||
-        die "manifest: application_commit '$commit' is not 40 lowercase hex characters."
     [[ "$dev" == "true" || "$dev" == "false" ]] ||
         die "manifest: development_override '$dev' is not a boolean."
     [[ -f "$bindings" ]] || die "manifest: bindings file '$bindings' not found."
+    # Everything else (identity components, the status enum, the commit shape and
+    # the null-commit rule) is the schema's job, checked before the atomic rename.
 
     dir=$(cloudify_state_deployment_dir "$app" "$flavor" "$name")
     manifest="$dir/manifest.json"

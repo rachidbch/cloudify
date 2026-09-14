@@ -1029,6 +1029,21 @@ EOF
     [[ "$output" == *"replayable: no"* ]]
 }
 
+@test "commit: an unidentified tree records a real null commit with the override" {
+    rubric "no repository + CLOUDIFY_DEVELOPMENT_OVERRIDE=1 -> null, never a zero commit"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook myapp default my-dep
+    # No git init: there is no commit to prove.
+    CLOUDIFY_DEVELOPMENT_OVERRIDE=1 run cloudify_app_run myapp --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field myapp default default development_override)" = "true" ]
+    [ "$(cloudify_manifest_field myapp default default application_commit)" = "null" ]
+    run cloudify_manifest_describe myapp default default
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"replayable: no"* ]]
+    [[ "$output" == *"application_commit: null"* ]]
+}
+
 @test "commit: a clean tree records a real commit and is replayable" {
     rubric "development_override false"
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"

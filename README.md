@@ -33,6 +33,10 @@ cloudify install bat
 cloudify packages
 ```
 
+Cloudify itself needs `jq` for deployment state: `cloudify deployment run` renders
+and validates the deployment manifest with it. It ships in the `basics` package
+(`cloudify install basics`).
+
 ## Usage
 
 ```
@@ -190,16 +194,17 @@ CLOUDIFY_HERMES_API_KEY: "sk-..."
 The per-package yaml is one source among five, not the single source of truth.
 Missing files are silently ignored (vars stay empty).
 
-**Var sources and precedence.** Five sources feed a var, weakest to strongest:
+**Var sources and precedence.** Six sources feed a var, weakest to strongest:
 
 1. recipe default (`${VAR:-default}` in the recipe — runtime truth)
 2. `~/.config/cloudify/remote-vars.yaml` (global always-forward, `chmod 600`)
 3. `~/.config/cloudify/pkgs/<pkg>.yaml` (package values)
-4. `~/.config/cloudify/deployments/<id>/config.yaml` (deployment values, ADR-011)
-5. caller environment at install/configure time (strongest)
+4. `~/.config/cloudify/apps/<application>/<flavor>/defaults.yaml` (application defaults)
+5. `~/.config/cloudify/deployments/<application>/<flavor>/<deployment>/values.yaml` (deployment desired inputs, ADR-011)
+6. caller environment at install/configure time (strongest)
 
 A name is forwarded only when a source knows it: a `.remote-vars` declaration, or
-any of the three file stores. An ambient env var no source mentions never enters
+any of the four file stores. An ambient env var no source mentions never enters
 the payload.
 
 **Secret references.** A value may be a reference instead of a literal:

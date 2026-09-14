@@ -7,7 +7,7 @@
 #   cloudify_state_deployment_dir    one validated component per level
 #   cloudify_manifest_write          one flock per manifest, atomic rename,
 #                                    exactly the schemas/v1 fields
-#   cloudify_manifest_validate_file  fail closed, reference checker when usable
+#   cloudify_manifest_validate_file  fail closed with the one schema checker
 #   cloudify_commit_of / cloudify_tree_unreproducible
 
 setup() {
@@ -203,7 +203,7 @@ _reference_check() {
 }
 
 @test "manifest: validate rejects a tampered file and an unknown top-level field" {
-    rubric "fail closed: status enum, commit shape, additionalProperties"
+    rubric "fail closed: the schema is the one validator"
     local commit="0123456789abcdef0123456789abcdef01234567"
     cloudify_manifest_write app default prod applying "$commit" false "$BINDINGS"
     local file
@@ -212,7 +212,7 @@ _reference_check() {
     sed -i 's/^  "status": "applying",$/  "status": "bogus",/' "$file"
     run cloudify_manifest_validate_file "$file"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"status"* ]]
+    [[ "$output" == *"rejected by the schema"* ]]
 
     sed -i 's/^  "status": "bogus",$/  "status": "applying",/' "$file"
     run cloudify_manifest_validate_file "$file"
@@ -221,7 +221,7 @@ _reference_check() {
     sed -i 's/^  "schema_version": 1,$/  "schema_version": 1,\n  "extra": 1,/' "$file"
     run cloudify_manifest_validate_file "$file"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"schema fields"* ]]
+    [[ "$output" == *"unexpected: extra"* ]]
 }
 
 @test "manifest: list and describe expose identity, bindings and replayability, never a value" {
@@ -249,26 +249,48 @@ _reference_check() {
     [ ! -d "$CLOUDIFY_STATE_DIR/deployments" ]
 }
 
-@test "manifest: the reference checker from schemas/v1 is reachable and is what validates" {
-    rubric "no second copy of the schema rules: the jq checker is called when usable"
-    if ! command -v jq >/dev/null 2>&1 || [[ ! -f "$PWD/schemas/v1/lib/schema-check.jq" ]]; then
-        skip "jq or schemas/v1/lib/schema-check.jq unavailable"
-    fi
+@test "manifest: the schema checker is the one validator and jq is required" {
+    rubric "no second copy of the schema rules; a jq-less host fails loudly"
+    command -v jq >/dev/null 2>&1 || skip "jq unavailable"
     local commit="0123456789abcdef0123456789abcdef01234567"
     cloudify_manifest_write app default prod applying "$commit" false "$BINDINGS"
     local file
     file=$(cloudify_state_manifest_file app default prod)
 
-    # With the tree present, the module reaches the reference checker.
-    CLOUDIFY_DIR="$PWD" run _cloudify_manifest_reference_check "$file"
+    # The checker from the module's own tree accepts what the writer produced.
+    run _cloudify_manifest_reference_check "$file"
     [ "$status" -eq 0 ]
 
     sed -i 's/^  "status": "applying",$/  "status": "bogus",/' "$file"
-    CLOUDIFY_DIR="$PWD" run _cloudify_manifest_reference_check "$file"
+    run _cloudify_manifest_reference_check "$file"
     [ "$status" -eq 2 ]
-    [ -n "$output" ]
+    [[ "$output" == *"rejected by the schema"* ]]
 
-    # And the writer's own gate uses it: the same file is refused.
-    CLOUDIFY_DIR="$PWD" run cloudify_manifest_validate_file "$file"
+    # And the public validator uses it: the same file is refused.
+    run cloudify_manifest_validate_file "$file"
     [ "$status" -ne 0 ]
+
+    # A missing checker is unusable, never a silent pass.
+    CLOUDIFY_SCHEMA_DIR="$CLOUDIFY_TMP/nope" run _cloudify_manifest_reference_check "$file"
+    [ "$status" -eq 1 ]
+    CLOUDIFY_SCHEMA_DIR="$CLOUDIFY_TMP/nope" run cloudify_manifest_validate_file "$file"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"needs jq and the schema checker"* ]]
+}
+
+@test "manifest: an unproved commit is real null, only with the development override" {
+    rubric "the zero sentinel is gone; the schema's cross-field rule is the gate"
+    cloudify_manifest_write app default prod applying "" true "$BINDINGS"
+    local file
+    file=$(cloudify_state_manifest_file app default prod)
+    [ "$(cloudify_manifest_field app default prod application_commit)" = "null" ]
+    grep -q '"application_commit": null' "$file"
+    run cloudify_manifest_validate_file "$file"
+    [ "$status" -eq 0 ]
+
+    # null without development_override is refused, and nothing lands.
+    run cloudify_manifest_write app default stage applying "" false "$BINDINGS"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"rejected by the schema"* ]]
+    [ ! -f "$(cloudify_state_manifest_file app default stage)" ]
 }

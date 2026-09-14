@@ -782,10 +782,12 @@ function _cloudify_runbook_tuple_for() {
 }
 
 # _cloudify_runbook_source_commit - the commit of the runbook and recipes in
-# use, plus whether it is a development override: print "commit\tdev". A dirty
+# use, plus whether it is a development override: print "dev\tcommit", dev
+# first so a null commit is a trailing empty field rather than a leading one
+# (a leading empty field would be eaten by `read`'s IFS handling). A dirty
 # or unidentified tree dies unless CLOUDIFY_DEVELOPMENT_OVERRIDE=1 is set, in
-# which case the manifest records the HEAD commit (or the git null object when
-# there is none) with development_override=true and the deployment is labelled
+# which case the manifest records the HEAD commit (or JSON null when there is
+# none) with development_override=true and the deployment is labelled
 # unreproducible. A dirty deployment is never presented as replayable.
 function _cloudify_runbook_source_commit() {
     local dir="${CLOUDIFY_DIR:-}" commit dev="false"
@@ -793,15 +795,14 @@ function _cloudify_runbook_source_commit() {
     if cloudify_tree_unreproducible "$dir"; then
         if [[ "${CLOUDIFY_DEVELOPMENT_OVERRIDE:-}" == "1" ]]; then
             dev="true"
-            [[ -n "$commit" ]] || commit="$_CLOUDIFY_MANIFEST_NULL_COMMIT"
-            log_warn "Cloudify tree '$dir' is dirty or unidentified (commit ${commit}); recording an unreproducible deployment (development override)."
+            log_warn "Cloudify tree '$dir' is dirty or unidentified (commit ${commit:-none}); recording an unreproducible deployment (development override)."
         else
             die "deployment: the Cloudify tree '$dir' is dirty or its commit is unknown (commit: ${commit:-unknown}). Commit the tree, or set CLOUDIFY_DEVELOPMENT_OVERRIDE=1 to record an unreproducible deployment."
         fi
     fi
-    [[ -n "$commit" ]] ||
+    [[ -n "$commit" || "$dev" == "true" ]] ||
         die "deployment: cannot identify the Cloudify commit at '$dir'."
-    printf '%s\t%s\n' "$commit" "$dev"
+    printf '%s\t%s\n' "$dev" "$commit"
 }
 
 # _cloudify_runbook_bindings_file <out-file> <bound-lines> - render the
@@ -869,7 +870,7 @@ function _cloudify_deployment_manifest_prepare() {
         rm -f "$bindings_file"
         return "$rc"
     fi
-    IFS=$'\t' read -r commit dev <<< "$commit_line"
+    IFS=$'\t' read -r dev commit <<< "$commit_line"
     cloudify_manifest_write "$app" "$flavor" "$name" applying "$commit" "$dev" "$bindings_file" || rc=$?
     rm -f "$bindings_file"
     [[ "$rc" -eq 0 ]] || return "$rc"
@@ -1588,7 +1589,7 @@ function cloudify_runbook_execute() {
         _mflavor="$CLOUDIFY_FLAVOR"
         _mname="$CLOUDIFY_DEPLOYMENT_NAME"
         _commit_line=$(_cloudify_runbook_source_commit)
-        IFS=$'\t' read -r _mcommit _mdev <<< "$_commit_line"
+        IFS=$'\t' read -r _mdev _mcommit <<< "$_commit_line"
         if [[ "$status" == "failed" ]]; then
             _mstatus="degraded"
         else

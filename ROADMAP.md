@@ -107,7 +107,7 @@ out rather than ridden along with a repair to the most breakage-prone code in th
 
 ### How
 
-One slice, its own consent and its own review, scheduled as the first step of the Phase 4 state and event substrate, before its writers run. Nothing else in Phase 4 depends on it: the state and event writers take identity from the parent (`ADR-024`) and read only the context's values, which the flat format already carries, so this is a quality slice rather than a dependency.
+One slice, its own consent and its own review. It is deliberately unscheduled: nothing depends on it, because the state and event writers take identity from the parent (`ADR-024`) and read only the context's values, which the flat format already carries. It is a quality improvement waiting for a slot, not a prerequisite of any phase.
 
 1. Write `schemas/v1/dispatch-context.schema.json` covering every field the context carries,
    with fields that have no producer yet typed nullable. Add valid and invalid fixtures.

@@ -297,7 +297,7 @@ This phase touches the remote result transport and the host lock in `lib/remote.
 
 ### State and event substrate (4.1)
 
-- [ ] Complete the deferred JSON dispatch-context contract from `ROADMAP.md` as this phase's first step, before its state and event writers run, under its own consent and review. Nothing else in this phase depends on it: the writers take identity from the parent (`ADR-024`) and read only the context's values, which the flat format already carries: the schema; the full per-name fields (declaration kind, resolved runtime form, secret classification origin); the identity fields whose producers land later (application commit, run and step IDs, package instance) with the rule that a field without a producer stays null; the projections from each context value into `package-state.applied.values`, `package-state.last_attempt.requested` and event `values`; the `jq` readers that replace the flat-line parsers (the allow-list extraction in `lib/remote.sh`, `cloudify_context_read`, and the DEBUG loop); and validation strictness (every expected field present, no unexpected field).
+- [ ] Define and test the projections from each context value into `package-state.applied.values`, `package-state.last_attempt.requested` and event `values` before any writer uses them.
 - [ ] Tighten `schemas/v1/package-state.schema.json` so every new applied, attempt, health and claim object carries a non-null event ID, add the matching fixtures, and keep `bash schemas/v1/validate.sh` green.
 
 - [ ] Add collision-resistant run and event IDs without a new runtime dependency.
@@ -308,6 +308,8 @@ This phase touches the remote result transport and the host lock in `lib/remote.
 - [ ] Create the event first, then replace state with revision plus one and that event ID.
 - [ ] Detect and report an event whose resulting revision is absent from state and state pointing to a missing event.
 - [ ] Never infer remote rollback from a local write failure.
+
+Not planned work for this phase: the JSON dispatch-context contract. It is roadmapped, not scheduled, and nothing here depends on it - the state and event writers take identity from the parent (`ADR-024`) and read only the context's values, which the flat format already carries. See "Dispatch context as a JSON contract" in `ROADMAP.md`.
 
 ### Package instance and host identity (4.2)
 

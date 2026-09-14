@@ -413,3 +413,8 @@
 
 - Phase 3 (R2) does not change the context's format; it audits the manifest, desired inputs, phase selection and runbook discovery, and dedups. Two of its lines presumed the JSON context: "mappings feed only the relevant package context view" (wrong-spec wording) and "one parent-side encoder and validator ... rather than only for the context" (the context has no `jq` encoder in the flat format). Both corrected.
 - The deferral target was contradictory: the plan's 4.1 line made the conversion a prerequisite of the state and event writers, while `ROADMAP.md` said "Do not block Phase 4 on it". Resolved: it is the first step of the state and event substrate, under its own consent and review, and nothing else in Phase 4 depends on it, because the writers take identity from the parent (ADR-024) and read only the context's values, which the flat format already carries.
+
+## 2026-09-14 - JSON context: roadmapped, not planned
+
+- Rachid corrected the framing: the plan tracks planned work; `ROADMAP.md` tracks work to be seen in a vague future. The JSON dispatch-context contract is roadmapped (nothing depends on it), so it must not appear as a scheduled task. Removed the Phase 4 task that had promoted it, and restored the piece that is genuinely planned: the projections from each context value into `package-state.applied.values`, `package-state.last_attempt.requested` and event `values`, which the Phase 4 writers need.
+- `ROADMAP.md` now says the slice is deliberately unscheduled rather than "the first step of Phase 4". The R1 references to "the deferred JSON context work" stay as pointers.

@@ -71,23 +71,23 @@ No implementation may weaken the design or the plan silently. A required change 
 
 ## Mandatory execution rules
 
-- [ ] Never mark a task complete from a subagent report alone; the lead agent verifies the file, focused tests and diff.
-- [ ] Never mark an entire phase complete with a bulk checkbox replacement.
-- [ ] One red test, minimum green implementation, refactor, then the next red test.
-- [ ] Every slice ends with focused tests and shellcheck before commit.
-- [ ] Full unit suite runs only at recovery and phase boundaries.
-- [ ] Run tests in the background into `results/<name>.tap` and poll with plain `tail`.
-- [ ] Read Cloudify's normal `/tmp/cloudify/logs/<timestamp>.log`; do not create custom diagnostic logs or grep test output.
-- [ ] Do not use integration or E2E as a debugger: fix what it exposes with L0 to L3 and focused tests first, then re-run it once.
-- [ ] Run the full disposable E2E at every code phase exit gate, and again at the final gate.
-- [ ] Push before every test whose remote host pulls from GitHub.
-- [ ] No compatibility flags, fallback readers, dual writers, legacy path discovery or superseded command aliases.
-- [ ] A temporary migration reader must be the sole caller of the old format and must have a deletion task in this plan.
-- [ ] Deleting a migration reader or its fixtures must leave the surviving gates (especially `bash schemas/v1/validate.sh`) passing; name the replacement gate in the same task.
-- [ ] No code commit while a SPEC or Technical reviewer has actionable feedback on that slice.
-- [ ] Any slice that changes `lib/`, the `cloudify` router, `lib/shadows/` or `lib/shadow.sh` needs the project CRITICAL GATE first, in this order: a read-only description subagent writes the artifact explaining the bash mechanism at risk, then a plan states explicitly why the change cannot break it, then Rachid gives explicit consent, then the consent is recorded in `LOGS.md`. No tick may be claimed before all four.
-- [ ] Plan-level reviews are bounded: stop after two consecutive rounds with no must-fix finding, log anything smaller as an implementation checklist item, and let the phase gate settle it on real code. Per-phase reviews of a real diff are the primary gate; reviewing plan prose is not.
-- [ ] `git status --short` is clean at every committed boundary.
+- Never mark a task complete from a subagent report alone; the lead agent verifies the file, focused tests and diff.
+- Never mark an entire phase complete with a bulk checkbox replacement.
+- One red test, minimum green implementation, refactor, then the next red test.
+- Every slice ends with focused tests and shellcheck before commit.
+- Full unit suite runs only at recovery and phase boundaries.
+- Run tests in the background into `results/<name>.tap` and poll with plain `tail`.
+- Read Cloudify's normal `/tmp/cloudify/logs/<timestamp>.log`; do not create custom diagnostic logs or grep test output.
+- Do not use integration or E2E as a debugger: fix what it exposes with L0 to L3 and focused tests first, then re-run it once.
+- Run the full disposable E2E at every code phase exit gate, and again at the final gate.
+- Push before every test whose remote host pulls from GitHub.
+- No compatibility flags, fallback readers, dual writers, legacy path discovery or superseded command aliases.
+- A temporary migration reader must be the sole caller of the old format and must have a deletion task in this plan.
+- Deleting a migration reader or its fixtures must leave the surviving gates (especially `bash schemas/v1/validate.sh`) passing; name the replacement gate in the same task.
+- No code commit while a SPEC or Technical reviewer has actionable feedback on that slice.
+- Any slice that changes `lib/`, the `cloudify` router, `lib/shadows/` or `lib/shadow.sh` needs the project CRITICAL GATE first, in this order: a read-only description subagent writes the artifact explaining the bash mechanism at risk, then a plan states explicitly why the change cannot break it, then Rachid gives explicit consent, then the consent is recorded in `LOGS.md`. No tick may be claimed before all four.
+- Plan-level reviews are bounded: stop after two consecutive rounds with no must-fix finding, log anything smaller as an implementation checklist item, and let the phase gate settle it on real code. Per-phase reviews of a real diff are the primary gate; reviewing plan prose is not.
+- `git status --short` is clean at every committed boundary.
 
 Test levels are fixed. L0 is shellcheck plus syntax. L1 is the real code run on a real machine without dispatching a package. It is not a separate file: `tests/unit/context-wiring.bats` already drives the real transport with a stubbed ssh, asserting the payload text and the ssh argument string, which is exactly this level. Later slices add a driver only if nothing existing covers the new wiring. L2 is one no-verify mutation of the disposable package `fixture-split` (already in `pkg/`) with an inspection of Cloudify's own log. L3 is `PKG_VERIFY_TIMEOUT=30 cloudify verify fixture-split`. L4 is the scoped bats acceptance harness. Every level names a concrete artifact, and no driver is created before the code it drives, so none can be satisfied by an empty green file.
 

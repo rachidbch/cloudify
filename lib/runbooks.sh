@@ -961,9 +961,11 @@ function cloudify_runbook_find() {
     local -a matches=()
     local f dep
     while IFS= read -r f; do
+        # Only a canonical runbooks/<app>/<flavor>/runbook.md is discoverable.
+        cloudify_runbook_identity "$f" >/dev/null 2>&1 || continue
         dep=$(_cloudify_runbook_deployment_of "$f")
         [[ "$dep" == "$id" ]] && matches+=("$f")
-    done < <(find "$root" -type f -name '*.md' | sort)
+    done < <(find "$root" -type f -name 'runbook.md' | sort)
     [[ ${#matches[@]} -gt 0 ]] || die "No runbook found for deployment '$id' under '$root'."
     [[ ${#matches[@]} -eq 1 ]] ||
         die "Multiple runbooks found for deployment '$id':"$'\n'"$(printf '  %s\n' "${matches[@]}")"
@@ -1591,8 +1593,13 @@ function cloudify_runbook_execute() {
             _mstatus="degraded"
         else
             _mstatus=$(cloudify_manifest_field "$_mapp" "$_mflavor" "$_mname" status)
+            # `active` means the deployment was installed AND verified. A run that
+            # selected only one of the two keeps its recorded status.
+            local _mphases=""
+            _mphases=$(cloudify_runbook_phases_for "$path" ${cli_phases[@]+"${cli_phases[@]}"})
             if [[ -z "$from" ]] &&
-                cloudify_runbook_phases_for "$path" ${cli_phases[@]+"${cli_phases[@]}"} | grep -qx install; then
+                grep -qx install <<< "$_mphases" &&
+                grep -qx verify <<< "$_mphases"; then
                 _mstatus="active"
             fi
             [[ -n "$_mstatus" ]] || _mstatus="applying"

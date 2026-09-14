@@ -301,15 +301,15 @@ EOF
 # ---------------------------------------------------------------
 
 @test "find: the single runbook declaring the deployment" {
-    rubric "scan <root>/**/*.md for a front-matter deployment match"
+    rubric "only a canonical runbooks/<app>/<flavor>/runbook.md is discoverable"
     local root="$CLOUDIFY_TMP/scan"
-    _make_runbook "$root/a/one.md" <<'EOF'
+    _make_runbook "$root/one/default/runbook.md" <<'EOF'
 ---
 deployment: demo
 targets: guest
 ---
 EOF
-    _make_runbook "$root/b/two.md" <<'EOF'
+    _make_runbook "$root/other/default/runbook.md" <<'EOF'
 ---
 deployment: other
 targets: guest
@@ -317,13 +317,27 @@ targets: guest
 EOF
     run cloudify_runbook_find demo "$root"
     [ "$status" -eq 0 ]
-    [ "$output" = "$root/a/one.md" ]
+    [ "$output" = "$root/one/default/runbook.md" ]
+}
+
+@test "find: a Markdown file that is not runbook.md is invisible" {
+    rubric "a non-canonical name is never discoverable, whatever its front matter"
+    local root="$CLOUDIFY_TMP/scan-name"
+    _make_runbook "$root/notes/default/other.md" <<'EOF'
+---
+deployment: demo
+targets: guest
+---
+EOF
+    run cloudify_runbook_find demo "$root"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No runbook found for deployment 'demo'"* ]]
 }
 
 @test "find: no match dies" {
     rubric "no matching runbook -> die"
     local root="$CLOUDIFY_TMP/scan-none"
-    _make_runbook "$root/two.md" <<'EOF'
+    _make_runbook "$root/other/default/runbook.md" <<'EOF'
 ---
 deployment: other
 targets: guest
@@ -337,13 +351,13 @@ EOF
 @test "find: two matches dies listing both" {
     rubric "two runbooks for one deployment -> die, never a silent pick"
     local root="$CLOUDIFY_TMP/scan-two"
-    _make_runbook "$root/a.md" <<'EOF'
+    _make_runbook "$root/a/default/runbook.md" <<'EOF'
 ---
 deployment: demo
 targets: guest
 ---
 EOF
-    _make_runbook "$root/b.md" <<'EOF'
+    _make_runbook "$root/b/default/runbook.md" <<'EOF'
 ---
 deployment: demo
 targets: guest
@@ -352,13 +366,13 @@ EOF
     run cloudify_runbook_find demo "$root"
     [ "$status" -ne 0 ]
     [[ "$output" == *"Multiple runbooks"* ]]
-    [[ "$output" == *"$root/a.md"* ]]
-    [[ "$output" == *"$root/b.md"* ]]
+    [[ "$output" == *"$root/a/default/runbook.md"* ]]
+    [[ "$output" == *"$root/b/default/runbook.md"* ]]
 }
 
 @test "find: the default root is \$CLOUDIFY_DIR/runbooks" {
     rubric "no root argument -> the repo runbooks dir, like pkg/"
-    _make_runbook "$CLOUDIFY_DIR/runbooks/app/x.md" <<'EOF'
+    _make_runbook "$CLOUDIFY_DIR/runbooks/app/default/runbook.md" <<'EOF'
 ---
 deployment: demo-default
 targets: guest
@@ -366,7 +380,7 @@ targets: guest
 EOF
     run cloudify_runbook_find demo-default
     [ "$status" -eq 0 ]
-    [ "$output" = "$CLOUDIFY_DIR/runbooks/app/x.md" ]
+    [ "$output" = "$CLOUDIFY_DIR/runbooks/app/default/runbook.md" ]
 }
 
 # ---------------------------------------------------------------
@@ -882,6 +896,18 @@ EOF
     [ "$(cloudify_manifest_field myapp default default last_run_id)" = "null" ]
     # the compatibility snapshot is still written where it always was
     [ -n "$(ls "$CLOUDIFY_DEPLOYMENTS_DIR/my-dep/runs/"*.yaml 2>/dev/null)" ]
+}
+
+@test "manifest: an install-only run never becomes active" {
+    rubric "active requires install and verify, not install alone"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook myapp default my-dep
+    _clean_tree
+    run cloudify_deployment_run my-dep --target guest=cloudai:xfce-test --phase install
+    [ "$status" -eq 0 ]
+    # The manifest was created applying and keeps that recorded status: only a
+    # run that selected both install and verify may end active.
+    [ "$(cloudify_manifest_field myapp default default status)" = "applying" ]
 }
 
 @test "manifest: an observed failure marks the deployment degraded" {

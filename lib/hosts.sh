@@ -58,7 +58,6 @@ function cloudify_list_hosts_by_tags() {
                     current_hosts_list=$(find "$CLOUDIFY_DIR"/inventory -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | tr '\n' ' ')
                 else
                     # Otherwise, filter by current tag
-                    current_hosts_list=$(find "$CLOUDIFY_DIR"/inventory -mindepth 2 -maxdepth 2 -name "$filter" -exec dirname {} \; -exec basename {} \; | head -1)
                     current_hosts_list=$(find "$CLOUDIFY_DIR"/inventory -mindepth 2 -maxdepth 2 -name "$filter" | while read -r d; do basename "$(dirname "$d")"; done | tr '\n' ' ')
                 fi
 

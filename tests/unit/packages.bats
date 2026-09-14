@@ -110,6 +110,34 @@ create_mock_pkg() {
     [[ "$output" != *"nondefault"* ]]
 }
 
+@test "a # platform filter includes platform-agnostic packages" {
+    # A package with no `#` tag runs on every OS (README tag model), so a
+    # platform filter must include it, not only packages carrying that tag.
+    create_mock_pkg tagged "#linux"
+    create_mock_pkg agnostic
+    create_mock_pkg other "#darwin"
+
+    run cloudify_list_packages_by_tags "#linux"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"tagged"* ]]
+    [[ "$output" == *"agnostic"* ]]
+    [[ "$output" != *"other"* ]]
+}
+
+@test "cloudify_list_default_packages includes a tag-less default package" {
+    # The @default packages carry no `#` platform tag on the real tree, so the
+    # default list was empty and no @default package ever auto-installed.
+    local os
+    os=$(cloudify_osdetect --os)
+    create_mock_pkg defpkg @default
+    create_mock_pkg skip "#${os}"
+
+    run cloudify_list_default_packages
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"defpkg"* ]]
+    [[ "$output" != *"skip"* ]]
+}
+
 @test "multi-tag intersection sorts comm input (no warnings) and returns every match" {
     # `comm -12` requires sorted input. The old code fed it unsorted `find`
     # order, so it emitted "not in sorted order" on stderr and dropped members

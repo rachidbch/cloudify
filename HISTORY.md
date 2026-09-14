@@ -1008,3 +1008,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Root cause: `comm -12` intersected two unsorted `find` lists, returning a wrong intersection and a non-zero exit that, under `set -E` + `trap cleanup ERR`, fired `cleanup()` mid-dispatch and wiped the context directory.
 - Fix (CRITICAL GATE, consent given): `| grep -v '^$' | sort` on both `comm` inputs in `lib/packages.sh` and `lib/hosts.sh`. Two red-first tests assert the full intersection and no sort warnings.
 - Ladder green: lint, L1 driver, L2 install with 0 sort warnings, full unit 636 ok, two-host E2E 4/4 with hosts torn down.
+
+### 2026-09-14 - platform filter and dead-line fixed (separate gated slice)
+
+- Fixed the platform-filter defect: `#<os>` now matches packages carrying that tag OR carrying no `#` tag (platform-agnostic), so `cloudify_list_default_packages` returns the 5 `@default` packages and `cloudify install` actually auto-installs them. CRITICAL GATE + consent.
+- Deleted the dead `head -1` assignment in `lib/hosts.sh`.
+- Two red-first tests; ladder green: lint, focused suites, L1 real-tree (5 default packages), L2 install, full unit 638 ok, two-host E2E 4/4.

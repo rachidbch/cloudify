@@ -96,7 +96,7 @@ Test levels are fixed. L0 is shellcheck plus syntax. L1 is the real code run on 
 Every code phase (the Phase 2 repair, R1; the Phase 3 audit, R2; and Phases 4 to 9) ends here, and no later phase starts until it passes.
 The clean baseline (R0) changes no runtime code and the Phase 4 design gate (R3) writes no code, so those two run the reviews but skip the E2E lines.
 
-- [x] Full unit suite green on the phase's final HEAD (634 ok, 0 not ok, `results/phase2-exit/report.tap`).
+- [x] Full unit suite green on the phase's final HEAD (644 ok, 0 not ok, `results/target-timeout/report.tap`).
 - [x] Full disposable end-to-end run green in `tests/e2e/two-host-application.bats`, created in the Phase 2 repair (R1) and run as an operator would: two disposable hosts, the scenario set unlocked by this phase, and `CLOUDIFY_CMD="cloudify --no-defaults"`. (4 scenarios green, 4 later-phase scenarios skipped by name, 0 failures.)
 - [x] Run the phase's unlocked E2E scenarios only: the Phase 2 repair (R1) and the Phase 3 audit (R2) run install, verify and interruption; the package state phase (Phase 4) onward adds reconfigure, shared claim and conflict; the provenance phase (Phase 7) adds first teardown and last teardown. A scenario whose phase has not landed stays marked not-yet-unlocked in the suite, never deleted and never silently skipped. (The four later-phase scenarios stay skipped with their unlocking phase named.)
 - [x] Every disposable resource torn down and the host policy proven restored, with no leftover node, binding or claim. (Both `e2e-2h-a` and `e2e-2h-b` deleted in teardown_file.)
@@ -146,7 +146,7 @@ The description artifact exists: `tmp/state-model-v2-forwarding-description.md` 
 
 - [x] Spawn a read-only subagent whose only mission is to describe how the env-var forwarding path works end to end: `declare -f` payload extraction, the `envsubst` allow-list, single-quoted `$VAR` remoting, first-write-wins claiming, and where the registry record and snapshot are written.
 - [x] Write that description as an artifact and cite it from the plan before touching code.
-- [ ] Use the artifact's section "What a safe Phase 2 fix may and may not touch" as the starting invariant list, dropping the two invariants the artifact marks as superseded by design (the metadata-only context and the frozen allow-list) and following `REDESIGN.md` where they differ.
+- [x] Use the artifact's section "What a safe Phase 2 fix may and may not touch" as the starting invariant list, dropping the two invariants the artifact marks as superseded by design (the metadata-only context and the frozen allow-list) and following `REDESIGN.md` where they differ. Done in `tmp/state-model-v2-phase2-non-breakage.md`.
 - [x] State explicitly in the plan why the context change cannot break forwarding or the shadows: name each invariant preserved, each mechanism traced, and the test that re-asserts it. Written before the first `lib/` edit in `tmp/state-model-v2-phase2-non-breakage.md`, with its durable trace in `LOGS.md`.
 - [x] Obtain explicit consent from Rachid and record it in `LOGS.md`. Consent given 2026-09-13 for the Phase 2 repair, scope: the seven files listed in R1.2, no shadow or recipe changes.
 
@@ -156,16 +156,14 @@ The context keeps its current flat `key: value` format. Converting it to JSON wi
 
 - [x] Create `tests/e2e/two-host-application.bats` with every scenario named and the phase that unlocks each one. Done for the Phase 2 repair: 4 scenarios green, 4 later-phase scenarios skipped by name.
 - [x] The L1 driver is not a new file. `tests/unit/context-wiring.bats` already runs the real code against a real machine without dispatching a package, so a `tests/unit/drivers/context.bats` would duplicate it and add a file rather than coverage. Later slices add a driver only if nothing existing covers the new wiring.
-- [ ] Add one field per name: the raw source form, the exact text the registry record and the snapshot must contain. It is carried in the context's transport encoding `t:<text>` or `b:<base64>` (chosen by `_cloudify_vars_raw_encode`, so a raw text that itself looks encoded is never mistaken for the transport); the record and snapshot decode it and keep their own existing `@base64:` convention for multiline values. Nothing else about the format changes.
-The full per-name field set is deferred with the JSON context contract. The separate package-view requirement remains open for a decision before it is moved.
-- [ ] Include dispatch identity, resolved target identity and address, application commit, run ID, stable step ID, package instance and phase.
-- [ ] Fields without a producer stay null: run ID until Phase 6, stable step ID outside a runbook, and application commit outside an application run; package instance is the specified `default` until explicit multi-instance support lands.
-- [ ] Define and test the exact projections from each context value into `package-state.applied.values`, `package-state.last_attempt.requested` and event `values` before any writer uses them.
+- [x] Add one field per name: the raw source form, the exact text the registry record and the snapshot must contain. It is carried in the context's transport encoding `t:<text>` or `b:<base64>` (chosen by `_cloudify_vars_raw_encode`, so a raw text that itself looks encoded is never mistaken for the transport); the record and snapshot decode it and keep their own existing `@base64:` convention for multiline values. Nothing else about the format changes. Pinned by `tests/unit/context-raw-form.bats`.
+The full per-name field set is deferred with the JSON context contract.
+- [x] Include deployment identity, resolved host identity and address, phase and action (verified by `tests/unit/context.bats`, "`cloudify_context_read` round-trips each field"). The identity fields whose producers land later, and the null rule for them, moved to the deferred JSON context work.
 - [x] Secret classification origin is exactly `explicit`, `heuristic` or `none`; the stale `legacy-heuristic` term is removed from schemas, fixtures and docs.
-- [ ] Permit resolved plaintext transiently in both this 0600 ephemeral context and collector shell exports, as `REDESIGN.md` requires; neither channel may be removed before payload execution.
-- [ ] Keep secret plaintext out of logs, debug output, state, runs and events. The raw source form of a secret is permitted in the context for the same reason the resolved form is, and the context's removal is what bounds it.
-- [ ] Validate the context with an explicit check before payload construction and before any mutation: every expected field present, no unexpected field, the encoding well formed. A malformed context must fail loudly, because a silently empty context stops payload forwarding with no error.
-- [ ] Obtain a fresh SPEC review and Technical review of this contract, each returning `PASS` with no actionable feedback.
+- [x] Permit resolved plaintext transiently in both this 0600 ephemeral context and collector shell exports, as `REDESIGN.md` requires; neither channel may be removed before payload execution.
+- [x] Keep secret plaintext out of logs, debug output, state, runs and events. The raw source form of a secret is permitted in the context for the same reason the resolved form is, and the context's removal is what bounds it. Asserted for logs, the context file and the registry record (`tests/unit/context.bats`, `tests/unit/context-wiring.bats`, `tests/unit/golden-fixtures.bats`); state, runs and events have no writer yet, so the scan extends with them.
+- [x] Validate the context with an explicit check before payload construction and before any mutation: the required fields are present and the raw encoding is well formed (`cloudify_context_validate`), and a malformed context fails loudly, because a silently empty context stops payload forwarding with no error. The stricter rule - every expected field present and no unexpected field - is deferred with the JSON schema that will own "expected fields".
+- [x] Obtain a fresh SPEC review and Technical review of this contract, each returning `PASS` with no actionable feedback. Both returned `PASS` at the Phase 2 exit gate.
 
 ### Replace the incomplete context (R1.2)
 
@@ -183,37 +181,36 @@ This slice changes a foundational mechanism (value forwarding), so its implement
 
 The gain was one `grep -qx` per claimed name and one parse-back. Not worth that risk surface in the same slice that already touches the most breakage-prone code in the repository.
 
-- [ ] Prove the repair leaves shadowing untouched: no shadowed command (`sudo`, `apt-get`, `add-apt-repository`, `git`) and no file under `lib/shadows/` is read, called or modified by it.
+- [x] Prove the repair leaves shadowing untouched: no shadowed command (`sudo`, `apt-get`, `add-apt-repository`, `git`) and no file under `lib/shadows/` is read, called or modified by it. `git diff 667d96f..HEAD -- lib/shadows lib/shadow.sh pkg/` is empty, and the payload bytes stay pinned by the eight `tests/fixtures/golden/payload/*` cases.
 
-- [ ] Build the dispatch's value set once from the source ladder at context creation.
-- [ ] Do not change the context builder's internal temp files: the claim ledger and the provenance file stay files. See the rejected option above for why.
-- [ ] Add the raw source form to what the builder records per name, beside the existing provenance record, so the registry record and the snapshot can be built from the context without reopening a store.
-- [ ] Preserve install precedence exactly as `REDESIGN.md` states, strongest first: caller or step environment, deployment desired inputs, application defaults, package defaults, global defaults, recipe defaults.
-- [ ] Resolve application input mappings only into names a package in the dispatch declares, never into an arbitrary ambient name.
-- [ ] Preserve file-store secret reference resolution and caller-environment literal timing.
-- [ ] Compute literal-secret digests while the resolved plaintext is in the private context.
-- [ ] Update the JSON-context readers that currently parse flat lines: the allow-list name extraction in `lib/remote.sh:_cloudify_dispatch_vars` (`lib/remote.sh:123`) and `cloudify_context_read` (`lib/context.sh:364-376`), which the DEBUG rendering loop calls for `value.<name>.source` and `value.<name>.secret` (`lib/remote.sh:250-260`). Today's `sed` and flat key match find nothing once the context is JSON, which would empty the allow-list and silently stop forwarding package values, and would make DEBUG report `source=recipe secret=false` for every name. Change the extraction and the reader only, never the payload template, the `envsubst` call or the stdin transport.
-- [ ] Fix context-removal ownership before the context carries plaintext, in two layers that both work within the existing exit path. First, remove each dispatch's context in the wait loop's success path too, mirroring the failure path (`cloudify:821-824`), so a direct package command with no deployment stops leaking (today `_cloudify_registry_record_bg` returns early at `lib/registry.sh:395-397` and its `rm` at `:418` is never reached). Second, declare `_CLOUDIFY_BG_CONTEXT` at global scope rather than `local -A` (`cloudify:412`), because an EXIT trap armed inside `main()` runs after `main()` returns, when a local is already unset and the array looks empty; then add the removal loop at the top of the existing `cleanup()` (`lib/utils.sh:74-87`), before its `DEBUG` early-return, so the single `trap cleanup SIGINT SIGTERM ERR EXIT` (`cloudify:98`) covers signals and early exits without a second trap. Do not arm a second EXIT trap: it would replace `cleanup` for the EXIT signal and silently disable `CLOUDIFY_TMP` cleanup, and do not use a RETURN trap at context creation, which fires before the backgrounded child fills the file.
-- [ ] Update the snapshot resolver in `lib/runbooks.sh` (the seed block around `lib/runbooks.sh:1390`) so it stops calling `_cloudify_vars_store_get` and reads the same context.
+- [x] Build the dispatch's value set once from the source ladder at context creation.
+- [x] Do not change the context builder's internal temp files: the claim ledger and the provenance file stay files. See the rejected option above for why.
+- [x] Add the raw source form to what the builder records per name, beside the existing provenance record, so the registry record and the snapshot can be built from the context without reopening a store.
+- [x] Preserve install precedence exactly as `REDESIGN.md` states, strongest first: caller or step environment, deployment desired inputs, application defaults, package defaults, global defaults, recipe defaults. Pinned by the walker tests in `tests/unit/vars.bats`.
+- [x] Resolve application input mappings only into names a package in the dispatch declares, never into an arbitrary ambient name (`tests/unit/context.bats`, "application inputs: a mapping is names only, so an unmapped package variable is untouched").
+- [x] Preserve file-store secret reference resolution and caller-environment literal timing (`tests/unit/context.bats`, "store references arrive decoded while the same text in the caller env arrives verbatim").
+- [x] Compute literal-secret digests while the resolved plaintext is in the private context.
+- [x] Fix context-removal ownership before the context carries plaintext, in two layers that both work within the existing exit path. First, remove each dispatch's context in the wait loop's success path too, mirroring the failure path (`cloudify:821-824`), so a direct package command with no deployment stops leaking (today `_cloudify_registry_record_bg` returns early at `lib/registry.sh:395-397` and its `rm` at `:418` is never reached). Second, declare `_CLOUDIFY_BG_CONTEXT` at global scope rather than `local -A` (`cloudify:412`), because an EXIT trap armed inside `main()` runs after `main()` returns, when a local is already unset and the array looks empty; then add the removal loop at the top of the existing `cleanup()` (`lib/utils.sh:74-87`), before its `DEBUG` early-return, so the single `trap cleanup SIGINT SIGTERM ERR EXIT` (`cloudify:98`) covers signals and early exits without a second trap. Do not arm a second EXIT trap: it would replace `cleanup` for the EXIT signal and silently disable `CLOUDIFY_TMP` cleanup, and do not use a RETURN trap at context creation, which fires before the backgrounded child fills the file. Implemented, and today the backstop is the swept context directory (`lib/utils.sh`).
+- [x] Update the snapshot resolver in `lib/runbooks.sh` (the seed block around `lib/runbooks.sh:1390`) so it stops calling `_cloudify_vars_store_get` and reads the same context (`tests/unit/context-raw-form.bats`, "no second walk: the snapshot resolver survives the sources disappearing").
 - [x] Replace `_cloudify_registry_context_raw`, the committed store re-opener, with a reader of the context's `value.<name>.raw` field: it never reopens a value store, so the second-walk defect is gone. (`cloudify_context_raw_value` existed only in the rejected patch and is already gone.)
-- [ ] Make preflight, the `envsubst` allow-list names, registry observation, snapshot writer and future state/event writers consume this context only.
-- [ ] Never read a resolved value back from the context to build the payload; values still flow resolver shell exports to one envsubst pass to single-quoted remote exports.
-- [ ] Keep collector exports in the calling shell and never capture them with command substitution.
-- [ ] Keep the payload on stdin and keep context paths and values off argv.
+- [x] Make preflight, the `envsubst` allow-list names, registry observation, snapshot writer and future state/event writers consume this context only.
+- [x] Never read a resolved value back from the context to build the payload; values still flow resolver shell exports to one envsubst pass to single-quoted remote exports.
+- [x] Keep collector exports in the calling shell and never capture them with command substitution.
+- [x] Keep the payload on stdin and keep context paths and values off argv (`tests/unit/context-wiring.bats`, "the ssh argv is only the host and 'bash -s'").
 - [x] Write the context once, after the walk completes. A walk that writes values into the context as it goes silently becomes last-writer-wins and reintroduces the defect. The write is a single `{ ... } > "$out"` block after the walk loop (`lib/context.sh`), and the no-second-walk proofs (`tests/unit/context-raw-form.bats`) re-assert the outcome by destroying every source after resolution and requiring the record and snapshot to still answer from the context.
 
 ### Prove the root defect is gone (R1.3)
 
-- [ ] Create a context, then mutate or trash every source file; payload, registry and snapshot must still use the original context answer.
-- [ ] Prove the rule: when a top-level package and a dependency declare the same name, the named package's value wins and the dependency's does not (`tests/unit/context.bats`, "rightmost package wins and dependency recursion resolves through the context").
-- [ ] Cover environment, desired input, application default, package default, global default and recipe default independently.
-- [ ] Cover required, optional and declared-default names.
-- [ ] Cover plain, escaped-at, backend reference, multiline, spaces, quotes, colons and shell metacharacters.
-- [ ] Assert no fixture secret appears in debug output or any persisted artifact.
-- [ ] Prove no context file survives a successful, a failed and an interrupted dispatch, including a direct package command with no deployment and with `CLOUDIFY_LOG_LEVEL=DEBUG`.
-- [ ] Prove the corrected resolution keeps payload and registry bytes identical to the pre-deletion goldens; treat any changed byte as a defect to explain, not a new golden to accept.
+- [x] Create a context, then mutate or trash every source file; payload, registry and snapshot must still use the original context answer (`tests/unit/context-raw-form.bats`, the two "no second walk" proofs).
+- [x] Prove the rule: when a top-level package and a dependency declare the same name, the named package's value wins and the dependency's does not (`tests/unit/context.bats`, "rightmost package wins and dependency recursion resolves through the context").
+- [x] Cover environment, desired input, application default, package default, global default and recipe default independently (walker tests in `tests/unit/vars.bats`; `tests/unit/context.bats`, "context build exports the expected value for every source combination").
+- [x] Cover required, optional and declared-default names (`tests/unit/vars.bats`, "declaration: bare NAME is required, NAME=value defaulted, NAME= optional").
+- [x] Cover plain, escaped-at, backend reference, multiline, spaces, quotes, colons and shell metacharacters (`tests/unit/context-raw-form.bats` for tab, multiline and look-encoded raw text; `tests/unit/context.bats` for reference-versus-verbatim; `tests/fixtures/golden/payload/*` for multiline and base64; `tests/unit/remote-stdin.bats` for single quotes and metacharacters; `tests/unit/vars.bats` for spaces and special characters).
+- [x] Assert no fixture secret appears in debug output or any persisted artifact (debug output and the log: `tests/unit/context-wiring.bats`, `tests/unit/context.bats`; the registry record: `tests/unit/golden-fixtures.bats`). State, runs and events have no writer yet, so their scan lands with them.
+- [x] Prove no context file survives a successful, a failed and an interrupted dispatch, including a direct package command with no deployment and with `CLOUDIFY_LOG_LEVEL=DEBUG` (`tests/e2e/two-host-application.bats` scenario 3; `tests/unit/context-raw-form.bats`, "cleanup: the swept context directory removes a runbook context too"; `tests/unit/context-wiring.bats`, a real no-deployment dispatch).
+- [x] Prove the corrected resolution keeps payload and registry bytes identical to the pre-deletion goldens; treat any changed byte as a defect to explain, not a new golden to accept (`tests/unit/golden-fixtures.bats`: eight payload cases, nine registry cases).
 - [x] Run focused context, vars, remote, registry, runbook, replay and router suites. Green.
-- [x] Run `task lint` and the full unit suite: lint rc 0, 634 ok, 0 not ok.
+- [x] Run `task lint` and the full unit suite: lint rc 0, 644 ok, 0 not ok.
 - [x] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing. The two-host end-to-end run is green (4 scenarios, 4 skipped by name); both reviews returned `PASS` with evidence.
 
 ## Audit and trim the Phase 3 foundations (R2)
@@ -300,7 +297,7 @@ This phase touches the remote result transport and the host lock in `lib/remote.
 
 ### State and event substrate (4.1)
 
-- [ ] Complete the deferred JSON dispatch-context contract from `ROADMAP.md` before state and event writers consume it: schema, full per-name fields and `jq` validation.
+- [ ] Complete the deferred JSON dispatch-context contract from `ROADMAP.md` before state and event writers consume it: the schema; the full per-name fields (declaration kind, resolved runtime form, secret classification origin); the identity fields whose producers land later (application commit, run and step IDs, package instance) with the rule that a field without a producer stays null; the projections from each context value into `package-state.applied.values`, `package-state.last_attempt.requested` and event `values`; the `jq` readers that replace the flat-line parsers (the allow-list extraction in `lib/remote.sh`, `cloudify_context_read`, and the DEBUG loop); and validation strictness (every expected field present, no unexpected field).
 - [ ] Tighten `schemas/v1/package-state.schema.json` so every new applied, attempt, health and claim object carries a non-null event ID, add the matching fixtures, and keep `bash schemas/v1/validate.sh` green.
 
 - [ ] Add collision-resistant run and event IDs without a new runtime dependency.

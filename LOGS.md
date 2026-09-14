@@ -401,3 +401,10 @@
 - Purged the per-package value-view wording from the plan (six lines) and from `REDESIGN.md` (two sentences: "holds a value view per top-level package" and "a separate declared-value view for each top-level package"). The plan now states the rule and points at the test instead.
 - Recorded the rule as ADR-024 and added a "Variable scope: one dispatch, one namespace" subsection to the README package-dev section, including the uppercase package-name prefixing convention that makes a variable package-scoped.
 - No code changed.
+
+## 2026-09-14 - Phase 2 checklist reconciled
+
+- Moved the deferred context work out of the Phase 2 repair: the full per-name field set, the identity fields whose producers land later (application commit, run and step IDs, package instance), the package-state and event projections, and the JSON context readers. They now sit on the state and event substrate (4.1) line that owns the deferred JSON context contract. Rachid's call: the validator's strictness ("every expected field present, no unexpected field") defers to the JSON schema too.
+- Verified and ticked the proof boxes against the repo's own tests, not a report: shadowing untouched (`git diff 667d96f..HEAD -- lib/shadows lib/shadow.sh pkg/` empty), the precedence ladder (walker tests), the single-resolution proofs, application mappings, file-store references, digests, context-removal ownership, the snapshot resolver, argv hygiene, the two "no second walk" proofs, the value-shape matrix, the secret scan, the leak proofs, and the byte-exact goldens (eight payload, nine registry cases).
+- The plan's test count was stale (634); corrected to 644, and the exit gate now names the current run.
+- No code changed. Remaining `- [ ]` lines in the Phase 2 section are the Mandatory execution rules (standing rules, not tasks).

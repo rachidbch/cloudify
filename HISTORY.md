@@ -1028,3 +1028,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ### 2026-09-14 - per-package value-view spec purged; variable scope recorded
 
 - The design and the plan carried a per-package value-view requirement that was never implemented and contradicts the global-scope feature. Replaced with the real rule (one namespace per dispatch; the named package wins over the packages it pulls in; prefix a variable with the package name to scope it), recorded as ADR-024, documented in the README, and purged from the plan.
+
+### 2026-09-14 - Phase 2 checklist reconciled
+
+- Moved the deferred context work (full field set, later-producer identity fields, state/event projections, JSON readers, validator strictness) onto the state and event substrate line. Verified and ticked the Phase 2 proof boxes against the repo's tests. Corrected the stale test count (634 to 644).

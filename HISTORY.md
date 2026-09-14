@@ -1014,3 +1014,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Fixed the platform-filter defect: `#<os>` now matches packages carrying that tag OR carrying no `#` tag (platform-agnostic), so `cloudify_list_default_packages` returns the 5 `@default` packages and `cloudify install` actually auto-installs them. CRITICAL GATE + consent.
 - Deleted the dead `head -1` assignment in `lib/hosts.sh`.
 - Two red-first tests; ladder green: lint, focused suites, L1 real-tree (5 default packages), L2 install, full unit 638 ok, two-host E2E 4/4.
+
+### 2026-09-14 - target resolver: a timed-out inventory probe is a timeout (gated slice)
+
+- Root cause: `ivps list` renders an unanswered node as a `<node> TIMEOUT` row and exits 0; the resolver kept only `<node>:<instance>` rows, so a timed-out node's instances vanished and it claimed "instance is not on node".
+- Fixed with Rachid's 2x2 frame (in ivps? x timed out?): (in ivps, timed out) -> Timeout for an instance target; (not in ivps, timed out) -> Error instead of a silently wrong external host; node targets exempt (metadata, no live probe); one probe retry before deciding.
+- Six red-first tests in tests/unit/targets.bats; ladder green: lint, focused resolver suites 144 ok, real resolver on the live inventory, full unit 644 ok, two-host E2E 4/4.

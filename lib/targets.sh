@@ -28,15 +28,64 @@ function _cloudify_target_node_exists() {
     ivps node path "$node" >/dev/null 2>&1
 }
 
+# _cloudify_target_ivps_list [refresh] — the `ivps list` inventory table, fetched
+# once per process and cached. Each fetch probes every remote live (a 5s cap per
+# node), so it is expensive; `refresh` discards the cache and probes again.
+# rc 1 when ivps is unavailable or the list fails.
+function _cloudify_target_ivps_list() {
+    if [[ "${1:-}" == refresh || -z "${_CLOUDIFY_TARGET_INV_READY:-}" ]]; then
+        _CLOUDIFY_TARGET_INV_READY=1
+        _CLOUDIFY_TARGET_INV_RC=1
+        if command -v ivps >/dev/null 2>&1 && _CLOUDIFY_TARGET_INV=$(ivps list 2>/dev/null); then
+            _CLOUDIFY_TARGET_INV_RC=0
+        else
+            _CLOUDIFY_TARGET_INV=""
+        fi
+    fi
+    [[ -n "${_CLOUDIFY_TARGET_INV:-}" ]] && printf '%s\n' "$_CLOUDIFY_TARGET_INV"
+    return "${_CLOUDIFY_TARGET_INV_RC:-1}"
+}
+
+# _cloudify_target_timed_out_nodes — the nodes whose `ivps list` probe timed out,
+# one per line. `ivps list` renders such a node as a bare "<node>  TIMEOUT" row
+# (no colon), so a timed-out node's instances are absent from the table: this is
+# the signal that the table is incomplete.
+function _cloudify_target_timed_out_nodes() {
+    local listed
+    listed=$(_cloudify_target_ivps_list) || return 0
+    awk '$1 !~ /:/ && $2 == "TIMEOUT" { print $1 }' <<< "$listed"
+}
+
+# _cloudify_target_node_timed_out <node> — rc 0 when <node> answered `ivps list`
+# with a TIMEOUT row (it is known from ivps metadata but was unobservable).
+function _cloudify_target_node_timed_out() {
+    local node="${1:-}"
+    [[ -n "$node" ]] || return 1
+    _cloudify_target_timed_out_nodes | grep -qxF "$node"
+}
+
+# _cloudify_target_inventory_settle — fetch the inventory, and when a node timed
+# out (usually transient) probe once more before accepting the table. Cached for
+# the rest of the process, so this is one probe normally and two on a timeout.
+function _cloudify_target_inventory_settle() {
+    _cloudify_target_ivps_list >/dev/null || return 0
+    if [[ -n "$(_cloudify_target_timed_out_nodes)" ]]; then
+        _cloudify_target_ivps_list refresh >/dev/null || true
+    fi
+    return 0
+}
+
 # _cloudify_target_instance_nodes <instance> — print the node(s) hosting <instance>
 # `ivps list` rows are "<node>:<name>" (e.g. "cloudai:cloudify"); a local instance
-# is rendered as "local:<name>". rc 1 when ivps is unavailable.
+# is rendered as "local:<name>". rc 1 when ivps is unavailable. A node that timed
+# out contributes no rows, so its instances are invisible here: callers must use
+# _cloudify_target_node_timed_out/_cloudify_target_timed_out_nodes to tell
+# "absent" from "unobservable".
 function _cloudify_target_instance_nodes() {
     local instance="${1:-}"
     [[ -n "$instance" ]] || return 1
-    command -v ivps >/dev/null 2>&1 || return 1
     local listed
-    listed=$(ivps list 2>/dev/null) || return 1
+    listed=$(_cloudify_target_ivps_list) || return 1
     awk -v want="$instance" '
         $1 ~ /^[^:]+:.+$/ {
             split($1, a, ":")
@@ -116,10 +165,16 @@ function _cloudify_target_resolve() {
             return 0
         fi
 
-        # X:Y / :Y — instance target
+        # X:Y / :Y — instance target. The instance is only visible when the node
+        # answered the live probe; settle the inventory once, then a node that
+        # timed out is a timeout, never a false "not on node".
+        _cloudify_target_inventory_settle
         local inst_nodes=""
         inst_nodes=$(_cloudify_target_instance_nodes "$instance_part" || true)
         if ! grep -qxF "$node" <<< "$inst_nodes"; then
+            if _cloudify_target_node_timed_out "$node"; then
+                die "Target '$token': node '$node' did not answer the ivps inventory probe (timed out); '$instance_part' could not be confirmed. Retry when the node responds."
+            fi
             die "Target '$token': instance '$instance_part' is not on node '$node'."
         fi
         printf '%s\t%s\t%s\n' "$node" "$instance_part" "$instance_part"
@@ -127,6 +182,7 @@ function _cloudify_target_resolve() {
     fi
 
     # Bare token: discover the kind (existence is always required)
+    _cloudify_target_inventory_settle
     local is_node=false inst_nodes=""
     _cloudify_target_node_exists "$token" && is_node=true
     inst_nodes=$(_cloudify_target_instance_nodes "$token" || true)
@@ -144,6 +200,15 @@ function _cloudify_target_resolve() {
         fi
         printf '%s\t%s\t%s\n' "$inst_nodes" "$token" "$token"
         return 0
+    fi
+
+    # Not a node, not a found instance. If a node timed out the inventory is
+    # incomplete, so "not found" is not conclusive: refuse rather than record a
+    # silently wrong external host.
+    local timed_out
+    timed_out=$(_cloudify_target_timed_out_nodes)
+    if [[ -n "$timed_out" ]]; then
+        die "Target '$token': not found in the ivps inventory, and node(s) $(tr '\n' ' ' <<< "$timed_out")did not answer the inventory probe (timed out); '$token' may be an instance on one of them. Retry, or address it as <node>:$token."
     fi
 
     # Plain host (back-compat): not in the ivps inventory, ssh validates reachability

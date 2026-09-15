@@ -415,6 +415,17 @@ EOF
     [[ "$output" == *"TARGET_"* ]]
 }
 
+@test "bind: a resolver failure fails the bind, it is never swallowed into an empty row" {
+    rubric "the resolver dies -> the bind dies with the resolver's own message"
+    IVPS_ROWS=(cloudai:xfce-test)   # 'cloudai:nope' does not exist
+    run cloudify_runbook_bind_targets "$RUNBOOKS/guest-only.md" --target guest=cloudai:nope
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Target host 'cloudai:nope'"* ]]
+    [[ "$output" == *"is not on node 'cloudai'"* ]]
+    # no row, empty or otherwise: a swallowed failure would emit 'guest\t'
+    [[ "$output" != *"row"* ]]
+}
+
 @test "bind: a binding for an undeclared target dies" {
     rubric "typo'd --target name -> die, fail closed"
     run cloudify_runbook_bind_targets "$RUNBOOKS/guest-only.md" --target nope=cloudai:guac

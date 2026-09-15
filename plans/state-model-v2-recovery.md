@@ -106,6 +106,8 @@ The clean baseline (R0) changes no runtime code and the Phase 4 design gate (R3)
 - [x] Fix every review finding and re-review from a fresh context; defer none to a later phase. (Both blockers and all notes fixed, then re-reviewed to PASS.)
 - [x] Commit and push only when every line above is green. (Committed `29f4890`, pushed to `state-model-v2-phase1`.)
 
+The Phase 3 audit (R2) re-ran this block on its final HEAD: full unit suite 657 ok / 0 not ok (`results/phase3-a4/report.tap`), two-host E2E 4 scenarios green with the 4 later-phase scenarios skipped by name and both disposable hosts torn down (`results/phase3-e2e2/report.tap`), lint rc 0, `git status --short` clean, SPEC review PASS and Technical review PASS with file:line evidence. Its own gate lines carry the detail under R2.3.
+
 The fleet E2E (`tests/e2e/k3s-multi-cluster.bats`, four throwaway nodes, live ACL mutation, up to fifteen minutes per node) is not a per-phase gate: it validates k3s UX rather than the state model, so it runs once at the Phase 9 final gate, where the tailnet and ACL restore is part of the exit criteria.
 If the two-host E2E is genuinely unrunnable for a phase, that is a blocker to raise with Rachid, not a line to tick with a substitute.
 
@@ -252,10 +254,10 @@ The checklist was reconciled against HEAD 6857081 after the Phase 2 repair (2026
 
 ### Phase 3 gate (R2.3)
 
-- [ ] Run focused runbook, replay, target, deployment, state, vars and router suites.
-- [ ] Run a real L1 driver in `cloudai:cloudify` without dispatch.
-- [ ] Run `task lint` and the full unit suite.
-- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
+- [x] Run focused runbook, replay, target, deployment, state, vars and router suites. (Green: `tests/unit/runbooks.bats`, `runbook-exec.bats`, `runbook-replay.bats`, `targets.bats`, `deployments.bats`, `state.bats`, `vars.bats`, `vars-cli.bats`, `context.bats`, `context-raw-form.bats`, `golden-fixtures.bats`, `registry-write.bats`, `remote-vars.bats`.)
+- [x] Run a real L1 driver in `cloudai:cloudify` without dispatch. (`tests/unit/context-wiring.bats` drives the real transport with a stubbed ssh, and the `run_router` cases in `vars-cli.bats` and "real router: app run --dry-run" in `runbooks.bats` run the real CLI in the container without dispatching a package; all green in the 657-test run.)
+- [x] Run `task lint` and the full unit suite. (Lint rc 0; 657 ok, 0 not ok, `results/phase3-a4/report.tap`, run in `cloudai:cloudify` on `357b468`.)
+- [x] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing. (Two-host E2E on the final HEAD: 4 scenarios green, the 4 later-phase scenarios skipped by name, both `e2e-2h-a` and `e2e-2h-b` torn down, `results/phase3-e2e2/report.tap`. SPEC review on claude: PASS with a criterion-to-file:line mapping after one round, whose single must-fix was a `runbook.md` one level too deep being discoverable. Technical review on codex: PASS after five rounds; the four failing rounds closed a too-deep discovery path, `@tsv` re-escaping of a backslash address, an `IFS` field collapse for an external binding, a masked reader failure in two runbook loops, an unbound-variable failure path, a silently collapsed duplicate binding slot, a trailing-slash runbooks root and stale "five-source" wording.)
 
 ## Fresh Phase 4 design before code (R3)
 

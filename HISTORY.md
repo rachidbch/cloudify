@@ -1085,6 +1085,11 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - The draft fixes the implementation order at event first then revisioned JSON state, one durable-host lock through remote mutation and all result commits, a nonce-bound framed result tail with byte-exact non-frame passthrough, explicit package-instance support, claims, registry-writer deletion, and event-backed old-registry migration.
 - Reconciled every R3 design requirement against HEAD; only independent SPEC and Technical reviews plus Rachid's consent remain open, and no runtime or schema file changed.
 
+### 2026-09-15 - Phase 4 design revision 2 resolves the review findings
+
+- Revised `plans/state-model-v2-phase4-design.md` to resolve all six SPEC and six Technical must-fix findings in one pass; no runtime, schema, or REDESIGN file changed.
+- Key decisions in revision 2: results travel in a framework-owned private file fetched after the child exits, superseding the framed stdout tail and keeping the payload goldens byte-identical; the remote child reports its checkout commit and dirty flag, and an application dispatch requires it to match the proved manifest commit; a uniform `development_override` rule governs every null applied commit; claims project only the package's own declared values while state records keep the full dispatch projection; Phase 4 events and claims carry null run IDs until the Phase 6 run writer exists; reconfigure and teardown enforce the commit-drift gate; direct uninstall over claims requires a typed `CLOUDIFY_BREAK_CLAIMS` confirmation with per-claim events; the manifest records the last committed event ID; dependency gating moves to result-commit time so runtime-optional dependencies cannot block a dispatch; reconciliation is graph membership plus body order; immutable event creation uses a validated hard-link create-if-absent.
+
 ### 2026-09-15 - one-pass Phase 4 self-reviews failed
 
 - The requested single SPEC review returned `FAIL` with six must-fix contract findings: dangling run IDs, package-wide overprojection of dispatch values, unsettled commit and development-override semantics, no Phase 4 commit-drift gate, an unscheduled destructive claim override, and unspecified manifest last-ID updates.

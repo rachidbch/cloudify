@@ -1,10 +1,12 @@
 # Phase 4 design: physical package state, events, claims, and safe results
 
-Status: draft for the Phase 4 design gate (R3).
+Status: draft, revision 2, after the one-pass SPEC and Technical reviews.
+
+Revision 2 resolves the six SPEC and six Technical must-fix findings recorded on 2026-09-15.
 
 This document authorizes no code.
 
-It needs the independent SPEC review, Technical review, and Rachid's consent required by `plans/state-model-v2-recovery.md` before implementation starts.
+It needs Rachid's consent, and the supersessions listed in Gate conditions, before implementation starts.
 
 ## Outcome
 
@@ -12,11 +14,11 @@ Phase 4 replaces the per-deployment registry observation with one schema-valid s
 
 Every state revision is backed by one immutable event.
 
-One operator-side worker holds one durable-host lock from before remote mutation through every top-level and dependency result commit.
+One operator-side worker holds one durable-host lock from before remote mutation through result fetch and every top-level and dependency result commit.
 
 Claims prevent one deployment from changing or removing a package instance still used by another deployment.
 
-The remote result channel reports package work without changing recipe stdin or exposing framework records as recipe stdout.
+Remote results travel in a framework-owned private file fetched after the child exits, so recipe stdout and the SSH payload bytes never change.
 
 ## Authority and scope
 
@@ -36,9 +38,11 @@ Phase 4 includes:
 - revisioned physical package state;
 - inventory-host and package-instance identity;
 - one host mutation lock;
-- the framed remote result protocol;
+- the private result-file channel;
 - phase-specific state resolution;
 - compatible claims and protected teardown;
+- the claim-release override for direct uninstalls;
+- the commit-drift gate for reconfigure and teardown;
 - one temporary old-registry migration command;
 - deletion of the runtime registry writer.
 
@@ -47,7 +51,7 @@ Phase 4 does not include:
 - the roadmapped JSON dispatch context;
 - run-record persistence or interrupted-run classification;
 - external-host durable state before SSH host-key acceptance;
-- pinned historical execution;
+- pinned historical execution beyond the drift gate;
 - event replay;
 - multi-operator coordination;
 - automatic removal of old migration sources.
@@ -64,9 +68,9 @@ There is no physical package-state path or writer.
 
 The only lock is the deployment manifest lock.
 
-`lib/remote.sh` merges command output into the normal SSH stream and has no nonce-bound frame or private result body.
+`lib/remote.sh` appends the package command to the payload and merges all remote output into the ordinary SSH stream.
 
-`lib/package-api.sh` knows dependency depth but reports no per-package result and no dependency parent.
+`lib/packages.sh` and `lib/package-api.sh` know dependency depth but report no per-package result and no dependency parent.
 
 `lib/registry.sh` still writes one observation per deployment, target, and package after a successful dispatch.
 
@@ -101,7 +105,7 @@ The package-state schema is only a preliminary contract.
 
 It still permits null event IDs, and its migrated fixture still uses them.
 
-The event schema cannot yet identify a registry migration without pretending it was an application phase.
+The event schema cannot yet identify a registry migration without pretending it was an application phase, and it forces a non-null commit whenever an application tuple is present, which a development-override run contradicts.
 
 Both schemas need the changes specified below before the first package-state writer lands.
 
@@ -111,11 +115,11 @@ Keep one owner per concern.
 
 - `lib/state.sh` owns the Cloudify state root, the shared JSON-schema validator, collision-resistant IDs, immutable event creation, writer identity, and deployment manifest locking.
 - `lib/package-state.sh` is new and owns durable host identity, host-state paths, package-state rendering, state transitions, claims, and registry migration into package state.
-- `lib/results.sh` is new and owns private result files, the result-object contract, frame rendering, frame parsing, and expected-graph reconciliation.
+- `lib/results.sh` is new and owns the result-file body contract, remote result writing, local result fetching, validation, and expected-graph reconciliation.
 - `lib/package-api.sh` emits one result object around each install attempt made through `pkg_depends`.
 - `lib/packages.sh` emits the same result shape around configure, verify, and uninstall attempts.
-- `lib/remote.sh` transports the execution plan and framed result while preserving the existing payload and recipe streams.
-- `lib/runbooks.sh` supplies application identity, clean commit, run ID, stable step ID, selected phase, and manifest updates.
+- `lib/remote.sh` keeps the payload bytes and recipe streams unchanged; the result channel is a second SSH exec, not payload content.
+- `lib/runbooks.sh` supplies application identity, clean commit, stable step ID, selected phase, the commit-drift gate, and manifest updates.
 - `lib/registry.sh` retains only the old-format reader needed by `cloudify state migrate-registry` until Phase 8 deletes it.
 - `cloudify` owns dispatch-worker lifecycle, unconditional context cleanup, and the final manifest result.
 
@@ -177,7 +181,7 @@ The same name must appear in the package's `.remote-vars` declaration and is res
 
 An absent or empty instance value means `default`.
 
-A non-empty value is validated with the frozen package-instance component rule and becomes the instance for that package in the expected graph, result, event, state path, and claim.
+A non-empty value is validated with the frozen package-instance component rule and becomes the instance for that package in the expected graph, result, state path, and claim.
 
 A package without `.package-instance` rejects any attempted non-default identity.
 
@@ -189,33 +193,39 @@ The result writer and operator-side reconciler read that same identity instead o
 
 These are per-package identity fields, not per-package value views, so ADR-024's one global value namespace remains unchanged.
 
-The framework-owned result path, execution plan, and frame nonce are not package-instance inputs.
+The framework-owned result directory and fetch channel are not package-instance inputs.
 
-## Commit provenance
+## Commit provenance and executed-code identity
 
-A newly written successful `applied` object must carry the 40-hex commit of the clean Cloudify checkout whose recipe ran.
+Two facts are kept separate and both are proved:
 
-This applies to application package mutations and new direct package mutations.
+- the local commit the operator dispatched from;
+- the remote checkout commit whose recipe actually ran.
 
-An application dispatch uses the same proved clean commit as its manifest.
+Remote hosts run code from GitHub, not the local checkout, so a clean local HEAD alone proves nothing about what executed.
 
-A direct package dispatch proves the clean checkout commit before mutation even though its event has no application tuple.
+The remote child Cloudify process reports, inside its result body:
 
-A dirty or unidentified checkout fails before a state-bearing package mutation.
+- `checkout_commit`: the 40-hex HEAD of the checkout it executed, or null when it cannot be determined;
+- `checkout_dirty`: true when that checkout has uncommitted changes.
 
-The only operation allowed to create `applied.application_commit: null` is a proved old-registry migration.
+Rules for a newly written successful `applied` object:
 
-Its linked event carries the migration origin described below.
+- An application dispatch requires `checkout_commit` equal to the proved clean local commit recorded in its manifest and `checkout_dirty: false`.
+  The applied commit is that shared 40-hex value.
+- A direct package dispatch records `checkout_commit` when the remote tree is clean.
+- A dirty or unidentified remote tree, local or remote, never fabricates a commit: the applied object records `application_commit: null` with `development_override: true`.
+- An executed-commit mismatch on an application dispatch (`checkout_commit` differs from the manifest commit, or the remote tree is dirty) degrades the dispatch before any applied write: the event records the executed commit from the body, `applied` is left unchanged, and the run is marked degraded.
+  The remote mutation already happened and is never claimed as rolled back.
+- Registry migration alone writes `application_commit: null` through the same `development_override` rule below, with its migration origin carried by its event.
 
-Direct-command events keep `application`, `flavor`, `deployment`, and event `application_commit` null because they have no application context.
+The package-state `applied` object therefore gains a `development_override` boolean in step 4.1, with one schema rule mirroring the manifest: `application_commit` null requires `development_override: true`.
 
-That event-level null does not permit a new direct command to write a null `applied.application_commit`.
+Migration, direct commands, and development-override application runs all use that one uniform rule.
 
-The existing nullable manifest and run fields stay unchanged.
+The manifest and run schemas keep their existing nullable-commit and override fields unchanged.
 
-Their `development_override` rule does not authorize an unreproducible Phase 4 package mutation.
-
-This clarification must be aligned in `REDESIGN.md`, the schema descriptions, and the recovery plan when Rachid accepts this design.
+This supersedes the recovery plan's R3 wording that reserved a null applied commit to migration alone; the supersession is listed in Gate conditions.
 
 ## Schema changes before writers
 
@@ -225,12 +235,12 @@ The state and event substrate step (4.1) changes schemas and fixtures before add
 
 Tighten `schemas/v1/package-state.schema.json` so:
 
+- `applied` gains `development_override` (boolean) and one `allOf` rule: `application_commit` null requires `development_override: true`;
 - `applied.event_id` is a non-null event ID whenever `applied` is an object;
 - `last_attempt.event_id` is a non-null event ID whenever `last_attempt` is an object;
 - `health.event_id` is always a non-null event ID;
 - every claim has a non-null `event_id`;
-- a missing state has conceptual revision 0, but the first persisted state has revision 1;
-- `applied.application_commit` remains nullable only because migration may not invent provenance.
+- a missing state has conceptual revision 0, but the first persisted state has revision 1.
 
 A new or migrated state with no verification uses `health.status: unknown`, `checked_at: null`, and the event ID that created the state.
 
@@ -238,13 +248,16 @@ A nullable `last_attempt` remains valid because migration is not a package attem
 
 Update every package-state valid fixture to use non-null event IDs.
 
-Add invalid fixtures for null event IDs in applied, last attempt, health, and claims.
+Add invalid fixtures for null event IDs in applied, last attempt, health, and claims, and for a null applied commit without `development_override: true`.
 
-The migrated-observation fixture gets its migration event ID and keeps `application_commit: null`.
+The migrated-observation fixture gets its migration event ID, keeps `application_commit: null`, and sets `development_override: true`.
 
 ### Events
 
-Extend `schemas/v1/event.schema.json` with one explicit registry-migration shape instead of encoding migration as install.
+Extend `schemas/v1/event.schema.json`:
+
+- add an optional `development_override` boolean, with an `allOf` rule: `application_commit` null with an application tuple present requires `development_override: true`;
+- add one explicit registry-migration shape instead of encoding migration as install.
 
 A normal package event has `origin: null`.
 
@@ -270,7 +283,7 @@ Migration events use a package subject, `run_id: null`, `step_id: null`, no depl
 
 Normal package events retain the four application phases and existing command kinds.
 
-Add valid and invalid migration-event fixtures, including a missing origin, a non-absolute source path, a bad source digest, and migration with a non-null application phase.
+Add valid and invalid migration-event fixtures, including a missing origin, a non-absolute source path, a bad source digest, migration with a non-null application phase, and an application event with a null commit but no development override.
 
 Keep `bash schemas/v1/validate.sh` green before any writer code.
 
@@ -278,13 +291,20 @@ Keep `bash schemas/v1/validate.sh` green before any writer code.
 
 Projection reads the existing context once and never reads a value source again.
 
-ADR-024 makes resolved values dispatch-global.
+ADR-024 makes resolved values dispatch-global; the projection stays one resolution.
 
-Every reported package result therefore projects the same set of resolved context names.
+Two projections come from one parsed context so they can never classify the same name differently:
 
-This conservative rule may reject sharing when an unrelated dispatch value differs, but it never omits a value that configured a dependency through the configuration-package pattern.
+- the record projection, used for `applied.values` and `last_attempt.requested`: every resolved context name;
+- the claim projection: only the names declared by the claimed package itself (its `.remote-vars` declaration), resolved from the same context.
 
-A later per-package usage contract would need its own decision and is not smuggled into Phase 4.
+The claim projection implements REDESIGN's "every configuration-affecting declared value" as the values the package itself declares.
+
+It needs no second walk: declaration names come from the enumeration the context build already performed, and values come from the context.
+
+An unrelated dispatch value, such as one package's password while a shared dependency installs, never enters another package's claim, so compatible deployments can share that dependency.
+
+A software package that reads a value declared only by the configuration package that pulls it is still protected: that value is claimed by the configuration package's own state subject, whose claim comparison catches the conflict.
 
 For each `value.<NAME>` block, decode the `t:` or `b:` transport in `raw` once.
 
@@ -295,11 +315,7 @@ Produce these package-state fields:
 - Literal secret: `source_form: null`, `reference: null`, the existing sha256 digest, and `redacted: true`.
 - Every value carries the context's `secret` and `declaration` fields.
 
-The same state projection populates `last_attempt.requested` for every result.
-
-It populates `applied.values` only after a successful install or reconfigure.
-
-It populates a new claim's `values` and the values of a successfully reconfigured sole claim.
+The record projection populates `last_attempt.requested` for every result, `applied.values` after a successful install or reconfigure, a new claim's `values` restricted to the claim projection, and the claim-projection subset of a successfully reconfigured sole claim.
 
 Produce these event fields:
 
@@ -313,11 +329,11 @@ Produce these event fields:
 
 The projection fails closed on a missing field, malformed raw transport, inconsistent secret metadata, unknown source label, or secret literal without a digest.
 
-The package-state and event projections are built together from one parsed context so they cannot classify the same name differently.
+Event `values` carry the same projection the transition used, restricted the same way.
 
 ## IDs, writer identity, and validation
 
-Run and event IDs use the schema's sortable form:
+Run and event IDs use one shared collision-resistant helper producing the schema's sortable form:
 
 ```text
 YYYYMMDDTHHMMSSZ-<8 lowercase random hex>
@@ -329,11 +345,11 @@ Creation retries with a new suffix on collision.
 
 It never overwrites an existing ID.
 
-An application execution generates one run ID before its first selected step and exports it to every package dispatch.
+Phase 4 generates event IDs only.
 
-Phase 4 uses that ID in events and claims but does not create a run record.
+Application events and claims carry `run_id: null` because the run writer does not exist until Phase 6; fabricating a run ID that no run record will ever back is forbidden.
 
-Phase 6 adds the run writer around the already-stable ID.
+Phase 6 wraps its new run writer around the already-stable ID format, and manifest `last_run_id` stays null until then.
 
 Direct commands and registry migration use `run_id: null`.
 
@@ -353,27 +369,30 @@ Events live at:
 ${XDG_STATE_HOME:-$HOME/.local/state}/cloudify/events/<year-month>/<event-id>.json
 ```
 
-The event writer:
+The event create primitive is fixed now, not chosen during implementation:
 
-1. Renders one complete JSON event into a mode-0600 temporary file in the destination directory.
-2. Validates it against `event.schema.json`.
-3. Creates the final name atomically without overwrite.
-4. Retries with a new event ID only when that final name already exists.
-5. Never edits or replaces a committed event.
+1. Render one complete JSON event into a mode-0600 temporary file in the destination directory.
+2. Validate it against `event.schema.json`.
+3. Flush it to disk.
+4. Create the final name with a hard link (`ln "$tmp" "$final"`), which is the atomic create-if-absent operation and fails when the name exists.
+5. On an existing-name failure, generate a new event ID, re-render, and retry, bounded at three attempts, then die loudly.
+6. Remove the temporary file after a successful link.
+7. Never edit or replace a committed event.
 
-The no-overwrite create uses a same-filesystem primitive whose existing destination fails, not `mv -f` or a check-then-move race.
+A crash between link and temporary-file removal leaves a stray temporary holding the same bytes as the committed event; the next writer ignores it and the state-check surface reports strays in Phase 6.
 
 A package-state transition runs under the host lock:
 
 1. Read and validate the current state, or use conceptual revision 0 when no file exists.
-2. Derive the complete next state from the current state, the validated result, and the one context projection.
-3. Set `next_revision = current_revision + 1`.
-4. Render the event with `previous_revision = current_revision` and `resulting_revision = next_revision`.
-5. Put that event ID on every state object created or changed by this transition.
-6. Render and validate the complete next state into a mode-0600 temporary file in the state directory.
-7. Atomically create the immutable event.
-8. Atomically replace `state.json` with the validated next state.
-9. Re-read the committed revision and event ID before reporting success.
+2. Refuse the transition when state points to a missing event.
+3. Derive the complete next state from the current state, the validated result, and the one context projection.
+4. Set `next_revision = current_revision + 1`.
+5. Render the event with `previous_revision = current_revision` and `resulting_revision = next_revision`.
+6. Put that event ID on every state object created or changed by this transition.
+7. Render and validate the complete next state into a mode-0600 temporary file in the state directory.
+8. Atomically create the immutable event.
+9. Atomically replace `state.json` with the validated next state.
+10. Re-read the committed revision and event ID before reporting success.
 
 No state write occurs when event creation fails.
 
@@ -400,7 +419,7 @@ Changed nested objects receive the new event ID.
 A successful install or reconfigure:
 
 - writes `last_attempt.outcome: succeeded`;
-- replaces `applied` with the proved commit, `package_version: null`, projected values, time, and event ID;
+- replaces `applied` with the proved commit or the override rule, `package_version: null`, projected values, time, and event ID;
 - writes health `ok` when its verification hook succeeded;
 - writes health `unknown` when no verification hook ran;
 - adds or updates only the compatible claim authorized for that operation.
@@ -435,9 +454,11 @@ On failed uninstall, the transition preserves both the claim and `applied`, reco
 
 This avoids turning a failed physical teardown into an ownerless installed package.
 
-A direct uninstall has no claim to release and is blocked while any deployment claim exists unless the later destructive-override contract is satisfied.
+A direct uninstall of a claimed package is blocked while any deployment claim exists.
 
-## Expected dependency graph
+The only override is the claim-release override in Claims and phase decisions.
+
+## Expected dependency graph and reconciliation
 
 Before taking the host lock, Cloudify expands the same static top-level and `pkg_depends` graph used to build the context.
 
@@ -448,35 +469,41 @@ One graph row contains:
 - resolved package instance;
 - selected phase;
 - operation kind;
-- run and stable step identity when present.
+- stable step identity when present.
 
-The graph is written to a private mode-0600 file.
+The graph is written to a mode-0600 private file.
 
-After taking the host lock, the worker reads every potentially touched subject and builds an execution plan.
+Membership is the reconciliation key: `(package, package_instance, phase, command_kind)`.
 
-The plan says whether a reported package may mutate, verify only, add a compatible claim without mutation, release a claim without uninstall, uninstall, or fail before remote execution.
+Reconciliation rules after the result body is fully validated:
 
-Both local and remote package wrappers consult that plan before recipe code.
+- Every requested top-level package must appear in at least one result with its graph identity.
+- Every result must match at least one graph row by membership; a result with no matching row rejects the whole body before any commit.
+- The same membership may appear in several results, because one package can be pulled through several parents at runtime; each extra result commits as its own ordered attempt.
+- A conditional dependency that is in the static graph but is not executed at runtime produces no result and no state transition, and blocks nothing: only requested top-level packages are required to report.
+- Results commit in body order, which is execution order, under the same host lock, each with its own event and revision.
 
-A conditional dependency that is in the static graph but is not called at runtime produces no result and no state transition.
+No attempt ordinal or edge ID is added: body order plus membership is the complete reconciliation contract.
 
-Every requested top-level package must report exactly one result.
+## Result channel: private file and post-exit fetch
 
-Every dependency actually attempted must report one result with its immediate parent.
+This channel supersedes the previously drafted framed stdout tail and its nonce machinery; the supersession is listed in Gate conditions.
 
-A reported package, parent edge, instance, phase, or operation absent from the precomputed graph rejects the whole result body before any result is committed.
+The motivation is unchanged: recipe stdout is noisy and must stay byte-exact, and framework results must never be parsed out of that stream.
 
-This catches dynamic or forged dependency work without inventing values after execution.
+Mechanism:
 
-Repeated subjects may produce ordered results from different graph edges.
+- The remote child Cloudify process writes its results as one JSON file under `/tmp/cloudify/results/` on the target host: directory 0700 root-owned, file 0600, name `<child-start-epoch>-<child-pid>.json`.
+- The child writes the complete body after its package work exits, so no recipe `exit`, dependency failure, or verification failure can bypass it.
+- The operator-side worker, still holding the host lock, makes one short second SSH exec that prints the newest file in that directory, then removes every file in it.
+- The host lock serializes mutations per durable host, so within the lock the newest file is this dispatch's child's file.
+- The worker validates the whole body before committing anything, applies the staleness rule, and marks the dispatch degraded when fetch, validation, or staleness fails.
 
-They commit in result order under the same host lock, each with its own event and revision.
+The SSH payload, its appended command, recipe stdin (`</dev/null`), recipe stdout, and the eight byte-exact payload goldens are untouched.
 
-## Private result contract
+The body is JSON, is not a persisted v2 artifact, and gets no file under `schemas/v1/`.
 
-The transport body is JSON, but it is not a persisted v2 artifact and gets no file under `schemas/v1/`.
-
-`lib/results.sh` owns one jq validator used by both local and remote paths.
+`lib/results.sh` owns one jq validator used by the worker.
 
 The compact body is:
 
@@ -484,6 +511,9 @@ The compact body is:
 {
   "protocol_version": 1,
   "child_exit_status": 0,
+  "finished_at": "2026-01-01T10:11:12Z",
+  "checkout_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
+  "checkout_dirty": false,
   "results": [
     {
       "parent": null,
@@ -508,22 +538,16 @@ Exact rules:
 - `outcome` is `succeeded` or `failed`.
 - `exit_status` is an integer from 0 through 255 and agrees with outcome.
 - `verification` is `ok`, `failed`, or `not-run`.
+- `finished_at` is the child's UTC completion time.
+- `checkout_commit` and `checkout_dirty` follow Commit provenance and executed-code identity.
 - Normal Phase 4 writes set package-state `package_version` to null because no recipe-version reporter exists.
 - No value, environment snapshot, stdout, stderr, payload, path, nonce, claim, or free-form summary is allowed.
 - Every object has exactly these fields.
-- The body is at most 1 MiB before framing.
+- The body is at most 1 MiB.
 
-The package wrapper runs recipe code in the same subshell boundary used today, captures its status after it exits, appends one compact JSON object to the private result file, and returns the original status.
+Staleness: the worker rejects a body whose `finished_at` predates the worker's own dispatch start minus five minutes of clock-skew slack, treats it as a crashed predecessor's leftover, removes all result files, and marks the dispatch degraded.
 
-A recipe `exit`, dependency failure, or verification failure therefore cannot bypass its framework result.
-
-The result append itself writes no stdout or stderr on success.
-
-For a local dispatch, the operator-side worker creates the mode-0600 result file, the local child appends JSON lines, and the worker compacts and validates them after the child exits.
-
-For a remote dispatch, the outer remote shell creates the mode-0600 result file and gives only its path and execution plan to the child Cloudify process.
-
-After that child exits, the outer shell compacts the file with the captured child status, frames it on stdout, removes the private file, and exits with the child's status unless framing itself failed.
+Local dispatches use the same body file and validator, with the local child writing the file and the worker reading it; no second channel is needed.
 
 The recipe remains trusted code and can inspect inherited process state as root.
 
@@ -531,76 +555,14 @@ This channel prevents accidental output collisions and ordinary framework ambigu
 
 It is not a security boundary against a hostile remote root.
 
-## Framed remote stdout protocol
+## Executed-code check
 
-The local operator-side parent generates 16 random bytes per dispatch and renders them as 32 lowercase hex characters.
+Before the first result commit, the worker compares the body's `checkout_commit` and `checkout_dirty` against the dispatch's proved local commit.
 
-It bakes that nonce as a single-quoted local variable into the outer remote shell.
+- Application dispatch: mismatch or dirty remote tree means the recipe that ran is not the manifest's commit. The dispatch is degraded, the event records the executed commit from the body, and no `applied` write or claim happens for any result in that body. `last_attempt` and health still record the attempt.
+- Direct dispatch: the body's checkout facts are recorded per Commit provenance; a dirty tree yields `application_commit: null` with `development_override: true`.
 
-The variable is not exported, is not passed in argv, and is not present in the child Cloudify process or recipe environment.
-
-The outer shell emits the frame only after the child Cloudify process exits.
-
-The frame bytes are exactly:
-
-```text
-\n__CLOUDIFY_RESULTS_V1_START__ <32-hex-nonce>\n
-length:<canonical-decimal-encoded-body-length>\n
-sha256:<64-lowercase-hex-digest-of-encoded-body>\n
-<base64-body-with-no-line-wrap>\n
-__CLOUDIFY_RESULTS_V1_END__ <same-32-hex-nonce>\n
-```
-
-The leading newline is part of the frame, so a recipe's unterminated final line is not changed when the whole frame is removed.
-
-The encoded body is base64 without wrapping.
-
-`length` counts encoded body bytes, not decoded JSON bytes.
-
-The digest covers those exact encoded bytes.
-
-The parser knows the expected nonce before it reads SSH stdout.
-
-It rejects:
-
-- no exact start marker;
-- more than one exact start marker;
-- no exact end marker;
-- more than one exact end marker;
-- a different end nonce;
-- an end before its start;
-- a non-canonical or out-of-range length;
-- a truncated or overlong body;
-- a malformed digest;
-- a digest mismatch;
-- invalid base64;
-- invalid JSON;
-- a body above the limit;
-- an invalid result object;
-- an unexpected graph member;
-- a missing or duplicate requested top-level result.
-
-A marker printed by a recipe without the random nonce is ordinary output.
-
-Every byte before and after the one accepted frame is passed to the existing host-prefix and protected-log path in its original order.
-
-The parser removes only the exact frame span and does not line-normalize, decode, trim, or reinterpret non-frame output.
-
-Recipe stdin remains exactly as today: remote package commands receive `</dev/null`, and the SSH payload remains on stdin to `bash -s`.
-
-Recipe stdout and stderr still enter the ordinary combined output stream.
-
-A valid frame is metadata at the tail of that stream, not recipe output.
-
-A successful SSH child with no valid frame is a failed dispatch because remote mutation may have happened without attributable results.
-
-The manifest becomes degraded, no package result is guessed, and no rollback is inferred.
-
-A valid frame is fully parsed and reconciled before the first package event or state commit.
-
-Valid results are then committed in order even when the child exit status is non-zero, so successful dependencies are not discarded because a later package failed.
-
-Any failed result, child failure, frame failure, or commit failure makes the dispatch and manifest degraded.
+The worker never writes the local HEAD as the applied commit when the body proves a different one.
 
 ## One host lock
 
@@ -608,7 +570,7 @@ A local dispatch worker, which is the operator-side parent of the local or remot
 
 It acquires the lock before reading claim compatibility or starting remote execution.
 
-It holds the same lock through frame validation, graph reconciliation, every package event creation, and every package-state replacement.
+It holds the same lock through payload execution, result fetch, body validation, graph reconciliation, the executed-code check, every package event creation, and every package-state replacement.
 
 It releases the lock only after all committable results finish or a failure is recorded.
 
@@ -622,8 +584,7 @@ After acquisition, the holder writes bounded non-secret metadata into the locked
 - boot ID;
 - PID and process start ticks;
 - acquired time;
-- durable host key;
-- run ID or `direct`.
+- durable host key.
 
 A timeout prints that metadata and the waited duration.
 
@@ -634,6 +595,13 @@ The metadata is diagnostic only and does not decide lock ownership.
 The runbook parent updates the deployment manifest only after every host worker has exited and therefore released its host lock.
 
 Manifest updates continue under the separate per-deployment lock.
+
+The manifest projection is fixed:
+
+- success: status per the existing install-plus-verify rule, `last_event_id` set to the event ID of the last result committed by this dispatch's workers;
+- any failure (child, fetch, validation, staleness, executed-code mismatch, or a failed result): status `degraded`, `last_event_id` still set to the last event the workers actually committed, because failed attempts also write events;
+- no event committed at all: `last_event_id` unchanged;
+- `last_run_id` stays null until Phase 6.
 
 A test-only assertion fails if manifest lock acquisition occurs while the process still owns a host-lock descriptor.
 
@@ -653,7 +621,7 @@ Compatibility compares:
 
 - package and package instance;
 - last successful recipe or package version;
-- every dispatch-global projected value;
+- the claim projection: every value the package itself declares;
 - non-secrets by source form;
 - secret references by reference;
 - literal secrets by digest.
@@ -664,7 +632,13 @@ They print value names and comparison class only.
 
 They never print either value, reference locator, or digest.
 
-Install decisions under the host lock are:
+Claim gating is split by certainty:
+
+- Requested top-level packages are checked under the host lock before recipe code, because their decision decides whether anything runs at all.
+- Dependencies are checked when their result commits, after execution. A dependency that turns out incompatible is marked degraded with its event, and no claim is added; the mutation already happened and is never claimed as rolled back.
+- A runtime-optional dependency that never executes is never gated, so a lexical `pkg_depends` line inside an untaken branch cannot fail an unrelated dispatch.
+
+Install decisions for checked subjects under the host lock are:
 
 - Missing state: run install and add the claim only after success.
 - Same active claim and no explicit difference: skip install and run verify.
@@ -688,7 +662,25 @@ A redacted literal secret must be resupplied by caller or desired inputs and mus
 
 Changed defaults do not affect an existing claim, verify, or teardown.
 
-Claim checks and execution-plan decisions happen under the host lock before recipe code.
+### Commit-drift gate
+
+Until Phase 7 proves pinned remote execution, `app reconfigure` and `app teardown` fail loudly before any step unless the current checkout's proved commit equals the manifest's `application_commit` and the tree is clean.
+
+This is REDESIGN's commit-drift rule applied at Phase 4, not a new policy.
+
+The error names both commits and states that upgrade or migration is not available yet.
+
+### Claim-release override for direct uninstalls
+
+A direct uninstall of a package instance with active deployment claims requires all of:
+
+- `CLOUDIFY_BREAK_CLAIMS` set exactly to the package instance being broken (a typed confirmation, not a boolean);
+- every displaced claim named in its own event, each with that claim's deployment tuple, step ID, and the subject identity;
+- one claim-releasing state transition per displaced claim, followed by the uninstall transition.
+
+Without the variable, direct uninstall fails and prints the blocking deployment tuples.
+
+The override is never valid for application teardown, which releases only its own claims.
 
 ## Registry writer removal
 
@@ -712,7 +704,7 @@ Move the old registry record bytes out of `tests/fixtures/golden/registry/` into
 
 Delete the registry-writer half of the golden suite.
 
-The migration step (4.7) owns those moved input fixtures and the narrow old-format reader tests.
+The migration step (4.7) consumes those moved input fixtures and the narrow old-format reader tests.
 
 ## Registry migration
 
@@ -752,7 +744,7 @@ An applied migration writes:
 
 1. one validated immutable `migrate-registry` event from revision 0 to 1;
 2. one validated state at revision 1;
-3. `applied.application_commit: null` linked to that event;
+3. `applied.application_commit: null` with `development_override: true`, linked to that event;
 4. `last_attempt: null`;
 5. health `unknown`, `checked_at: null`, linked to that event;
 6. no claims.
@@ -778,20 +770,23 @@ The event schema, its migration event fixture, and already-written immutable mig
 The following all fail closed before remote mutation:
 
 - no durable inventory host identity;
-- no clean checkout commit for a new normal applied write;
 - invalid package or instance component;
 - missing schema or validator;
 - malformed context or projection;
 - unresolved required redacted secret;
-- claim conflict;
+- claim conflict on a requested top-level package;
 - host-lock timeout;
-- invalid execution plan.
+- commit drift on reconfigure or teardown;
+- missing `CLOUDIFY_BREAK_CLAIMS` confirmation.
 
 The following may occur after remote mutation and therefore mark the deployment degraded without claiming rollback:
 
 - child process failure;
-- missing or invalid result frame;
-- unexpected reported package;
+- result fetch or validation failure;
+- stale result body;
+- executed-code mismatch on an application dispatch;
+- unexpected reported membership or a missing requested top-level result;
+- dependency claim incompatibility found at commit time;
 - event-create failure;
 - state-replace failure;
 - a later result commit failing after earlier results committed.
@@ -808,10 +803,13 @@ Write one red test at a time in this order.
 
 - Every valid state object has non-null event IDs.
 - Null event IDs in applied, attempt, health, or claim fail schema validation.
+- A null applied commit without `development_override: true` fails; with it, passes.
+- An application event with a null commit and no override fails; with the override, passes.
 - Migration event origin is required and bounded.
 - Normal events reject a migration origin.
 - Plain, escaped-at, multiline, reference-secret, explicit literal-secret, heuristic literal-secret, empty, spaces, quotes, colons, and shell metacharacters project correctly.
 - State and event projections come from a context after every value source is made unavailable.
+- The claim projection contains only the claimed package's declared names; the record projection contains all resolved names.
 - No literal fixture secret appears in state, event, result body, stdout, debug output, or log.
 
 ### Event and state writes
@@ -820,10 +818,11 @@ Write one red test at a time in this order.
 - A state file is real JSON and validates before replacement.
 - An invalid next state leaves the prior bytes unchanged.
 - Event creation failure leaves state unchanged.
+- An existing event name causes ID regeneration, never overwrite.
+- A stray event temporary with committed bytes is ignored by writers.
 - State replacement failure leaves one detectable event-to-state gap.
 - State pointing to a missing event is reported and blocks mutation.
 - Two successive results produce revisions 1 and 2 with matching event links.
-- An existing event ID is never overwritten and causes ID retry.
 - A failed attempt preserves applied bytes and claims.
 
 ### Package instance and host identity
@@ -835,43 +834,45 @@ Write one red test at a time in this order.
 - Two aliases of one inventory host produce one host lock.
 - An external target fails before remote execution.
 
-### Locking
+### Locking and result channel
 
-- Same-host workers serialize remote execution and all result commits.
+- Same-host workers serialize remote execution, fetch, and all result commits.
 - Different-host workers can overlap.
 - Dependencies acquire no nested lock.
 - Timeout is bounded and prints the current holder metadata.
 - The host lock is released before the manifest lock is acquired.
-- A partial multi-package commit keeps earlier event/state pairs valid.
-
-### Results and framing
-
-- Local package results stay in the private file and never enter stdout.
-- A top-level and nested dependency report parent, package, instance, phase, operation, status, verification, and no values.
-- Recipe success, return failure, `exit`, dependency failure, and verify failure each emit one accurate result.
-- The random nonce is absent from child and recipe environments.
-- Recipe stdin remains unchanged.
-- Non-frame stdout bytes, including an unterminated final line and a fake marker, round-trip byte exact.
-- Missing, duplicate, truncated, malformed, overlong, bad-length, bad-digest, bad-base64, bad-JSON, and wrong-nonce frames fail.
-- An unexpected package, parent, instance, phase, or operation prevents every commit from that body.
-- A missing or duplicate top-level result fails.
+- The payload bytes stay byte-identical to all eight goldens with the result channel active.
+- Recipe stdin and recipe stdout bytes are unchanged by the result channel.
+- Local and remote results land in the private file and never in stdout.
+- A top-level and nested dependency report parent, package, instance, phase, operation, status, verification, checkout facts, and no values.
+- Recipe success, return failure, `exit`, dependency failure, and verify failure each emit one accurate result written after the child exits.
+- Fetch failure, malformed body, overlarge body, and a stale body each mark the dispatch degraded, remove host result files, and commit nothing.
+- A result whose membership is absent from the graph prevents every commit from that body.
+- A missing requested top-level result fails; an extra repeated membership commits as an ordered attempt.
 - A successful dependency result commits even when a later top-level result fails.
-- The eight payload goldens remain byte-identical.
+- An executed-code mismatch on an application dispatch records the executed commit in its event, writes no applied, and degrades the dispatch.
+- A partial multi-package commit keeps earlier event/state pairs valid and the manifest degraded with the last committed event ID.
 
-### Claims, phases, and migration
+### Claims, phases, provenance, and migration
 
 - Compatible claims share one state record.
+- A dispatch value declared only by another package never enters a dependency's claim, and two deployments with different such values still share the dependency.
 - Conflicting explicit input fails before recipe code and prints no secret material.
 - Existing-claim install skips install and verifies.
 - Failed first install adds no claim.
 - Failed reconfigure preserves applied and claim values.
+- A dependency found incompatible at commit time degrades the dispatch and adds no claim.
+- An optional dependency never executed blocks nothing.
 - Shared teardown releases one claim without uninstall.
 - Failed last-claim uninstall preserves the claim and applied state.
 - Successful last-claim uninstall clears applied and the claim.
+- Direct uninstall over claims fails and prints the blocking tuples.
+- Direct uninstall with `CLOUDIFY_BREAK_CLAIMS` set to the instance releases each claim with its own naming event, then uninstalls.
+- Reconfigure and teardown fail on commit drift, naming both commits, before any step.
 - Verify and teardown seed only from successful applied values.
 - A failed attempt never seeds another phase.
 - Migration dry-run writes nothing.
-- Migration apply writes event first, then revision 1 state with null applied commit and no claims.
+- Migration apply writes event first, then revision 1 state with null commit, override true, and no claims.
 - Repeating identical migration is a no-op.
 - Conflicting migration fails without exposing values.
 - External and removed records are reported but not migrated.
@@ -884,10 +885,10 @@ No implementation test may weaken the byte-exact payload goldens or a fragile-su
 ### 4.1 State and event substrate
 
 1. Add red schema fixtures and projection tests.
-2. Add the flat context declaration-origin field under the fragile-surface gate.
+2. Add the flat context declaration-origin and package-instance fields under the fragile-surface gate.
 3. Generalize the one jq schema validator.
-4. Add ID and writer-identity helpers.
-5. Add immutable event rendering and creation.
+4. Add the shared ID helper and writer-identity helper.
+5. Add immutable event rendering and hard-link creation.
 6. Add physical package-state rendering and event-first replacement.
 7. Add subject-level gap detection.
 
@@ -902,15 +903,15 @@ No package-state writer lands before step 5 is complete and green.
 
 ### 4.3 Host lock and result channel
 
-1. Freeze the lock, private-result, frame, passthrough, and graph-reconciliation tests.
+1. Freeze the lock, result-body, fetch, staleness, and graph-reconciliation tests.
 2. Add the operator-side dispatch worker and bounded host lock.
-3. Add framework result emission around package attempts.
-4. Add remote frame emission and local frame parsing.
+3. Add framework result emission around package attempts and the child's result-file write.
+4. Add the post-exit fetch, whole-body validation, and executed-code check.
 5. Validate the whole result body before ordered commits.
 6. Delete the runtime registry writer and split its goldens.
 7. Prove unconditional context cleanup and byte-identical payloads.
 
-The framed-result format is a fragile transport contract and needs Rachid's go before this slice.
+The result-channel format supersedes the drafted framed stdout tail and needs Rachid's go before this slice.
 
 ### 4.4 Phase-specific resolution
 
@@ -921,17 +922,20 @@ The framed-result format is a fragile transport contract and needs Rachid's go b
 
 ### 4.5 Claims and adoption
 
-1. Add pre-mutation compatibility checks under the host lock.
-2. Add claim-only and verify-only execution-plan decisions.
-3. Add claims only after compatible success or adoption.
-4. Add guarded configure-based adoption.
+1. Add pre-mutation compatibility checks for requested top-level packages under the host lock.
+2. Add commit-time compatibility checks for dependency results.
+3. Add claim-only and verify-only execution-plan decisions.
+4. Add claims only after compatible success or adoption.
+5. Add guarded configure-based adoption.
 
-### 4.6 Teardown and failure state
+### 4.6 Teardown, override, and failure state
 
 1. Add shared claim release without uninstall.
 2. Add last-claim uninstall ordering.
-3. Preserve applied and ownership on failure.
-4. Record degraded or unknown health through event-backed transitions.
+3. Add the `CLOUDIFY_BREAK_CLAIMS` override with per-claim events.
+4. Add the reconfigure and teardown commit-drift gate.
+5. Preserve applied and ownership on failure.
+6. Record degraded or unknown health through event-backed transitions.
 
 ### 4.7 Migration and phase gate
 
@@ -945,10 +949,13 @@ The framed-result format is a fragile transport contract and needs Rachid's go b
 
 The design gate (R3) is complete only after:
 
-- this document has no unresolved must-fix review finding;
-- SPEC review returns `PASS` with file and line evidence;
-- Technical review returns `PASS` with file and line evidence;
-- Rachid explicitly consents to the context-format and framed-result contract changes;
-- accepted clarifications are aligned in `REDESIGN.md`, the recovery plan, schemas, and ADR trail before code.
+- SPEC and Technical reviews return `PASS` with file and line evidence on this revision;
+- Rachid explicitly consents to:
+  - the result channel superseding the drafted framed stdout tail, its nonce, and its byte parser, and the recovery plan lines that specify them (R3 lines on nonce, frame markers, passthrough, and framed stdout tail; the 4.3 title and framed-protocol items);
+  - the uniform `development_override` commit rule superseding the R3 line that reserved a null applied commit to migration alone;
+  - the claim projection (own-declared names) as the implementable rule for REDESIGN's "every configuration-affecting declared value", recorded as a new ADR with the REDESIGN alignment in the same commit;
+  - the `CLOUDIFY_BREAK_CLAIMS` override contract;
+  - the two fragile-surface contract changes already flagged: the added flat-context fields and the result-channel format;
+- accepted supersessions are aligned in `REDESIGN.md`, the recovery plan, the schemas, and the ADR trail in the same commit as the consent decision, before code.
 
 This turn performs none of those acceptance steps.

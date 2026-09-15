@@ -14,11 +14,11 @@ Phase 4 replaces the per-deployment registry observation with one schema-valid s
 
 Every state revision is backed by one immutable event.
 
-One operator-side worker holds one durable-host lock from before remote mutation through result fetch and every top-level and dependency result commit.
+One operator-side worker holds one durable-host lock from before remote mutation through result-line capture and every top-level and dependency result commit.
 
 Claims prevent one deployment from changing or removing a package instance still used by another deployment.
 
-Remote results travel in a framework-owned private file fetched after the child exits, so recipe stdout and the SSH payload bytes never change.
+Remote results travel as one marked line the child itself emits on the existing streamed log, so recipe output, the live streaming chain, and the SSH payload bytes never change.
 
 ## Authority and scope
 
@@ -115,10 +115,10 @@ Keep one owner per concern.
 
 - `lib/state.sh` owns the Cloudify state root, the shared JSON-schema validator, collision-resistant IDs, immutable event creation, writer identity, and deployment manifest locking.
 - `lib/package-state.sh` is new and owns durable host identity, host-state paths, package-state rendering, state transitions, claims, and registry migration into package state.
-- `lib/results.sh` is new and owns the result-file body contract, remote result writing, local result fetching, validation, and expected-graph reconciliation.
+- `lib/results.sh` is new and owns the result-body contract, the remote child's private result file and marked-line emission, the local capture tap and result reading, validation, and expected-graph reconciliation.
 - `lib/package-api.sh` emits one result object around each install attempt made through `pkg_depends`.
 - `lib/packages.sh` emits the same result shape around configure, verify, and uninstall attempts.
-- `lib/remote.sh` keeps the payload bytes and recipe streams unchanged; the result channel is a second SSH exec, not payload content.
+- `lib/remote.sh` keeps the payload bytes and recipe streams unchanged; the result channel is one marked line emitted by the child and captured by a pass-through tap, never payload content.
 - `lib/runbooks.sh` supplies application identity, clean commit, stable step ID, selected phase, the commit-drift gate, and manifest updates.
 - `lib/registry.sh` retains only the old-format reader needed by `cloudify state migrate-registry` until Phase 8 deletes it.
 - `cloudify` owns dispatch-worker lifecycle, unconditional context cleanup, and the final manifest result.
@@ -193,7 +193,7 @@ The result writer and operator-side reconciler read that same identity instead o
 
 These are per-package identity fields, not per-package value views, so ADR-024's one global value namespace remains unchanged.
 
-The framework-owned result directory and fetch channel are not package-instance inputs.
+The framework-owned result file and marked line are not package-instance inputs.
 
 ## Commit provenance and executed-code identity
 
@@ -485,21 +485,30 @@ Reconciliation rules after the result body is fully validated:
 
 No attempt ordinal or edge ID is added: body order plus membership is the complete reconciliation contract.
 
-## Result channel: private file and post-exit fetch
+## Result channel: one marked line in the streamed log
 
-This channel supersedes the previously drafted framed stdout tail and its nonce machinery; the supersession is listed in Gate conditions.
+This channel supersedes the drafted framed stdout tail, its nonce machinery, and the second-SSH-exec fetch; the supersession was consented on 2026-09-15 and is recorded in Gate conditions.
 
-The motivation is unchanged: recipe stdout is noisy and must stay byte-exact, and framework results must never be parsed out of that stream.
+First principle: the live streamed log is what makes a remote install feel like a local one.
+Output is written on the remote host and streams live to the controller through one chain: the payload's `exec > >(tee -a "$CLOUDIFY_LOG_FILE") 2>&1`, the SSH channel, the local host-prefix stages, and the local protected log.
+That chain must keep flowing unbuffered, unfiltered, and unbroken; it is now a documented fragile invariant in `docs/FRAGILE.md`.
 
-Mechanism:
+The result is one line, marked by the child itself, and captured by a tap that removes nothing:
 
-- The remote child Cloudify process writes its results as one JSON file under `/tmp/cloudify/results/` on the target host: directory 0700 root-owned, file 0600, name `<child-start-epoch>-<child-pid>.json`.
-- The child writes the complete body after its package work exits, so no recipe `exit`, dependency failure, or verification failure can bypass it.
-- The operator-side worker, still holding the host lock, makes one short second SSH exec that prints the newest file in that directory, then removes every file in it.
-- The host lock serializes mutations per durable host, so within the lock the newest file is this dispatch's child's file.
-- The worker validates the whole body before committing anything, applies the staleness rule, and marks the dispatch degraded when fetch, validation, or staleness fails.
+- The remote child Cloudify process aggregates per-package results into one private mode-0600 file during its run; recipe `exit`, dependency failure, or verification failure cannot bypass it.
+- At its own exit, after all package work is done, the child prints exactly one line to stdout:
 
-The SSH payload, its appended command, recipe stdin (`</dev/null`), recipe stdout, and the eight byte-exact payload goldens are untouched.
+```text
+__CLOUDIFY_RESULT_V1__ 1 <base64-body-without-wrap>
+```
+
+- The emission lives inside the child process, so the payload template, the eight byte-exact payload goldens, recipe stdin, and recipe stdout are untouched.
+- The marked line flows through the existing chain like any other line: the operator sees it live and both logs keep it.
+- The operator-side worker appends one pass-through capture stage to the received stream: a line-oriented filter that prints every line onward unchanged and additionally copies lines whose body after the host prefix starts with the marker into a private capture file.
+  No stage may exit early or close the pipe: an early-exiting stage SIGPIPEs the chain and kills live output.
+- When the SSH channel closes, the worker validates the capture: exactly one marker line, protocol version 1, well-formed unwrapped base64, valid JSON under the result contract, at most 1 MiB of body, and the staleness rule on `finished_at`.
+- Zero marked lines, or more than one, marks the dispatch degraded; nothing is committed from an unvalidated body.
+- The child removes its private result file after printing; a crashed child's stray file is inert and never read.
 
 The body is JSON, is not a persisted v2 artifact, and gets no file under `schemas/v1/`.
 
@@ -545,9 +554,9 @@ Exact rules:
 - Every object has exactly these fields.
 - The body is at most 1 MiB.
 
-Staleness: the worker rejects a body whose `finished_at` predates the worker's own dispatch start minus five minutes of clock-skew slack, treats it as a crashed predecessor's leftover, removes all result files, and marks the dispatch degraded.
+Staleness: the worker rejects a body whose `finished_at` predates the worker's own dispatch start minus five minutes of clock-skew slack, treats it as a crashed predecessor's leftover, and marks the dispatch degraded.
 
-Local dispatches use the same body file and validator, with the local child writing the file and the worker reading it; no second channel is needed.
+Local dispatches use the same body file and validator, with the local child writing the file and the worker reading it directly; no marked line is needed on the local path.
 
 The recipe remains trusted code and can inspect inherited process state as root.
 
@@ -570,7 +579,7 @@ A local dispatch worker, which is the operator-side parent of the local or remot
 
 It acquires the lock before reading claim compatibility or starting remote execution.
 
-It holds the same lock through payload execution, result fetch, body validation, graph reconciliation, the executed-code check, every package event creation, and every package-state replacement.
+It holds the same lock through payload execution, result-line capture, body validation, graph reconciliation, the executed-code check, every package event creation, and every package-state replacement.
 
 It releases the lock only after all committable results finish or a failure is recorded.
 
@@ -782,7 +791,7 @@ The following all fail closed before remote mutation:
 The following may occur after remote mutation and therefore mark the deployment degraded without claiming rollback:
 
 - child process failure;
-- result fetch or validation failure;
+- result-line capture or validation failure;
 - stale result body;
 - executed-code mismatch on an application dispatch;
 - unexpected reported membership or a missing requested top-level result;
@@ -843,10 +852,11 @@ Write one red test at a time in this order.
 - The host lock is released before the manifest lock is acquired.
 - The payload bytes stay byte-identical to all eight goldens with the result channel active.
 - Recipe stdin and recipe stdout bytes are unchanged by the result channel.
-- Local and remote results land in the private file and never in stdout.
+- Local results land in the private file; the remote result is the one marked line on the stream, kept in both logs like any other line.
 - A top-level and nested dependency report parent, package, instance, phase, operation, status, verification, checkout facts, and no values.
-- Recipe success, return failure, `exit`, dependency failure, and verify failure each emit one accurate result written after the child exits.
-- Fetch failure, malformed body, overlarge body, and a stale body each mark the dispatch degraded, remove host result files, and commit nothing.
+- Recipe success, return failure, `exit`, dependency failure, and verify failure each produce one accurate result line emitted at the child's own exit.
+- A missing, duplicated, malformed, overlarge, or stale result line marks the dispatch degraded and commits nothing.
+- The capture tap passes every non-marker line through in order and never terminates the stream early.
 - A result whose membership is absent from the graph prevents every commit from that body.
 - A missing requested top-level result fails; an extra repeated membership commits as an ordered attempt.
 - A successful dependency result commits even when a later top-level result fails.
@@ -903,15 +913,15 @@ No package-state writer lands before step 5 is complete and green.
 
 ### 4.3 Host lock and result channel
 
-1. Freeze the lock, result-body, fetch, staleness, and graph-reconciliation tests.
+1. Freeze the lock, result-body, capture-tap, staleness, and graph-reconciliation tests.
 2. Add the operator-side dispatch worker and bounded host lock.
-3. Add framework result emission around package attempts and the child's result-file write.
-4. Add the post-exit fetch, whole-body validation, and executed-code check.
+3. Add framework result emission around package attempts, the child's private result file, and the marked-line emission.
+4. Add the pass-through capture tap, whole-body validation, and executed-code check.
 5. Validate the whole result body before ordered commits.
 6. Delete the runtime registry writer and split its goldens.
 7. Prove unconditional context cleanup and byte-identical payloads.
 
-The result-channel format supersedes the drafted framed stdout tail and needs Rachid's go before this slice.
+The result-line format was consented on 2026-09-15; the streamed-logging chain is a documented fragile invariant and its gate runs on this slice.
 
 ### 4.4 Phase-specific resolution
 
@@ -947,15 +957,19 @@ The result-channel format supersedes the drafted framed stdout tail and needs Ra
 
 ## Gate conditions
 
+Consent was given by Rachid on 2026-09-15, recorded in `LOGS.md`, for:
+
+- the result channel: one marked line emitted by the child itself on the existing streamed log, superseding the drafted framed stdout tail, its nonce, its byte parser, and the second-SSH-exec fetch; the streamed-logging chain becomes a documented fragile invariant;
+- the uniform `development_override` rule for every null applied commit;
+- the claim projection over the package's own declared values, recorded as ADR-025 with the REDESIGN sentence in the same commit;
+- the `CLOUDIFY_BREAK_CLAIMS` override contract;
+- the fragile-surface format changes: the two added flat-context field shapes and the result-line format.
+
 The design gate (R3) is complete only after:
 
-- SPEC and Technical reviews return `PASS` with file and line evidence on this revision;
-- Rachid explicitly consents to:
-  - the result channel superseding the drafted framed stdout tail, its nonce, and its byte parser, and the recovery plan lines that specify them (R3 lines on nonce, frame markers, passthrough, and framed stdout tail; the 4.3 title and framed-protocol items);
-  - the uniform `development_override` commit rule superseding the R3 line that reserved a null applied commit to migration alone;
-  - the claim projection (own-declared names) as the implementable rule for REDESIGN's "every configuration-affecting declared value", recorded as a new ADR with the REDESIGN alignment in the same commit;
-  - the `CLOUDIFY_BREAK_CLAIMS` override contract;
-  - the two fragile-surface contract changes already flagged: the added flat-context fields and the result-channel format;
-- accepted supersessions are aligned in `REDESIGN.md`, the recovery plan, the schemas, and the ADR trail in the same commit as the consent decision, before code.
+- fresh independent SPEC and Technical reviews return `PASS` with file and line evidence on this revision;
+- the alignment that depends on those reviews alone (none currently open) lands with the reviews' evidence.
 
-This turn performs none of those acceptance steps.
+The alignment that does not depend on the reviews - REDESIGN sentence, ADR-025, the recovery plan supersessions, and `docs/FRAGILE.md` - lands in the same commit as the consent record, before code.
+
+This turn performs no implementation.

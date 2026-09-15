@@ -361,6 +361,8 @@ A claim may be added only when its requested configuration is compatible with th
 
 Compatible means the package and package-instance identity, applied recipe commit or declared package version, and every configuration-affecting declared value match.
 
+A package's configuration-affecting declared values are the values it declares itself; a value declared only by another package in the dispatch is claimed by that package's own state subject (ADR-025).
+
 Non-secret values compare by source value, secret references compare by reference, and literal secrets compare by digest.
 
 A conflicting claim fails before mutation and names the deployments in conflict.

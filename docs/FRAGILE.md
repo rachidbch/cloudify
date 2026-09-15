@@ -38,6 +38,26 @@ Chain: caller env -> ladder walk (`lib/vars.sh`) -> one dispatch context
   Lives at `lib/context.sh`, `lib/utils.sh` `cleanup`.
   Pinned by `tests/unit/context-wiring.bats` and the E2E leak scenario.
 
+## 3. Live log streaming
+
+Chain: remote payload `exec > >(tee -a "$CLOUDIFY_LOG_FILE") 2>&1` -> SSH channel
+-> local `stdbuf sed` host-prefix stages -> local `tee -a` protected log.
+This is what makes a remote install feel like a local one: output is written on
+the host AND streams live to the controller, unbuffered and unfiltered.
+
+- Never buffer, filter, or early-close the stream: an early-exiting stage
+  (`grep -m1`, `head`) SIGPIPEs the chain and kills live output.
+- Any capture taps the stream pass-through: print every line onward, copy
+  matches aside, never stop reading.
+- The Phase 4 result channel adds exactly one marked result line per dispatch,
+  emitted by the child cloudify at its own exit; it stays in the stream and in
+  both logs, and the payload bytes do not change.
+
+  Lives at `lib/remote.sh` (`cloudify_remote_sync` stream pipeline and the
+  payload template's `exec`/`tee` pairing).
+  Pinned by `tests/unit/golden-fixtures.bats` (payload bytes) and the Phase 4
+  capture-tap tests (4.3).
+
 ## 2. Shadows
 
 `lib/shadows/{sudo,apt-get,add-apt-repository,git}.sh` + loader `lib/shadow.sh`.

@@ -267,7 +267,7 @@ Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-s
 - [x] State is actual JSON and validates against `schemas/v1/package-state.schema.json` before atomic replacement. (Design: "Immutable event and state write protocol".)
 - [x] No package state writer lands before the immutable event writer exists. (Design: "Files and ownership" and step 4.1.)
 - [x] The design must specify tightening the package-state schema so every new applied, attempt, health and claim object carries a non-null event ID; migration also emits its own event. The schema and fixture edit itself lands in the state and event substrate step (4.1), not in this design-only gate. (Design: "Schema changes before writers".)
-- [x] Allow `applied.application_commit: null` only for a proved old-registry migration; require a 40-hex commit for every new application mutation and record the migration origin in its event. (Design: "Commit provenance" and "Registry migration"; new direct applied writes also require a clean checkout commit.)
+- [x] Allow `applied.application_commit: null` only through the uniform `development_override` rule, which covers a proved old-registry migration, a direct package command, and a development-override application run; require a proved commit for every normal application mutation and record the migration origin in its event. (Consented supersession of the migration-only wording, 2026-09-15; design "Commit provenance and executed-code identity".)
 - [x] Keep `application_commit` nullable in the manifest and run schemas with one `allOf` rule requiring `development_override: true` whenever it is null, so a dirty or unidentified tree never forces a fabricated commit.
 - [x] Add the matching valid fixtures (`unproved-commit-development-override` for manifest and run, the migrated-observation package state) and invalid fixtures (`null-commit-without-development-override` for manifest and run), and keep `bash schemas/v1/validate.sh` green. (The migrated state fixture's preliminary null event IDs are explicitly replaced in step 4.1.)
 - [x] Every state transition is event first, then state with the event ID and revision plus one. (Design: "Immutable event and state write protocol".)
@@ -278,10 +278,10 @@ Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-s
 - [x] Use one lock keyed by durable host identity only across remote mutation and all reported result commits; package and instance identify state subjects, not locks, and no nested package lock exists. (Design: "One host lock".)
 - [x] Release the host mutation lock before acquiring the deployment manifest lock. (Design: "One host lock".)
 - [x] Treat recipes as trusted but noisy: framing prevents accidental collisions, not a hostile remote root. (Design: "Private result contract".)
-- [x] Generate a random per-dispatch nonce in the local parent, bake it into the outer remote shell without exporting it to the child cloudify process or recipe, and emit the frame only after that child exits. (Design: "Framed remote stdout protocol".)
-- [x] Frame exact start, encoded length, digest and end markers; reject missing, duplicate, truncated or malformed frames. (Design: "Framed remote stdout protocol".)
-- [x] Pass every non-frame stdout byte through unchanged. (Design: "Framed remote stdout protocol".)
-- [x] Keep local results in a private file and remote results in the framed stdout tail after the child command exits. (Design: "Private result contract".)
+- [x] Emit the remote result as one marked line from the child cloudify process at its own exit; no nonce is generated and no payload byte changes. (Consented supersession of the drafted nonce and outer-shell frame, 2026-09-15; design "Result channel: one marked line in the streamed log".)
+- [x] Mark the result line exactly; reject missing, duplicate, malformed, overlarge, or stale results. (Design "Result channel".)
+- [x] Keep the streamed-log chain (remote tee, SSH channel, host prefix, local log) flowing unbuffered and unfiltered; the result line is captured by a pass-through tap and stays in the stream and both logs. (Fragile invariant added to `docs/FRAGILE.md`.)
+- [x] Keep local results in a private file and the remote result in the marked line carried by the existing stream after the child's package work exits. (Design "Result channel".)
 - [x] Include outcome, parent, package instance and phase for every attempted top-level package and dependency, with no values. (Design: "Private result contract".)
 - [x] Reconcile results against every precomputed top-level package and dependency and fail closed on an unexpected package. (Design: "Expected dependency graph".)
 - [x] Freeze lock, state, event and result-frame tests before implementation. (Design: "Tests frozen before implementation".)
@@ -294,10 +294,10 @@ Outcome: one physical installation is represented once, every mutation has an im
 
 ### Fragile-surface gate (4.0)
 
-Slices here touch `lib/remote.sh` (framed-result transport, host lock) and add classification-origin and package-instance fields to the existing flat context in `lib/context.sh` - both are on the fragile surface. The JSON dispatch-context conversion is NOT part of this phase: it is roadmapped, unscheduled, and nothing here depends on it (see the phase outcome below).
+Slices here touch `lib/remote.sh` (marked-line capture, host lock) and add classification-origin and package-instance fields to the existing flat context in `lib/context.sh` - both are on the fragile surface. The JSON dispatch-context conversion is NOT part of this phase: it is roadmapped, unscheduled, and nothing here depends on it (see the phase outcome below).
 
 - [ ] Apply the fragile-surface rule: name the invariants touched, run `task gate`, goldens unchanged.
-- [ ] The framed-result format and the added flat-context fields are contract changes: Rachid's go before either lands.
+- [x] The result-line format and the added flat-context fields are contract changes: Rachid's go was given on 2026-09-15 (`LOGS.md`).
 
 ### State and event substrate (4.1)
 
@@ -329,9 +329,9 @@ Not planned work for this phase: the JSON dispatch-context contract. It is roadm
 - [ ] Hold it through every top-level and dependency result commit.
 - [ ] Use no nested package lock.
 - [ ] Print holder metadata on timeout.
-- [ ] Implement and validate the reviewed framed result protocol.
+- [ ] Implement and validate the reviewed marked-line result channel.
 - [ ] Prove recipe stdout and stdin are unchanged.
-- [ ] Fail and mark degraded when a successful dispatch has no valid result frame.
+- [ ] Fail and mark degraded when a successful dispatch has no valid result line.
 - [ ] Fail the commit when a reported package or instance was not precomputed.
 - [ ] Commit successful dependency results, not only CLI package words.
 - [ ] Release the host lock before updating the manifest.

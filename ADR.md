@@ -371,3 +371,17 @@ Decision:
 4. The context records resolved values and their provenance, not a per-package structure.
 
 Consequences: configuration-only packages keep working by depending on what they configure. Two packages that declare the same name share one value, and the one resolved first wins; a collision is prevented by prefixing. The plan and the context contract no longer require per-package views.
+
+## ADR-025: A claim compares only the values its package declares
+
+Status: accepted 2026-09-15 (implements the compatibility sentence in `REDESIGN.md` "Physical package state and claims"; ADR-024's one global value namespace stands unchanged).
+
+Context: REDESIGN requires claims to match on "every configuration-affecting declared value" without defining which dispatch values those are. One dispatch resolves one global namespace, so comparing a claim against the whole namespace makes sharing impossible: two deployments using the same dependency would conflict whenever any unrelated value in their dispatches differs, such as one deployment's RDP password while both share docker.
+
+Decision:
+
+1. A claim's compared value set is exactly the values the claimed package declares in its own `.remote-vars`, resolved from the one dispatch context. No second resolution and no per-package value view exist.
+2. A value declared only by another package (the configuration-package pattern) is claimed by that other package's own state subject, so a conflict on it surfaces there.
+3. The state record's `applied` and `last_attempt` sections keep the full dispatch projection as observation; only claim compatibility uses the restricted set.
+
+Consequences: compatible deployments can share a dependency whose own declared values match, even when the rest of their dispatches differ. A software package that reads a value it does not declare is protected through the configuration package that declares it; an operator who changes such a value without the declaring package in the dispatch gets no claim conflict and must rely on verify to detect drift.

@@ -469,6 +469,13 @@
 ## 2026-09-15 - Phase 4 design revision 2 (correction pass)
 
 - All twelve review findings resolved in `plans/state-model-v2-phase4-design.md` revision 2; the delegated re-review attempt returned no result and was abandoned on Rachid's instruction to continue from the existing reports.
+
+## 2026-09-15 - Phase 4 design revision 3; five consents recorded
+
+- Rachid's decisions on the five contract questions: (1) the live streamed log (remote write plus live stream to the controller) must not break, becomes a documented fragile invariant, and the programmatic result rides one marked line on that stream - consent to supersede the framed stdout tail, nonce, byte parser, and second-exec fetch; (2) uniform `development_override` rule approved; (3) claim projection over the package's own declared values approved; (4) `CLOUDIFY_BREAK_CLAIMS` override approved; (5) fragile-surface format changes approved as recommended.
+- Design revision 3 rewrites the result channel: the remote child aggregates results in a private 0600 file, prints exactly one `__CLOUDIFY_RESULT_V1__` line at its own exit, and removes the file; the operator side taps the stream pass-through (never early-closing it), validates exactly one well-formed body, and keeps the line in the stream and both logs. Payload bytes and the eight goldens are untouched.
+- Aligned in the same commit as the consent record: `REDESIGN.md` (claim-projection sentence), ADR-025 (claim compares only own-declared values), the recovery plan R3 result-channel lines and 4.0/4.3 wording, and `docs/FRAGILE.md` section 3 (live log streaming: never early-close the chain, pass-through taps only).
+- Remaining before code: fresh independent SPEC and Technical reviews returning `PASS` on revision 3, then the phase implementation order is unchanged.
 - SPEC-1: Phase 4 events and claims carry `run_id: null`; the shared ID helper lands now and the Phase 6 run writer adopts it; no run ID is fabricated without a run record; lock metadata drops the run field.
 - SPEC-2: the claim projection is restricted to the claimed package's own declared names, resolved from the same context, so shared dependencies stay shareable; `applied` and `last_attempt` keep the full dispatch projection; both projections come from one parse.
 - SPEC-3: one uniform rule - a null applied commit always requires `development_override: true` - covers migration, direct commands, and development-override application runs; supersession of the R3 'null only for migration' line is flagged for consent, not silently applied.

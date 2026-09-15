@@ -1,8 +1,8 @@
 # Phase 4 design: physical package state, events, claims, and safe results
 
-Status: draft, revision 4, after two independent fresh-context review rounds.
+Status: draft, revision 5, after three independent fresh-context review rounds.
 
-Revision 2 resolved the first round's twelve findings; revision 3 recorded the five consents and the marked-line result channel; revision 4 resolves the second round's one SPEC and one Technical must-fix finding.
+Revision 2 resolved round one's twelve findings; revision 3 recorded the five consents and the marked-line result channel; revision 4 resolved round two's findings; revision 5 resolves round three's two SPEC and two Technical must-fix findings and their notes.
 
 Rachid's consent and the five contract decisions were given on 2026-09-15 and are recorded in `LOGS.md`.
 
@@ -25,7 +25,7 @@ Remote results travel as one marked line the child itself emits on the existing 
 This design derives from:
 
 - `REDESIGN.md`, especially Physical package state and claims, Application lifecycle and phases, Runs and events, Write protocol, and Migration and removal.
-- ADR-022, ADR-023, and ADR-024.
+- ADR-022, ADR-023, ADR-024, and ADR-025.
 - `schemas/v1/package-state.schema.json`.
 - `schemas/v1/event.schema.json`.
 - `schemas/v1/run.schema.json`.
@@ -91,7 +91,8 @@ The declaration field is derived during the existing single resolution, beside `
 
 The package-instance field is derived after that resolution from the package's optional instance variable and defaults to `default`.
 
-A valid secret reference or a package `secret <NAME>` marker yields `explicit`.
+A valid secret reference yields `explicit`.
+The package `secret <NAME>` marker joins it when Phase 5 defines that marker; until then `explicit` arises only from a reference, with the name heuristic still applying as defense in depth.
 
 Otherwise a matching secret-name heuristic yields `heuristic`.
 
@@ -242,6 +243,7 @@ Tighten `schemas/v1/package-state.schema.json` so:
 - `health.event_id` is always a non-null event ID;
 - every claim has a non-null `event_id`;
 - a missing state has conceptual revision 0, but the first persisted state has revision 1;
+- set the persisted `revision` minimum to 1, with an invalid revision-0 fixture, so a persisted state can never claim the absence revision;
 - update the schema and `schemas/v1/README.md` descriptions so a null applied commit reads as the uniform development-override rule (a proved old-registry migration, a direct package command, or a development-override application run); text only, no constraint change.
 
 A new or migrated state with no verification uses `health.status: unknown`, `checked_at: null`, and the event ID that created the state.
@@ -485,6 +487,7 @@ Reconciliation rules after the result body is fully validated:
 - Every result must match at least one graph row by membership; a result with no matching row rejects the whole body before any commit.
 - The same membership may appear in several results, because one package can be pulled through several parents at runtime; each extra result commits as its own ordered attempt.
 - A conditional dependency that is in the static graph but is not executed at runtime produces no result and no state transition, and blocks nothing: only requested top-level packages are required to report.
+- Framework-driven pre-installs are not dispatch subjects: the `@default` package set (or `basics` under `--no-defaults`) and any package installed by the first-contact `cloudify init` branch run under a framework recording-suppression guard, emit no results, and need no graph rows or Phase 4 state subjects; the requested dispatch tree is the whole reportable surface.
 - Results commit in body order, which is execution order, under the same host lock, each with its own event and revision.
 
 No attempt ordinal or edge ID is added: body order plus membership is the complete reconciliation contract.
@@ -512,6 +515,7 @@ __CLOUDIFY_RESULT_V1__ 1 <base64-body-without-wrap>
   No stage may exit early or close the pipe: an early-exiting stage SIGPIPEs the chain and kills live output.
 - When the SSH channel closes, the worker validates the capture: exactly one marker line, protocol version 1, well-formed unwrapped base64, valid JSON under the result contract, at most 1 MiB of body, and the staleness rule on `finished_at`.
 - Zero marked lines, or more than one, marks the dispatch degraded; nothing is committed from an unvalidated body.
+- Exactly one marker is achievable because the suppression guard also silences framework-internal package work: the framework sets the guard wherever it invokes package actions for non-dispatch reasons (the defaults block inside the dispatch child, the init branch's internal install, in-process or in a child it spawns), so only the dispatch child emits. The guard travels by process environment on the remote host, never in the payload.
 - The child removes its private result file after printing; a crashed child's stray file is inert and never read.
 
 The body is JSON, is not a persisted v2 artifact, and gets no file under `schemas/v1/`.
@@ -553,6 +557,7 @@ Exact rules:
 - `verification` is `ok`, `failed`, or `not-run`.
 - `finished_at` is the child's UTC completion time.
 - `checkout_commit` and `checkout_dirty` follow Commit provenance and executed-code identity.
+- `child_exit_status` is the child cloudify process's captured exit status: an integer 0 through 255, or null when it was killed by a signal; a body reporting success for every result while the status is non-zero fails validation.
 - Normal Phase 4 writes set package-state `package_version` to null because no recipe-version reporter exists.
 - No value, environment snapshot, stdout, stderr, payload, path, nonce, claim, or free-form summary is allowed.
 - Every object has exactly these fields.
@@ -648,7 +653,7 @@ They never print either value, reference locator, or digest.
 Claim gating is split by certainty:
 
 - Requested top-level packages are checked under the host lock before recipe code, because their decision decides whether anything runs at all.
-- Dependencies are checked when their result commits, after execution. A dependency that turns out incompatible is marked degraded with its event, and no claim is added; the mutation already happened and is never claimed as rolled back. This is the same post-execution degraded pattern REDESIGN already establishes for a runtime dependency absent from the precomputed graph; the fail-before-mutation rule applies to the subjects that were claim-checked before recipe code.
+- Dependencies are checked when their result commits, after execution. A dependency that turns out incompatible is marked degraded with its event, and no claim is added; the mutation already happened and is never claimed as rolled back. Its state transition follows the failed-attempt rules: `applied` preserved, `last_attempt` failed, health `degraded`. This is the same post-execution degraded pattern REDESIGN already establishes for a runtime dependency absent from the precomputed graph; the fail-before-mutation rule applies to the subjects that were claim-checked before recipe code.
 - A runtime-optional dependency that never executes is never gated, so a lexical `pkg_depends` line inside an untaken branch cannot fail an unrelated dispatch.
 
 Install decisions for checked subjects under the host lock are:
@@ -657,8 +662,9 @@ Install decisions for checked subjects under the host lock are:
 - State present with `applied: null` and no claim (what a failed first install leaves behind): run install and add the claim only after success.
 - Same active claim and no explicit difference: skip install and run verify.
 - Compatible state without this claim: add the claim without recipe mutation, then verify when the phase requires it.
-- Explicit input differing from applied or any active claim: fail before recipe code and direct the operator to reconfigure or upgrade.
+- This deployment or another deployment holds an active claim and explicit input differs from applied or that claim: fail before recipe code and direct the operator to reconfigure or upgrade.
 - Unclaimed incompatible state: require `--adopt`, require configure support, run configure, and add the claim only after success.
+  An explicit input differing from applied is what makes unclaimed state incompatible, mirroring REDESIGN's assignment of that shape to adoption.
 
 Reconfigure requires an existing successful applied object and this deployment's active claim.
 
@@ -750,7 +756,7 @@ For each inventory-node or instance record with `status: installed` or `configur
 
 It never infers application commit, run ID, step ID, health, target binding, or historical event sequence.
 
-Each migrated value is classified by the same mapping rules `schemas/v1/README.md` already fixes for one stored value: a `@<backend>:` value becomes an explicit secret reference; a heuristic secret name becomes a redacted literal with its sha256 digest; any other value stays a non-secret literal.
+Each migrated value is classified by the same mapping rules `schemas/v1/README.md` already fixes for one stored value: a `@<backend>:` value becomes an explicit secret reference; a heuristic secret name is decoded from its recorded `@base64:` or `@@` form first and then becomes a redacted literal with the sha256 of the plaintext; any other value stays a non-secret literal.
 Migration never writes plaintext into state, and a record whose classification cannot be derived is reported, not migrated.
 A record with no usable observation timestamp is also reported, not migrated, because `applied.at` is required and is never fabricated.
 
@@ -867,6 +873,7 @@ Write one red test at a time in this order.
 - A top-level and nested dependency report parent, package, instance, phase, operation, status, verification, checkout facts, and no values.
 - Recipe success, return failure, `exit`, dependency failure, and verify failure each produce one accurate result line emitted at the child's own exit.
 - A missing, duplicated, malformed, overlarge, or stale result line marks the dispatch degraded and commits nothing.
+- The `@default` pre-install block and a first-contact `cloudify init` internal install emit no results and no second marker; the dispatch reports exactly one marker and only requested-tree results.
 - The capture tap passes every non-marker line through in order and never terminates the stream early.
 - A result whose membership is absent from the graph prevents every commit from that body.
 - A missing requested top-level result fails; an extra repeated membership commits as an ordered attempt.
@@ -923,7 +930,7 @@ No package-state writer lands before step 5 is complete and green.
 1. Add the `.package-instance` contract and tests.
 2. Resolve instance identity from the already-built context.
 3. Add inventory host key, host root, state path, and host-lock path helpers.
-4. Reject external durable state and ship the README or release note on the temporary external-host suspension.
+4. Reject external durable state and ship the README or release note on the temporary external-host suspension and the executed-commit freshness requirement (push and let the remote refresh, or expect a degraded dispatch until Phase 7 pins execution).
 
 ### 4.3 Host lock and result channel
 
@@ -982,6 +989,8 @@ Consent was given by Rachid on 2026-09-15, recorded in `LOGS.md`, for:
 The design gate (R3) is complete only after:
 
 - fresh independent SPEC and Technical reviews return `PASS` with file and line evidence on this revision;
+- the reconfigure value-ladder insert (`applied` ranked between deployment inputs and application defaults, as REDESIGN's phase-specific sources mandate) is named as a fragile visit-order contract change and gets Rachid's go before step 4.4 lands, with the pinning-test updates named in that slice;
+- the next consented REDESIGN alignment carries the subject-scope qualifier for the fail-before-mutation claim sentence, matching the dependency commit-time gate (note, round three).
 - the alignment that depends on those reviews alone (none currently open) lands with the reviews' evidence.
 
 The alignment that does not depend on the reviews - REDESIGN sentence, ADR-025, the recovery plan supersessions, and `docs/FRAGILE.md` - lands in the same commit as the consent record, before code.

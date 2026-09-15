@@ -1,8 +1,8 @@
 # Phase 4 design: physical package state, events, claims, and safe results
 
-Status: draft, revision 6, after four independent fresh-context review rounds.
+Status: draft, revision 7, after five independent fresh-context review rounds.
 
-Revisions 2 to 5 resolved the earlier rounds' findings; revision 6 resolves round four's shared must-fix - the development-override application dispatch had two opposite applied-write outcomes - plus that round's notes.
+Revisions 2 to 6 resolved the earlier rounds' findings; revision 7 resolves round five's two Technical must-fix findings (the live `secret <NAME>` marker and the capture tap's return discipline) and that round's notes. The SPEC review returned `PASS` on revision 6 with notes only.
 
 Rachid's consent and the five contract decisions were given on 2026-09-15 and are recorded in `LOGS.md`.
 
@@ -91,8 +91,9 @@ The declaration field is derived during the existing single resolution, beside `
 
 The package-instance field is derived after that resolution from the package's optional instance variable and defaults to `default`.
 
-A valid secret reference yields `explicit`.
-The package `secret <NAME>` marker joins it when Phase 5 defines that marker; until then `explicit` arises only from a reference, with the name heuristic still applying as defense in depth.
+A valid secret reference or the live `secret <NAME>` marker yields `explicit`; the marker is not future work: the context build already parses it and forces `secret: true`, and this field only surfaces that classification origin.
+The name heuristic alone yields `heuristic`, and every other name yields `none`.
+Phase 5 adds the validation and read surface on top of the existing marker; it does not introduce the marker.
 
 Otherwise a matching secret-name heuristic yields `heuristic`.
 
@@ -115,7 +116,7 @@ Both schemas need the changes specified below before the first package-state wri
 Keep one owner per concern.
 
 - `lib/state.sh` owns the Cloudify state root, the shared JSON-schema validator, collision-resistant IDs, immutable event creation, writer identity, and deployment manifest locking.
-- `lib/package-state.sh` is new and owns durable host identity, host-state paths, package-state rendering, state transitions, claims, and registry migration into package state.
+- `lib/package-state.sh` is new and owns durable host identity, host-state paths, the host mutation lock, package-state rendering, state transitions, claims, and registry migration into package state.
 - `lib/results.sh` is new and owns the result-body contract, the remote child's private result file and marked-line emission, the local capture tap and result reading, validation, and expected-graph reconciliation.
 - `lib/package-api.sh` emits one result object around each install attempt made through `pkg_depends`.
 - `lib/packages.sh` emits the same result shape around configure, verify, and uninstall attempts.
@@ -171,6 +172,7 @@ An external SSH alias has no durable key in Phase 4.
 A state-bearing package command targeting an external SSH alias fails before remote execution until Phase 5 accepts its SSH host key.
 This suspends direct package commands to plain SSH aliases for the Phase 4-to-5 window; the 4.2 slice ships the README and release note saying inventory targets are the state-bearing surface meanwhile.
 The local machine is inventory node `local`: a state-bearing local install requires `ivps node path local` to resolve and fails with that named error when the inventory lacks it.
+A node rename in Phase 4 means a new host identity: state under the old root is orphaned and must be reconciled manually, because stable ivps IDs are deferred; detection strengthens when they land.
 
 ### Package instances
 
@@ -228,7 +230,7 @@ Migration, direct commands, and development-override application runs all use th
 
 The manifest and run schemas keep their existing nullable-commit and override fields unchanged.
 
-This supersedes the recovery plan's R3 wording that reserved a null applied commit to migration alone; the supersession is listed in Gate conditions.
+The recovery plan's earlier wording, which reserved a null applied commit to migration alone, was superseded by consent on 2026-09-15 and is aligned in the plan.
 
 ## Schema changes before writers
 
@@ -427,8 +429,7 @@ A successful install or reconfigure:
 
 - writes `last_attempt.outcome: succeeded`;
 - replaces `applied` with the proved commit or the override rule, `package_version: null`, projected values, time, and event ID;
-- writes health `ok` when its verification hook succeeded;
-- writes health `unknown` when no verification hook ran;
+- writes health `ok` when its verification hook succeeded and health `unknown` when no verification hook ran; a verification failure is a failed attempt, never a success with bad health;
 - adds or updates only the compatible claim authorized for that operation.
 
 A failed install or reconfigure:
@@ -514,6 +515,7 @@ __CLOUDIFY_RESULT_V1__ 1 <base64-body-without-wrap>
 - The marked line flows through the existing chain like any other line: the operator sees it live and both logs keep it.
 - The operator-side worker appends one pass-through capture stage to the received stream: a line-oriented filter that prints every line onward unchanged and additionally copies lines whose body after the host prefix starts with the marker into a private capture file.
   The stage's read loop keeps a final line that lacks a trailing newline (the `IFS= read -r line || [[ -n $line ]]` idiom), so the stream's last bytes pass through unchanged.
+  The stage owns its return discipline: every match and copy runs in condition context, the stage returns 0 unconditionally at end of input, and the ERR trap is inhibited inside its subshell, so the router's `trap cleanup SIGINT SIGTERM ERR EXIT` can never fire mid-stream and sweep the dispatch context.
   No stage may exit early or close the pipe: an early-exiting stage SIGPIPEs the chain and kills live output.
 - When the SSH channel closes, the worker validates the capture: exactly one marker line, protocol version 1, well-formed unwrapped base64, valid JSON under the result contract, at most 1 MiB of body, and the staleness rule on `finished_at`.
 - Zero marked lines, or more than one, marks the dispatch degraded; nothing is committed from an unvalidated body.
@@ -554,9 +556,10 @@ Exact rules:
 - `package` and `package_instance` identify the state subject.
 - `phase` is one of the four application phases.
 - `command_kind` is `install`, `configure`, `verify`, or `uninstall`.
+- `phase` comes from the action in the emitter, never from the context's resolution phase: install maps to `install`, configure to `reconfigure`, uninstall to `teardown`, verify to `verify`.
 - `outcome` is `succeeded` or `failed`.
 - `exit_status` is an integer from 0 through 255 and agrees with outcome.
-- `verification` is `ok`, `failed`, or `not-run`.
+- `verification` is `ok`, `failed`, or `not-run`; `verification: failed` forces `outcome: failed`, so a package whose verification failed can never record a successful attempt.
 - `finished_at` is the child's UTC completion time.
 - `checkout_commit` and `checkout_dirty` follow Commit provenance and executed-code identity.
 - `child_exit_status` is the child cloudify process's captured exit status: an integer 0 through 255, or null when it was killed by a signal; a body reporting success for every result while the status is non-zero fails validation.
@@ -619,7 +622,7 @@ The runbook parent updates the deployment manifest only after every host worker 
 
 Manifest updates continue under the separate per-deployment lock.
 
-The manifest projection is fixed:
+The manifest projection is fixed (the manifest writer and renderer gain an explicit `last_event_id` parameter in this slice; today the field is only carried over from the existing manifest):
 
 - success: status per the existing install-plus-verify rule, `last_event_id` set to the event ID of the last result committed by this dispatch's workers;
 - any failure (child, fetch, validation, staleness, executed-code mismatch, or a failed result): status `degraded`, `last_event_id` still set to the last event the workers actually committed, because failed attempts also write events;
@@ -882,6 +885,7 @@ Write one red test at a time in this order.
 - The `@default` pre-install block and a first-contact `cloudify init` internal install emit no results and no second marker; the dispatch reports exactly one marker and only requested-tree results.
 - A stream whose final line has no trailing newline passes through unchanged.
 - The capture tap passes every non-marker line through in order and never terminates the stream early.
+- The tap survives the router's real ERR-trap environment: a failing match or copy inside the stage neither fails the dispatch nor triggers cleanup.
 - A result whose membership is absent from the graph prevents every commit from that body.
 - A missing requested top-level result fails; an extra repeated membership commits as an ordered attempt.
 - A successful dependency result commits even when a later top-level result fails.
@@ -998,7 +1002,7 @@ The design gate (R3) is complete only after:
 
 - fresh independent SPEC and Technical reviews return `PASS` with file and line evidence on this revision;
 - the reconfigure value-ladder insert (`applied` ranked between deployment inputs and application defaults, as REDESIGN's phase-specific sources mandate) and the `applied` source label on seeded context values are fragile contract changes; they get Rachid's go before step 4.4 lands, with the pinning-test updates named in that slice;
-- the next consented REDESIGN alignment carries the subject-scope qualifier for the fail-before-mutation claim sentence, matching the dependency commit-time gate (note, round three).
+- the next consented REDESIGN alignment carries the subject-scope qualifier for the fail-before-mutation claim sentence and the teardown release-after-recipe ordering as the interpretation of the release-before-uninstall sentence, matching the dependency commit-time gate (notes, rounds four and five).
 - the alignment that depends on those reviews alone (none currently open) lands with the reviews' evidence.
 
 The alignment that does not depend on the reviews - REDESIGN sentence, ADR-025, the recovery plan supersessions, and `docs/FRAGILE.md` - lands in the same commit as the consent record, before code.

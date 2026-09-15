@@ -318,18 +318,20 @@ function _cloudify_manifest_reference_check() {
     return 2
 }
 
-# cloudify_manifest_validate_file <file> - fail closed with the one validator:
-# the schema checker against schemas/v1/deployment-manifest.schema.json. No shell
-# copy of the schema rules. jq is a hard prerequisite.
+# cloudify_manifest_validate_file <file> - the one validator. Fail closed:
+# prints the reason on stderr and rc 1. It never exits, so the writer can remove
+# its temporary file before aborting.
 function cloudify_manifest_validate_file() {
     local file="${1:-}" rc=0 reason=""
-    [[ -f "$file" ]] || die "manifest: '$file' not found."
+    [[ -f "$file" ]] || { printf "manifest: '%s' not found.\n" "$file" >&2; return 1; }
     reason=$(_cloudify_manifest_reference_check "$file") || rc=$?
     if [[ "$rc" == "1" ]]; then
-        die "manifest '$file': validation needs jq and the schema checker under '$CLOUDIFY_SCHEMA_DIR' (install it: apt-get install -y jq)."
+        printf "manifest '%s': validation needs jq and the schema checker under '%s' (install it: apt-get install -y jq).\n" "$file" "$CLOUDIFY_SCHEMA_DIR" >&2
+        return 1
     fi
     if [[ "$rc" == "2" ]]; then
-        die "manifest '$file': $reason."
+        printf "manifest '%s': %s.\n" "$file" "$reason" >&2
+        return 1
     fi
     return 0
 }
@@ -357,9 +359,15 @@ function _cloudify_manifest_render_write() {
 
     tmp=$(mktemp "$dir/.manifest.XXXXXX") || die "manifest: cannot create a temporary file under '$dir'."
     chmod 600 "$tmp" 2>/dev/null || true
-    _cloudify_manifest_render "$app" "$flavor" "$name" "$status" "$commit" "$dev" \
-        "$created" "$last_run" "$last_event" "$bindings" > "$tmp"
-    cloudify_manifest_validate_file "$tmp"
+    if ! _cloudify_manifest_render "$app" "$flavor" "$name" "$status" "$commit" "$dev" \
+        "$created" "$last_run" "$last_event" "$bindings" > "$tmp"; then
+        rm -f "$tmp"
+        die "manifest: cannot render the manifest under '$dir'."
+    fi
+    if ! cloudify_manifest_validate_file "$tmp"; then
+        rm -f "$tmp"
+        die "manifest: the rendered manifest under '$dir' did not validate."
+    fi
     mv "$tmp" "$manifest" || die "manifest: cannot move '$tmp' into place."
 }
 

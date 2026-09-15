@@ -1023,8 +1023,9 @@ function cloudify_runbook_bind_targets() {
             unbound+=("$name")
             continue
         fi
-        # dies (fail closed) on an unknown/ambiguous address
-        resolved=$(_cloudify_target_resolve "$addr")
+        # dies (fail closed) on an unknown/ambiguous address; the status is
+        # checked because errexit is off inside the caller's $(...).
+        resolved=$(_cloudify_target_resolve "$addr") || return 1
         lines+=("$(printf '%s\t%s' "$name" "$resolved")")
     done
 

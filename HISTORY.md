@@ -1078,3 +1078,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - The plan's standing rule (the old CRITICAL GATE bullet) and the five future phase-gate sections (4.0 to 8.0) still described the retired ceremony; they now apply the fragile-surface rule per phase, naming which slices touch `lib/remote.sh`/`lib/vars.sh`/`lib/context.sh` and reserving Rachid's go for contract changes (the framed-result and context formats in Phase 4). Phase 8's section became the deletion gate. The R1.0/R2.0 gate sections stay as history - those gates ran. REDESIGN.md's pointer updated to match.
 - ROADMAP gained "Inventory probe per runbook step (non-urgent)": every step is a fresh `cloudify` process that re-probes the live inventory, so a busy node fails a step mid-run (2 of 5 E2E runs today); candidate fix is a short-TTL shared cache, with freshness pinned as a contract.
+
+### 2026-09-15 - Phase 4 design drafted and reconciled
+
+- Added `plans/state-model-v2-phase4-design.md` from the live redesign, schemas, context contract, ADR-022 through ADR-024, and current code; no rejected Phase 4 artifact was used.
+- The draft fixes the implementation order at event first then revisioned JSON state, one durable-host lock through remote mutation and all result commits, a nonce-bound framed result tail with byte-exact non-frame passthrough, explicit package-instance support, claims, registry-writer deletion, and event-backed old-registry migration.
+- Reconciled every R3 design requirement against HEAD; only independent SPEC and Technical reviews plus Rachid's consent remain open, and no runtime or schema file changed.

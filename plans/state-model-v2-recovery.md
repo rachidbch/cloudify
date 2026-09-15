@@ -263,28 +263,28 @@ The checklist was reconciled against HEAD 6857081 after the Phase 2 repair (2026
 
 Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-stream attempt.
 
-- [ ] Write a new `plans/state-model-v2-phase4-design.md` from `REDESIGN.md`, the corrected context schema and the package-state/event schemas; do not copy the rejected patch.
-- [ ] State is actual JSON and validates against `schemas/v1/package-state.schema.json` before atomic replacement.
-- [ ] No package state writer lands before the immutable event writer exists.
-- [ ] The design must specify tightening the package-state schema so every new applied, attempt, health and claim object carries a non-null event ID; migration also emits its own event. The schema and fixture edit itself lands in the state and event substrate step (4.1), not in this design-only gate.
-- [ ] Allow `applied.application_commit: null` only for a proved old-registry migration; require a 40-hex commit for every new application mutation and record the migration origin in its event.
+- [x] Write a new `plans/state-model-v2-phase4-design.md` from `REDESIGN.md`, the corrected flat context contract and the package-state/event schemas; do not copy the rejected patch. (Drafted from the live sources and reconciled against HEAD on 2026-09-15.)
+- [x] State is actual JSON and validates against `schemas/v1/package-state.schema.json` before atomic replacement. (Design: "Immutable event and state write protocol".)
+- [x] No package state writer lands before the immutable event writer exists. (Design: "Files and ownership" and step 4.1.)
+- [x] The design must specify tightening the package-state schema so every new applied, attempt, health and claim object carries a non-null event ID; migration also emits its own event. The schema and fixture edit itself lands in the state and event substrate step (4.1), not in this design-only gate. (Design: "Schema changes before writers".)
+- [x] Allow `applied.application_commit: null` only for a proved old-registry migration; require a 40-hex commit for every new application mutation and record the migration origin in its event. (Design: "Commit provenance" and "Registry migration"; new direct applied writes also require a clean checkout commit.)
 - [x] Keep `application_commit` nullable in the manifest and run schemas with one `allOf` rule requiring `development_override: true` whenever it is null, so a dirty or unidentified tree never forces a fabricated commit.
-- [x] Add the matching valid fixtures (`unproved-commit-development-override` for manifest and run, the migrated-observation package state) and invalid fixtures (`null-commit-without-development-override` for manifest and run), and keep `bash schemas/v1/validate.sh` green.
-- [ ] Every state transition is event first, then state with the event ID and revision plus one.
-- [ ] Move the event-directory, event-ID, event-first commit and lock-integration work formerly listed in Phase 6 into Phase 4 before the first state writer.
-- [ ] Prove application commit before the first event or state writer: application runs use their clean HEAD; direct package commands and migration keep it null rather than fabricating provenance.
-- [ ] Keep last successful `applied`, `last_attempt`, `health` and active claims separate.
-- [ ] Key every result and state commit by its reported package instance, never by a dispatch-wide substitute.
-- [ ] Use one lock keyed by durable host identity only across remote mutation and all reported result commits; package and instance identify state subjects, not locks, and no nested package lock exists.
-- [ ] Release the host mutation lock before acquiring the deployment manifest lock.
-- [ ] Treat recipes as trusted but noisy: framing prevents accidental collisions, not a hostile remote root.
-- [ ] Generate a random per-dispatch nonce in the local parent, bake it into the outer remote shell without exporting it to the child cloudify process or recipe, and emit the frame only after that child exits.
-- [ ] Frame exact start, encoded length, digest and end markers; reject missing, duplicate, truncated or malformed frames.
-- [ ] Pass every non-frame stdout byte through unchanged.
-- [ ] Keep local results in a private file and remote results in the framed stdout tail after the child command exits.
-- [ ] Include outcome, parent, package instance and phase for every attempted top-level package and dependency, with no values.
-- [ ] Reconcile results against every precomputed top-level package and dependency and fail closed on an unexpected package.
-- [ ] Freeze lock, state, event and result-frame tests before implementation.
+- [x] Add the matching valid fixtures (`unproved-commit-development-override` for manifest and run, the migrated-observation package state) and invalid fixtures (`null-commit-without-development-override` for manifest and run), and keep `bash schemas/v1/validate.sh` green. (The migrated state fixture's preliminary null event IDs are explicitly replaced in step 4.1.)
+- [x] Every state transition is event first, then state with the event ID and revision plus one. (Design: "Immutable event and state write protocol".)
+- [x] Move the event-directory, event-ID, event-first commit and lock-integration work formerly listed in Phase 6 into Phase 4 before the first state writer. (Design: steps 4.1 and 4.3.)
+- [x] Prove checkout commit before the first normal event or state writer: application runs and new direct applied writes use their clean HEAD; direct events keep their application commit null, and migration alone may write a null applied commit. (Design: "Commit provenance".)
+- [x] Keep last successful `applied`, `last_attempt`, `health` and active claims separate. (Design: "State transitions".)
+- [x] Key every result and state commit by its reported package instance, never by a dispatch-wide substitute. (Design: "Package instances" and "Private result contract".)
+- [x] Use one lock keyed by durable host identity only across remote mutation and all reported result commits; package and instance identify state subjects, not locks, and no nested package lock exists. (Design: "One host lock".)
+- [x] Release the host mutation lock before acquiring the deployment manifest lock. (Design: "One host lock".)
+- [x] Treat recipes as trusted but noisy: framing prevents accidental collisions, not a hostile remote root. (Design: "Private result contract".)
+- [x] Generate a random per-dispatch nonce in the local parent, bake it into the outer remote shell without exporting it to the child cloudify process or recipe, and emit the frame only after that child exits. (Design: "Framed remote stdout protocol".)
+- [x] Frame exact start, encoded length, digest and end markers; reject missing, duplicate, truncated or malformed frames. (Design: "Framed remote stdout protocol".)
+- [x] Pass every non-frame stdout byte through unchanged. (Design: "Framed remote stdout protocol".)
+- [x] Keep local results in a private file and remote results in the framed stdout tail after the child command exits. (Design: "Private result contract".)
+- [x] Include outcome, parent, package instance and phase for every attempted top-level package and dependency, with no values. (Design: "Private result contract".)
+- [x] Reconcile results against every precomputed top-level package and dependency and fail closed on an unexpected package. (Design: "Expected dependency graph".)
+- [x] Freeze lock, state, event and result-frame tests before implementation. (Design: "Tests frozen before implementation".)
 - [ ] Obtain independent SPEC and Technical design reviews, both `PASS` with no actionable feedback; this gate writes no code, so it runs the reviews only and skips the E2E lines.
 - [ ] Obtain explicit Rachid consent for the reviewed Phase 4 design before code.
 
@@ -294,10 +294,10 @@ Outcome: one physical installation is represented once, every mutation has an im
 
 ### Fragile-surface gate (4.0)
 
-Slices here touch `lib/remote.sh` (framed-result transport, host lock) and read the existing flat context in `lib/context.sh` - remote is on the fragile surface. The JSON dispatch-context conversion is NOT part of this phase: it is roadmapped, unscheduled, and nothing here depends on it (see the phase outcome below).
+Slices here touch `lib/remote.sh` (framed-result transport, host lock) and add classification-origin and package-instance fields to the existing flat context in `lib/context.sh` - both are on the fragile surface. The JSON dispatch-context conversion is NOT part of this phase: it is roadmapped, unscheduled, and nothing here depends on it (see the phase outcome below).
 
 - [ ] Apply the fragile-surface rule: name the invariants touched, run `task gate`, goldens unchanged.
-- [ ] The framed-result format is a contract change: Rachid's go before it lands.
+- [ ] The framed-result format and the added flat-context fields are contract changes: Rachid's go before either lands.
 
 ### State and event substrate (4.1)
 

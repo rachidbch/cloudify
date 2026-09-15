@@ -255,7 +255,8 @@ then runs those steps, stopping at the first failure. A step sees
 `runbook`, `target.<name>`, the raw `value.<NAME>` lines and `output.<name>`.
 `--dry-run` prints the plan (seeded value NAMES, never values) and runs nothing.
 The lower-level `cloudify_deployment_run` engine keeps `--runbook <path>` for a
-runbook outside the tree and for replay.
+runbook outside the tree and for replay. A path that is not canonical carries no
+application identity, so the run records no deployment manifest.
 
 `cloudify deployment replay <id> [--at <run>]` re-runs a recorded run: it seeds
 the environment from the snapshot (target bindings, and each `value.<NAME>`

@@ -4,7 +4,7 @@ Deployment procedures an agent or human executes with ONLY `ivps` and `cloudify`
 
 ## Tree and identity
 
-Canonical: `runbooks/<application>/<flavor>/runbook.md`. It is the only discoverable runbook path.
+Canonical: `runbooks/<application>/<flavor>/runbook.md`. It is the only discoverable runbook path: exactly two levels under the runbooks root, so a deeper `runbook.md` is not canonical and carries no application identity.
 The application identity (`<application>/<flavor>`) is derived from the path, not from the file body.
 The default flavor is `default`.
 A `run` or `human-gate` step must declare an explicit `phase=`.

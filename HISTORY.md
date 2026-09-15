@@ -1084,3 +1084,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Added `plans/state-model-v2-phase4-design.md` from the live redesign, schemas, context contract, ADR-022 through ADR-024, and current code; no rejected Phase 4 artifact was used.
 - The draft fixes the implementation order at event first then revisioned JSON state, one durable-host lock through remote mutation and all result commits, a nonce-bound framed result tail with byte-exact non-frame passthrough, explicit package-instance support, claims, registry-writer deletion, and event-backed old-registry migration.
 - Reconciled every R3 design requirement against HEAD; only independent SPEC and Technical reviews plus Rachid's consent remain open, and no runtime or schema file changed.
+
+### 2026-09-15 - one-pass Phase 4 self-reviews failed
+
+- The requested single SPEC review returned `FAIL` with six must-fix contract findings: dangling run IDs, package-wide overprojection of dispatch values, unsettled commit and development-override semantics, no Phase 4 commit-drift gate, an unscheduled destructive claim override, and unspecified manifest last-ID updates.
+- The requested single Technical review returned `FAIL` with six must-fix findings: framed transport conflicts with byte-exact payload goldens, local commit does not prove remote code, byte-exact stdout parsing has no bounded algorithm, static optional dependencies can fail before an unused branch, repeated dependency results lack stable identity, and immutable event creation names no exact primitive.
+- Reports: `~/tmp/cloudify-phase4-spec-review-20260915.md` and `~/tmp/cloudify-phase4-technical-review-20260915.md`; no finding was fixed or re-reviewed, and the formal independent review gate remains open.

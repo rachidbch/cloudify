@@ -123,6 +123,12 @@ function cloudify_runbook_phase_default() {
     printf 'install\nverify\n'
 }
 
+# _cloudify_runbook_target_arg_ok <arg> - a `--target` argument is `name=addr`.
+# The one spelling of that fact; the caller owns the error message.
+function _cloudify_runbook_target_arg_ok() {
+    [[ -n "${1:-}" && "$1" == *=* ]]
+}
+
 # _cloudify_runbook_pkg_type <type>
 function _cloudify_runbook_pkg_type() {
     local type="${1:-}" k
@@ -400,7 +406,7 @@ function cloudify_runbook_phases_for() {
         done
         return 0
     fi
-    printf 'install\nverify\n'
+    cloudify_runbook_phase_default
 }
 
 # _cloudify_runbook_select_steps <path> <parse-out> [<phase>...] - the steps a
@@ -964,7 +970,7 @@ function cloudify_runbook_bind_targets() {
         case "$1" in
             --target)
                 shift
-                [[ -n "${1:-}" && "$1" == *=* ]] || die "runbook: --target expects name=addr."
+                _cloudify_runbook_target_arg_ok "${1:-}" || die "runbook: --target expects name=addr."
                 bindings["${1%%=*}"]="${1#*=}"
                 ;;
             *) die "runbook: unknown argument '$1'." ;;
@@ -1112,7 +1118,7 @@ function cloudify_deployment_run() {
                 ;;
             --target)
                 shift
-                [[ -n "${1:-}" && "$1" == *=* ]] || die "deployment: --target expects name=addr."
+                _cloudify_runbook_target_arg_ok "${1:-}" || die "deployment: --target expects name=addr."
                 target_bindings+=("$1")
                 cli_targets+=("$1")
                 ;;
@@ -1281,7 +1287,7 @@ function cloudify_runbook_execute() {
         case "$1" in
             --target)
                 shift
-                [[ -n "${1:-}" && "$1" == *=* ]] || die "runbook execute: --target expects name=addr."
+                _cloudify_runbook_target_arg_ok "${1:-}" || die "runbook execute: --target expects name=addr."
                 target_bindings+=("$1")
                 ;;
             --from)
@@ -1616,7 +1622,7 @@ function cloudify_deployment_replay() {
                 ;;
             --target)
                 shift
-                [[ -n "${1:-}" && "$1" == *=* ]] || die "deployment replay: --target expects name=addr."
+                _cloudify_runbook_target_arg_ok "${1:-}" || die "deployment replay: --target expects name=addr."
                 cli_bindings+=("$1")
                 ;;
             --from)

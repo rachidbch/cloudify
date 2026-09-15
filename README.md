@@ -345,7 +345,7 @@ lib/
   registry.sh         Observation registry: per-(deployment, target, package) records
   runbooks.sh         Runbook engine: parse, target binding, preflight, run, replay
   pkg-config.sh       Sources lib/vars.sh for package-config consumers (reader lives there)
-  vars.sh             Five-source var helpers + precedence walker core + resolver
+  vars.sh             Six-source var helpers + precedence walker core + resolver
   secrets.sh          Secret-backend loader (sources lib/secrets/*.sh)
   hosts.sh            Host inventory (list, filter by tags)
   os.sh               OS detection (distro, version, arch)

@@ -55,6 +55,14 @@ Policy: compose-ability. Fix at the root (CRITICAL GATE where lib/router touches
 
 - [ ] Target resolution (is X a node? which node hosts instance X?) piggybacks on ivps inventory today. Put it behind a small adapter seam so cloudify can use ivps or another provisioning/inventory tool. Decide the adapter API (look up node/instance, list targets, provision).
 
+## Inventory probe per runbook step (non-urgent)
+
+**Problem:** every `cloudify` invocation re-probes the live inventory (`ivps list`, ~5s cap per node), and every runbook step is a fresh invocation - an N-step runbook costs N full probes, and one slow probe fails a step mid-run. Seen twice in one day: 2 of 5 two-host E2E runs died on a probe timeout.
+
+- [ ] Share one probe across a run: cache the inventory on disk (state, 0600) with a short TTL, so a run's child processes reuse the parent's probe; TTL or `--refresh` invalidates; the resolver tests in `task gate` grow the cache cases. Cheap first move: probe only the node being resolved instead of the whole inventory.
+
+**Constraint:** freshness stays a contract - the 2x2 timeout rule stays fail closed, the cache must never confirm an instance that moved, and ivps owns the data (cloudify caches only what ivps printed).
+
 ## Runbook teardown phase (non-urgent)
 
 The runbook engine runs steps in document order with no phase concept, so a teardown section

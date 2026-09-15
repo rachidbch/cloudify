@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lib/context.sh - one resolved dispatch context (state model v2, Phase 2 slice 2A)
 #
-# Owns value RESOLUTION only. It reproduces the existing five-source ladder
+# Owns value RESOLUTION only. It reproduces the existing six-source ladder
 # (lib/remote.sh:_cloudify_dispatch_vars) exactly by delegating to the same
 # readers in lib/vars.sh in the same visit order, and then records each resolved
 # name in a mode-0600 context file: its provenance AND its raw source form.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for lib/vars.sh — five-source var helpers (ADR-007/ADR-011),
+# Tests for lib/vars.sh — six-source var helpers (ADR-007/ADR-011),
 # the precedence walker, the secret resolver (R4), the reserved-name guard
 # (R5) and the deployment reader value parsing (R6).
 #
@@ -55,7 +55,7 @@ _collect() {
 
 # --- Function surface ---
 
-@test "five-source helpers are defined" {
+@test "six-source helpers are defined" {
     [ "$(type -t cloudify_vars_global_read)" = "function" ]
     [ "$(type -t cloudify_vars_global_write)" = "function" ]
     [ "$(type -t cloudify_vars_pkg_read)" = "function" ]
@@ -180,17 +180,11 @@ EOF
 @test "declared names: one enumerator pins the three shapes, the trim and the order" {
     rubric "cloudify_vars_declared_names is the single .remote-vars parser"
     mkdir -p "$CLOUDIFY_DIR/pkg/demo"
-    cat > "$CLOUDIFY_DIR/pkg/demo/.remote-vars" <<'EOF'
-# a comment
-
-REQUIRED_ONE
-OPTIONAL_ONE=
-DEFAULTED_ONE=mirror-value
-DEFAULTED_EQUALS=a=b
-lowercase_ignored
-NOT A NAME
-  REQUIRED_TWO  
-EOF
+    {
+        printf '# a comment\n\nREQUIRED_ONE\nOPTIONAL_ONE=\nDEFAULTED_ONE=mirror-value\n'
+        printf 'DEFAULTED_EQUALS=a=b\nlowercase_ignored\nNOT A NAME\n'
+        printf '  REQUIRED_TWO  \n'
+    } > "$CLOUDIFY_DIR/pkg/demo/.remote-vars"
     run cloudify_vars_declared_names demo
     [ "$status" -eq 0 ]
     [ "$(printf '%s\n' "${lines[@]}" | cut -f1)" = "$(printf '%s\n' REQUIRED_ONE OPTIONAL_ONE DEFAULTED_ONE DEFAULTED_EQUALS REQUIRED_TWO)" ]

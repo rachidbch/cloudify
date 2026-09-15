@@ -250,6 +250,9 @@ function _cloudify_manifest_render() {
          | split("\n")
          | map(select(length > 0) | split("\t"))
          | map(if length != 5 then error("a binding line must have 5 tab-separated fields") else . end)
+         | (. as $rows | ($rows | map(.[0])) as $keys
+            | if ($keys | length) != ($keys | unique | length)
+              then error("duplicate binding slot") else $rows end)
          | map({key: .[0], value: {
                   address: .[1],
                   node:     (if (.[2] // "") == "" then null else .[2] end),

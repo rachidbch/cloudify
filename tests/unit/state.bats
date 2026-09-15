@@ -242,6 +242,15 @@ _reference_check() {
     [ ! -f "$(cloudify_state_manifest_file app default prod)" ]
 }
 
+@test "manifest: a duplicate binding slot is refused, never silently collapsed" {
+    rubric "two rows for one slot would lose a binding"
+    local b="$CLOUDIFY_TMP/dup.tsv"
+    printf 'guest\tcloudai:a\tcloudai\ta\ta\nguest\tcloudai:b\tcloudai\tb\tb\n' > "$b"
+    run cloudify_manifest_write app default prod applying 0123456789abcdef0123456789abcdef01234567 false "$b"
+    [ "$status" -ne 0 ]
+    [ ! -f "$(cloudify_state_manifest_file app default prod)" ]
+}
+
 @test "manifest: describe fails loudly when the bindings are unreadable" {
     rubric "a reader failure is never swallowed into an empty binding list"
     local commit="0123456789abcdef0123456789abcdef01234567"

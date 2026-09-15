@@ -234,12 +234,13 @@ function _cloudify_runbook_resolver_value() {
 # cloudify_runbook_identity <path> [<runbooks-root>] - "application\tflavor" for
 # a canonical `runbooks/<application>/<flavor>/runbook.md`, or rc 1. The path
 # must sit exactly two directory levels under the runbooks root (a deeper path is
-# not canonical) and must be under the root at all. Dies (fail closed) on a path
-# component the identity rules reject.
+# not canonical) and must be under the root at all; a trailing slash on the root
+# is ignored. Dies (fail closed) on a path component the identity rules reject.
 function cloudify_runbook_identity() {
     local path="${1:-}" root="${2:-}" rel app flavor
     [[ -n "$path" && "$path" == */runbook.md ]] || return 1
     [[ -n "$root" ]] || root=$(_cloudify_runbook_root)
+    root="${root%/}"
     [[ -n "$root" ]] || return 1
     rel="${path#"$root"/}"
     [[ "$rel" != "$path" ]] || return 1

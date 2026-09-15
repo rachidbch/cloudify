@@ -520,6 +520,10 @@ EOF
     [ "$status" -eq 0 ]
     [ "$output" = "$(printf 'myapp\tprod')" ]
 
+    run cloudify_runbook_identity "$f" "$CLOUDIFY_DIR/runbooks/"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'myapp\tprod')" ]
+
     run cloudify_runbook_identity "$CLOUDIFY_TMP/plain.md"
     [ "$status" -ne 0 ]
 }

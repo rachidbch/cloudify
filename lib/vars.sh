@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib/vars.sh — five-source var helpers (ADR-007 + ADR-011)
+# lib/vars.sh — six-source var helpers (ADR-007 + ADR-011 + ADR-024)
 #
 # One read/write helper per var source. The collector (lib/context.sh:
 # cloudify_context_build, reached through lib/remote.sh:_cloudify_dispatch_vars)
@@ -729,4 +729,3 @@ cloudify_vars_declared() {
         fi
     done < <(cloudify_vars_declared_names "$pkg")
 }
-

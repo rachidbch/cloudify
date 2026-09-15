@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for lib/targets.sh — the `--on` target grammar resolver.
+# Tests for lib/targets.sh — the `--on` target host grammar resolver.
 # The resolver is validation-only: it never provisions, it dies (fail closed) on
 # an unknown or ambiguous target.
 
@@ -69,7 +69,7 @@ ivps() {
 }
 
 # ---------------------------------------------------------------
-# Bare token: kind discovery
+# Bare form: kind discovery
 # ---------------------------------------------------------------
 
 @test "bare name that is an ivps node resolves to a node target" {
@@ -122,7 +122,7 @@ ivps() {
     [ "$output" = "$(printf '\t\tmyserver')" ]
 }
 
-@test "a multi-colon token stays a plain host (IPv6 back-compat)" {
+@test "a multi-colon target host stays a plain host (IPv6 back-compat)" {
     rubric "fd42::1 -> plain host, not parsed as a target triple"
     IVPS_NODES=(cloudai)
     IVPS_ROWS=(cloudai:cloudify)
@@ -152,6 +152,7 @@ ivps() {
 
     run _cloudify_target_resolve 'cloudify:'
     [ "$status" -ne 0 ]
+    [[ "$output" == *"Target host 'cloudify:'"* ]]
     [[ "$output" == *"node 'cloudify' not found"* ]]
 }
 
@@ -423,7 +424,7 @@ ivps() {
     [[ "$output" == *"is not on node 'cloudai'"* ]]
 }
 
-@test "a bare token absent while a node timed out is an error, not an external host" {
+@test "a bare target host absent while a node timed out is an error, not an external host" {
     rubric "incomplete inventory -> refuse, never a silently wrong external host"
     IVPS_NODES=()
     IVPS_ROWS=()
@@ -434,7 +435,7 @@ ivps() {
     [[ "$output" == *"timed out"* ]]
 }
 
-@test "a bare token absent with a complete inventory is an external host" {
+@test "a bare target host absent with a complete inventory is an external host" {
     rubric "no timeout -> the inventory is complete, so not-found is conclusive"
     IVPS_NODES=()
     IVPS_ROWS=()

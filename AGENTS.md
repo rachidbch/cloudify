@@ -32,7 +32,7 @@ failure mode in this repo.
 
 ## Conventions
 
-- **`--on <target>`** comes BEFORE the action verb: `cloudify --on host install pkg`.
+- **`--on <target host>`** comes BEFORE the action verb: `cloudify --on host install pkg`.
   Grammar: `X` (must exist; kind discovered), `X:` (a node), `X:Y` (an instance on node X),
   `:Y` (an instance on the active node). Active = `CLOUDIFY_NODE` (`cloudify node use <node>`
   prints the export; else the ivps default). No localhost fallback; install never provisions.
@@ -51,7 +51,7 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 - **Module pattern**: each `lib/*.sh` has a guard `_CLOUDIFY_X_LOADED`. Sourced by the router, not by each other.
 - **Plugin API**: `pkg_*` functions in `lib/package-api.sh`. Signatures are stable — used by 75+ packages.
 - **Shadow commands**: `lib/shadows/*.sh` override `sudo`, `apt-get`, `add-apt-repository`, `git` with wrappers for password injection, idempotency, auth. Recipes call bare commands — shadows handle the rest.
-- **Targets** (`lib/targets.sh`): resolve an `--on` token to (node, instance, ssh host); ivps is the inventory provider; validation only, never provisioning.
+- **Targets** (`lib/targets.sh`): resolve an `--on` target host to (node, instance, ssh host); ivps is the inventory provider; validation only, never provisioning.
 - **Registry** (`lib/registry.sh`): observation records per (deployment, target, package) at `$(ivps node path <node>)/[<instance>/]deployments/<id>/pkgs/<pkg>/config.yaml`, cloudify-owned fallback bucket when no node resolves; written after a successful dispatch, uninstall marks `removed`, `deployment delete` sweeps. Observation only, never a precedence source (ADR-020).
 - **Runbooks** (`lib/runbooks.sh`): repo-tracked Markdown plan (`runbooks/<app>/<flavor>/runbook.md`, the only discoverable shape: front-matter `deployment` + `targets`, `bash step=<type>` fences). `cloudify deployment run <id>` binds targets, preflights required vars, runs the steps (a `human-gate` step pauses), writes a run snapshot; `deployment replay` re-runs from one. See `runbooks/README.md`.
 - **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Var sources, weakest to strongest: recipe default < `remote-vars.yaml` (global) < `pkgs/<pkg>.yaml` (package) < `apps/<app>/<flavor>/defaults.yaml` (application defaults) < `deployments/<app>/<flavor>/<name>/values.yaml` (deployment) < caller env; a name forwards only if a `.remote-vars` declaration or a file store knows it. Values may be secret references (`@backend:locator`, `@@` escapes). Loaded by `lib/vars.sh` (+ `lib/secrets.sh` backends); `lib/credentials.sh` loads only system credentials.

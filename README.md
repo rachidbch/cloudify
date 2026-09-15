@@ -101,8 +101,8 @@ Remote execution flow: cloudify SSHes into the target host, runs the bootstrap g
 
 ### Targets (`--on`)
 
-`--on` takes a target, not just an ssh name. The resolver is operator-side and
-validation-only: it never provisions a node or an instance to satisfy a target,
+`--on` takes a target host, not just an ssh name. The resolver is operator-side and
+validation-only: it never provisions a node or an instance to satisfy a target host,
 and every form must exist in the ivps inventory.
 
 ```bash
@@ -112,8 +112,8 @@ cloudify --on cloudai:cloudify install bat  # X:Y X is a node, Y an instance on 
 CLOUDIFY_NODE=cloudai cloudify --on :web install bat   # :Y  Y on the active node
 ```
 
-Bare form, kind discovered: a name that is only an ivps node is a node target; a
-name that is only an instance is an instance target (its node is discovered);
+Bare form, kind discovered: a name that is only an ivps node resolves as a node;
+a name that is only an instance resolves as an instance (its node is discovered);
 both at once is an error (fail closed). A name ivps does not know stays a plain
 host and ssh validates reachability. `localhost` is the node `local`. `@tag`
 expands first and each expanded name goes through the same resolver.

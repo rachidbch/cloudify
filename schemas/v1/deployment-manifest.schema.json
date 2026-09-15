@@ -144,7 +144,7 @@
       "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
     },
     "binding": {
-      "description": "One target slot bound to one host. address is the token the CLI accepts; node and instance come from ivps; ssh_host is set for an external host.",
+      "description": "One target slot bound to one host. address is the target host notation the CLI accepts; node and instance come from ivps; ssh_host is set for an external host.",
       "type": "object",
       "required": ["address", "node", "instance", "ssh_host"],
       "additionalProperties": false,

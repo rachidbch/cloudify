@@ -573,11 +573,11 @@ The intended state commands are:
 ```bash
 cloudify deployments
 cloudify deployment show <application>[/<flavor>] [--name <name>]
-cloudify --on <target> state [--application <application>[/<flavor>]] [--name <name>]
+cloudify --on <target host> state [--application <application>[/<flavor>]] [--name <name>]
 cloudify runs [--application <application>[/<flavor>]] [--name <name>]
 cloudify run show <run-id>
 cloudify state check
-cloudify --on <target> show overlay-name
+cloudify --on <target host> show overlay-name
 ```
 
 Direct package commands remain available with stable signatures except for claim protection.

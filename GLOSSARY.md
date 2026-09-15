@@ -50,9 +50,9 @@ A place where Cloudify can dispatch a package operation.
 
 A host is a node, an instance, or an external host.
 
-## target reference
+## target host
 
-A token typed after `--on` and resolved to one host for that command.
+The value typed after `--on`, resolved to one host for that command.
 
 The existing `X`, `X:`, `X:Y`, and `:Y` grammar remains unchanged during the state-model work.
 

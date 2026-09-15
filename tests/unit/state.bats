@@ -224,6 +224,38 @@ _reference_check() {
     [[ "$output" == *"unexpected: extra"* ]]
 }
 
+@test "manifest: a missing schema tree fails before creating the deployment directory" {
+    rubric "the prerequisite is checked before any filesystem write"
+    CLOUDIFY_SCHEMA_DIR="$CLOUDIFY_TMP/no-schema" run cloudify_manifest_write app default prod \
+        applying 0123456789abcdef0123456789abcdef01234567 false "$BINDINGS"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"schema checker is missing"* ]]
+    [ ! -d "$CLOUDIFY_STATE_DIR/deployments" ]
+}
+
+@test "manifest: a bindings line without five fields is refused, never shifted" {
+    rubric "arity is checked in the renderer, so a malformed row cannot become fields"
+    local b="$CLOUDIFY_TMP/short.tsv"
+    printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\n' > "$b"
+    run cloudify_manifest_write app default prod applying 0123456789abcdef0123456789abcdef01234567 false "$b"
+    [ "$status" -ne 0 ]
+    [ ! -f "$(cloudify_state_manifest_file app default prod)" ]
+}
+
+@test "manifest: describe fails loudly when the bindings are unreadable" {
+    rubric "a reader failure is never swallowed into an empty binding list"
+    local commit="0123456789abcdef0123456789abcdef01234567"
+    cloudify_manifest_write app default prod applying "$commit" false "$BINDINGS"
+    local file
+    file=$(cloudify_state_manifest_file app default prod)
+    jq '.bindings = "not-an-object"' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+    run cloudify_manifest_bindings app default prod
+    [ "$status" -ne 0 ]
+    run cloudify_manifest_describe app default prod
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"cannot read the recorded bindings"* ]]
+}
+
 @test "manifest: an external binding and a backslash address round-trip" {
     rubric "null node/instance keep their fields, and no byte is re-escaped"
     local commit="0123456789abcdef0123456789abcdef01234567"

@@ -14,7 +14,7 @@
 #   cloudify_runbook_parse <path>            one line per step:
 #                                            type \t id \t target \t pkg \t body-b64 \t phase
 #   cloudify_runbook_meta <path>             deployment \t targets-csv
-#   cloudify_runbook_identity <path>         application \t flavor (canonical path only)
+#   cloudify_runbook_identity <path> [root]  application \t flavor (canonical path only)
 #   cloudify_runbook_inputs <path>           one declared application input name per line
 #   cloudify_runbook_map <path>              one PACKAGE_VAR \t APPLICATION_INPUT per line
 #   cloudify_runbook_find <id> [root]        path of the single matching runbook
@@ -84,7 +84,8 @@ _CLOUDIFY_RUNBOOK_PHASES=(install reconfigure verify teardown)
 # _cloudify_runbook_root — the runbooks tree, resolved like `pkg/`
 # (${CLOUDIFY_DIR}/runbooks). CLOUDIFY_RUNBOOKS_DIR overrides it for tests.
 function _cloudify_runbook_root() {
-    printf '%s\n' "${CLOUDIFY_RUNBOOKS_DIR:-${CLOUDIFY_DIR:-$HOME/cloudify}/runbooks}"
+    local root="${CLOUDIFY_RUNBOOKS_DIR:-${CLOUDIFY_DIR:-$HOME/cloudify}/runbooks}"
+    printf '%s\n' "${root%/}"
 }
 
 # _cloudify_runbook_type_known <type>
@@ -1185,10 +1186,8 @@ function cloudify_deployment_run() {
     # re-prompting. A slot the caller bound explicitly keeps the caller's value.
     if ((manifest)) && cloudify_manifest_exists "$app" "$flavor" "$name"; then
         local rslot raddr recorded
-        recorded=$(cloudify_manifest_bindings "$app" "$flavor" "$name") || {
-            rm -f "$bindings_file"
+        recorded=$(cloudify_manifest_bindings "$app" "$flavor" "$name") ||
             die "manifest for '$app/$flavor --name $name': cannot read the recorded bindings."
-        }
         while IFS=$'\t' read -r rslot raddr _ _ _; do
             [[ -n "$rslot" ]] || continue
             supplied=0

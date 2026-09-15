@@ -224,8 +224,8 @@ function _cloudify_manifest_field_file() {
 # _cloudify_manifest_parse_bindings <file> - one
 # `slot<TAB>address<TAB>node<TAB>instance<TAB>ssh_host` per binding, read with jq.
 # `join` (not `@tsv`) keeps the bytes exact: the schema forbids tabs, newlines and
-# backslashes in these tokens, and `@tsv` would escape a backslash. A null node,
-# instance or ssh_host prints empty.
+# other control characters in these tokens, but it allows a backslash, which
+# `@tsv` would escape. A null node, instance or ssh_host prints empty.
 function _cloudify_manifest_parse_bindings() {
     local file="${1:-}"
     [[ -f "$file" ]] || return 1
@@ -249,6 +249,7 @@ function _cloudify_manifest_render() {
         ($bindings
          | split("\n")
          | map(select(length > 0) | split("\t"))
+         | map(if length != 5 then error("a binding line must have 5 tab-separated fields") else . end)
          | map({key: .[0], value: {
                   address: .[1],
                   node:     (if (.[2] // "") == "" then null else .[2] end),
@@ -268,6 +269,15 @@ function _cloudify_manifest_render() {
             last_run_id: (if $last_run == "" then null else $last_run end),
             last_event_id: (if $last_event == "" then null else $last_event end)
           }'
+}
+
+# _cloudify_manifest_require_tools - jq and the schema tree, checked before any
+# write. A host that cannot validate a manifest must not create one.
+function _cloudify_manifest_require_tools() {
+    command -v jq >/dev/null 2>&1 ||
+        die "manifest: 'jq' is required to write deployment state (install it: apt-get install -y jq)."
+    [[ -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" && -f "$CLOUDIFY_SCHEMA_DIR/deployment-manifest.schema.json" ]] ||
+        die "manifest: the schema checker is missing under '$CLOUDIFY_SCHEMA_DIR'."
 }
 
 # _cloudify_manifest_shape_hint <file> - name the missing and unexpected
@@ -357,8 +367,9 @@ function cloudify_manifest_write() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" status="${4:-}"
     local commit="${5:-}" dev="${6:-}" bindings="${7:-}"
     local dir manifest lock
-    command -v jq >/dev/null 2>&1 ||
-        die "manifest: 'jq' is required to write deployment state (install it: apt-get install -y jq)."
+    # The tools and the schema tree are checked BEFORE anything is created, so a
+    # host that cannot validate never gets a deployment directory or a lock file.
+    _cloudify_manifest_require_tools
     [[ -n "${app}${flavor}${name}" ]] || die "manifest: application, flavor and deployment name are all required."
     [[ "$dev" == "true" || "$dev" == "false" ]] ||
         die "manifest: development_override '$dev' is not a boolean."
@@ -443,7 +454,8 @@ function cloudify_manifest_describe() {
     # Parse the row by hand: `read` with IFS=$'\t' collapses consecutive tabs, so
     # an external binding (node and instance null) would shift ssh_host into a
     # neighbouring field.
-    recorded=$(cloudify_manifest_bindings "$app" "$flavor" "$name") || recorded=""
+    recorded=$(cloudify_manifest_bindings "$app" "$flavor" "$name") ||
+        die "manifest '$file': cannot read the recorded bindings."
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
         slot="${line%%$'\t'*}"; rest="${line#*$'\t'}"

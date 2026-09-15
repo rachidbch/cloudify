@@ -294,10 +294,10 @@ Outcome: one physical installation is represented once, every mutation has an im
 
 ### Fragile-surface gate (4.0)
 
-Slices here touch `lib/remote.sh` (framed-result transport, host lock) and `lib/context.sh` (the roadmapped JSON context conversion) - both on the fragile surface.
+Slices here touch `lib/remote.sh` (framed-result transport, host lock) and read the existing flat context in `lib/context.sh` - remote is on the fragile surface. The JSON dispatch-context conversion is NOT part of this phase: it is roadmapped, unscheduled, and nothing here depends on it (see the phase outcome below).
 
 - [ ] Apply the fragile-surface rule: name the invariants touched, run `task gate`, goldens unchanged.
-- [ ] The framed-result format and the context format are contract changes: Rachid's go before either lands.
+- [ ] The framed-result format is a contract change: Rachid's go before it lands.
 
 ### State and event substrate (4.1)
 

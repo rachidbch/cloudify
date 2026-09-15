@@ -1,0 +1,9 @@
+status: failed
+started_at: 2026-01-01T10:30:00Z
+finished_at: 2026-01-01T10:30:41Z
+runbook: runbooks/legacy-app/disposable.md
+target.guest: cloudai:cloudify
+target.gateway: cloudai
+value.CLOUDIFY_RDP_HOST: cloudai:cloudify
+value.CLOUDIFY_RDP_DOMAIN: @@literal-at-sign
+output.partial_probe: PLACEHOLDER_SNAPSHOT_OUTPUT_LINE

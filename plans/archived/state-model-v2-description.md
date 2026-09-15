@@ -1,6 +1,6 @@
 # State model v2 - CRITICAL GATE description of Cloudify's brittle Bash mechanisms
 
-Artifact of the G1 description phase for `plans/state-model-v2.md`. Written
+Artifact of the G1 description phase for the plan now archived at `plans/archived/state-model-v2-attempt1.md`. Written
 READ-ONLY from the code at commit `e46689d`, before any edit under `lib/`, the
 router, `pkg/`, or `tests/`. No source file was modified, created, or deleted.
 It does NOT approve any change and it proposes none: G2 is the non-breakage
@@ -11,7 +11,7 @@ argument, G3 is human consent.
 Scope: the two mechanisms named in `cloudify/AGENTS.md` - remote value
 forwarding plus the `envsubst` payload (`lib/remote.sh`, `lib/vars.sh`) and the
 shadow commands (`lib/shadows/*.sh`); plus everything the G1 acceptance list in
-`plans/state-model-v2.md` names: the router, targets, registry, deployments,
+the archived attempt plan names: the router, targets, registry, deployments,
 runbook engine, and the dependency/verify paths.
 
 Method: every load-bearing claim carries a `file:line` citation. Claims that

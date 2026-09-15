@@ -66,6 +66,20 @@ function cloudify_list_packages_by_tags() {
                 # If filter is a tag, filter all packages with that tag
                 if [[ $filter == @all ]]; then
                     current_packages_list=$(find "$CLOUDIFY_DIR"/pkg -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | tr '\n' ' ')
+                elif [[ $filter == \#* ]]; then
+                    # Platform filter: a package matches when it carries this
+                    # platform tag OR carries no platform tag at all (it runs on
+                    # every OS). A package tagged for a DIFFERENT OS is excluded.
+                    current_packages_list=$(
+                        {
+                            find "$CLOUDIFY_DIR"/pkg -mindepth 2 -maxdepth 2 -name "$filter" \
+                                | while read -r d; do basename "$(dirname "$d")"; done
+                            comm -23 \
+                                <(find "$CLOUDIFY_DIR"/pkg -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort) \
+                                <(find "$CLOUDIFY_DIR"/pkg -mindepth 2 -maxdepth 2 -name '#*' \
+                                    | while read -r d; do basename "$(dirname "$d")"; done | sort -u)
+                        } | tr '\n' ' '
+                    )
                 else
                     current_packages_list=$(find "$CLOUDIFY_DIR"/pkg -mindepth 2 -maxdepth 2 -name "$filter" | while read -r d; do basename "$(dirname "$d")"; done | tr '\n' ' ')
                 fi
@@ -74,9 +88,13 @@ function cloudify_list_packages_by_tags() {
                     packages_list=$current_packages_list
                 else
                     # 'comm' is a standard linux utility that compares FILES line by line
-                    # It is used here to find the intersection of 2 LISTS
-                    # The 'echo ... | tr ...' is here to transform lists in simili-files that can be fed to comm command
-                    packages_list=$(comm -12 <(echo "$packages_list" | tr ' ' '\n') <(echo "$current_packages_list" | tr ' ' '\n'))
+                    # It is used here to find the intersection of 2 LISTS, and it
+                    # REQUIRES sorted input (unsorted input drops members, warns and
+                    # exits non-zero, which under `set -E` + the ERR trap fires a
+                    # destructive cleanup mid-run). `grep -v '^$'` drops the empty
+                    # line the `tr '\n' ' '` producers leave behind; `sort` makes
+                    # the input sorted and the intersection correct.
+                    packages_list=$(comm -12 <(echo "$packages_list" | tr ' ' '\n' | grep -v '^$' | sort) <(echo "$current_packages_list" | tr ' ' '\n' | grep -v '^$' | sort))
                 fi
             fi
         done

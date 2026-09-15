@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "event_id": "20260101T101112Z-a1b2c3d4",
+  "at": "2026-01-01T10:11:12Z",
+  "tool": "cloudify",
+  "writer": {
+    "host": "cloudai",
+    "boot_id": "3f2a1b0c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "pid": 48213,
+    "process_start_ticks": 91726345
+  },
+  "run_id": null,
+  "step_id": null,
+  "application": null,
+  "flavor": null,
+  "deployment": null,
+  "application_commit": null,
+  "subject": {
+    "kind": "package",
+    "host": "cloudai:cloudify",
+    "host_key": "ivps:cloudai:cloudify",
+    "package": "nginx",
+    "package_instance": "default"
+  },
+  "phase": "install",
+  "command_kind": "install",
+  "values": {},
+  "outcome": {
+    "exit_status": 0,
+    "summary": "first line of summary\nsecond line that makes the summary unbounded and multi-line"
+  },
+  "state": {
+    "previous_revision": 0,
+    "resulting_revision": 1
+  }
+}

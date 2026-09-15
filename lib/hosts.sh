@@ -58,7 +58,6 @@ function cloudify_list_hosts_by_tags() {
                     current_hosts_list=$(find "$CLOUDIFY_DIR"/inventory -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | tr '\n' ' ')
                 else
                     # Otherwise, filter by current tag
-                    current_hosts_list=$(find "$CLOUDIFY_DIR"/inventory -mindepth 2 -maxdepth 2 -name "$filter" -exec dirname {} \; -exec basename {} \; | head -1)
                     current_hosts_list=$(find "$CLOUDIFY_DIR"/inventory -mindepth 2 -maxdepth 2 -name "$filter" | while read -r d; do basename "$(dirname "$d")"; done | tr '\n' ' ')
                 fi
 
@@ -66,9 +65,13 @@ function cloudify_list_hosts_by_tags() {
                     hosts_list=$current_hosts_list
                 else
                     # 'comm' is a standard linux utility that compares FILES line by line
-                    # It is used here to find the intersection of 2 LISTS
-                    # The 'echo ... | tr ...' is here to transform lists in simili-files that can be fed to comm command
-                    hosts_list=$(comm -12 <(echo "$hosts_list" | tr ' ' '\n') <(echo "$current_hosts_list" | tr ' ' '\n'))
+                    # It is used here to find the intersection of 2 LISTS, and it
+                    # REQUIRES sorted input (unsorted input drops members, warns and
+                    # exits non-zero, which under `set -E` + the ERR trap fires a
+                    # destructive cleanup mid-run). `grep -v '^$'` drops the empty
+                    # line the `tr '\n' ' '` producers leave behind; `sort` makes
+                    # the input sorted and the intersection correct.
+                    hosts_list=$(comm -12 <(echo "$hosts_list" | tr ' ' '\n' | grep -v '^$' | sort) <(echo "$current_hosts_list" | tr ' ' '\n' | grep -v '^$' | sort))
                 fi
             fi
         done

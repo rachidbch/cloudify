@@ -19,6 +19,10 @@ setup() {
     IVPS_NODES=()
     IVPS_ROWS=()
     IVPS_LIST_RC=0
+    IVPS_TIMEOUT_NODES=()
+    IVPS_TIMEOUT_FIRST_CALL=""
+    IVPS_CALLS="$CLOUDIFY_TMP/ivps-calls"
+    rm -f "$IVPS_CALLS"
 }
 
 teardown() {
@@ -29,8 +33,11 @@ teardown() {
 #   IVPS_NODES  — node names `ivps node path` accepts
 #   IVPS_ROWS   — "<node>:<name>" rows `ivps list` prints
 #   IVPS_LIST_RC — exit code of `ivps list`
+#   IVPS_TIMEOUT_NODES — nodes `ivps list` prints as a bare "<node>  TIMEOUT" row
+#   IVPS_TIMEOUT_FIRST_CALL — a node that times out on the first probe only
+#   IVPS_CALLS — file counting `ivps list` invocations (proves the retry)
 ivps() {
-    local sub="${1:-}" e r
+    local sub="${1:-}" e r _calls=0
     case "$sub" in
         node)
             # ivps node path <node>
@@ -41,7 +48,17 @@ ivps() {
             ;;
         list)
             [[ "$IVPS_LIST_RC" -eq 0 ]] || return "$IVPS_LIST_RC"
+            [[ -f "${IVPS_CALLS:-}" ]] && _calls=$(cat "$IVPS_CALLS")
+            _calls=$((_calls + 1))
+            [[ -n "${IVPS_CALLS:-}" ]] && echo "$_calls" > "$IVPS_CALLS"
             echo "  REMOTE:NAME      STATUS"
+            if [[ -n "${IVPS_TIMEOUT_FIRST_CALL:-}" && "$_calls" -eq 1 ]]; then
+                printf '  %-30s TIMEOUT\n' "$IVPS_TIMEOUT_FIRST_CALL"
+                return 0
+            fi
+            for e in ${IVPS_TIMEOUT_NODES[@]+"${IVPS_TIMEOUT_NODES[@]}"}; do
+                printf '  %-30s TIMEOUT\n' "$e"
+            done
             for r in ${IVPS_ROWS[@]+"${IVPS_ROWS[@]}"}; do
                 printf '  %-30s Running\n' "$r"
             done
@@ -378,6 +395,76 @@ ivps() {
     run cloudify_node_use cloudai
     [ "$status" -ne 0 ]
     [[ "$output" == *"ivps is not installed"* ]]
+}
+
+# ---------------------------------------------------------------
+# A timed-out inventory probe is reported as a timeout
+# ---------------------------------------------------------------
+
+@test "X:Y on a node that timed out reports a timeout, not 'not on node'" {
+    rubric "the node is in ivps but unobservable -> timeout, never a false 'not on node'"
+    IVPS_NODES=(cloudai)
+    IVPS_ROWS=()
+    IVPS_TIMEOUT_NODES=(cloudai)
+
+    run _cloudify_target_resolve 'cloudai:cloudify'
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"timed out"* ]]
+    [[ "$output" != *"is not on node"* ]]
+}
+
+@test "X:Y on an answered node that lacks the instance still says 'not on node'" {
+    rubric "no timeout -> the absent instance is a real answer"
+    IVPS_NODES=(cloudai)
+    IVPS_ROWS=(cloudai:other)
+
+    run _cloudify_target_resolve 'cloudai:cloudify'
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"is not on node 'cloudai'"* ]]
+}
+
+@test "a bare token absent while a node timed out is an error, not an external host" {
+    rubric "incomplete inventory -> refuse, never a silently wrong external host"
+    IVPS_NODES=()
+    IVPS_ROWS=()
+    IVPS_TIMEOUT_NODES=(cloudai)
+
+    run _cloudify_target_resolve cloudify
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"timed out"* ]]
+}
+
+@test "a bare token absent with a complete inventory is an external host" {
+    rubric "no timeout -> the inventory is complete, so not-found is conclusive"
+    IVPS_NODES=()
+    IVPS_ROWS=()
+    IVPS_TIMEOUT_NODES=()
+
+    run _cloudify_target_resolve myserver
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf '\t\tmyserver')" ]
+}
+
+@test "a node target is not blocked by an inventory timeout" {
+    rubric "the node is known from metadata; the live probe is not needed"
+    IVPS_NODES=(cloudai)
+    IVPS_ROWS=()
+    IVPS_TIMEOUT_NODES=(cloudai)
+
+    run _cloudify_target_resolve 'cloudai:'
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'cloudai\t\tcloudai')" ]
+}
+
+@test "a transient timeout resolves after one probe retry" {
+    rubric "first probe times out, the retry answers -> resolve, no error"
+    IVPS_NODES=(cloudai)
+    IVPS_ROWS=(cloudai:cloudify)
+    IVPS_TIMEOUT_FIRST_CALL=cloudai
+
+    run _cloudify_target_resolve 'cloudai:cloudify'
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'cloudai\tcloudify\tcloudify')" ]
 }
 
 # ---------------------------------------------------------------

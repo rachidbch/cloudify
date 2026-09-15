@@ -18,14 +18,18 @@ setup() {
     source lib/os.sh
     source lib/pkg-config.sh
     source lib/package-api.sh
+    source lib/packages.sh
     source lib/deployments.sh
+    source lib/vars.sh
     source lib/registry.sh
+    source lib/context.sh
 
     IVPS_NODE_ROOT="$CLOUDIFY_TMP/ivps/nodes"
     IVPS_NODES=()
     IVPS_NODE_PATH_RC=0
 
     DEP="xfce-gui"
+    export CLOUDIFY_APPLICATION=regapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=xfce-gui
     NODE="cloudai"
     INSTANCE=""
     HOST="cloudify"
@@ -35,6 +39,7 @@ setup() {
     declare -gA _CLOUDIFY_BG_ACTION=()
     declare -gA _CLOUDIFY_BG_PKGS=()
     declare -gA _CLOUDIFY_BG_TARGET=()
+    declare -gA _CLOUDIFY_BG_CONTEXT=()
     unset CLOUDIFY_DEPLOYMENT
 }
 
@@ -73,6 +78,30 @@ _declare() {
     shift
     mkdir -p "$CLOUDIFY_DIR/pkg/$pkg"
     printf '%s\n' "$@" > "$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
+}
+
+# _ctx <pkg...> - build a REAL dispatch context (lib/context.sh) for the current
+# stores and caller env, exactly as a dispatch would; print its path. The build
+# exports into a subshell so no resolved literal leaks into the test shell.
+_ctx() {
+    local ctx cand p
+    ctx=$(mktemp "$CLOUDIFY_TMP/dispatch-context-XXXXXX")
+    chmod 600 "$ctx"
+    cand=$(mktemp)
+    for p in "$@"; do
+        _cloudify_context_emit_declared "$p" >> "$cand"
+    done
+    ( export CLOUDIFY_CONTEXT_FILE="$ctx"
+      cloudify_context_build install "$DEP" install "$cand" "$@" > /dev/null )
+    rm -f "$cand"
+    printf '%s\n' "$ctx"
+}
+
+# _reset_stores - empty every var store so one case cannot leak into the next.
+_reset_stores() {
+    rm -f "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
+    rm -rf "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
+    rm -f "$(_cloudify_deployment_config)"
 }
 
 # ---------------------------------------------------------------
@@ -166,7 +195,9 @@ _declare() {
 }
 
 # ---------------------------------------------------------------
-# var snapshot
+# var snapshot (context-free calls: the direct _cloudify_registry_record_build
+# call builds its own context through the same resolver as a dispatch, never a
+# second walk)
 # ---------------------------------------------------------------
 
 @test "var snapshot: raw precedence env > deployment > package > global" {
@@ -176,7 +207,7 @@ _declare() {
     printf 'V: global\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     mkdir -p "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
     printf 'V: package\n' > "$CLOUDIFY_CREDENTIALS_DIR/pkgs/decl-pkg.yaml"
-    _cloudify_vars_file_set "$(_cloudify_deployment_config "$DEP")" V deployment
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" V deployment
 
     export V=env
     run cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" decl-pkg
@@ -186,7 +217,7 @@ _declare() {
     run cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" decl-pkg
     [ "$(_field var.V "$output")" = "deployment" ]
 
-    rm -f "$(_cloudify_deployment_config "$DEP")"
+    rm -f "$(_cloudify_deployment_config)"
     run cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" decl-pkg
     [ "$(_field var.V "$output")" = "package" ]
 
@@ -260,6 +291,7 @@ _declare() {
     _CLOUDIFY_BG_ACTION[7]=install
     _CLOUDIFY_BG_PKGS[7]="bats-test vim"
     _CLOUDIFY_BG_TARGET[7]=$'cloudai\t\tcloudify'
+    _CLOUDIFY_BG_CONTEXT[7]=$(_ctx bats-test vim)
     export CLOUDIFY_DEPLOYMENT="$DEP"
 
     run _cloudify_registry_record_bg 7
@@ -284,4 +316,68 @@ _declare() {
     run _cloudify_registry_record_bg 9
     [ "$status" -eq 0 ]
     [ ! -e "$IVPS_NODE_ROOT/cloudai/deployments/$DEP" ]
+}
+
+# ---------------------------------------------------------------
+# Context-driven record (slice 2B-ii)
+# ---------------------------------------------------------------
+
+@test "context record: the reference form is recorded verbatim (raw, inv 18)" {
+    rubric "a store's @base64: text reaches var.<NAME> unchanged, from the context"
+    IVPS_NODES=(cloudai)
+    _declare ctx-ref 'CTX_REF'
+    _reset_stores
+    cloudify_vars_pkg_write ctx-ref CTX_REF '@base64:aGVsbG8='
+    local ctx
+    ctx=$(_ctx ctx-ref)
+    run cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" ctx-ref "$ctx"
+    rm -f "$ctx"
+    [ "$status" -eq 0 ]
+    [ "$(_field var.CTX_REF "$output")" = "@base64:aGVsbG8=" ]
+}
+
+@test "wait loop: a missing or unreadable context writes no record and warns" {
+    rubric "no context -> no record, never a second walk (design section 5)"
+    IVPS_NODES=(cloudai)
+    _declare absent-pkg 'ABSENT_VAR'
+    export ABSENT_VAR=leak
+    export CLOUDIFY_DEPLOYMENT="$DEP"
+
+    _CLOUDIFY_BG_ACTION[11]=install
+    _CLOUDIFY_BG_PKGS[11]=absent-pkg
+    _CLOUDIFY_BG_TARGET[11]=$'cloudai\t\tcloudify'
+    _CLOUDIFY_BG_CONTEXT[11]="$CLOUDIFY_TMP/does-not-exist.yaml"
+    run _cloudify_registry_record_bg 11
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"missing or unreadable"* ]]
+
+    _CLOUDIFY_BG_ACTION[12]=install
+    _CLOUDIFY_BG_PKGS[12]=absent-pkg
+    _CLOUDIFY_BG_TARGET[12]=$'cloudai\t\tcloudify'
+    _CLOUDIFY_BG_CONTEXT[12]=""
+    run _cloudify_registry_record_bg 12
+    unset ABSENT_VAR
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"missing or unreadable"* ]]
+
+    [ ! -e "$IVPS_NODE_ROOT/cloudai/deployments/$DEP/pkgs/absent-pkg/config.yaml" ]
+}
+
+@test "wait loop: the dispatch context is removed after the write" {
+    rubric "the parent owns the context file (design section 5)"
+    IVPS_NODES=(cloudai)
+    _declare ctx-owned 'CTX_OWNED'
+    local ctx
+    ctx=$(_ctx ctx-owned)
+    [ -f "$ctx" ]
+    _CLOUDIFY_BG_ACTION[15]=install
+    _CLOUDIFY_BG_PKGS[15]=ctx-owned
+    _CLOUDIFY_BG_TARGET[15]=$'cloudai\t\tcloudify'
+    _CLOUDIFY_BG_CONTEXT[15]="$ctx"
+    export CLOUDIFY_DEPLOYMENT="$DEP"
+
+    run _cloudify_registry_record_bg 15
+    [ "$status" -eq 0 ]
+    [ ! -e "$ctx" ]
+    [ -f "$IVPS_NODE_ROOT/cloudai/deployments/$DEP/pkgs/ctx-owned/config.yaml" ]
 }

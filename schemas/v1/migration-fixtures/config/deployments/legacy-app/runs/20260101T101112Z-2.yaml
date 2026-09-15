@@ -1,0 +1,8 @@
+status: succeeded
+started_at: 2026-01-01T10:11:13Z
+finished_at: 2026-01-01T10:14:02Z
+runbook: runbooks/legacy-app/disposable.md
+target.guest: cloudai:cloudify
+value.CLOUDIFY_RDP_HOST: cloudai:cloudify
+value.CLOUDIFY_RDP_PASSWORD: @vault:kv/cloudify/legacy-app/rdp-password
+output.guest_address: cloudai:cloudify

@@ -154,9 +154,7 @@ They do not claim that an operation succeeded.
 
 A value explicitly classified as sensitive by a package or application declaration.
 
-Name-based detection is defense in depth, not the primary classification for canonical declarations.
-
-Legacy declarations use the heuristic with a migration warning during the compatibility period.
+Name-based detection is defense in depth, not the primary classification for canonical declarations, and it never produces a separate legacy class.
 
 Events and runs never store a literal secret.
 
@@ -302,10 +300,10 @@ Upgrade handles added, changed, and removed stable runbook steps before replacin
 
 An ordinary reconfigure never performs an implicit upgrade.
 
-## compatibility period
+## migration bridge
 
-The release interval in which Cloudify reads both legacy and v2 deployment stores, runbooks, registry records, and snapshots.
+A temporary one-shot command that reads one old artifact class, desired inputs, registry records or snapshots, and writes the v2 equivalent.
 
-New writers switch only after schema, migration, and parity gates pass.
+A bridge is dry-run first, idempotent, prints names and paths without values, and preserves only facts the old artifact proves.
 
-Old readers are removed in a later explicitly approved release.
+Runtime commands never consult a bridge or an old path, and every bridge, old reader and migration fixture is deleted once the inventory reports zero old artifacts.

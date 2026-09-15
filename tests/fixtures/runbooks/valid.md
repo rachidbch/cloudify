@@ -17,6 +17,6 @@ echo done
 cloudify --on "$TARGET_GUEST" verify demo-pkg
 ```
 
-```bash step=human-gate
+```bash step=human-gate phase=verify
 Open the URL and confirm the desktop renders.
 ```

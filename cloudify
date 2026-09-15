@@ -37,12 +37,14 @@ function usage() {
         cloudify vars show <key> [scope] [--resolve] [--reveal]  show a var (masked unless --reveal)
         cloudify vars list|ls [--json] [scope] [--reveal]        list vars (masked unless --reveal)
         cloudify vars declared <pkg> [--sources] [--reveal]      show a package's declared vars
-        cloudify deployment create|new <id>            create a deployment
-        cloudify deployment delete|del <id>            delete a deployment (+ its node/instance records)
-        cloudify deployment list|ls                    list deployments
-        cloudify deployment use <id>                   print export command
-        cloudify deployment run <id> [--runbook <path>] [--target name=addr]... [--from <id>] [--yes]
-                                                       run a runbook (--dry-run: plan only)
+        cloudify deployment list|ls                    list deployments and their manifests
+        cloudify deployment show <id>                  manifest status, bindings, commit, replayability
+        cloudify deployment migrate <id> --application <app> [--flavor <flavor>] [--name <name>] [--dry-run] [--force]
+                                                       one-shot bridge: copy the single-ID inputs to the nested path
+                                                       (temporary, delete this command once stores are migrated)
+        cloudify app run <application>[/<flavor>] [--name <name>] [--target name=addr]...
+                                                       run the application (bare run: install then verify);
+                                                       --name defaults to 'default', --flavor defaults to 'default'
         cloudify deployment replay <id> [--at <run>] [--runbook <path>] [--target name=addr]...
                                                        re-run a recorded run (--at: path, basename or timestamp prefix;
                                                        default: newest; --dry-run: plan only)
@@ -71,6 +73,7 @@ export CLOUDIFY_LOCAL_BIN="$HOME"/.local/bin
 export CLOUDIFY_RECIPE_FILENAME="init.sh"
 export CLOUDIFY_BOOTSTRAP_URL="https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh"
 export CLOUDIFY_TMP=/tmp/cloudify
+export CLOUDIFY_CONTEXT_DIR="${CLOUDIFY_TMP}/context"
 
 #== ENVIRONMENT
 : "${CLOUDIFY_IS_LOCAL:=true}" && export CLOUDIFY_IS_LOCAL
@@ -112,6 +115,8 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/deployments.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/hosts.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/targets.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/registry.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/state.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/context.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/runbooks.sh"
 
 #== INITIALIZATION
@@ -120,6 +125,11 @@ function cloudify_init_paths() {
 
     # Ensure tmp folder exists
     [[ -d "$CLOUDIFY_TMP" ]] || mkdir -p "$CLOUDIFY_TMP"
+    # The swept context directory: every dispatch context, the runbook context
+    # and the builder's temps live here, and cleanup() empties it on exit
+    # (lib/utils.sh), so no name enumeration can miss a context file.
+    [[ -d "$CLOUDIFY_CONTEXT_DIR" ]] || mkdir -p "$CLOUDIFY_CONTEXT_DIR"
+    chmod 700 "$CLOUDIFY_CONTEXT_DIR" 2>/dev/null || true
 
     # Initialize log file for this session
     cloudify_init_log
@@ -177,10 +187,13 @@ function cloudify_init_paths() {
 # final wait loop can write a registry record for each package on success.
 # Pid-keyed, parallel to _CLOUDIFY_BG_HOSTS (both live in main()'s scope).
 function _cloudify_note_bg() {
-    local pid="$1" action="$2" pkg_list="$3" target="$4"
+    local pid="$1" action="$2" pkg_list="$3" target="$4" context="${5:-}"
     _CLOUDIFY_BG_ACTION[$pid]="$action"
     _CLOUDIFY_BG_PKGS[$pid]="$pkg_list"
     _CLOUDIFY_BG_TARGET[$pid]="$target"
+    # The dispatch context path (one per dispatch). The registry writer and the
+    # run snapshot both read this context; neither reopens a value store.
+    _CLOUDIFY_BG_CONTEXT[$pid]="$context"
 }
 
 # Guard: ensure remote credentials are set before remote operations
@@ -203,7 +216,7 @@ function _cloudify_is_reserved() {
     local word="${1:-}"
     local context="${2:-global}"
     case "$word" in
-        --help | help | -h | --list | list | l | --credentials | credentials | c | --test | test | t | vars | deployment | deploy | dep)
+        --help | help | -h | --list | list | l | --credentials | credentials | c | --test | test | t | vars | deployment | deploy | dep | app)
             return 0
             ;;
     esac
@@ -230,6 +243,14 @@ function _cloudify_execute_package_action() {
     shift
     local pkgs=("$@")
     cloudify_init_paths
+    # One dispatch context per action (design section 5): the PARENT creates the
+    # 0600 file so it already knows the path, the backgrounded child fills it,
+    # and _cloudify_note_bg records the path for the registry write. verify is
+    # excluded on purpose: it resolves its own package yaml and writes no record
+    # (inv 33, 32).
+    if [[ "$action" != "verify" ]]; then
+        _cloudify_context_file_init
+    fi
     if [[ "$action" == "install" ]]; then
         # Auto-install @default packages first (idempotent — apt skips already-installed)
         # With --no-defaults, install only basics (essential tooling) instead of all defaults
@@ -246,9 +267,9 @@ function _cloudify_execute_package_action() {
             # @default install is synchronous and a prerequisite env check
             # (e.g. sudo password). If it fails, the user-requested package is
             # NOT attempted — fail fast with a clear message + remediation.
-            # R1: the five-source walker runs on the local path too, so one
+            # R1: the same one-resolution path runs on the local path too, so one
             # precedence governs local and remote installs (I9).
-            if ! ( _cloudify_pkg_remote_vars install $defaults > /dev/null; cloudify_install_package $defaults ); then
+            if ! ( _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install $defaults; cloudify_install_package $defaults ); then
                 msg "${RED}@default package(s) failed to install — your requested package(s) were NOT attempted.${RESET}"
                 msg "${RED}Fix the failure above, or re-run with --no-defaults to install only basics + your package(s).${RESET}"
                 exit 1
@@ -260,25 +281,25 @@ function _cloudify_execute_package_action() {
         # --clear-data implies CLOUDIFY_FORCE.
         PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs[*]}${RESET}"
         # shellcheck disable=SC2030
-        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; _cloudify_pkg_remote_vars install "${pkgs[@]}" > /dev/null; cloudify_install_package "${pkgs[@]}") &
+        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_install_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
-        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}"
+        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
         is_setup_in_progress=true
     elif [[ "$action" == "configure" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_configure_package ${pkgs[*]}${RESET}"
-        ( _cloudify_pkg_remote_vars configure "${pkgs[@]}" > /dev/null; cloudify_configure_package "${pkgs[@]}" ) &
+        ( _cloudify_dispatch_vars /dev/null configure "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_configure_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
-        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}"
+        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
         is_setup_in_progress=true
     elif [[ "$action" == "uninstall" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs[*]}${RESET}"
         # The uninstall leg needs the same resolved vars as install/configure.
-        ( _cloudify_pkg_remote_vars uninstall "${pkgs[@]}" > /dev/null; cloudify_uninstall_package "${pkgs[@]}" ) &
+        ( _cloudify_dispatch_vars /dev/null uninstall "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_uninstall_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
-        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}"
+        _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
         is_setup_in_progress=true
     elif [[ "$action" == "verify" ]]; then
         PKG_DEBUG "${YELLOW}cloudify verify ${pkgs[*]}${RESET}"
@@ -360,7 +381,7 @@ function _cloudify_dispatch() {
             # the final wait loop needs for the registry record (T3).
             local _dispatch_pkgs="${packages#--"$action"}"
             _dispatch_pkgs="${_dispatch_pkgs# }"
-            _cloudify_note_bg "$!" "$action" "$_dispatch_pkgs" "${_target_of_host[$host]:-$'\t\t'"$host"}"
+            _cloudify_note_bg "$!" "$action" "$_dispatch_pkgs" "${_target_of_host[$host]:-$'\t\t'"$host"}" "${CLOUDIFY_CONTEXT_FILE:-}"
         fi
     done
 }
@@ -394,6 +415,10 @@ function main() {
     local -A _CLOUDIFY_BG_ACTION=()
     local -A _CLOUDIFY_BG_PKGS=()
     local -A _CLOUDIFY_BG_TARGET=()
+    # Global scope, not local: cleanup() runs from the EXIT trap AFTER main()
+    # returns, when a local is already unset, and it must still see these paths
+    # to remove a context that outlived its dispatch.
+    declare -gA _CLOUDIFY_BG_CONTEXT=()
     local _CLOUDIFY_CUR_TARGET=""
     # Resolved --on targets: one "<node>\t<instance>\t<ssh_host>" triple per target
     local -a _CLOUDIFY_TARGETS=()
@@ -557,16 +582,26 @@ function main() {
                             var_val="${_CV_POS[1]:-}"
                             [[ -n "$var_val" ]] || die "Usage: cloudify vars set <key> <value> [--stdin|--file <path>]" ;;
                     esac
-                    var_file=$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")
-                    [[ "$_CV_SCOPE" == global || "$_CV_SCOPE" == pkg ]] && var_strict=1
-                    _cloudify_vars_file_set "$var_file" "$var_key" "$var_val" "$var_strict"
+                    if [[ "$_CV_SCOPE" == deployment || "$_CV_SCOPE" == ambient ]]; then
+                        # The write goes to the nested values.yaml of the active
+                        # application reference; without one it fails closed.
+                        cloudify_vars_deployment_write "$var_key" "$var_val" "$_CV_SCOPE_ARG"
+                    else
+                        var_file=$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")
+                        [[ "$_CV_SCOPE" == pkg ]] && var_strict=1
+                        _cloudify_vars_file_set "$var_file" "$var_key" "$var_val" "$var_strict"
+                    fi
                     ;;
                 delete | del | unset)
                     _cloudify_vars_parse_args "$@"
                     [[ $_CV_JSON -eq 0 && $_CV_SOURCES -eq 0 && $_CV_REVEAL -eq 0 && $_CV_RESOLVE -eq 0 && "$_CV_VALUE_MODE" == literal ]] || die "vars delete: invalid flag."
                     local var_key="${_CV_POS[0]:-}"
                     [[ -n "$var_key" ]] || die "Usage: cloudify vars delete <key> [scope]"
-                    _cloudify_vars_store_delete "$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")" "$var_key"
+                    if [[ "$_CV_SCOPE" == deployment || "$_CV_SCOPE" == ambient ]]; then
+                        cloudify_vars_deployment_delete "$var_key" "$_CV_SCOPE_ARG"
+                    else
+                        _cloudify_vars_store_delete "$(_cloudify_vars_scope_file "$_CV_SCOPE" "$_CV_SCOPE_ARG")" "$var_key"
+                    fi
                     ;;
                 show)
                     _cloudify_vars_parse_args "$@"
@@ -605,34 +640,40 @@ function main() {
         deployment | deploy | dep)
             shift
             case "${1:-}" in
-                create | new)
-                    shift
-                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment create <id>"
-                    cloudify_deployment_create "$1"
-                    ;;
-                delete | del | rm)
-                    shift
-                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment delete <id>"
-                    cloudify_deployment_delete "$1"
-                    ;;
                 list | ls)
                     cloudify_deployment_list
                     ;;
-                use)
+                show)
                     shift
-                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment use <id>"
-                    cloudify_deployment_use "$1"
+                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment show <id>"
+                    cloudify_deployment_show "$1"
                     ;;
-                run)
+                migrate)
                     shift
-                    cloudify_deployment_run "$@"
+                    cloudify_deployment_migrate "$@"
                     ;;
                 replay)
                     shift
                     cloudify_deployment_replay "$@"
                     ;;
                 *)
-                    die "Usage: cloudify deployment <create|delete|list|use|run|replay> [args]"
+                    die "Usage: cloudify deployment <list|show|migrate|replay> [args]"
+                    ;;
+            esac
+            break
+            ;;
+        app)
+            shift
+            case "${1:-}" in
+                run)
+                    shift
+                    cloudify_app_run "$@"
+                    ;;
+                reconfigure | verify | teardown)
+                    cloudify_app_reserved "$1"
+                    ;;
+                *)
+                    die "Usage: cloudify app <run> [args] (reconfigure, verify and teardown arrive in Phase 4)"
                     ;;
             esac
             break
@@ -778,11 +819,23 @@ function main() {
             wait "$_bg_pid" && _bg_rc=0 || _bg_rc=$?
             if [[ "$_bg_rc" -eq 0 ]]; then
                 msg "  ${GREEN}${_bg_host}: OK${RESET}"
+                # _cloudify_registry_record_bg removes the dispatch context when
+                # it writes a record. It returns early when there is no deployment
+                # (a direct package command), so remove it here too: the file
+                # carries resolved values and must not outlive the dispatch.
                 _cloudify_registry_record_bg "$_bg_pid"
+                if [[ -n "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]:-}" && -e "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}" ]]; then
+                    rm -f "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}"
+                fi
             else
                 msg "  ${RED}${_bg_host}: FAILED (exit ${_bg_rc})${RESET}"
                 had_failures=true
                 failed_count=$((failed_count + 1))
+                # Failure path: no record write, so the parent removes the
+                # dispatch context itself (design section 5).
+                if [[ -n "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]:-}" && -e "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}" ]]; then
+                    rm -f "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}"
+                fi
             fi
         done
 

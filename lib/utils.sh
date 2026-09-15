@@ -74,6 +74,35 @@ function log_debug() {
 function cleanup() {
     trap - SIGINT SIGTERM ERR EXIT
 
+    # Remove any dispatch context still on disk BEFORE the DEBUG return below:
+    # these files carry resolved values, so a DEBUG run must not be the one run
+    # that leaves them behind. The wait loop removes each context it can; this is
+    # the backstop for a signal, an early exit, or an interrupted run.
+    if declare -p _CLOUDIFY_BG_CONTEXT >/dev/null 2>&1; then
+        local _ctx
+        for _ctx in ${_CLOUDIFY_BG_CONTEXT[@]+"${_CLOUDIFY_BG_CONTEXT[@]}"}; do
+            [[ -n "$_ctx" && -e "$_ctx" ]] && rm -f "$_ctx"
+        done
+    fi
+    # The context of the dispatch in flight. A build that dies mid-walk never
+    # reaches its own cleanup (Bash does not run a RETURN trap on exit), so both
+    # the context and the builder's dot-prefixed temps, which hold the raw source
+    # forms, are removed here rather than left for the DEBUG skip below.
+    [[ -n "${CLOUDIFY_CONTEXT_FILE:-}" && -e "${CLOUDIFY_CONTEXT_FILE:-}" ]] \
+        && rm -f "$CLOUDIFY_CONTEXT_FILE"
+    # The swept context directory: every context file (dispatch, runbook, and
+    # the builder's dot-prefixed temps) lives here, so emptying the directory
+    # removes them all without name enumeration. This is the bound for the
+    # resolved values the context carries; it runs before the DEBUG return.
+    if [[ -n "${CLOUDIFY_CONTEXT_DIR:-}" && -d "$CLOUDIFY_CONTEXT_DIR" ]]; then
+        rm -rf "$CLOUDIFY_CONTEXT_DIR"
+    fi
+    # Fallback for a caller that built a context outside the directory (tests,
+    # direct lib callers without the router's CLOUDIFY_CONTEXT_DIR).
+    if [[ -n "${CLOUDIFY_TMP:-}" && -d "$CLOUDIFY_TMP" ]]; then
+        find "$CLOUDIFY_TMP" -maxdepth 1 -name '.cloudify-*' -exec rm -f {} + 2>/dev/null || true
+    fi
+
     if [[ "${CLOUDIFY_LOG_LEVEL:-INFO}" == "DEBUG" ]]; then
         return 0
     fi
@@ -363,9 +392,4 @@ function cloudify_print_done() {
     msg "${GREEN}********************************************************************************${RESET}"
     msg "${GREEN}  Station cloudified!${RESET}"
     msg "${GREEN}********************************************************************************${RESET}"
-}
-
-# Alias: legacy name kept for backwards compatibility
-function add_in_hosts() {
-    cloudify_add_in_hosts "$@"
 }

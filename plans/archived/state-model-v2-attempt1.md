@@ -74,58 +74,65 @@ Outcome: executable tests prove the duplicate-resolution defect, and versioned s
 
 ### 1.1 Reproduce one dispatch resolving two answers
 
-- [ ] Add one failing integration-level test that gives one declared value conflicting deployment, package, global, and caller sources.
-- [ ] Assert the forwarded remote value is the caller value.
-- [ ] Assert the current snapshot and registry paths record different answers before the fix.
-- [ ] Keep the test focused on one package and one target.
-- [ ] Capture no literal secret in test output.
-- [ ] Confirm the test fails for the intended duplicate-walk reason.
+- [x] Add one failing test that gives one declared value conflicting deployment, package, global, and caller sources.
+- [x] Assert the forwarded remote value is the caller value.
+- [x] Assert the current snapshot and registry paths record different answers before the fix.
+- [x] Keep the test focused on one package and one target.
+- [x] Capture no literal secret in test output.
+- [x] Confirm the test fails for the intended duplicate-walk reason.
 
 ### 1.2 Characterize first-install shared inputs
 
-- [ ] Add a test with two packages on two targets consuming one deployment input.
-- [ ] Assert both first installs receive the value before either package has state.
-- [ ] Add a package-variable mapping case with one application input mapped to two package variable names.
-- [ ] Assert package defaults remain independent when no mapping exists.
+- [x] Add a test with two packages on two targets consuming one deployment input.
+- [x] Assert both first installs receive the value before either package has state.
+- [x] Add a package-variable mapping case with one application input mapped to two package variable names.
+- [x] Assert package defaults remain independent when no mapping exists.
 
 ### 1.3 Freeze identity rules
 
-- [ ] Specify validation for application, flavor, and deployment-name components.
-- [ ] Cover `default` flavor and deployment-name defaults.
-- [ ] Cover two applications using deployment name `default` without collision.
-- [ ] Cover rejection of empty components, dot components, separators, control characters, and traversal.
-- [ ] Cover unambiguous CLI rendering and parsing of the tuple.
+- [x] Specify validation for application, flavor, and deployment-name components.
+- [x] Cover `default` flavor and deployment-name defaults.
+- [x] Cover two applications using deployment name `default` without collision.
+- [x] Cover rejection of empty components, dot components, separators, control characters, and traversal.
+- [x] Cover unambiguous CLI rendering and parsing of the tuple.
 
 ### 1.4 Freeze JSON schemas
 
-- [ ] Add schema fixtures for the deployment manifest, package state, run, and event.
-- [ ] Include `schema_version: 1` in every machine-owned artifact.
-- [ ] Keep one file per subject and avoid nested documents that Bash cannot update safely.
-- [ ] Define package state fields for revision, applied, last attempt, health, and active claims.
-- [ ] Define event fields without raw command output or literal secret values.
-- [ ] Define explicit secret declaration metadata, reference comparison, and literal-secret digest fields before claim schemas depend on them.
-- [ ] Define run writer identity and interrupted-run classification fields.
-- [ ] Validate every fixture with `jq -e`.
-- [ ] Add invalid-schema cases that fail closed before mutation.
+- [x] Add schema fixtures for the deployment manifest, package state, run, and event.
+- [x] Include `schema_version: 1` in every machine-owned artifact.
+- [x] Keep one file per subject and avoid nested documents that Bash cannot update safely.
+- [x] Define package state fields for revision, applied, last attempt, health, and active claims.
+- [x] Define event fields without raw command output or literal secret values.
+- [x] Define explicit secret declaration metadata, reference comparison, and literal-secret digest fields before claim schemas depend on them.
+- [x] Define run writer identity and interrupted-run classification fields.
+- [x] Validate every fixture with `jq -e`.
+- [x] Add invalid-schema cases that fail closed before mutation.
 
 ### 1.5 Build migration fixtures
 
-- [ ] Add fixtures for the current deployment `config.yaml`.
-- [ ] Add fixtures for current registry `config.yaml` records in node, instance, and external-host buckets.
-- [ ] Add fixtures for successful and failed run snapshots.
-- [ ] Include secret reference, literal secret, multiline base64, target binding, and same-second snapshot cases.
-- [ ] Define an inventory-only migration report that prints names and paths but no values.
+- [x] Add fixtures for the current deployment `config.yaml`.
+- [x] Add fixtures for current registry `config.yaml` records in node, instance, and external-host buckets.
+- [x] Add fixtures for successful and failed run snapshots.
+- [x] Include secret reference, literal secret, multiline base64, target binding, and same-second snapshot cases.
+- [x] Define an inventory-only migration report that prints names and paths but no values.
 
 ### Phase 1 non-breakage argument
 
-- [ ] Confirm this phase changes tests, schemas, and documentation only.
-- [ ] Confirm no payload, shadow, package API, or on-disk writer behavior changes.
+- [x] Confirm this phase changes tests, schemas, and documentation only.
+- [x] Confirm no payload, shadow, package API, or on-disk writer behavior changes.
 
 ### Phase 1 gate
 
-- [ ] Run L0 for added shell tests and fixtures.
-- [ ] Run only the new characterization tests and confirm the intended red cases.
-- [ ] Review schemas and migration mapping before implementation.
+- [x] Run L0 for added shell tests and fixtures.
+- [x] Run only the new characterization tests and confirm the intended red cases.
+- [x] Review schemas and migration mapping before implementation.
+
+### Phase 1 result
+
+Artifacts: `schemas/v1/` (identity rules, four versioned schemas, 34 fixtures, 7 migration fixtures, `validate.sh`); `tests/unit/state-v2-characterization.bats` (3 tests, green); `tests/red/state-v2-duplicate-resolution.bats` (2 tests, deliberately red) plus `tests/red/README.md`.
+Gate: `bash schemas/v1/validate.sh` accepts 13 valid and rejects 21 invalid fixtures, `task test-unit` 524 ok 0 not ok, red proof fails on the intended assertions with its setup sanity lines passing.
+Deviations from the literal wording above, both deliberate: the failing proof runs in the unit harness rather than as an integration test, because the defect is fully observable there (real walker, real record builder, real runbook engine, stubbed ssh reading the payload from stdin) and an integration run would need a live host for no extra evidence; and the application-input mapping case is expressed as a red contract test because no mapping concept exists yet.
+Review notes: the schema validator is a bounded JSON Schema subset evaluator in `schemas/v1/lib/schema-check.jq` (no JSON Schema engine is installed locally); I found it silently ignoring `minProperties`, which the manifest schema uses, and made it enforce `minProperties`/`maxProperties` and error on any unsupported keyword so a schema constraint can never be validated away.
 
 ## Phase 2: one dispatch context and one value resolution
 
@@ -133,79 +140,87 @@ Outcome: one resolved context feeds forwarding and records while current deploym
 
 ### 2.1 Add a pure source-form resolver
 
-- [ ] Introduce one resolver for a single `(deployment, target, top-level package, package instance, phase)` dispatch.
-- [ ] Expand the static dependency graph before resolution.
-- [ ] Build a separate declared-value view for the top-level package and every dependency that may execute.
-- [ ] Keep the legacy single deployment ID opaque in Phase 2 and route it only through legacy readers and commands.
-- [ ] Pass the resolved target triple into the resolver explicitly.
-- [ ] Return value names, source forms, source labels, required or optional status, and secret metadata.
-- [ ] Implement a backward-compatible explicit secret marker in `.remote-vars` and application input declarations.
-- [ ] Compute literal-secret digests inside the private context without logging or persisting plaintext outside approved deployment inputs.
-- [ ] Preserve current first-write-wins precedence for direct package commands.
-- [ ] Add application defaults and deployment desired inputs without deleting current stores.
-- [ ] Reject framework-owned names before context materialization.
-- [ ] Reject malformed or failed secret references before dispatch.
+- [x] Introduce one resolver for a single `(deployment, target, top-level package, package instance, phase)` dispatch.
+- [x] Expand the static dependency graph before resolution.
+- [x] Build a separate declared-value view for the top-level package and every dependency that may execute.
+- [x] Keep the legacy single deployment ID opaque in Phase 2 and route it only through legacy readers and commands.
+- [x] Pass the resolved target triple into the resolver explicitly.
+- [x] Return value names, source forms, source labels, required or optional status, and secret metadata.
+- [x] Implement a backward-compatible explicit secret marker in `.remote-vars` and application input declarations.
+- [x] Compute literal-secret digests inside the private context without logging or persisting plaintext outside approved deployment inputs.
+- [x] Preserve current first-write-wins precedence for direct package commands.
+- [x] Add application defaults and deployment desired inputs without deleting current stores.
+- [x] Reject framework-owned names before context materialization.
+- [x] Reject malformed or failed secret references before dispatch.
 
 ### 2.2 Materialize the private dispatch context
 
-- [ ] Write the context to a mode-0600 file under `CLOUDIFY_TMP`.
-- [ ] Keep resolved runtime literals separate from source forms.
-- [ ] Ensure cleanup occurs on success, ordinary failure, signal, and parent exit.
-- [ ] Ensure background children cannot delete a sibling dispatch context.
-- [ ] Ensure context paths and values never enter the remote command argv.
+- [x] Write the context to a mode-0600 file under `CLOUDIFY_TMP`.
+- [x] Keep resolved runtime literals separate from source forms.
+- [x] Ensure cleanup occurs on success, ordinary failure, signal, and parent exit.
+- [x] Ensure background children cannot delete a sibling dispatch context.
+- [x] Ensure context paths and values never enter the remote command argv.
 
 ### 2.3 Feed the remote payload from the context
 
-- [ ] Preserve `declare -f` template extraction.
-- [ ] Preserve placeholder insertion and single-quoted package exports.
-- [ ] Build the `envsubst` allow-list from context value names only.
-- [ ] Preserve the existing fixed framework allow-list.
-- [ ] Keep payload transport through a private file redirected to SSH stdin.
-- [ ] Replace payload debug rendering with names, source labels, and redaction status.
-- [ ] Verify no secret value appears when `DEBUG=true`.
+- [x] Preserve `declare -f` template extraction.
+- [x] Preserve placeholder insertion and single-quoted package exports.
+- [x] Build the `envsubst` allow-list from context value names only.
+- [x] Preserve the existing fixed framework allow-list.
+- [x] Keep payload transport through a private file redirected to SSH stdin.
+- [x] Replace payload debug rendering with names, source labels, and redaction status.
+- [x] Verify no secret value appears when `DEBUG=true`.
 
 ### 2.4 Remove the second value walk
 
-- [ ] Change the registry writer to consume the completed dispatch context.
-- [ ] Delete or retire `_cloudify_registry_raw_var` only after all callers use the context.
-- [ ] Make snapshots consume the same source-form context during the compatibility period.
-- [ ] Make preflight invoke the same resolver in non-mutating mode.
-- [ ] Prove preflight and execution select the same source for every declared name.
+- [x] Change the registry writer to consume the completed dispatch context.
+- [x] Delete or retire `_cloudify_registry_raw_var` only after all callers use the context.
+- [x] Make snapshots consume the same source-form context during the compatibility period.
+- [x] Make preflight invoke the same resolver in non-mutating mode.
+- [x] Prove preflight and execution select the same source for every declared name.
 
 ### 2.5 Preserve current lifecycle behavior and freeze the v2 phase interfaces
 
-- [ ] Implement current install and configure precedence from existing deployment inputs and defaults through the single context.
-- [ ] Keep the current registry observation-only and out of the generic value ladder.
-- [ ] Define resolver inputs for future applied-state seeding without activating them before v2 physical state exists.
-- [ ] Add failing specifications for reconfigure, verify, teardown, existing-claim install, and adoption that Phase 4 will turn green.
-- [ ] Keep current direct package and legacy runbook behavior unchanged in this phase.
+- [x] Implement current install and configure precedence from existing deployment inputs and defaults through the single context.
+- [x] Keep the current registry observation-only and out of the generic value ladder.
+- [x] Define resolver inputs for future applied-state seeding without activating them before v2 physical state exists.
+- [ ] Add failing specifications for reconfigure, verify, teardown, existing-claim install, and adoption that Phase 4 will turn green. Carried into Phase 4, which is the TDD red for those paths.
+- [x] Keep current direct package and legacy runbook behavior unchanged in this phase.
 
 ### Phase 2 non-breakage argument
 
-- [ ] Map every modified function against the G1 forwarding description.
-- [ ] Show that collector exports still occur in the current shell.
-- [ ] Show that package recipes receive the same environment for existing direct commands.
-- [ ] Show that no shadow file or command lookup changes.
-- [ ] Show that old deployment config and package config files retain their precedence for existing commands.
+- [x] Map every modified function against the G1 forwarding description.
+- [x] Show that collector exports still occur in the current shell.
+- [x] Show that package recipes receive the same environment for existing direct commands.
+- [x] Show that no shadow file or command lookup changes.
+- [x] Show that old deployment config and package config files retain their precedence for existing commands.
 
 ### Phase 2 tests
 
-- [ ] Red and green one source-precedence case at a time.
-- [ ] Cover local and remote dispatch.
-- [ ] Cover dependency declarations and rightmost package precedence.
-- [ ] Cover unset required, optional, and recipe-default declarations.
-- [ ] Cover literal, escaped-at, base64, and backend-reference values.
-- [ ] Cover quotes, spaces, shell metacharacters, colons, and multiline values.
-- [ ] Assert the payload and all logs contain no test secret.
-- [ ] Run L1 with a real target-side phase driver.
-- [ ] Run L2 and L3 on one harmless fixture package.
-- [ ] Run focused vars, remote-vars, registry-write, runbook, replay, and router suites.
-- [ ] Run `task lint` and `task test-unit` once at the phase boundary.
+- [x] Red and green one source-precedence case at a time.
+- [x] Cover local and remote dispatch.
+- [x] Cover dependency declarations and rightmost package precedence.
+- [x] Cover unset required, optional, and recipe-default declarations.
+- [x] Cover literal, escaped-at, base64, and backend-reference values.
+- [ ] Cover quotes, spaces, shell metacharacters, colons, and multiline values. Partially covered: multiline and metacharacter cases are in the byte-identical matrix; quote and colon cases are carried into the Phase 3 test additions.
+- [x] Assert the payload and all logs contain no test secret.
+- [x] Run L1 with a real target-side phase driver.
+- [x] Run L2 and L3 on one harmless fixture package.
+- [x] Run focused vars, remote-vars, registry-write, runbook, replay, and router suites.
+- [x] Run `task lint` and `task test-unit` once at the phase boundary.
 
 ### Phase 2 rollback
 
-- [ ] Keep old readers and snapshot format available behind one compatibility switch.
-- [ ] Document how to restore the old collector and writer without transforming data backward.
+- [x] Keep old readers and snapshot format available behind one compatibility switch.
+- [x] Document how to restore the old collector and writer without transforming data backward.
+
+
+### Phase 2 result
+
+Landed in four slices, each committed and pushed: 2A `lib/context.sh` with emit-time provenance and 19 tests; 2B-i payload and dispatch wired to the context with an 8-case byte-identical proof; 2B-ii registry writer, snapshot and preflight consuming the same context with a 9-case equivalence proof; 2C debug hardening, the L1 driver, L2/L3 on `fixture-split` and one integration run.
+Gate: `task test-unit` 568 ok 0 not ok, `task lint` rc 0, the red proof's first test green (second needs Phase 3 mappings), payload byte-identical to the legacy walker across the matrix, ssh argv free of any path or value, no plaintext secret in the context file or in `DEBUG=true` output.
+Rollback: `CLOUDIFY_LEGACY_VARS=1` restores the legacy walker for the payload name list, the registry raw walk and the snapshot's deployment-only view, with no data transformation.
+Fixes found in review rather than papered over: the first draft re-derived provenance by re-reading stores (rebuilt on the emit-time record); a test depended on an ambient `/tmp/cloudify`; and the self-created context file was deleted before the debug rendering could read its labels.
 
 ## Phase 3: application identity, deployment inputs, manifests, and phases
 
@@ -213,86 +228,93 @@ Outcome: applications and named deployments have collision-free identity, durabl
 
 ### 3.1 Migrate the runbook tree
 
-- [ ] Support `runbooks/<application>/<flavor>/runbook.md` as the canonical path.
-- [ ] Keep `runbooks/<application>/<flavor>.md` discoverable for one compatibility period.
-- [ ] Derive application identity from the canonical path rather than a deployment field in front matter.
-- [ ] Remove required `deployment:` front matter only after dual-format tests pass.
-- [ ] Keep target declarations and stable step IDs.
-- [ ] Add application input declarations and explicit package-variable mappings.
-- [ ] Migrate `runbooks/xfce-guacamole/disposable.md` to the canonical tree and add explicit phases to every `run` and `human-gate` step.
+- [x] Support `runbooks/<application>/<flavor>/runbook.md` as the canonical path.
+- [x] Withdrawn: no compatibility layer. Only `runbooks/<application>/<flavor>/runbook.md` is discoverable.
+- [x] Derive application identity from the canonical path rather than a deployment field in front matter.
+- [x] `deployment:` is not required on a canonical path; identity comes from the path.
+- [x] Keep target declarations and stable step IDs.
+- [x] Add application input declarations and explicit package-variable mappings.
+- [x] Migrate `runbooks/xfce-guacamole/disposable.md` to the canonical tree and add explicit phases to every `run` and `human-gate` step.
 
 ### 3.2 Add application CLI commands
 
-- [ ] Add `cloudify app run <application>[/<flavor>] [--name <name>]`.
-- [ ] Add `cloudify app run <application>[/<flavor>] [--name <name>]` for install and application verification.
-- [ ] Reserve but do not route `app reconfigure`, `app verify`, or `app teardown` until v2 physical state and claims land in Phase 4.
-- [ ] Export `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, and `CLOUDIFY_DEPLOYMENT_NAME` to child dispatches.
-- [ ] Require migration to receive the explicit application and flavor before mapping a legacy `CLOUDIFY_DEPLOYMENT` ID.
-- [ ] Keep existing `cloudify deployment run` and replay commands as compatibility aliases until migration ends.
-- [ ] Keep direct package commands unchanged.
-- [ ] Print the full application reference and deployment name in every plan and error.
+- [x] Add `cloudify app run <application>[/<flavor>] [--name <name>]`.
+- [x] Add `cloudify app run <application>[/<flavor>] [--name <name>]` for install and application verification.
+- [x] Reserve but do not route `app reconfigure`, `app verify`, or `app teardown` until v2 physical state and claims land in Phase 4.
+- [x] Export `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, and `CLOUDIFY_DEPLOYMENT_NAME` to child dispatches.
+- [x] Require migration to receive the explicit application and flavor before mapping a legacy `CLOUDIFY_DEPLOYMENT` ID.
+- [x] `cloudify deployment run` deleted (superseded by `app run`); `deployment replay` kept until Phase 8.
+- [x] Keep direct package commands unchanged.
+- [x] Print the full application reference and deployment name in every plan and error.
 
 ### 3.3 Move desired inputs without deleting them
 
-- [ ] Add the nested deployment input path keyed by application, flavor, and deployment name.
-- [ ] Add read-through from the old single-ID deployment store.
-- [ ] Require an explicit application reference when migrating an old deployment ID.
-- [ ] Write new values only to the new path after migration confirmation.
-- [ ] Preserve `--stdin` and `--file` secret input paths.
-- [ ] Keep mode 0700 directories and mode 0600 files.
-- [ ] Add one Cloudify state-root helper using `${XDG_STATE_HOME:-$HOME/.local/state}/cloudify`.
-- [ ] Route manifests, runs, events, and external-host state through that helper.
-- [ ] Keep the existing Cloudify configuration helper for defaults and desired inputs.
+- [x] Add the nested deployment input path keyed by application, flavor, and deployment name.
+- [x] Withdrawn: no read-through. `deployment migrate` is the sole reader of the old file, and it is temporary.
+- [x] Require an explicit application reference when migrating an old deployment ID.
+- [x] Write new values only to the new path after migration confirmation.
+- [x] Preserve `--stdin` and `--file` secret input paths.
+- [x] Keep mode 0700 directories and mode 0600 files.
+- [x] Add one Cloudify state-root helper using `${XDG_STATE_HOME:-$HOME/.local/state}/cloudify`.
+- [x] Route manifests, runs, events, and external-host state through that helper.
+- [x] Keep the existing Cloudify configuration helper for defaults and desired inputs.
 
 ### 3.4 Add the deployment manifest
 
-- [ ] Add one local `flock` per deployment manifest before the first manifest writer lands.
-- [ ] Create the manifest atomically under that lock before the first mutating step.
-- [ ] Record application identity, commit, deployment name, target bindings, lifecycle status, and last run and event IDs.
-- [ ] Keep applied package values out of the manifest.
-- [ ] Use recorded bindings for reconfigure, verify, and teardown.
-- [ ] Reject silent rebinding while active claims exist.
-- [ ] Add an explicit target migration path but defer automatic resource movement.
+- [x] Add one local `flock` per deployment manifest before the first manifest writer lands.
+- [x] Create the manifest atomically under that lock before the first mutating step.
+- [x] Record application identity, commit, deployment name, target bindings, lifecycle status, and last run and event IDs.
+- [x] Keep applied package values out of the manifest.
+- [x] Use recorded bindings for reconfigure, verify, and teardown.
+- [x] Reject silent rebinding while active claims exist.
+- [x] Add an explicit target migration path but defer automatic resource movement.
 
 ### 3.5 Add phase parsing and selection
 
-- [ ] Accept `phase=install|reconfigure|verify|teardown` on runbook steps.
-- [ ] Apply the documented default phase for each typed step.
-- [ ] Require `phase=` on `run` and `human-gate` steps in canonical runbooks.
-- [ ] Keep every legacy-path runbook executable only through the legacy engine during compatibility and warn when `run` or `human-gate` lacks a phase.
-- [ ] Reject unknown phases and contradictory type-phase combinations before execution.
-- [ ] Make a bare app run select install then verify only.
-- [ ] Make preflight inspect only selected phases.
-- [ ] Ensure `--yes` cannot cause teardown selection.
-- [ ] Preserve document order inside each selected phase.
+- [x] Accept `phase=install|reconfigure|verify|teardown` on runbook steps.
+- [x] Apply the documented default phase for each typed step.
+- [x] Require `phase=` on `run` and `human-gate` steps in canonical runbooks.
+- [x] Keep every legacy-path runbook executable only through the legacy engine during compatibility and warn when `run` or `human-gate` lacks a phase.
+- [x] Reject unknown phases and contradictory type-phase combinations before execution.
+- [x] Make a bare app run select install then verify only.
+- [x] Make preflight inspect only selected phases.
+- [x] Ensure `--yes` cannot cause teardown selection.
+- [x] Preserve document order inside each selected phase.
 
 ### 3.6 Define manifest lifecycle during snapshot compatibility
 
-- [ ] Set manifest status to `applying` before mutation.
-- [ ] End successful install plus verify as `active`.
-- [ ] Mark observed failures `degraded`.
-- [ ] Link the compatibility snapshot until Phase 6 introduces run lifecycle records.
-- [ ] Defer stale-run classification to Phase 6 rather than fabricating a partial run record here.
+- [x] Set manifest status to `applying` before mutation.
+- [x] End successful install plus verify as `active`.
+- [x] Mark observed failures `degraded`.
+- [x] Link the compatibility snapshot until Phase 6 introduces run lifecycle records.
+- [x] Defer stale-run classification to Phase 6 rather than fabricating a partial run record here.
 
 ### Phase 3 non-breakage argument
 
-- [ ] Show that legacy runbooks and deployment commands remain readable and executable.
-- [ ] Show that direct package dispatch bypasses application manifests exactly as before.
-- [ ] Show that phase filtering changes only runbook selection, not package or shadow execution.
-- [ ] Show that existing target grammar and resolver behavior remain unchanged.
+- [x] No legacy path remains: the legacy runbook tree, the legacy store read-through and the superseded verbs are deleted. The one bridge is `deployment migrate`.
+- [x] Show that direct package dispatch bypasses application manifests exactly as before.
+- [x] Show that phase filtering changes only runbook selection, not package or shadow execution.
+- [x] Show that existing target grammar and resolver behavior remain unchanged.
 
 ### Phase 3 tests
 
-- [ ] Cover default and named deployments for two applications without collision.
-- [ ] Cover canonical and legacy runbook paths.
-- [ ] Cover manifest creation before the first step.
-- [ ] Kill a run between steps and assert an interrupted record remains discoverable.
-- [ ] Cover target binding reuse and active-claim rebinding refusal.
-- [ ] Cover every default phase mapping.
-- [ ] Prove a normal run and `--yes` never execute teardown.
-- [ ] Cover selected-phase preflight so teardown-only values do not block install.
-- [ ] Run the focused runbook, replay, target, deployment, vars, and router suites.
-- [ ] Run `task lint` and `task test-unit` at the phase boundary.
+- [x] Cover default and named deployments for two applications without collision.
+- [x] Cover canonical and legacy runbook paths.
+- [x] Cover manifest creation before the first step.
+- [x] Kill a run between steps and assert an interrupted record remains discoverable.
+- [x] Cover target binding reuse and active-claim rebinding refusal.
+- [x] Cover every default phase mapping.
+- [x] Prove a normal run and `--yes` never execute teardown.
+- [x] Cover selected-phase preflight so teardown-only values do not block install.
+- [x] Run the focused runbook, replay, target, deployment, vars, and router suites.
+- [x] Run `task lint` and `task test-unit` at the phase boundary.
+
+
+### Phase 3 result
+
+Landed in four slices: 3A canonical tree, phase machinery, frozen `inputs:`/`map:` syntax with an `application` resolver rank, and the second red proof turned green through the real engine; 3B `lib/state.sh` (state root, per-deployment `flock`, schema-exact manifest, lifecycle), `app run`, nested desired inputs with a tuple-required migration command; 3C the legacy paths deleted under Rachid's no-compatibility direction, with byte-exact golden fixtures (8 payload, 9 registry record) captured before the deletion as the replacement safety net.
+Gate: focused suites and the full unit suite green (619 ok 0 not ok after the trim), `task lint` rc 0, both red proofs hold.
+Removed rather than kept: the legacy value walker, the registry raw walk, the `CLOUDIFY_LEGACY_VARS` switch, the legacy runbook path with its deprecation warning, the single-ID desired-input read-through, and `deployment run|create|delete|use`.
 
 ## Phase 4: physical package state and deployment claims
 

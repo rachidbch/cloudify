@@ -26,6 +26,7 @@ setup() {
     source lib/deployments.sh
     source lib/targets.sh
     source lib/registry.sh
+    source lib/context.sh
     source lib/runbooks.sh
 
     STUB_DIR="$(mktemp -d)"
@@ -103,7 +104,8 @@ echo second >> "$CLOUDIFY_TMP/order"
 echo "seen=$OUT_greeting" >> "$CLOUDIFY_OUTPUTS_FILE"
 ```
 EOF
-    _cloudify_vars_file_set "$(_cloudify_deployment_config exec-demo)" FOO bar
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-demo
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" FOO bar
 
     run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test
     [ "$status" -eq 0 ]
@@ -182,7 +184,7 @@ EOF
 deployment: exec-gate
 targets: guest
 ---
-```bash step=human-gate id=gate
+```bash step=human-gate id=gate phase=verify
 Confirm the desktop renders.
 ```
 EOF
@@ -267,4 +269,95 @@ EOF
     local rec
     rec=$(cloudify_registry_file exec-sep cloudai xfce-test xfce-test demo)
     [ ! -e "$rec" ]
+}
+
+@test "execute: the snapshot adds declared names and keeps every deployment key" {
+    rubric "resolver view built once per run: adds the package name, corrects the env name, drops no deployment line"
+    mkdir -p "$CLOUDIFY_DIR/pkg/demo"
+    printf 'PKG_ONLY\nENV_WINS\n' > "$CLOUDIFY_DIR/pkg/demo/.remote-vars"
+    cloudify_vars_pkg_write demo PKG_ONLY from-package
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-add
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" DEP_KEY kept
+    _cloudify_vars_file_set "$(_cloudify_deployment_config)" ENV_WINS from-deployment
+    export ENV_WINS=from-env
+
+    local rb="$CLOUDIFY_TMP/add.md"
+    _make_runbook "$rb" <<'EOF'
+---
+deployment: exec-add
+targets: guest
+---
+```bash step=install target=guest pkg=demo id=one
+echo ok
+```
+EOF
+    run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test
+    unset ENV_WINS
+    [ "$status" -eq 0 ]
+
+    local snap
+    snap=$(_snapshot exec-add)
+    grep -q "^value.DEP_KEY: kept$" "$snap"
+    grep -q "^value.PKG_ONLY: from-package$" "$snap"
+    grep -q "^value.ENV_WINS: from-env$" "$snap"
+    [ "$(grep -c '^value\.' "$snap")" -eq 3 ]
+}
+
+# ---------------------------------------------------------------
+# Phase selection (state model v2 Phase 3)
+# ---------------------------------------------------------------
+
+@test "execute: a canonical bare run selects install+verify; --yes never reaches teardown" {
+    rubric "bare run = install then verify; teardown only with --phase teardown"
+    local rb="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
+    _make_runbook "$rb" <<'EOF'
+---
+deployment: exec-canonical
+targets: guest
+---
+```bash step=install target=guest pkg=demo id=i
+echo install >> "$CLOUDIFY_TMP/canon-order"
+```
+```bash step=verify target=guest pkg=demo id=v
+echo verify >> "$CLOUDIFY_TMP/canon-order"
+```
+```bash step=uninstall target=guest pkg=demo id=u
+echo teardown >> "$CLOUDIFY_TMP/canon-order"
+```
+EOF
+    run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test --yes
+    [ "$status" -eq 0 ]
+    [ "$(cat "$CLOUDIFY_TMP/canon-order")" = "$(printf 'install\nverify')" ]
+
+    run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test --phase teardown
+    [ "$status" -eq 0 ]
+    [ "$(tail -1 "$CLOUDIFY_TMP/canon-order")" = "teardown" ]
+    [ "$(grep -c teardown "$CLOUDIFY_TMP/canon-order")" -eq 1 ]
+}
+
+@test "preflight: only selected phases are inspected" {
+    rubric "a teardown-only required var cannot block the install run"
+    local rb="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
+    _make_runbook "$rb" <<'EOF'
+---
+deployment: exec-phases
+targets: guest
+---
+```bash step=install target=guest pkg=inst id=i
+echo i
+```
+```bash step=uninstall target=guest pkg=teardown-pkg id=u
+echo u
+```
+EOF
+    mkdir -p "$CLOUDIFY_DIR/pkg/teardown-pkg"
+    printf 'TEARDOWN_ONLY\n' > "$CLOUDIFY_DIR/pkg/teardown-pkg/.remote-vars"
+
+    run cloudify_runbook_preflight "$rb" --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+
+    run cloudify_runbook_preflight "$rb" --target guest=cloudai:xfce-test --phase teardown
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"teardown-pkg: TEARDOWN_ONLY"* ]]
 }

@@ -6,7 +6,7 @@ This design supersedes the implementation contract in ADR-021.
 
 Concept definitions live in `GLOSSARY.md`.
 
-Implementation lives in `plans/state-model-v2.md` and remains behind the project CRITICAL GATE.
+Implementation lives in `plans/state-model-v2-recovery.md` through the `PLAN.md` pointer and remains behind the project CRITICAL GATE.
 
 ## Decision in one breath
 
@@ -79,7 +79,7 @@ A command identifies a deployment with the application reference and `--name <na
 
 The application command exports `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, and `CLOUDIFY_DEPLOYMENT_NAME` for its child dispatches.
 
-`CLOUDIFY_DEPLOYMENT` remains an opaque legacy ID used only by legacy commands during migration.
+`CLOUDIFY_DEPLOYMENT` is accepted only as an opaque input to the temporary migration command; runtime commands use the tuple and never split the old ID.
 
 It cannot be translated into the tuple without an explicit application and flavor supplied to migration.
 
@@ -190,11 +190,21 @@ Folding an event log is not a substitute for inspecting a live host.
 
 ## One value resolution per dispatch
 
-A dispatch is one `(deployment, target, top-level package, package instance, phase)` operation.
+A dispatch is one target's job. It carries one or more top-level packages and never spans two targets.
+One dispatch context therefore holds the resolved values for every package the dispatch carries - the top-level packages and the dependencies they pull in - in one namespace.
+
+Resolution happens once and the context is written once, after resolution completes.
+A context written incrementally while resolution is still running is the last-writer-wins defect and is forbidden: later sources would overwrite earlier ones and the recorded source would drift from the value.
+
+Precedence is first source wins. The first source to provide a name claims it and records where it came from; every later source is refused without looking.
+The visit order is not the precedence order: the caller's environment is visited last yet wins, because a source refuses to overwrite a name that is already set.
+
+Records and events use a value's source form. Only the payload uses the resolved runtime form.
 
 Before execution, Cloudify expands the static dependency graph and builds one private dispatch context.
 
-The context contains a separate declared-value view for the top-level package and every dependency that may execute.
+Values are dispatch-global: every top-level package and every dependency that may execute resolves into one namespace, and the first source to provide a name keeps it for the whole dispatch.
+The named package is resolved before the packages it pulls in, so its value wins over theirs - which is how one package configures another. A package that needs a variable no other package shares prefixes the name with the package name in upper case.
 
 The context contains:
 
@@ -210,9 +220,21 @@ The context contains:
 
 The source form is a literal, an escaped literal, or a secret reference.
 
+Each declared value carries: its declaration kind, its source label, its source form, its **raw source form**, its resolved runtime form, and its secret classification.
+
+The raw source form is the exact text the registry record and the run snapshot must contain. It is why no consumer reopens a source: whoever resolves a value records its raw text at the same moment, so the recorded text cannot drift from the forwarded value, and an absent value stays distinguishable from a present-but-empty one.
+A raw form that cannot be carried on one line is transported in an explicit, unambiguous encoding, so a raw text that itself looks encoded is never mistaken for the transport.
+
+A value's raw form and its resolved runtime form both live in the context, and the context is removed when the dispatch ends. That removal is what bounds the resolved runtime form; it may never appear in a log, a manifest, package state, a run record or an event. The raw source form is by design the text the registry record and the run snapshot store, so those two are where it belongs - and nowhere else.
+
+The context is validated before payload construction and before any mutation. A malformed or partial context fails loudly, because a silently empty context stops payload forwarding without an error.
+
 The resolved runtime form exists only long enough to execute the dispatch.
 
 The context is created with mode 0600 and removed after the parent process has written the result.
+
+The parent process owns the context path. It creates the context, forks one dispatch job per target, waits for them, and writes each result. The child job fills the context, renders the payload and ships it.
+The context is a file because it is the only channel from the child back to the parent: a fork inherits downward only.
 
 Preflight, the `envsubst` allow-list, payload exports, state update, and event metadata all consume this same context.
 
@@ -390,11 +412,9 @@ The `reconfigure` application phase invokes package `configure` operations.
 
 The `teardown` application phase invokes package `uninstall` operations where the pinned runbook asks for them.
 
-All legacy-path runbooks remain executable through the legacy engine during one compatibility period.
+Only canonical `runbooks/<application>/<flavor>/runbook.md` files are discoverable.
 
-The legacy engine emits a deprecation warning when `run` or `human-gate` has no phase.
-
-Every shipped runbook is migrated before it becomes eligible for canonical application execution.
+Every shipped runbook is canonical and `run` or `human-gate` always declares a phase.
 
 A bare application run executes `install`, then `verify`.
 
@@ -560,7 +580,7 @@ cloudify state check
 cloudify --on <target> show overlay-name
 ```
 
-Direct package commands remain available and backward compatible except for claim protection.
+Direct package commands remain available with stable signatures except for claim protection.
 
 A direct package command without deployment context has no deployment claim.
 
@@ -568,35 +588,31 @@ Direct uninstall blocks when any deployment claim exists.
 
 The destructive override requires confirmation and records every displaced claim.
 
-Legacy `cloudify deployment delete` retains old-record cleanup during compatibility but refuses to delete a v2 deployment with a manifest or active claims and directs the operator to `cloudify app teardown`.
+`cloudify deployment delete` does not exist in v2; application teardown owns claim release and removal.
 
-## Compatibility and migration
+## Migration and removal
 
-The current deployment store, registry records, run snapshots, router grammar, package APIs, remote payload, and shadows remain readable until their replacements have passed parity tests.
+Cloudify runtime reads and writes v2 paths and schemas only.
+
+Temporary one-shot migration commands are the sole readers of old desired-input files, registry records and snapshots.
+
+Each migration is explicit, dry-run first, idempotent and emits names and paths without values.
+
+Old deployment IDs map only with an explicit application reference because the old string does not encode application and flavor.
+
+Migration preserves only facts the old artifact proves and never fabricates application commit, host identity or success.
+
+Every new JSON artifact carries `schema_version` from its first write and validates before atomic replacement.
 
 The current registry remains observation-only and never enters the generic value ladder.
 
-Only the v2 physical package state's last successful `applied` section may seed the explicit reconfigure, verify, and teardown phase paths.
+Only the v2 physical package state's last successful `applied` section may seed reconfigure, verify and teardown.
 
-Migration is explicit, idempotent, and rollback-safe before old files are retired.
+Persisted `output.*` lines are never migrated into run records or events.
 
-Every new JSON artifact has `schema_version` from its first release.
+After the migration inventory reports zero old artifacts, the migration commands, old readers, old snapshot replay and migration fixtures are deleted.
 
-A migration inventories old files before writing new ones and emits a non-secret report.
-
-Old deployment IDs map only with an explicit application reference because the old single string does not encode application and flavor.
-
-The legacy `CLOUDIFY_DEPLOYMENT` value remains an opaque compatibility identity until a migration command receives the missing application and flavor explicitly.
-
-Legacy runbook files at `runbooks/<application>/<flavor>.md` remain discoverable and executable through the legacy command during one compatibility period.
-
-Run snapshots remain the replay source until run records plus desired inputs and bindings have proven equivalent replay inputs.
-
-Persisted `output.*` lines are not replay inputs today and are not copied into new run records.
-
-No phase deletes old snapshots in the same release that introduces events.
-
-Rollback restores readers to the old files without reverse-transforming newer state.
+Rollback is a Git revert plus restoration from a pre-migration backup, never a permanent runtime switch or dual reader.
 
 ## Explicitly deferred
 
@@ -632,5 +648,5 @@ The redesign is complete only when all of these are true:
 - Concurrent same-subject dispatches cannot lose a state transition.
 - A crash between event and state writes is detectable.
 - Existing direct package commands and all shadow behavior remain intact.
-- Old state remains readable through the compatibility period.
+- Every old artifact is migrated explicitly or reported, and final runtime code contains no migration bridge or old-format reader.
 - The scoped unit, integration, and disposable E2E gates pass.

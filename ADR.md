@@ -159,8 +159,7 @@ the xfce generate+print path is the fallback, not the primary flow.
 
 ## ADR-018: no framework errexit restore — recipes contract is explicit `|| die`
 
-Status: accepted 2026-09-07 (CRITICAL GATE; rejected by gate description, see
-plans/errexit-restore-description.md).
+Status: accepted 2026-09-07 (CRITICAL GATE; the proposal was rejected after an end-to-end description of the affected code).
 Context: recipes are sourced inside pkg_depends' `if ! ( ... )` subshell, so
 errexit is suspended and bare failing commands continue silently (root cause of
 a silent chrome-install failure). A proposal to restore real errexit by
@@ -183,8 +182,8 @@ creation, two hosts, and human render acceptance.
 Decision: no orchestration package and no pkg coupling (SOP boundary). Config
 glue lives in the cloudify deployment store (ADR-011), one source of truth,
 read by both pkgs via .remote-vars names. Sequence glue is a pure runbook of
-ivps + cloudify commands plus one orchestrator-side password generation
-(plans/xfce-guacamole-e2e.md); no custom scripts. Reachability policy is the
+ivps + cloudify commands plus one orchestrator-side password generation; no
+custom scripts. Reachability policy is the
 tailnet ACL (ivps), proven by the human browser session - the only
 unautomatable acceptance step.
 Consequences: any future GUI deployment = same runbook with new targets; a
@@ -329,6 +328,46 @@ Consequences: the existing deployment store and run snapshots remain during comp
 proved defect is fixed first by one dispatch context. Application identity, manifests, claims,
 events, teardown, and migration land in gated phases. Cloudify owns Cloudify global state and its
 event directory; ivps remains the owner of node inventory and node lifecycle. Full behavior,
-layouts, safety rules, and acceptance criteria are in `REDESIGN.md`; implementation is tracked in
-`plans/state-model-v2.md`.
+layouts, safety rules, and acceptance criteria are in `REDESIGN.md`; implementation is tracked through
+`PLAN.md`.
 
+## ADR-023: One v2 runtime path and temporary migration bridges
+
+Status: accepted 2026-09-13 (supersedes ADR-022 only where ADR-022 retained compatibility readers, writers, aliases, paths or command spellings that cannot express tuple identity).
+
+Context: the attempted compatibility period duplicated source readers, runbook discovery, desired-input paths, router verbs and tests.
+That duplication increased core size, left contradictory completed tasks, and recreated the second-read failure class the redesign exists to remove.
+Rachid directed that Cloudify stay focused and trim dead weight rather than ship backward-compatibility layers.
+Existing desired inputs and observations still need one explicit bridge into v2 without becoming runtime precedence sources.
+
+Decision:
+
+1. Cloudify runtime reads and writes only v2 paths, identities and schemas.
+2. No compatibility switch, dual reader, dual writer, fallback precedence path, legacy runbook discovery or superseded command alias ships in the completed implementation.
+3. Temporary one-shot migration commands are the sole readers of old desired-input files, registry records and snapshots.
+4. Migration is dry-run first, idempotent, prints names and paths without values, preserves only facts the old artifact proves, and removes an old source file only after its v2 copy verifies.
+5. After every old source file is migrated or removed and the inventory reports zero old artifacts, migration commands, old readers and migration fixtures are deleted.
+6. Byte-exact golden fixtures and contract tests replace runtime parity code as the non-breakage safety net.
+7. Direct package function signatures and shadow command behavior remain stable; claim protection is the deliberate lifecycle change.
+8. Command surface: reads are `cloudify deployments`, `cloudify deployment show <application>[/<flavor>] --name <name>`, `cloudify --on <target> state [--application <application>[/<flavor>]] [--name <name>]`, `cloudify runs`, `cloudify run show <run-id>` and `cloudify state check`.
+   Desired inputs are written by `cloudify vars set|delete|list` scoped with `--application` and `--name`, so the deployment-wide store survives as the v2 input writer.
+   Removal is owned by `cloudify app teardown`; `cloudify deployment delete` and `cloudify deployments show` from ADR-022 point 7 do not exist because a bare name cannot express the tuple.
+
+Consequences: operators must migrate known old artifacts before relying on v2 state.
+Rollback is a Git revert plus restoration from a pre-migration backup, not a permanent runtime switch.
+`REDESIGN.md` and the live plan use this decision; ADR-022 remains authoritative for the state model itself.
+
+## ADR-024: Values are dispatch-global; a package scopes a name by prefixing it
+
+Status: accepted 2026-09-14 (corrects the per-package value-view wording in `REDESIGN.md`; ADR-022 point 3 stands unchanged).
+
+Context: `REDESIGN.md` described the dispatch context as holding "a separate declared-value view for each top-level package and every dependency that may execute". That reads as per-package resolution, which is neither implemented nor desirable. One dispatch resolves every package's values into one set of names, and the first source to provide a name keeps it. Global scope is a feature: a configuration-only package declares a value and depends on the package it configures, so installing the configuration package forwards its value and the software package's recipe reads it. Per-package resolution would break that override, and the forwarded payload is one set of environment variables on the host, so it cannot carry two values for one name.
+
+Decision:
+
+1. One dispatch resolves its top-level packages and every dependency that may execute into one namespace, one value per name. There is no per-package value view.
+2. The named package is resolved before the packages it pulls in, so its value wins. That is the configuration-package pattern, pinned by `tests/unit/context.bats` ("rightmost package wins and dependency recursion resolves through the context").
+3. A package that needs a name no other package shares scopes it by prefixing the name with the package name in upper case, for example `CLOUDIFY_GUACAMOLE_DB_PASSWORD` or `CLOUDIFY_XFCE_RDP_PORT`.
+4. The context records resolved values and their provenance, not a per-package structure.
+
+Consequences: configuration-only packages keep working by depending on what they configure. Two packages that declare the same name share one value, and the one resolved first wins; a collision is prevented by prefixing. The plan and the context contract no longer require per-package views.

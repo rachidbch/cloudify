@@ -1,0 +1,537 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloudify.invalid/schemas/v1/event.schema.json",
+  "title": "Cloudify event (schema_version 1)",
+  "description": "An immutable audit record for one observed attempt or state transition. Events never contain raw stdout, raw stderr, a rendered payload, or a literal secret value.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "at",
+    "tool",
+    "writer",
+    "run_id",
+    "step_id",
+    "application",
+    "flavor",
+    "deployment",
+    "application_commit",
+    "subject",
+    "phase",
+    "command_kind",
+    "values",
+    "outcome",
+    "state"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Artifact schema version.",
+      "type": "integer",
+      "const": 1
+    },
+    "event_id": {
+      "description": "Collision-resistant event ID: UTC second plus a random suffix.",
+      "$ref": "#/$defs/event_id"
+    },
+    "at": {
+      "description": "UTC time the event was recorded.",
+      "$ref": "#/$defs/utc"
+    },
+    "tool": {
+      "description": "Tool that wrote the event. This schema fixes the Cloudify payload; ivps writes its own files.",
+      "const": "cloudify"
+    },
+    "writer": {
+      "description": "Identity of the process that wrote the event.",
+      "$ref": "#/$defs/writer"
+    },
+    "run_id": {
+      "description": "Run that produced this event, or null for a direct package command without run context.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/run_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "step_id": {
+      "description": "Stable runbook step ID that produced this event, or null for a command outside a runbook step.",
+      "type": ["string", "null"],
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "application": {
+      "description": "Application name, or null when the command has no deployment context.",
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+    },
+    "flavor": {
+      "description": "Flavor, or null when the command has no deployment context.",
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+    },
+    "deployment": {
+      "description": "Deployment name, or null when the command has no deployment context.",
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+    },
+    "application_commit": {
+      "description": "Cloudify commit that produced the observed attempt, or null without deployment context.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "subject": {
+      "description": "The thing this event is about: a package instance or a deployment.",
+      "$ref": "#/$defs/subject"
+    },
+    "phase": {
+      "description": "Selected application phase.",
+      "enum": ["install", "reconfigure", "verify", "teardown"]
+    },
+    "command_kind": {
+      "description": "Kind of work observed: a package operation or a runbook step type.",
+      "enum": ["install", "configure", "verify", "uninstall", "launch", "run", "human-gate"]
+    },
+    "values": {
+      "description": "Metadata for the declared values involved. A value never appears in plaintext: a non-secret value has no reference and no digest, a secret reference carries the reference, and a literal secret carries only a digest.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Z_][A-Z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/value_metadata"
+      }
+    },
+    "outcome": {
+      "description": "Bounded non-secret result summary. Raw command output stays in the protected Cloudify log.",
+      "$ref": "#/$defs/outcome"
+    },
+    "state": {
+      "description": "Subject revisions before and after this event when the event changed state.",
+      "$ref": "#/$defs/state"
+    },
+    "log_reference": {
+      "description": "Optional pointer to the protected log holding the raw output, by path and digest.",
+      "type": ["object", "null"],
+      "required": ["path", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^/[^\\x00-\\x1f\\x7f]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "application": {
+            "type": "string"
+          }
+        },
+        "required": ["application"]
+      },
+      "then": {
+        "properties": {
+          "flavor": {
+            "type": "string"
+          },
+          "deployment": {
+            "type": "string"
+          },
+          "application_commit": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "application": {
+            "type": "null"
+          }
+        },
+        "required": ["application"]
+      },
+      "then": {
+        "properties": {
+          "flavor": {
+            "type": "null"
+          },
+          "deployment": {
+            "type": "null"
+          },
+          "application_commit": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "subject": {
+            "properties": {
+              "kind": {
+                "const": "package"
+              }
+            },
+            "required": ["kind"]
+          }
+        },
+        "required": ["subject"]
+      },
+      "then": {
+        "properties": {
+          "subject": {
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "host_key": {
+                "type": "string"
+              },
+              "package": {
+                "type": "string"
+              },
+              "package_instance": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "subject": {
+            "properties": {
+              "kind": {
+                "const": "deployment"
+              }
+            },
+            "required": ["kind"]
+          }
+        },
+        "required": ["subject"]
+      },
+      "then": {
+        "properties": {
+          "subject": {
+            "properties": {
+              "host": {
+                "type": "null"
+              },
+              "host_key": {
+                "type": "null"
+              },
+              "package": {
+                "type": "null"
+              },
+              "package_instance": {
+                "type": "null"
+              }
+            }
+          },
+          "state": {
+            "properties": {
+              "previous_revision": {
+                "type": "null"
+              },
+              "resulting_revision": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "component": {
+      "description": "One validated identity path component; rules in schemas/v1/identity.md.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\x00-\\x1f\\x7f]+$",
+      "allOf": [
+        {
+          "not": {
+            "enum": [".", ".."]
+          }
+        },
+        {
+          "not": {
+            "pattern": "^\\s|\\s$"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^-"
+          }
+        }
+      ]
+    },
+    "utc": {
+      "description": "UTC timestamp, second precision and trailing Z.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "run_id": {
+      "description": "Sortable run ID: UTC second plus a random suffix.",
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+    },
+    "event_id": {
+      "description": "Sortable event ID: UTC second plus a random suffix.",
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+    },
+    "writer": {
+      "description": "Writer identity: host, kernel boot ID, process ID, and the process start time in clock ticks read from /proc/<pid>/stat field 22.",
+      "type": "object",
+      "required": ["host", "boot_id", "pid", "process_start_ticks"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/component"
+        },
+        "boot_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "process_start_ticks": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "subject": {
+      "description": "Event subject identity. kind package names one physical package instance; kind deployment names a deployment-scoped transition such as a runbook action.",
+      "type": "object",
+      "required": ["kind", "host", "host_key", "package", "package_instance"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["package", "deployment"]
+        },
+        "host": {
+          "description": "Host address in --on grammar, or null for a deployment subject.",
+          "type": ["string", "null"],
+          "minLength": 1,
+          "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+        },
+        "host_key": {
+          "description": "Durable host identity, or null for a deployment subject.",
+          "type": ["string", "null"],
+          "pattern": "^(ivps:[^/\\x00-\\x1f\\x7f]+(:[^/\\x00-\\x1f\\x7f]+)?|ssh-sha256:[A-Za-z0-9+/=]+)$"
+        },
+        "package": {
+          "description": "Package name, or null for a deployment subject.",
+          "type": ["string", "null"],
+          "maxLength": 255,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "package_instance": {
+          "description": "Package instance key, or null for a deployment subject.",
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
+        }
+      }
+    },
+    "value_metadata": {
+      "description": "Metadata for one declared value. No plaintext form exists in an event.",
+      "type": "object",
+      "required": ["source", "secret", "declaration", "reference", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "description": "Source label that supplied the value. caller covers a runbook step environment and the caller environment.",
+          "enum": ["caller", "deployment", "applied", "application", "package", "global", "recipe"]
+        },
+        "secret": {
+          "description": "Explicit secret declaration for this value name.",
+          "type": "boolean"
+        },
+        "declaration": {
+          "description": "How the secret classification was obtained.",
+          "enum": ["explicit", "heuristic", "none"]
+        },
+        "reference": {
+          "description": "The @<backend>:<locator> secret reference when the source was a reference.",
+          "type": ["string", "null"],
+          "pattern": "^@[A-Za-z0-9_-]+:.+$"
+        },
+        "digest": {
+          "description": "sha256 digest of a literal secret.",
+          "type": ["string", "null"],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "declaration": {
+                "const": "none"
+              }
+            },
+            "required": ["declaration"]
+          },
+          "then": {
+            "properties": {
+              "secret": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "declaration": {
+                "const": "heuristic"
+              }
+            },
+            "required": ["declaration"]
+          },
+          "then": {
+            "properties": {
+              "secret": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "secret": {
+                "const": false
+              }
+            },
+            "required": ["secret"]
+          },
+          "then": {
+            "properties": {
+              "reference": {
+                "type": "null"
+              },
+              "digest": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "secret": {
+                "const": true
+              }
+            },
+            "required": ["secret"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {
+                  "reference": {
+                    "type": "string"
+                  }
+                },
+                "required": ["reference"]
+              },
+              {
+                "properties": {
+                  "digest": {
+                    "type": "string"
+                  }
+                },
+                "required": ["digest"]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reference": {
+                "type": "string"
+              }
+            },
+            "required": ["reference"]
+          },
+          "then": {
+            "properties": {
+              "digest": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "outcome": {
+      "description": "Bounded non-secret outcome.",
+      "type": "object",
+      "required": ["exit_status", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "exit_status": {
+          "description": "Exit status of the observed command, or null when no status was observed.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "summary": {
+          "description": "Bounded single-line non-secret summary.",
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^[^\\n\\r]*$"
+        }
+      }
+    },
+    "state": {
+      "description": "Subject revisions around this event.",
+      "type": "object",
+      "required": ["previous_revision", "resulting_revision"],
+      "additionalProperties": false,
+      "properties": {
+        "previous_revision": {
+          "description": "Subject revision before the transition, or null when no state changed.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "resulting_revision": {
+          "description": "Subject revision after the transition, or null when no state changed.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

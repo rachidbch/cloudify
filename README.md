@@ -33,6 +33,10 @@ cloudify install bat
 cloudify packages
 ```
 
+Cloudify itself needs `jq` for deployment state: `cloudify deployment run` renders
+and validates the deployment manifest with it. It ships in the `basics` package
+(`cloudify install basics`).
+
 ## Usage
 
 ```
@@ -56,8 +60,9 @@ Commands:
   credentials --check         Check credential status
   vars set <key> <value> [scope] [--stdin|--file <path>]  Set a var (scope: --global|--pkg <n>|--deployment <id>)
   vars show|list [--json]|delete <key> [scope]   Manage vars (masked unless --reveal)
-  deployment create|list|use|delete <id>         Manage deployments (ADR-011)
-  deployment run <id> [--dry-run]                Run the deployment's runbook
+  app run <application>[/<flavor>] [--name <name>]  Run the application's runbook (bare run: install then verify)
+  deployment list|show <id>                      List deployments; show one manifest and its run snapshots
+  deployment migrate <id> --application <app>    One-shot bridge: copy single-ID inputs to the nested path
   deployment replay <id> [--at <run>]            Re-run a recorded run from its snapshot
   node use <node>             Set the active node (prints the export command)
   packages | pkgs             List installable packages
@@ -152,7 +157,7 @@ cloudify credentials gitlab   # CLOUDIFY_GITLABUSER, CLOUDIFY_GITLABPWD
 cloudify credentials --check  # status check
 ```
 
-Git auth on hosts: the git shadow (GIT_ASKPASS + url.insteadOf) needs a TOKEN — GitHub rejects passwords since 2021. Set `CLOUDIFY_GITHUB_READONLY_TOKEN` (fine-grained PAT, Contents: read-only) for clones; the shadow prefers it over the legacy `CLOUDIFY_GITHUBPWD` slot.
+Git auth on hosts: the git shadow (GIT_ASKPASS + url.insteadOf) needs a TOKEN - GitHub rejects passwords since 2021. Set `CLOUDIFY_GITHUB_READONLY_TOKEN` (fine-grained PAT, Contents: read-only) for clones; the shadow prefers it over the earlier `CLOUDIFY_GITHUBPWD` slot.
 
 Or export directly (overrides file):
 
@@ -186,19 +191,20 @@ CLOUDIFY_HERMES_API_URL: "https://hermes.example.ts.net/v1"
 CLOUDIFY_HERMES_API_KEY: "sk-..."
 ```
 
-The per-package yaml is one source among five, not the single source of truth.
+The per-package yaml is one source among six, not the single source of truth.
 Missing files are silently ignored (vars stay empty).
 
-**Var sources and precedence.** Five sources feed a var, weakest to strongest:
+**Var sources and precedence.** Six sources feed a var, weakest to strongest:
 
 1. recipe default (`${VAR:-default}` in the recipe — runtime truth)
 2. `~/.config/cloudify/remote-vars.yaml` (global always-forward, `chmod 600`)
 3. `~/.config/cloudify/pkgs/<pkg>.yaml` (package values)
-4. `~/.config/cloudify/deployments/<id>/config.yaml` (deployment values, ADR-011)
-5. caller environment at install/configure time (strongest)
+4. `~/.config/cloudify/apps/<application>/<flavor>/defaults.yaml` (application defaults)
+5. `~/.config/cloudify/deployments/<application>/<flavor>/<deployment>/values.yaml` (deployment desired inputs, ADR-011)
+6. caller environment at install/configure time (strongest)
 
 A name is forwarded only when a source knows it: a `.remote-vars` declaration, or
-any of the three file stores. An ambient env var no source mentions never enters
+any of the four file stores. An ambient env var no source mentions never enters
 the payload.
 
 **Secret references.** A value may be a reference instead of a literal:
@@ -213,13 +219,19 @@ aborts the run — an empty value is never forwarded. Backends are shell files i
 `CLOUDIFY_INSTANCE` are framework-owned: a file store that tries to set one is
 warned about and skipped.
 
-**Deployment-wide vars (ADR-011):** `~/.config/cloudify/deployments/<id>/config.yaml`
-A deployment is an application across nodes (e.g. a k3s cluster). Set the per-shell context and manage vars via the CLI:
+**Deployment-wide vars (ADR-011):** the deployment is the application instance,
+so desired inputs live at
+`~/.config/cloudify/deployments/<application>/<flavor>/<name>/values.yaml`. It is
+written and read while an application reference is active
+(`CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, `CLOUDIFY_DEPLOYMENT_NAME`, as
+`cloudify app run` exports them); without one, `vars set --deployment <id>` fails
+closed and names the application command. A deployment is an application across
+nodes (e.g. a k3s cluster):
 
 ```bash
-cloudify deployment create my-cluster
-eval "$(cloudify deployment use my-cluster)"   # export CLOUDIFY_DEPLOYMENT=my-cluster
-cloudify vars set K3S_TOKEN secret
+export CLOUDIFY_APPLICATION=my-cluster CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=prod
+cloudify vars set FOO bar --deployment my-cluster
+cloudify app run my-cluster --name prod
 ```
 
 `vars show`/`vars list` mask secret-looking values (`PASSWORD|TOKEN|SECRET|KEY`) by default; add `--reveal` to print them. `vars show <key> --resolve` decodes a `@backend:locator` reference.
@@ -227,23 +239,24 @@ cloudify vars set K3S_TOKEN secret
 `cloudify --on <node> install <pkg>` then forwards the deployment vars to the host.
 Deployment values beat package and global values; the caller env still wins.
 
-`cloudify deployment delete <id>` trashes the deployment store dir and every
-observation record for that id (the node and instance buckets written after an
-install), so no record outlives its deployment.
-
-**Runbooks (`cloudify deployment run`).** A runbook is repo-tracked Markdown
-(`runbooks/<app>/<flavor>.md`, see `runbooks/README.md`): front-matter
-(`deployment`, `targets`) plus fenced `bash step=<type> [target=] [pkg=] [id=]`
+**Runbooks (`cloudify app run`).** A runbook is repo-tracked Markdown
+(`runbooks/<app>/<flavor>/runbook.md`, see `runbooks/README.md`): front-matter
+(`deployment`, `targets`) plus fenced `bash step=<type> [target=] [pkg=] [id=] [phase=]`
 blocks, `<type>` in `launch|install|configure|verify|uninstall|run|human-gate`.
-`deployment run <id>` binds each target (`--target name=addr` wins, else the
-deployment var `TARGET_<NAME>`), preflights the required vars of every
-pkg-consuming step, then runs the steps in document order, stopping at the first
-failure. A step sees `CLOUDIFY_DEPLOYMENT`, `TARGET_<NAME>`,
-`CLOUDIFY_OUTPUTS_FILE` (append `name=value`; later steps read `OUT_<name>`) and
-`STEP_ID/STEP_TYPE/STEP_TARGET/STEP_PKG`. Every run writes
+`cloudify app run <application>[/<flavor>] [--name <name>]` resolves the
+canonical runbook from the reference, exports the application identity, binds
+each target (`--target name=addr` wins, else the deployment var `TARGET_<NAME>`),
+preflights the required vars of every pkg-consuming step in the selected phases,
+then runs those steps, stopping at the first failure. A step sees
+`CLOUDIFY_DEPLOYMENT`, `TARGET_<NAME>`, `CLOUDIFY_OUTPUTS_FILE` (append
+`name=value`; later steps read `OUT_<name>`) and
+`STEP_ID/STEP_TYPE/STEP_TARGET/STEP_PKG/STEP_PHASE`. Every run writes
 `${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml` (0600): `status`, timestamps,
 `runbook`, `target.<name>`, the raw `value.<NAME>` lines and `output.<name>`.
 `--dry-run` prints the plan (seeded value NAMES, never values) and runs nothing.
+The lower-level `cloudify_deployment_run` engine keeps `--runbook <path>` for a
+runbook outside the tree and for replay. A path that is not canonical carries no
+application identity, so the run records no deployment manifest.
 
 `cloudify deployment replay <id> [--at <run>]` re-runs a recorded run: it seeds
 the environment from the snapshot (target bindings, and each `value.<NAME>`
@@ -333,7 +346,7 @@ lib/
   registry.sh         Observation registry: per-(deployment, target, package) records
   runbooks.sh         Runbook engine: parse, target binding, preflight, run, replay
   pkg-config.sh       Sources lib/vars.sh for package-config consumers (reader lives there)
-  vars.sh             Five-source var helpers + precedence walker core + resolver
+  vars.sh             Six-source var helpers + precedence walker core + resolver
   secrets.sh          Secret-backend loader (sources lib/secrets/*.sh)
   hosts.sh            Host inventory (list, filter by tags)
   os.sh               OS detection (distro, version, arch)
@@ -351,12 +364,81 @@ pkg/
 inventory/
   <host>/@<tag>       Host tag files for grouping
 runbooks/
-  <app>/<flavor>.md   Deployment procedure (front-matter + typed shell steps)
+  <app>/<flavor>/runbook.md  Deployment procedure (front-matter + typed shell steps)
+schemas/
+  v1/                 State model v2 machine contracts: identity rules, the manifest,
+                      package state, run and event JSON schemas, fixtures, and
+                      validate.sh (Phase 1 provenance in the archived attempt;
+                      current recovery and completion tracked through PLAN.md)
 tests/
   unit/               Unit tests (mocked environment)
+  red/                Deliberately failing proofs of the v2 contract (not globbed
+                      by task test-unit; run explicitly, see tests/red/README.md)
   integration/        Integration tests (real package installs via SSH)
   helpers/            Test setup/teardown helpers
 ```
+
+## Core Mechanisms
+
+Four mechanisms carry every dispatch. They are load-bearing and easy to break; this is
+their rationale, so nobody has to rediscover it.
+
+### Shadow commands
+
+Recipes call `sudo`, `apt-get`, `add-apt-repository` and `git` as plain commands.
+Functions with the same names wrap them and inject the password, the idempotency check
+and the authentication. Rationale: a recipe stays a one-liner that behaves the same
+locally and over SSH. Details in "Shadow Command System" under the Developer Guide.
+
+### Value forwarding
+
+A dispatch forwards values to a target host. Six sources provide them, weakest first:
+the recipe's own default, global defaults, package defaults, application defaults, the
+deployment's desired inputs, and the caller's environment.
+
+Values are resolved once, exported into the dispatching shell, rendered into the payload
+by a single `envsubst` run, and shipped on stdin as single-quoted exports. The `envsubst`
+allow-list is an explicit list of names: only those substitute locally, so `$HOME` and
+`$(...)` are substituted on the target or stay inert. Neither the context path nor any
+value ever reaches a command line, so neither can appear in a process list.
+
+### The dispatch context
+
+Resolving once is the point. The payload, the registry record and the run snapshot must
+agree, so they all consume one artifact instead of each walking the sources.
+
+- The **parent** is the `cloudify` process you ran. It creates the context path, forks one
+dispatch job per target, waits for them, then writes each registry record.
+- The **child** is the backgrounded job for one target. It resolves the values into its
+own shell, fills the context, renders the payload and ships it.
+- The context is a **file** because it crosses from the child (writer) to the parent
+(reader). A fork only inherits downward, so a file is the only channel back.
+- **One context per target**, holding the resolved values for every package that target's dispatch carries, in one namespace.
+- It is 0600 and ephemeral: never on a command line, removed when the dispatch ends.
+
+Why it exists: the design it replaces computed the same values twice, in two different
+walks, and wrote them to two places that nothing compared.
+
+### Why the first source wins
+
+The shell environment is both an input and an output. The caller's values live there, and
+resolved values are exported there. So when a source is about to set a name it must
+decide: did the caller set this, or an earlier source? The two cases need opposite
+handling - the caller wins, an earlier source means refuse - and in the shell they look
+identical, because the variable is set either way.
+
+That information exists only at the instant the value is written, so it is consumed then.
+The first source to provide a name claims it and records where it came from; every later
+source is refused without looking. The recorded source therefore cannot drift from the
+value, which is the property the context exists to guarantee. Allowing later writes would
+mean re-attributing the source on every overwrite, and one missed re-attribution is
+exactly the defect being prevented.
+
+The ladder order is **not** the precedence order. The caller's environment is visited last
+yet wins, because a source refuses to overwrite a name that is already set. Precedence,
+strongest first: caller environment, deployment desired inputs, application defaults and
+mapped inputs, packages (rightmost first, each before its dependencies), global defaults,
+recipe default.
 
 ## Developer Guide
 
@@ -378,7 +460,7 @@ task setup-container    # Install bats + libraries in container (one-time)
 task test-unit          # Sync files + run unit tests in container
 task test-integration   # Run SSH-based integration tests from localhost
 task test               # Run all tests (unit + integration)
-task lint               # Run shellcheck in container
+task lint               # Run shellcheck locally
 ```
 
 ### Writing a Package Recipe
@@ -519,8 +601,26 @@ Parallel-safe by construction: values never touch a shared file, so two
 concurrent installs of the same package with different env values each forward
 their own — no last-write-wins race. The classic per-pkg yaml
 (`~/.config/cloudify/pkgs/<pkg>.yaml`) and the global `remote-vars.yaml` remain
-supported; the full five-source ladder is documented under "Package
+supported; the full six-source ladder is documented under "Package
 Configuration" above.
+
+#### Variable scope: one dispatch, one namespace
+
+A **dispatch** is one target's job. It resolves the values of every package it
+carries - the top-level packages and the dependencies they pull in - into **one
+set of names**, and forwards that set to the host as environment variables. There
+is one value per name for the whole dispatch.
+
+Global scope is deliberate: it is how one package configures another. If
+`myapp-config` declares `PORT` and depends on `myapp` (`pkg_depends myapp`), then
+`cloudify --on <host> install myapp-config` resolves `PORT` from the configuration
+package and forwards it, and `myapp`'s recipe reads the configured value. The named
+package is resolved before the packages it pulls in, so its value wins.
+
+The consequence: two packages that declare the same name share one value, and the
+one resolved first wins. To give a variable a package-scoped value, prefix it with
+the package name in upper case, e.g. `CLOUDIFY_GUACAMOLE_DB_PASSWORD` or
+`CLOUDIFY_XFCE_RDP_PORT`.
 
 #### Lifecycle (install / configure / uninstall)
 

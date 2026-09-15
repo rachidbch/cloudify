@@ -53,8 +53,8 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 - **Shadow commands**: `lib/shadows/*.sh` override `sudo`, `apt-get`, `add-apt-repository`, `git` with wrappers for password injection, idempotency, auth. Recipes call bare commands — shadows handle the rest.
 - **Targets** (`lib/targets.sh`): resolve an `--on` token to (node, instance, ssh host); ivps is the inventory provider; validation only, never provisioning.
 - **Registry** (`lib/registry.sh`): observation records per (deployment, target, package) at `$(ivps node path <node>)/[<instance>/]deployments/<id>/pkgs/<pkg>/config.yaml`, cloudify-owned fallback bucket when no node resolves; written after a successful dispatch, uninstall marks `removed`, `deployment delete` sweeps. Observation only, never a precedence source (ADR-020).
-- **Runbooks** (`lib/runbooks.sh`): repo-tracked Markdown plan (`runbooks/<app>/<flavor>.md`: front-matter `deployment` + `targets`, `bash step=<type>` fences). `cloudify deployment run <id>` binds targets, preflights required vars, runs the steps (a `human-gate` step pauses), writes a run snapshot; `deployment replay` re-runs from one. See `runbooks/README.md`.
-- **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Var sources, weakest to strongest: recipe default < `remote-vars.yaml` (global) < `pkgs/<pkg>.yaml` (package) < `deployments/<id>/config.yaml` (deployment) < caller env; a name forwards only if a `.remote-vars` declaration or a file store knows it. Values may be secret references (`@backend:locator`, `@@` escapes). Loaded by `lib/vars.sh` (+ `lib/secrets.sh` backends); `lib/credentials.sh` loads only system credentials.
+- **Runbooks** (`lib/runbooks.sh`): repo-tracked Markdown plan (`runbooks/<app>/<flavor>/runbook.md`, the only discoverable shape: front-matter `deployment` + `targets`, `bash step=<type>` fences). `cloudify deployment run <id>` binds targets, preflights required vars, runs the steps (a `human-gate` step pauses), writes a run snapshot; `deployment replay` re-runs from one. See `runbooks/README.md`.
+- **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Var sources, weakest to strongest: recipe default < `remote-vars.yaml` (global) < `pkgs/<pkg>.yaml` (package) < `apps/<app>/<flavor>/defaults.yaml` (application defaults) < `deployments/<app>/<flavor>/<name>/values.yaml` (deployment) < caller env; a name forwards only if a `.remote-vars` declaration or a file store knows it. Values may be secret references (`@backend:locator`, `@@` escapes). Loaded by `lib/vars.sh` (+ `lib/secrets.sh` backends); `lib/credentials.sh` loads only system credentials.
 - **Remote payload**: `declare -f` extracts template body as literal text, `envsubst` with explicit allow-list substitutes only listed vars. Single-quoted `$VAR` references resolve on the remote side.
 - **Install guards**: stateful packages use `CLOUDIFY_FORCE`/`CLOUDIFY_CLEAR_DATA` convention. See "Install Guards" in README.md.
 - **Verification**: optional `pkg/<name>/verify.sh` defines `pkg_verify()`, sourced in a clean subshell by `_cloudify_run_verify` after every package (deep verify, incl. deps). `--no-verify` skips, `--verify`/`cloudify verify` is verify-only. See "Verification" in README.md.
@@ -73,16 +73,26 @@ TDD cycle. All tests run inside an Incus container (`cloudai:cloudify`), never o
 task setup-container   # One-time: install bats + libraries
 task test-unit         # Push + unit tests
 task test              # Push + all tests (unit + integration)
-task lint              # Push + shellcheck
+task lint              # shellcheck on this host
 ```
 
 **Push before tests.** Integration tests SSH into the container, pull from GitHub, run there.
 
-**Test output:** rubric/subrubric/step (`tests/helpers/report.bash`, fd 9 = live stream). Run long tests in the background and poll `results/<name>.tap` with plain `tail`, never grep, never invent a log; E2E only as the final gate.
+**Testing:** tests run in `cloudai:cloudify` only; `task sync` rsyncs the tree (prunes deletions), integration tests also need the branch pushed.
+Background + poll, never redirect or grep: `mkdir -p results/<suite>`; `setsid <cmd> --report-formatter tap13 -o results/<suite> </dev/null >/dev/null 2>&1 &`; then `tail results/<suite>/report.tap`. bats always names it `report.tap`, and stdout must be discarded or SIGPIPE kills it when the ssh channel closes. tap13 carries each failure's assertion and output, so the tap suffices; give a large tap to a subagent for the failures only.
+Full suite at phase and milestone boundaries; E2E is an exit gate, never a debugger.
+
+**Implementation:** the lead agent writes the code and shows the moves; subagents review, research, and read large taps.
 
 **Debugging:** Read `/tmp/cloudify/logs/<timestamp>.log`. Fix one issue, push, re-test.
 
-**Planning:** `PLAN.md` → symlink to `plans/<current>.md`. Done plans move to `plans/archived/`. Issues/PRs document outcomes; plans reference issues.
+**Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues.
+
+**Normative files:** the design (`REDESIGN.md`) and the plan (`plans/<current>.md` via `PLAN.md`) are the single source of truth. Everything else is a working note I may use freely, except `schemas/v1/` (machine-enforced), `AGENTS.md` (process) and `LOGS.md`/`HISTORY.md` (required records). Every spec or plan change must land in a normative file, and a design change lands in `REDESIGN.md` in the same commit as the decision that authorizes it.
+
+**ADRs:** self-contained, never referencing a path that can move or be deleted. `REDESIGN.md` and `PLAN.md` are the only stable references an ADR may name.
+
+**Naming:** reference every step, phase and entry by a human-readable name with its id in parentheses, never the bare id.
 
 **Issues:** filed on GitHub (`github.com/rachidbch/cloudify`), not as local markdown.
 **PRs:** `git push -u origin <branch>` then `gh pr create`.

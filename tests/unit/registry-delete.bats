@@ -165,40 +165,17 @@ _make_record() {
 }
 
 # ---------------------------------------------------------------
-# wiring: cloudify deployment delete
+# No-collateral properties of the sweep (the Phase 7 teardown calls it)
 # ---------------------------------------------------------------
 
-@test "cloudify deployment delete trashes the store dir and the records" {
-    rubric "cloudify_deployment_delete <id> -> store dir + node/instance records gone"
-    cloudify_deployment_create "$DEP_X"
-    _make_record "$NODE_ROOT/cloudai/deployments/$DEP_X"
-    _make_record "$NODE_ROOT/cloudai/cloudify/deployments/$DEP_X"
-
-    run cloudify_deployment_delete "$DEP_X"
-    [ "$status" -eq 0 ]
-    [ ! -d "$CLOUDIFY_DEPLOYMENTS_DIR/$DEP_X" ]
-    [ ! -e "$NODE_ROOT/cloudai/deployments/$DEP_X" ]
-    [ ! -e "$NODE_ROOT/cloudai/cloudify/deployments/$DEP_X" ]
-}
-
-@test "cloudify deployment delete of an absent id still cleans orphan records" {
-    rubric "records outlive a hand-deleted store dir -> delete still sweeps them"
-    _make_record "$NODE_ROOT/cloudai/deployments/$DEP_X"
-
-    run cloudify_deployment_delete "$DEP_X"
-    [ "$status" -eq 0 ]
-    [ ! -e "$NODE_ROOT/cloudai/deployments/$DEP_X" ]
-}
-
-@test "cloudify deployment delete leaves other deployments and the node dir alone" {
+@test "cloudify_registry_delete_deployment leaves other deployments and the node dir alone" {
     rubric "no collateral: node.json, sibling records and the bucket survive"
-    cloudify_deployment_create "$DEP_X"
     mkdir -p "$NODE_ROOT/cloudai"
     printf '{}\n' > "$NODE_ROOT/cloudai/node.json"
     _make_record "$NODE_ROOT/cloudai/deployments/$DEP_X"
     _make_record "$NODE_ROOT/cloudai/deployments/$DEP_Y"
 
-    run cloudify_deployment_delete "$DEP_X"
+    run cloudify_registry_delete_deployment "$DEP_X"
     [ "$status" -eq 0 ]
     [ -f "$NODE_ROOT/cloudai/node.json" ]
     [ -f "$NODE_ROOT/cloudai/deployments/$DEP_Y/pkgs/vim/config.yaml" ]

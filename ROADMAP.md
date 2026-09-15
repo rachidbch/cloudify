@@ -62,7 +62,7 @@ placed after a `human-gate` is reachable by a plain `cloudify deployment run <id
 auto-confirms the gate and then immediately tears the deployment down. The only guard today is
 operator discipline (`--from <id>`), which lives nowhere in the artifact.
 
-- [ ] Fix: a `phase=install|reconfigure|verify|teardown` step attribute, defaulted from the step type, with `run` and `human-gate` steps declaring theirs. A bare run executes install then verify; teardown never runs as part of it. Decided in `REDESIGN.md` and ADR-022; implementation is Phase 3 of `plans/state-model-v2.md`. Runs the CRITICAL GATE. The teardown order itself is documented in `runbooks/README.md` ("Teardown contract").
+- [ ] Fix: a `phase=install|reconfigure|verify|teardown` step attribute, defaulted from the step type, with `run` and `human-gate` steps declaring theirs. A bare run executes install then verify; teardown never runs as part of it. Decided in `REDESIGN.md` and ADR-022; implementation and recovery are tracked through `PLAN.md`. Runs the CRITICAL GATE. The teardown order itself is documented in `runbooks/README.md` ("Teardown contract").
 
 ## Remote bootstrap git pull vs task sync (non-urgent)
 
@@ -70,7 +70,85 @@ operator discipline (`--from <id>`), which lives nowhere in the artifact.
 
 ## Pinned execution before safe historical teardown (state-model v2)
 
-- [ ] Hosts pull the branch tip, so reconfigure or teardown cannot claim to execute the application commit recorded in state. Phase 7 of `plans/state-model-v2.md` must pin remote execution and fail on commit drift before historical teardown is enabled. Automatic rebuild and command replay are deferred by ADR-022.
+- [ ] Hosts pull the branch tip, so reconfigure or teardown cannot claim to execute the application commit recorded in state. Phase 7 of `PLAN.md` must pin remote execution and fail on commit drift before historical teardown is enabled. Automatic rebuild and command replay are deferred by ADR-022.
+
+## Dispatch context as a JSON contract (state-model v2, proposal)
+
+Status: a proposal for discussion. Not scheduled, not accepted, and nothing depends on it.
+
+### What
+
+Convert the private dispatch context from its flat `key: value` format to JSON, give it a
+`schema_version: 1`, validate it against `schemas/v1/dispatch-context.schema.json` through
+`schemas/v1/validate.sh`, and make local `jq` the one parent-side JSON encoder and validator.
+The context is ephemeral and nothing persisted reads it, so there is no migration.
+
+### The open design question (settle this before any code)
+
+The context is, in production, a **resolution record**. The payload's allow-list, the registry
+record, the run snapshot and the DEBUG rendering read only `value.<NAME>.*`; no production
+consumer reads the identity fields. `ADR-024` settled the value scope (one namespace per
+dispatch; the named package wins) and left those identity fields unused.
+
+So this proposal has two shapes. The choice is the first thing to settle:
+
+1. **Resolution record.** The context carries the resolved values and their provenance, plus
+the identity fields that already exist: `action`, `deployment`, `phase`, `target`. JSON adds
+the full per-name field set, machine checking and native multi-line values.
+2. **Dispatch descriptor.** The context also describes the dispatch: application commit, run
+and step IDs, package identity and package instance, each typed nullable while it has no
+producer. The original design's field list implies this shape, and it would let every writer
+read one file. Cost: the context grows a field whenever a writer needs one, and the parent
+already holds every one of those facts.
+
+### Why
+
+Three gains, under either shape. The contract becomes machine-checked instead of checked by hand, so a malformed
+context fails loudly rather than silently emptying the payload's name allow-list. Multi-line
+values become native, so the `@base64:` convention is no longer needed inside the context
+(it stays in the registry record and the run snapshot, which are user-visible). And one
+encoder replaces the hand-rolled writer and its hand-rolled reader.
+
+### Why it was deferred
+
+The conversion itself is what turns four existing readers into silent failures. Today they
+parse flat lines, and every one of them returns nothing rather than erroring once the file is
+JSON:
+
+- the allow-list name extraction in `lib/remote.sh`, which decides which names are substituted
+- `cloudify_context_read` in `lib/context.sh`
+- the DEBUG rendering loop in `lib/remote.sh`, through that reader
+- the snapshot's value lookup in `lib/runbooks.sh`
+
+Missing the first one stops payload forwarding from exporting package values **with no error
+message**. The Phase 2 repair does not need the format change: it needs one added field, the
+raw source form, which the flat format carries equally well. So the format change was split
+out rather than ridden along with a repair to the most breakage-prone code in the repository.
+
+### Proposed steps
+
+One slice, its own consent and its own review. It is deliberately unscheduled: nothing depends on it, because the state and event writers take identity from the parent (`ADR-024`) and read only the context's values, which the flat format already carries. It is a quality improvement waiting for a slot, not a prerequisite of any phase.
+
+1. Fix the field set and write `schemas/v1/dispatch-context.schema.json`: for each declared value, its declaration kind, source label, source form, raw source form, resolved runtime form and secret classification origin, plus the dispatch fields of the chosen shape, with every field that has no producer yet typed nullable. Add valid and invalid fixtures.
+2. Add `dispatch-context` to the artifact list in `schemas/v1/validate.sh` and update
+   `schemas/v1/README.md`: file list, field lists, validator description, and the
+   `schema_version` rule that currently covers four schemas.
+3. Confirm `jq` is present on the operator machine before any state work, fail with an
+   install hint if it is not, and change nothing about the remote bootstrap.
+4. Convert the four readers in one commit, each with a test that fails if it returns nothing
+   for a valid context. This is the step that carries the risk; do not split it.
+5. **Preserve the payload bytes.** The context's entries are written in the ledger's `sort -u`
+   order today, that order becomes the allow-list order, and that becomes the payload's export
+   order, pinned byte-for-byte by the eight `tests/fixtures/golden/payload/*` cases. A JSON
+   writer that emits keys in hash order changes the payload. Emit sorted, and prove it by
+   keeping those eight cases byte-identical with `cmp`.
+6. Replace `context_version: 1` with `schema_version: 1`, and drop the `@base64:` convention
+   inside the context once the value can carry a newline natively.
+7. Validate the context before payload construction and before any mutation, and reject a context with a missing expected field or an unexpected field.
+
+Acceptance: the eight payload golden cases and the nine registry record golden cases stay
+byte-identical; each converted reader has a test that fails when it returns nothing; the
+context schema and its fixtures pass `bash schemas/v1/validate.sh`.
 
 ## Mixed local/remote host list dispatch (non-urgent)
 

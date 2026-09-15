@@ -29,6 +29,7 @@ setup() {
     source lib/vars.sh
     source lib/deployments.sh
     source lib/targets.sh
+    source lib/context.sh
     source lib/runbooks.sh
 
     STUB_DIR="$(mktemp -d)"

@@ -338,10 +338,10 @@ function _cloudify_run_verify() {
 
     verify_path=$(cloudify_package_verify_path "$pkg") || return 0
 
-    # Load localhost pkg yaml so verify.sh reads config vars (remote already
-    # has them forwarded via _cloudify_pkg_remote_vars). Fill-only: a temporary
+    # Load localhost pkg yaml so verify.sh reads config vars (the remote already
+    # has them forwarded from the dispatch context). Fill-only: a temporary
     # claim ledger activates the reader's no-clobber mode, so a parent override
-    # already forwarded by the walker (constraint a) is not overwritten.
+    # already forwarded by the resolver (constraint a) is not overwritten.
     local config_dir="${CLOUDIFY_CREDENTIALS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/cloudify}"
     local _verify_ledger
     _verify_ledger=$(mktemp)

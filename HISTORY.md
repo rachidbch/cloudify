@@ -949,3 +949,100 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Accepted after review: every citation resolves in range, a sample matched its claimed subject, probes re-run rc 0, and the draft was checked against `AGENTS.md` and the `cloudify-dev` skill. No runtime file changed; G2 and G3 remain open.
 - G2 argument written: `plans/state-model-v2-non-breakage.md`, one touch line per phase, the six required proofs, the ssh host-key transport argument, the read-before-write ordering rule, per-phase rollback boundaries and the exact eight-item behavior change set that consent would cover.
 - G2 open risks recorded rather than papered over: the verify path reads values itself, the Phase 4 remote result channel has no existing implementation (strongest risk), and four pre-existing hazards (allow-list name collision, single-quote injection, the inert depth bug, `pkg_depends` blind spots) are named and left out of scope pending separate consent.
+
+### 2026-09-12 - state model v2 Phase 1 complete
+
+- Phase 1 done on branch `state-model-v2-phase1`: `schemas/v1/` (normative identity rules, four `schema_version: 1` schemas for manifest, package state, run and event, 34 fixtures, 7 migration fixtures, a local `validate.sh`), a green characterization suite, and a deliberately red proof of the duplicate-resolution defect.
+- The defect is now pinned executably: one declared name with caller, deployment, package and global values, where the payload and the registry record carry the caller value while the run snapshot carries the deployment value.
+- Gate: 13 valid fixtures accepted and 21 invalid rejected, `task test-unit` 524 ok 0 not ok, red proof failing only on the intended assertions.
+- Fixed a validator hole found in review: the bounded JSON Schema evaluator silently ignored `minProperties`, which the manifest schema uses; it now enforces it and errors on any unsupported keyword.
+- No runtime file changed: `lib/`, the router, `pkg/` and ivps are untouched.
+
+### 2026-09-12 - state model v2 Phase 2 complete
+
+- One dispatch context now feeds the payload, the registry record and the run snapshot, so the three can no longer answer differently: `lib/context.sh` resolves once and records provenance at the emit point, the payload name list and exports come from the context, and the registry writer and snapshot read that same resolution.
+- Payload text and registry records proven equivalent to the legacy walker: 8-case byte-identical payload matrix and 9-case registry record equality, each run twice, legacy versus context.
+- Debug output no longer renders the payload; it prints names, source labels and redaction status, so a secret with an unrecognised name cannot leak through `DEBUG=true`.
+- `CLOUDIFY_LEGACY_VARS=1` is the rollback switch and needs no data transformation.
+
+### 2026-09-12 - no compatibility layers (direction change)
+
+- Rachid's direction: the code base stays focused and trimmed, so v2 does not ship backward-compatibility layers. Legacy dual paths are deleted, not kept behind switches; the one exception is the one-shot migration command that moves an existing store once.
+- Withdrawn in consequence: the `CLOUDIFY_LEGACY_VARS=1` rollback switch, `_cloudify_pkg_remote_vars`, `_cloudify_registry_raw_var`, the legacy runbook path, the legacy single-ID desired-input read-through, and the compatibility clauses in `plans/state-model-v2-non-breakage.md` section 5 and section 7.1.
+- The safety net moves to byte-exact golden fixtures captured before the legacy code is deleted, plus the existing contract proofs in `tests/red/`.
+- Grounded in a real cost measured tonight: the delegate implementing slice 3B was still carrying dual-path logic and its tests, which is exactly the bloat the direction removes.
+
+### 2026-09-13 - state model v2 recovery: Phase 4 attempt discarded, one v2 path, plan re-issued
+
+- Discarded the uncommitted Phase 4A attempt (archived to `~/tmp/cloudify-phase4a-rejected-20260913/`) for a flat non-JSON state file, a forgeable remote result sentinel, dropped package-instance identity, fabricated migration provenance and events deferred past state writes.
+- Phases 1-3 kept on `state-model-v2-phase1` as a repairable baseline; no runtime file changed in this slice.
+- ADR-023 accepted (one v2 path, temporary migration bridges, no compatibility readers or switches), with the v2 command surface recorded and ADR-022's unexpressible spellings superseded.
+- Docs realigned from a compatibility period to migration-and-removal; `REDESIGN.md`, `GLOSSARY.md`, `README.md`, `ROADMAP.md` and `schemas/v1` updated; both earlier plan documents archived and every live citation repointed.
+- Schemas: `heuristic` replaces `legacy-heuristic`; `application_commit` is nullable in manifest, run and package-state with the `development_override` cross-field rule; validator green at 15 valid / 23 invalid.
+- Execution plan re-issued as `plans/state-model-v2-recovery.md`, `PLAN.md` repointed; order R0 baseline, R1 Phase 2 repair, R2 Phase 3 audit, R3 fresh Phase 4 design, then Phases 4-9, each with independent SPEC and Technical `PASS` gates.
+
+### 2026-09-13 - why the v2 plan was replaced
+
+- Cloudify was executing `plans/state-model-v2.md`. Rachid detected drift against that plan's own contract, not a schedule slip, and directed a recovery rather than more patching.
+- Two independent read-only audits confirmed the drift with `file:line` evidence: a registry writer reopening value stores after the dispatch context was built, a package state written as flat text into a file named `state.json` while its schema required JSON, a forgeable remote result sentinel, package-instance identity dropped from state keys, and migration fabricating `application_commit`.
+- Response: discard the uncommitted Phase 4 work, keep Phases 1 to 3 as a repairable baseline, archive the original plan as `plans/archived/state-model-v2-attempt1.md`, and replace it with `plans/state-model-v2-recovery.md` via `PLAN.md`.
+- The original plan's destination stands; its state-model contract did not. The replacement keeps the destination and corrects the contract.
+
+### 2026-09-14 - Phase 2 repair implemented, verified, and its exit gate still open
+
+- The second walk is gone: the resolution records each declared value's raw source form in the private dispatch context (transport `t:`/`b:`, fields 0x1f-separated because a tab-separated record shifts fields after an empty one), so the registry record and the run snapshot read it instead of reopening a value store.
+- The run snapshot resolves each package step once, in its own context, using that step's real action and phase. Context removal is now unconditional on the wait-loop success path, with `_CLOUDIFY_BG_CONTEXT` at global scope and a pre-DEBUG drain in `cleanup()`.
+- Verified: lint rc 0; full unit suite 631 ok 0 not ok; ten proofs including two mutation proofs (resolve once, destroy the sources, the record and the snapshot still report the original value); a new two-host end-to-end gate `tests/e2e/two-host-application.bats`, 4 scenarios green with later-phase scenarios skipped by name.
+- Both independent reviews of the repair returned FAIL twice. Of the re-review findings, 3 are real (the decoder's non-zero return is ignored; the validator accepts an empty `b:` body; a stale docstring), 2 come from an abandoned "no plaintext in the context" rule the tests still assert, and 1 is a symptom of a name-based cleanup drain instead of the agreed swept context directory.
+- Rule confirmed by Rachid: non-vault secrets may sit in the context; the protection is the context's location and lifetime, not keeping plaintext out. When a rule changes, the tests and comments that assert it must change in the same commit, or every reviewer re-derives the old rule.
+
+### 2026-09-14 - Phase 2 repair exit gate closed
+
+- Fixed the six re-review findings (decode fail-closed, empty `b:` rejection, docstring, the swept context directory, and the two dead-rule test rewrites), then closed the SPEC re-review's two blockers and three notes (registry `own_context` into the swept dir, e2e probe widened, carry-forward documented, stale sentence deleted, plan wording corrected).
+- Both independent reviews returned PASS with file:line evidence: SPEC on claude, Technical on codex. Full unit suite 634 ok / 0 not ok; lint rc 0.
+- The live two-host E2E caught a regression the swept directory introduced: a pre-existing `set -E` + ERR-trap fires `cleanup()` inside a subshell when `comm -12` gets unsorted input, removing the context directory mid-dispatch; the build now recreates it. E2E green (4 scenarios, 4 skipped by name, hosts torn down).
+- The `comm` unsorted-input landmine (`lib/packages.sh`, `lib/hosts.sh`) is recorded for a separate gated fix; it is out of this slice's scope.
+
+### 2026-09-14 - comm -12 unsorted-intersection fixed (separate gated slice)
+
+- Root cause: `comm -12` intersected two unsorted `find` lists, returning a wrong intersection and a non-zero exit that, under `set -E` + `trap cleanup ERR`, fired `cleanup()` mid-dispatch and wiped the context directory.
+- Fix (CRITICAL GATE, consent given): `| grep -v '^$' | sort` on both `comm` inputs in `lib/packages.sh` and `lib/hosts.sh`. Two red-first tests assert the full intersection and no sort warnings.
+- Ladder green: lint, L1 driver, L2 install with 0 sort warnings, full unit 636 ok, two-host E2E 4/4 with hosts torn down.
+
+### 2026-09-14 - platform filter and dead-line fixed (separate gated slice)
+
+- Fixed the platform-filter defect: `#<os>` now matches packages carrying that tag OR carrying no `#` tag (platform-agnostic), so `cloudify_list_default_packages` returns the 5 `@default` packages and `cloudify install` actually auto-installs them. CRITICAL GATE + consent.
+- Deleted the dead `head -1` assignment in `lib/hosts.sh`.
+- Two red-first tests; ladder green: lint, focused suites, L1 real-tree (5 default packages), L2 install, full unit 638 ok, two-host E2E 4/4.
+
+### 2026-09-14 - target resolver: a timed-out inventory probe is a timeout (gated slice)
+
+- Root cause: `ivps list` renders an unanswered node as a `<node> TIMEOUT` row and exits 0; the resolver kept only `<node>:<instance>` rows, so a timed-out node's instances vanished and it claimed "instance is not on node".
+- Fixed with Rachid's 2x2 frame (in ivps? x timed out?): (in ivps, timed out) -> Timeout for an instance target; (not in ivps, timed out) -> Error instead of a silently wrong external host; node targets exempt (metadata, no live probe); one probe retry before deciding.
+- Six red-first tests in tests/unit/targets.bats; ladder green: lint, focused resolver suites 144 ok, real resolver on the live inventory, full unit 644 ok, two-host E2E 4/4.
+
+### 2026-09-14 - plan reconciliation: full context field set moved to JSON context work
+
+- The initial full context contract was conflated with the reduced flat context. Moved its field-set checkbox from the Phase 2 repair to the state and event substrate, where the deferred JSON context work belongs. Separate package views remain an open decision.
+
+### 2026-09-14 - per-package value-view spec purged; variable scope recorded
+
+- The design and the plan carried a per-package value-view requirement that was never implemented and contradicts the global-scope feature. Replaced with the real rule (one namespace per dispatch; the named package wins over the packages it pulls in; prefix a variable with the package name to scope it), recorded as ADR-024, documented in the README, and purged from the plan.
+
+### 2026-09-14 - Phase 2 checklist reconciled
+
+- Moved the deferred context work (full field set, later-producer identity fields, state/event projections, JSON readers, validator strictness) onto the state and event substrate line. Verified and ticked the Phase 2 proof boxes against the repo's tests. Corrected the stale test count (634 to 644).
+
+### 2026-09-14 - JSON context slice: phrasings and scheduling resolved
+
+- Phase 3's audit carried two stale phrasings that presumed the JSON context; corrected. The JSON context conversion's scheduling was contradictory (a 4.1 prerequisite versus "do not block Phase 4"); resolved as the first step of the state and event substrate, nothing else depending on it.
+
+### 2026-09-14 - state model v2 Phase 3 audit complete (R2)
+
+- Gate first, per AGENTS.md: `tmp/state-model-v2-phase3-description.md` (813 lines, read-only subagent) extends the Phase 2 forwarding description to the Phase 3 surface, and `tmp/state-model-v2-phase3-non-breakage.md` argues why each edit cannot break forwarding, the shadows or a recipe. Rachid's consent (recorded in `LOGS.md`) covers `lib/state.sh`, `lib/runbooks.sh`, `lib/vars.sh`, `lib/context.sh`, `lib/registry.sh`, `lib/deployments.sh`, `lib/utils.sh`, the `migration` alias and one comment in `cloudify`, `README.md` and the coupled `tests/unit/*`, with `jq` accepted as a hard prerequisite of the state path and the `cloudify deployments` listing bug fixed here.
+- Code audit before any edit: of the 20 R2 checklist lines, 12 were already true at `6857081` and are ticked with the code and test that prove them; the rest were five edit groups plus one bug.
+- Manifest: one JSON encoder and one validator. The hand-rolled encoder, field reader, bindings parser and the optional-jq fallback are deleted; the manifest is rendered with `jq -n` and validated by `schemas/v1/lib/schema-check.jq` before the atomic rename. jq and the schema tree are checked before any deployment directory or lock is created. A binding row that is not exactly five fields, or that repeats a slot, is refused rather than silently shifted or collapsed. `application_commit: null` replaces the all-zeros sentinel, gated on `development_override: true` by the schema's own `allOf`.
+- Lifecycle and discovery: a manifest becomes `active` only after install AND verify, so `--phase install` no longer flips a half-run to active; discovery accepts only `runbooks/<application>/<flavor>/runbook.md` at exactly two levels under the runbooks root.
+- Dedup: one pure `.remote-vars` enumerator (`cloudify_vars_declared_names`) behind all six copies, with the only claim and provenance path left in `cloudify_vars_pkg_read`; one front-matter key reader; one `--target` predicate; one bare-run phase set; `cloudify vars list --json` built by jq. The two flat readers on the resolution ladder and the four legacy single-ID readers stay separate, with the reason recorded in the non-breakage artifact.
+- Deleted the dead `add_in_hosts` alias, the `cloudify_vars_set/delete/list/show` and `_cloudify_deployment_read_vars` aliases and the undocumented `migration` verb alias; `cloudify deployments` lists current manifests only, never a bare application directory.
+- Gate: lint rc 0; full unit suite 657 ok / 0 not ok (`results/phase3-a4/report.tap`); two-host E2E 4 scenarios green, 4 later-phase scenarios skipped by name, both disposable hosts torn down (`results/phase3-e2e2/report.tap`). SPEC review on claude PASS after one round; Technical review on codex PASS after five rounds, each failing round's finding fixed and re-probed.

@@ -1,0 +1,11 @@
+# cloudify registry record (observation); do not edit by hand
+status: installed
+installed_at: <ts>
+configured_at: <ts>
+removed_at: <ts>
+deployment: golden-dep
+node: cloudai
+instance:
+package: eq-ambient
+version:
+var.EQ_DECLARED: declared-value

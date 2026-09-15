@@ -6,6 +6,14 @@ set -Eeuo pipefail
 [[ -n "${_CLOUDIFY_REMOTE_LOADED:-}" ]] && return 0
 _CLOUDIFY_REMOTE_LOADED=1
 
+# The dispatch wrapper resolves value names through lib/context.sh. Source it
+# here so any caller that has lib/remote.sh also has the resolver; the router
+# sources both and the module guard makes the second load a no-op.
+if [[ -z "${_CLOUDIFY_CONTEXT_LOADED:-}" ]]; then
+    # shellcheck source=/dev/null
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/context.sh"
+fi
+
 #== REMOTING
 ##  Cloudify can execute cloudify package init scripts on remote host
 
@@ -77,115 +85,62 @@ function cloudify_remote_payload_template() {
     :
 }
 
-# Collect remote var names for the given command args with recursive dependency walk.
-# Usage: _cloudify_pkg_remote_vars install pkg1 pkg2  (or --install pkg1 pkg2)
-#
-# Thin precedence walker over the five-source helpers (lib/vars.sh). Target
-# precedence, weakest -> strongest:
-#   recipe default < global < package < deployment < caller env
-# The walker sets a claim ledger (_CLOUDIFY_VARS_LEDGER); readers are
-# non-clobbering, so the FIRST source to claim a name wins. That is why the
-# walker visits sources strongest-first (env survives because file reads never
-# overwrite a set caller value).
-#
-# I1: exports ARE the value channel — this function is always invoked with a
-# redirect, never `$()`. Output: claimed var names, one per line (deduplicated).
-function _cloudify_pkg_remote_vars() {
-    # shellcheck disable=SC2206  # intentional word-splitting of $@ for "install pkg1 pkg2"
-    local args=($@)
-    local config_dir
-    config_dir=$(cloudify_vars_config_dir)
-    local in_install=false arg
+# _cloudify_context_file_init - create THIS dispatch's context file and export
+# CLOUDIFY_CONTEXT_FILE. The PARENT calls it before the child starts (the
+# backgrounded cloudify_remote_sync, or the local install subshell) so the
+# parent already knows the path for the later registry write; the child fills
+# it. The path never travels as an argument, so it never enters ssh argv
+# (design section 5, inv 2).
+function _cloudify_context_file_init() {
+    local _ctx_dir="${CLOUDIFY_CONTEXT_DIR:-$CLOUDIFY_TMP}"
+    mkdir -p "$_ctx_dir" 2>/dev/null || true
+    CLOUDIFY_CONTEXT_FILE=$(mktemp "$_ctx_dir/cloudify-context-XXXXXX") \
+        || die "Cannot create a dispatch context file under $_ctx_dir."
+    chmod 600 "$CLOUDIFY_CONTEXT_FILE"
+    export CLOUDIFY_CONTEXT_FILE
+}
 
-    TMPFILE=$(mktemp /tmp/cloudify-pkg-vars-XXXXXX)
-    local declared_file
-    declared_file=$(mktemp /tmp/cloudify-pkg-declared-XXXXXX)
-    _CLOUDIFY_VARS_LEDGER="$TMPFILE"
-    _CLOUDIFY_VARS_DECLARED="$declared_file"
-    # Only clean up when THIS function returns. Under functrace (set -T, used by
-    # bats) a RETURN trap also fires on nested function returns, which would
-    # delete TMPFILE mid-walk and break every subsequent claim.
-    trap '[[ "${FUNCNAME[0]:-}" == "_cloudify_pkg_remote_vars" ]] && { rm -f "$TMPFILE" "$declared_file"; unset _CLOUDIFY_VARS_LEDGER _CLOUDIFY_VARS_DECLARED; }' RETURN
+# _cloudify_dispatch_vars <names-file> <action> <deployment> <phase> [pkg...]
+# Resolve one dispatch's forwarded names and export their literals into the
+# CALLING shell (inv 1: always invoked with a redirect, never `$(...)`), then
+# write the claimed names, sorted, one per line, to <names-file>. Resolution
+# itself lives in lib/context.sh; this is only the dispatch-facing wrapper.
+function _cloudify_dispatch_vars() {
+    local names_file="$1" action="$2" deployment="$3" phase="$4"
+    shift 4
+    local -a pkgs=("$@")
 
-    # -- Detect a phase that dispatches package vars (install/configure/uninstall) --
-    for arg in "${args[@]}"; do
-        [[ "$arg" == "install" || "$arg" == "--install" || "$arg" == "configure" || "$arg" == "--configure" || "$arg" == "uninstall" || "$arg" == "--uninstall" || "$arg" == "u" ]] && { in_install=true; break; }
-    done
-
-    if $in_install; then
-        # -- Collect named packages (args after install/configure that aren't flags) --
-        local -a pkgs=()
-        local saw_install=false
-        for arg in "${args[@]}"; do
-            if [[ "$arg" == "install" || "$arg" == "--install" || "$arg" == "configure" || "$arg" == "--configure" || "$arg" == "uninstall" || "$arg" == "--uninstall" || "$arg" == "u" ]]; then
-                saw_install=true; continue
-            fi
-            $saw_install && [[ "$arg" != -* ]] && pkgs+=("$arg")
-        done
-
-        # -- Deployment (application values): stronger than package/global --
-        if [[ -n "${CLOUDIFY_DEPLOYMENT:-}" ]]; then
-            cloudify_vars_deployment_read "$CLOUDIFY_DEPLOYMENT" > /dev/null
-        fi
-
-        # -- Packages: rightmost CLI arg first, parent before deps (I4) --
-        declare -A _visited_pkgs
-        _recurse_pkg_vars() {
-            local pkg="$1"
-            [[ -n "${_visited_pkgs[$pkg]:-}" ]] && return 0
-            _visited_pkgs[$pkg]=1
-
-            cloudify_vars_pkg_read "$pkg" > /dev/null
-
-            local recipe deps
-            recipe=$(cloudify_package_recipe_path "$pkg" 2>/dev/null) || return 0
-            # `|| true`: grep exits 1 when a recipe has no pkg_depends line, which
-            # under errexit+pipefail would abort the whole walk.
-            deps=$(grep '^[[:space:]]*pkg_depends ' "$recipe" 2>/dev/null \
-                | sed 's/.*pkg_depends //' | tr ' ' '\n' || true)
-            local dep
-            for dep in $deps; do
-                [[ -n "$dep" ]] && _recurse_pkg_vars "$dep"
-            done
-        }
-
-        # Right-to-left: last CLI arg = highest priority
-        local i
-        for ((i = ${#pkgs[@]} - 1; i >= 0; i--)); do
-            _recurse_pkg_vars "${pkgs[i]}"
-        done
-
-        # -- Global (weakest file source) --
-        cloudify_vars_global_read "$config_dir/remote-vars.yaml" > /dev/null
-
-        # -- Caller env (strongest): candidate set = declaration + file stores --
-        if [[ -s "$declared_file" ]]; then
-            local -a _declared_names=()
-            local _dname _dpkg
-            local _dname _dpkg _dkind
-            while IFS=$'\t' read -r _dname _dpkg _dkind; do
-                [[ -n "$_dname" ]] && _declared_names+=("$_dname")
-            done < "$declared_file"
-            if (( ${#_declared_names[@]} )); then
-                cloudify_vars_env_read "${_declared_names[@]}" > /dev/null
-            fi
-            # Genuine warn only: a declared name with no value from any source (L12)
-            while IFS=$'\t' read -r _dname _dpkg _dkind; do
-                [[ -n "$_dname" ]] || continue
-                [[ "${_dkind:-required}" == required ]] || continue
-                [[ -n "${!_dname:-}" ]] || log_warn "Var $_dname (declared in pkg $_dpkg .remote-vars) is unset in caller env — not forwarded."
-            done < "$declared_file"
-        fi
-    else
-        # Non-install (verify-only/exec): global only (I11)
-        cloudify_vars_global_read "$config_dir/remote-vars.yaml" > /dev/null
+    if [[ -z "${CLOUDIFY_CONTEXT_FILE:-}" ]]; then
+        die "_cloudify_dispatch_vars: CLOUDIFY_CONTEXT_FILE is not set."
     fi
-
-    sort -u "$TMPFILE" 2>/dev/null
+    local cand_file
+    cand_file=$(mktemp "$CLOUDIFY_TMP/cloudify-candidates-XXXXXX")
+    if (( ${#pkgs[@]} )); then
+        cloudify_context_candidate_names "${pkgs[@]}" > "$cand_file"
+    fi
+    cloudify_context_build "$action" "$deployment" "$phase" "$cand_file" \
+        "${pkgs[@]}" > /dev/null
+    # The context's resolved names ARE the payload's allow-list entries, and the
+    # context build wrote them in the walker's sorted order.
+    sed -n 's/^value\.\([^.]*\)\.source:.*$/\1/p' "$CLOUDIFY_CONTEXT_FILE" > "$names_file"
+    # L12: a declared required name no source provides is warned about, never
+    # fatal (same condition and content as the walker this replaces).
+    local name pkg kind
+    while IFS=$'\t' read -r name pkg kind; do
+        [[ -n "$name" ]] || continue
+        [[ "${kind:-required}" == required ]] || continue
+        [[ -n "${!name:-}" ]] || log_warn "Var $name (declared in pkg $pkg .remote-vars) is unset in caller env - not forwarded."
+    done < "$cand_file"
+    rm -f "$cand_file"
+    return 0
 }
 
 # By default cloudify_remote executes remotely
 function cloudify_remote() {
+    # The PARENT owns the context path: the backgrounded sync fills the file and
+    # the router records the path with the dispatch metadata, so it never
+    # reaches a command line (inv 2, design section 5).
+    _cloudify_context_file_init
     (cloudify_remote_sync "$@") &
     _CLOUDIFY_BG_PIDS+=($!)
     _CLOUDIFY_BG_HOSTS[$!]="$1"
@@ -211,11 +166,58 @@ function cloudify_remote_sync() {
         export CLOUDIFY_LOG_BASENAME
         CLOUDIFY_LOG_BASENAME="$(basename "${CLOUDIFY_LOG_FILE:-}")"
 
-        # --- Collect package remote vars from yaml files ---
-        # Run in parent shell (not $()) so export calls survive for envsubst below.
+        # --- Resolve the forwarded names and their literals (one resolution) ---
+        # Run in THIS shell (not $()) so the exports survive for envsubst below
+        # (inv 1); only the NAMES come back, through a file.
         local pkg_var_names
-        local _pkg_vars_list="${CLOUDIFY_TMP}/pkg-vars-list-$$"
-        _cloudify_pkg_remote_vars "$@" > "$_pkg_vars_list"
+        local _pkg_vars_list
+        _pkg_vars_list=$(mktemp "$CLOUDIFY_TMP/pkg-vars-list-XXXXXX")
+        # Parse the action and the package words exactly as the pre-Phase-2
+        # walker did: `$@` word-split, the action word anywhere in the list, the
+        # package words after it (flags excluded).
+        # shellcheck disable=SC2206  # intentional word-splitting of $@, as before
+        local -a _ctx_args=($@) _ctx_pkgs=()
+        local _ctx_arg _ctx_action="" _ctx_phase="verify" _ctx_deployment=""
+        for _ctx_arg in ${_ctx_args[@]+"${_ctx_args[@]}"}; do
+            case "$_ctx_arg" in
+                install | --install) _ctx_action=install; _ctx_phase=install; break ;;
+                configure | --configure) _ctx_action=configure; _ctx_phase=install; break ;;
+                uninstall | --uninstall | u) _ctx_action=uninstall; _ctx_phase=install; break ;;
+            esac
+        done
+        _ctx_action="${_ctx_action:-${_ctx_args[0]:-verify}}"
+        if [[ "$_ctx_phase" == install ]]; then
+            local _ctx_saw_action=false
+            for _ctx_arg in ${_ctx_args[@]+"${_ctx_args[@]}"}; do
+                case "$_ctx_arg" in
+                    install | --install | configure | --configure | uninstall | --uninstall | u)
+                        _ctx_saw_action=true
+                        continue
+                        ;;
+                esac
+                if $_ctx_saw_action && [[ "$_ctx_arg" != -* ]]; then
+                    _ctx_pkgs+=("$_ctx_arg")
+                fi
+            done
+            _ctx_deployment="${CLOUDIFY_DEPLOYMENT:-}"
+        fi
+        # The parent (cloudify_remote) creates the context file so it already
+        # knows the path; a direct call (cloudify exec, tests) makes its own and
+        # removes it, because no parent will ever consume that metadata.
+        local _ctx_own=""
+        if [[ -z "${CLOUDIFY_CONTEXT_FILE:-}" ]]; then
+            _cloudify_context_file_init
+            _ctx_own=1
+        fi
+        _cloudify_dispatch_vars "$_pkg_vars_list" "$_ctx_action" "$_ctx_deployment" "$_ctx_phase" \
+            "${_ctx_pkgs[@]}"
+        if [[ -n "$_ctx_own" ]]; then
+            # Remove the self-created context only when THIS function returns, so
+            # the provenance labels are still readable for the debug rendering
+            # below (the payload is already extracted by then).
+            local _ctx_own_file="$CLOUDIFY_CONTEXT_FILE"
+            trap '[[ "${FUNCNAME[0]:-}" == "cloudify_remote_sync" ]] && rm -f "${_ctx_own_file:-}"' RETURN
+        fi
         pkg_var_names=$(cat "$_pkg_vars_list")
         rm -f "$_pkg_vars_list"
         local pkg_envsubst=""
@@ -245,18 +247,19 @@ function cloudify_remote_sync() {
         # Append the command; </dev/null keeps package code off the payload's stdin.
         cloudify_remote_payload="$cloudify_remote_payload; cloudify $* </dev/null"
 
-        PKG_DEBUG "Payload to execute remotely on $host:"
-        # Passwords are replaced by asterisks before printing
-        # HACK! Passwords are recognized only if env variable ends with 'PWD', contains 'PASSWORD' or contains 'SECRET'
-        local cloudify_remote_payload_secure
-        cloudify_remote_payload_secure="${cloudify_remote_payload//PWD=\'*\'/PWD=\'***********\'}"
-        cloudify_remote_payload_secure="${cloudify_remote_payload_secure//PASSWORD*=\'*\'/PASSWORD=\'***********\'}"
-        cloudify_remote_payload_secure="${cloudify_remote_payload_secure//SECRET*=\'*\'/SECRET=\'***********\'}"
-        # ADR-011: extend masking to TOKEN and KEY (K3S_TOKEN, TS_API_KEY, etc.)
-        cloudify_remote_payload_secure="${cloudify_remote_payload_secure//TOKEN*=\'*\'/TOKEN=\'***********\'}"
-        cloudify_remote_payload_secure="${cloudify_remote_payload_secure//KEY*=\'*\'/KEY=\'***********\'}"
-
-        $DEBUG && msg "$cloudify_remote_payload_secure"
+        # Debug renders names, source labels and redaction status only (Phase 2.3,
+        # Phase 5.4): the payload text is never printed, so a secret whose name the
+        # masking heuristics do not recognise cannot leak through DEBUG=true.
+        if $DEBUG; then
+            local _dbg_context="${CLOUDIFY_CONTEXT_FILE:-}" _dbg_name _dbg_src _dbg_sec
+            msg "Payload for $host: $(printf '%s' "$pkg_var_names" | grep -c . || true) forwarded name(s)."
+            while IFS= read -r _dbg_name; do
+                [[ -n "$_dbg_name" ]] || continue
+                _dbg_src=$(cloudify_context_read "$_dbg_context" "value.${_dbg_name}.source" 2>/dev/null || true)
+                _dbg_sec=$(cloudify_context_read "$_dbg_context" "value.${_dbg_name}.secret" 2>/dev/null || true)
+                msg "  $_dbg_name source=${_dbg_src:-recipe} secret=${_dbg_sec:-false} value=$( [[ "${_dbg_sec:-false}" == "true" ]] && printf 'redacted' || printf 'shown-at-recipe' )"
+            done <<< "$pkg_var_names"
+        fi
 
         PKG_DEBUG "SSHing..."
         # The SSH session is launched in the background to parallelize hosts cloudifcation

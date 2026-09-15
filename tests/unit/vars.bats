@@ -1,10 +1,10 @@
 #!/usr/bin/env bats
-# Tests for lib/vars.sh — five-source var helpers (ADR-007/ADR-011),
+# Tests for lib/vars.sh — six-source var helpers (ADR-007/ADR-011),
 # the precedence walker, the secret resolver (R4), the reserved-name guard
 # (R5) and the deployment reader value parsing (R6).
 #
-# Note: _cloudify_pkg_remote_vars is called in the parent shell (exports must
-# survive for envsubst), so walker tests call it directly, not via `run`.
+# Note: _collect (the dispatch path) is called in the parent shell (exports
+# must survive for envsubst), so its tests call it directly, not via `run`.
 
 setup() {
     source tests/helpers/common.bash
@@ -24,9 +24,38 @@ teardown() {
     teardown_test_env
 }
 
+# _collect <action> [pkg...] - the surviving dispatch entry point. Prints the
+# forwarded names on stdout and the warnings on stderr, exactly as the retired
+# walker did. Called in the parent shell (never `$(...)`): the resolved
+# literals are exported into THIS shell.
+_collect() {
+    local action="$1" phase=verify
+    shift
+    case "$action" in
+        install | --install | configure | --configure | uninstall | --uninstall | u) phase=install ;;
+    esac
+    local names ctx_own=""
+    names=$(mktemp)
+    if [[ -z "${CLOUDIFY_CONTEXT_FILE:-}" ]]; then
+        _cloudify_context_file_init
+        ctx_own="$CLOUDIFY_CONTEXT_FILE"
+    fi
+    if [[ "$phase" == "install" ]]; then
+        _cloudify_dispatch_vars "$names" "$action" "${CLOUDIFY_DEPLOYMENT:-}" install "$@"
+    else
+        _cloudify_dispatch_vars "$names" "$action" "" verify
+    fi
+    cat "$names"
+    rm -f "$names"
+    if [[ -n "$ctx_own" ]]; then
+        rm -f "$ctx_own"
+        unset CLOUDIFY_CONTEXT_FILE
+    fi
+}
+
 # --- Function surface ---
 
-@test "five-source helpers are defined" {
+@test "six-source helpers are defined" {
     [ "$(type -t cloudify_vars_global_read)" = "function" ]
     [ "$(type -t cloudify_vars_global_write)" = "function" ]
     [ "$(type -t cloudify_vars_pkg_read)" = "function" ]
@@ -34,19 +63,12 @@ teardown() {
     [ "$(type -t cloudify_vars_deployment_read)" = "function" ]
     [ "$(type -t cloudify_vars_deployment_write)" = "function" ]
     [ "$(type -t cloudify_vars_env_read)" = "function" ]
-    [ "$(type -t cloudify_vars_state_read)" = "function" ]
 }
 
 @test "module guard prevents double-sourcing lib/vars.sh" {
     source lib/vars.sh
     source lib/vars.sh
     [ "$(type -t cloudify_vars_global_read)" = "function" ]
-}
-
-@test "cloudify_vars_state_read is a read-only no-op until branch 7" {
-    run cloudify_vars_state_read
-    [ "$status" -eq 0 ]
-    [ -z "$output" ]
 }
 
 # --- Resolver (R4) ---
@@ -155,10 +177,44 @@ EOF
     [ "$DECLARED_VAR" = "fromenv" ]
 }
 
+@test "declared names: one enumerator pins the three shapes, the trim and the order" {
+    rubric "cloudify_vars_declared_names is the single .remote-vars parser"
+    mkdir -p "$CLOUDIFY_DIR/pkg/demo"
+    {
+        printf '# a comment\n\nREQUIRED_ONE\nOPTIONAL_ONE=\nDEFAULTED_ONE=mirror-value\n'
+        printf 'DEFAULTED_EQUALS=a=b\nlowercase_ignored\nNOT A NAME\n'
+        printf '  REQUIRED_TWO  \n'
+    } > "$CLOUDIFY_DIR/pkg/demo/.remote-vars"
+    run cloudify_vars_declared_names demo
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s\n' "${lines[@]}" | cut -f1)" = "$(printf '%s\n' REQUIRED_ONE OPTIONAL_ONE DEFAULTED_ONE DEFAULTED_EQUALS REQUIRED_TWO)" ]
+    [ "$(printf '%s\n' "${lines[@]}" | cut -f2)" = "$(printf '%s\n' required optional defaulted defaulted required)" ]
+    [ "$(printf '%s\n' "${lines[@]}" | cut -f3 | sed -n 4p)" = "a=b" ]
+
+    # No declarations is empty output, never an error.
+    mkdir -p "$CLOUDIFY_DIR/pkg/empty"
+    run cloudify_vars_declared_names empty
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run cloudify_vars_declared_names missing
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "declared names: the context candidate mirror matches the enumerator" {
+    rubric "_cloudify_context_emit_declared reads the one enumerator"
+    source lib/context.sh
+    mkdir -p "$CLOUDIFY_DIR/pkg/demo"
+    printf 'ALPHA\nBETA=\nGAMMA=x\n' > "$CLOUDIFY_DIR/pkg/demo/.remote-vars"
+    run _cloudify_context_emit_declared demo
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'ALPHA\tdemo\trequired\nBETA\tdemo\toptional\nGAMMA\tdemo\tdefaulted')" ]
+}
+
 # --- deployment source ---
 
 @test "cloudify_vars_deployment_write then read round-trips" {
-    cloudify_deployment_create testdep
+    export CLOUDIFY_APPLICATION=varsapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=testdep
     export CLOUDIFY_DEPLOYMENT=testdep
     cloudify_vars_deployment_write DEP_VAR "dep-value"
     unset DEP_VAR
@@ -167,8 +223,9 @@ EOF
 }
 
 @test "deployment read preserves single quotes, double quotes, backslashes and spaces (R6)" {
-    cloudify_deployment_create testdep
-    cat > "$CLOUDIFY_DEPLOYMENTS_DIR/testdep/config.yaml" <<'EOF'
+    export CLOUDIFY_APPLICATION=varsapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=testdep
+    mkdir -p "$(dirname "$(_cloudify_deployment_config)")"
+    cat > "$(_cloudify_deployment_config)" <<'EOF'
 QUOTED: it's a "test" \ backslash
 SPACED:   lots   of   spaces
 EOF
@@ -179,12 +236,12 @@ EOF
 }
 
 @test "multi-line write is stored as @base64: and round-trips (L4/R6)" {
-    cloudify_deployment_create testdep
+    export CLOUDIFY_APPLICATION=varsapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=testdep
     export CLOUDIFY_DEPLOYMENT=testdep
     local pem
     pem=$(printf -- '-----BEGIN KEY-----\nabc\n-----END KEY-----')
     cloudify_vars_deployment_write PEM_VAR "$pem"
-    run grep '^PEM_VAR:' "$CLOUDIFY_DEPLOYMENTS_DIR/testdep/config.yaml"
+    run grep '^PEM_VAR:' "$(_cloudify_deployment_config)"
     [[ "$output" == *'@base64:'* ]]
     unset PEM_VAR
     cloudify_vars_deployment_read testdep > /dev/null
@@ -192,10 +249,11 @@ EOF
 }
 
 @test "deployment read resolves @base64: multi-line values (R6)" {
-    cloudify_deployment_create testdep
+    export CLOUDIFY_APPLICATION=varsapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=testdep
     local encoded
     encoded=$(printf 'line1\nline2' | base64 -w0)
-    printf 'MULTI: @base64:%s\n' "$encoded" > "$CLOUDIFY_DEPLOYMENTS_DIR/testdep/config.yaml"
+    mkdir -p "$(dirname "$(_cloudify_deployment_config)")"
+    printf 'MULTI: @base64:%s\n' "$encoded" > "$(_cloudify_deployment_config)"
     unset MULTI
     cloudify_vars_deployment_read testdep > /dev/null
     [ "$MULTI" = "$(printf 'line1\nline2')" ]
@@ -233,8 +291,9 @@ EOF
 }
 
 @test "reserved name in the deployment store is skipped" {
-    cloudify_deployment_create testdep
-    printf 'CLOUDIFY_UPDATE_DELAY: 999\n' > "$CLOUDIFY_DEPLOYMENTS_DIR/testdep/config.yaml"
+    export CLOUDIFY_APPLICATION=varsapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=testdep
+    mkdir -p "$(dirname "$(_cloudify_deployment_config)")"
+    printf 'CLOUDIFY_UPDATE_DELAY: 999\n' > "$(_cloudify_deployment_config)"
     export CLOUDIFY_UPDATE_DELAY=30
     cloudify_vars_deployment_read testdep > /dev/null 2>&1
     [ "$CLOUDIFY_UPDATE_DELAY" = "30" ]
@@ -248,7 +307,7 @@ EOF
         subrubric "$name"
         printf '%s: evil\n' "$name" > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
         export "$name=good"
-        _cloudify_pkg_remote_vars install walk > "$CLOUDIFY_TMP/names" 2> "$CLOUDIFY_TMP/warn"
+        _collect install walk > "$CLOUDIFY_TMP/names" 2> "$CLOUDIFY_TMP/warn"
         step "value untouched: $name=${!name}"
         [ "${!name}" = "good" ]
         grep -q "$name is framework-owned" "$CLOUDIFY_TMP/warn"
@@ -267,11 +326,12 @@ make_walker_fixture() {
     make_walker_fixture
     printf 'WALK_VAR: fromglobal\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     cloudify_vars_pkg_write walk WALK_VAR frompkg
-    cloudify_deployment_create dep
-    printf 'WALK_VAR: fromdep\n' > "$CLOUDIFY_DEPLOYMENTS_DIR/dep/config.yaml"
+    export CLOUDIFY_APPLICATION=varsapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=dep
+    mkdir -p "$(dirname "$(_cloudify_deployment_config)")"
+    printf 'WALK_VAR: fromdep\n' > "$(_cloudify_deployment_config)"
     export CLOUDIFY_DEPLOYMENT=dep
     export WALK_VAR=fromenv
-    _cloudify_pkg_remote_vars install walk > "$CLOUDIFY_TMP/names" 2>/dev/null
+    _collect install walk > "$CLOUDIFY_TMP/names" 2>/dev/null
     [ "$WALK_VAR" = "fromenv" ]
     grep -qx WALK_VAR "$CLOUDIFY_TMP/names"
 }
@@ -280,11 +340,12 @@ make_walker_fixture() {
     make_walker_fixture
     printf 'WALK_VAR: fromglobal\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     cloudify_vars_pkg_write walk WALK_VAR frompkg
-    cloudify_deployment_create dep
-    printf 'WALK_VAR: fromdep\n' > "$CLOUDIFY_DEPLOYMENTS_DIR/dep/config.yaml"
+    export CLOUDIFY_APPLICATION=varsapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=dep
+    mkdir -p "$(dirname "$(_cloudify_deployment_config)")"
+    printf 'WALK_VAR: fromdep\n' > "$(_cloudify_deployment_config)"
     export CLOUDIFY_DEPLOYMENT=dep
     unset WALK_VAR
-    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    _collect install walk > /dev/null 2>&1
     [ "$WALK_VAR" = "fromdep" ]
 }
 
@@ -293,7 +354,7 @@ make_walker_fixture() {
     printf 'WALK_VAR: fromglobal\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     cloudify_vars_pkg_write walk WALK_VAR frompkg
     unset WALK_VAR
-    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    _collect install walk > /dev/null 2>&1
     [ "$WALK_VAR" = "frompkg" ]
 }
 
@@ -301,14 +362,14 @@ make_walker_fixture() {
     make_walker_fixture
     printf 'WALK_VAR: fromglobal\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     unset WALK_VAR
-    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    _collect install walk > /dev/null 2>&1
     [ "$WALK_VAR" = "fromglobal" ]
 }
 
 @test "walker: no source leaves the recipe default in charge" {
     make_walker_fixture
     unset WALK_VAR
-    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    _collect install walk > /dev/null 2>&1
     [ -z "${WALK_VAR:-}" ]
 }
 
@@ -316,7 +377,7 @@ make_walker_fixture() {
     mkdir -p "$CLOUDIFY_DIR/pkg/walk"
     cloudify_vars_pkg_write walk OTHER_VAR fromyaml
     export OTHER_VAR=fromenv
-    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    _collect install walk > /dev/null 2>&1
     [ "$OTHER_VAR" = "fromenv" ]
 }
 
@@ -327,7 +388,7 @@ make_walker_fixture() {
     cloudify_vars_pkg_write pkga SHARED froma
     cloudify_vars_pkg_write pkgb SHARED fromb
     unset SHARED
-    _cloudify_pkg_remote_vars install pkga pkgb > /dev/null 2>&1
+    _collect install pkga pkgb > /dev/null 2>&1
     [ "$SHARED" = "fromb" ]
 }
 
@@ -338,14 +399,14 @@ make_walker_fixture() {
     cloudify_vars_pkg_write pkga SHARED froma
     cloudify_vars_pkg_write pkgb SHARED fromb
     unset SHARED
-    _cloudify_pkg_remote_vars install pkgb pkga > /dev/null 2>&1
+    _collect install pkgb pkga > /dev/null 2>&1
     [ "$SHARED" = "froma" ]
 }
 
 @test "walker: an ambient var no source knows is not forwarded (R2)" {
     mkdir -p "$CLOUDIFY_DIR/pkg/walk"
     export AMBIENT_SECRET=leak
-    _cloudify_pkg_remote_vars install walk > "$CLOUDIFY_TMP/names" 2>/dev/null
+    _collect install walk > "$CLOUDIFY_TMP/names" 2>/dev/null
     ! grep -qx AMBIENT_SECRET "$CLOUDIFY_TMP/names"
 }
 
@@ -353,7 +414,7 @@ make_walker_fixture() {
     make_walker_fixture
     cloudify_vars_pkg_write walk WALK_VAR frompkg
     unset WALK_VAR
-    _cloudify_pkg_remote_vars install walk > /dev/null 2> "$CLOUDIFY_TMP/err"
+    _collect install walk > /dev/null 2> "$CLOUDIFY_TMP/err"
     [ "$WALK_VAR" = "frompkg" ]
     ! grep -q "unset in caller env" "$CLOUDIFY_TMP/err"
 }
@@ -361,7 +422,7 @@ make_walker_fixture() {
 @test "walker: genuine warn when nothing provides the declared name (L12)" {
     make_walker_fixture
     unset WALK_VAR
-    _cloudify_pkg_remote_vars install walk > /dev/null 2> "$CLOUDIFY_TMP/err"
+    _collect install walk > /dev/null 2> "$CLOUDIFY_TMP/err"
     grep -q "unset in caller env" "$CLOUDIFY_TMP/err"
 }
 
@@ -370,7 +431,7 @@ make_walker_fixture() {
     printf 'GLOBAL_ONLY: g\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     cloudify_vars_pkg_write walk PKG_ONLY p
     unset GLOBAL_ONLY PKG_ONLY
-    _cloudify_pkg_remote_vars verify walk > "$CLOUDIFY_TMP/names" 2>/dev/null
+    _collect verify walk > "$CLOUDIFY_TMP/names" 2>/dev/null
     [ "$GLOBAL_ONLY" = "g" ]
     [ -z "${PKG_ONLY:-}" ]
     ! grep -qx PKG_ONLY "$CLOUDIFY_TMP/names"
@@ -380,7 +441,7 @@ make_walker_fixture() {
     mkdir -p "$CLOUDIFY_DIR/pkg/walk"
     printf 'DEBUG: true\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
     export DEBUG=false
-    _cloudify_pkg_remote_vars install walk > "$CLOUDIFY_TMP/names" 2>/dev/null
+    _collect install walk > "$CLOUDIFY_TMP/names" 2>/dev/null
     [ "$DEBUG" = "false" ]
     ! grep -qx DEBUG "$CLOUDIFY_TMP/names"
 }
@@ -391,7 +452,7 @@ make_walker_fixture() {
     encoded=$(printf 's3cr3t' | base64 -w0)
     cloudify_vars_pkg_write walk SECRET_REF "@base64:${encoded}"
     unset SECRET_REF
-    _cloudify_pkg_remote_vars install walk > /dev/null 2>&1
+    _collect install walk > /dev/null 2>&1
     [ "$SECRET_REF" = "s3cr3t" ]
 }
 
@@ -401,13 +462,13 @@ make_walker_fixture() {
     # backend, so a read-time die is only reachable from a hand-written file.
     printf 'BAD_REF: @nope:whatever\n' > "$(cloudify_vars_pkg_file walk)"
     unset BAD_REF
-    run _cloudify_pkg_remote_vars install walk
+    run _collect install walk
     [ "$status" -ne 0 ]
 }
 
 # --- local install path parity (R1) ---
 
-@test "local install path runs the walker: pkg yaml reaches the recipe (R1)" {
+@test "local install path runs the dispatch: pkg yaml reaches the recipe (R1)" {
     local home
     home=$(mktemp -d)
     local cfg="$CLOUDIFY_TMP/lp-config"

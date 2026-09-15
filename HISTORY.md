@@ -1100,3 +1100,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - The requested single SPEC review returned `FAIL` with six must-fix contract findings: dangling run IDs, package-wide overprojection of dispatch values, unsettled commit and development-override semantics, no Phase 4 commit-drift gate, an unscheduled destructive claim override, and unspecified manifest last-ID updates.
 - The requested single Technical review returned `FAIL` with six must-fix findings: framed transport conflicts with byte-exact payload goldens, local commit does not prove remote code, byte-exact stdout parsing has no bounded algorithm, static optional dependencies can fail before an unused branch, repeated dependency results lack stable identity, and immutable event creation names no exact primitive.
 - No finding was fixed or re-reviewed, and the formal independent review gate remains open.
+
+### 2026-09-15 - review round two: one must-fix each; revision 4
+
+- Fresh independent reviews (pi subagents; claude/codex backends unavailable, exit 1) returned SPEC FAIL with one must-fix (missing install decision for state present with null applied and no claim, the failed-first-install shape) plus five notes, and Technical FAIL with one must-fix (migration lacked a secret-classification rule for old `var.*` values) plus five notes.
+- Revision 4 resolves all eleven findings: failed-first-install retry branch; migration value classification per the schemas README mapping with fail-closed reporting; event-schema `allOf` amendment named in 4.1; claim projection via the one `.remote-vars` enumerator at commit time; development-override drift lockout; schema/README description updates in 4.1; external-host suspension release note; stale pointers and revision header.

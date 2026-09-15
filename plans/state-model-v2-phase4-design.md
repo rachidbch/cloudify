@@ -1,12 +1,12 @@
 # Phase 4 design: physical package state, events, claims, and safe results
 
-Status: draft, revision 2, after the one-pass SPEC and Technical reviews.
+Status: draft, revision 4, after two independent fresh-context review rounds.
 
-Revision 2 resolves the six SPEC and six Technical must-fix findings recorded on 2026-09-15.
+Revision 2 resolved the first round's twelve findings; revision 3 recorded the five consents and the marked-line result channel; revision 4 resolves the second round's one SPEC and one Technical must-fix finding.
 
-This document authorizes no code.
+Rachid's consent and the five contract decisions were given on 2026-09-15 and are recorded in `LOGS.md`.
 
-It needs Rachid's consent, and the supersessions listed in Gate conditions, before implementation starts.
+This document authorizes no code until the fresh reviews return `PASS`.
 
 ## Outcome
 
@@ -167,7 +167,8 @@ Package and package instance never enter the lock key.
 
 An external SSH alias has no durable key in Phase 4.
 
-A state-bearing package command targeting one fails before remote execution until Phase 5 accepts its SSH host key.
+A state-bearing package command targeting an external SSH alias fails before remote execution until Phase 5 accepts its SSH host key.
+This suspends direct package commands to plain SSH aliases for the Phase 4-to-5 window; the 4.2 slice ships the README and release note saying inventory targets are the state-bearing surface meanwhile.
 
 ### Package instances
 
@@ -240,7 +241,8 @@ Tighten `schemas/v1/package-state.schema.json` so:
 - `last_attempt.event_id` is a non-null event ID whenever `last_attempt` is an object;
 - `health.event_id` is always a non-null event ID;
 - every claim has a non-null `event_id`;
-- a missing state has conceptual revision 0, but the first persisted state has revision 1.
+- a missing state has conceptual revision 0, but the first persisted state has revision 1;
+- update the schema and `schemas/v1/README.md` descriptions so a null applied commit reads as the uniform development-override rule (a proved old-registry migration, a direct package command, or a development-override application run); text only, no constraint change.
 
 A new or migrated state with no verification uses `health.status: unknown`, `checked_at: null`, and the event ID that created the state.
 
@@ -257,6 +259,7 @@ The migrated-observation fixture gets its migration event ID, keeps `application
 Extend `schemas/v1/event.schema.json`:
 
 - add an optional `development_override` boolean, with an `allOf` rule: `application_commit` null with an application tuple present requires `development_override: true`;
+- amend the existing `allOf` rule that forces a string commit whenever an application tuple is present, so the rule above is reachable (tuple present means flavor and deployment are strings; `application_commit` is a string, or null with `development_override: true`);
 - add one explicit registry-migration shape instead of encoding migration as install.
 
 A normal package event has `origin: null`.
@@ -300,7 +303,8 @@ Two projections come from one parsed context so they can never classify the same
 
 The claim projection implements REDESIGN's "every configuration-affecting declared value" as the values the package itself declares.
 
-It needs no second walk: declaration names come from the enumeration the context build already performed, and values come from the context.
+The claim projection needs no second value walk: declaration names come from re-running the one `.remote-vars` enumerator (`cloudify_vars_declared_names`) at commit time and intersecting it with the context's resolved names, and values come from the context.
+That is a declaration read, never a value-source walk, so ADR-024 and the one-resolution rule hold.
 
 An unrelated dispatch value, such as one package's password while a shared dependency installs, never enters another package's claim, so compatible deployments can share that dependency.
 
@@ -644,12 +648,13 @@ They never print either value, reference locator, or digest.
 Claim gating is split by certainty:
 
 - Requested top-level packages are checked under the host lock before recipe code, because their decision decides whether anything runs at all.
-- Dependencies are checked when their result commits, after execution. A dependency that turns out incompatible is marked degraded with its event, and no claim is added; the mutation already happened and is never claimed as rolled back.
+- Dependencies are checked when their result commits, after execution. A dependency that turns out incompatible is marked degraded with its event, and no claim is added; the mutation already happened and is never claimed as rolled back. This is the same post-execution degraded pattern REDESIGN already establishes for a runtime dependency absent from the precomputed graph; the fail-before-mutation rule applies to the subjects that were claim-checked before recipe code.
 - A runtime-optional dependency that never executes is never gated, so a lexical `pkg_depends` line inside an untaken branch cannot fail an unrelated dispatch.
 
 Install decisions for checked subjects under the host lock are:
 
 - Missing state: run install and add the claim only after success.
+- State present with `applied: null` and no claim (what a failed first install leaves behind): run install and add the claim only after success.
 - Same active claim and no explicit difference: skip install and run verify.
 - Compatible state without this claim: add the claim without recipe mutation, then verify when the phase requires it.
 - Explicit input differing from applied or any active claim: fail before recipe code and direct the operator to reconfigure or upgrade.
@@ -674,6 +679,8 @@ Changed defaults do not affect an existing claim, verify, or teardown.
 ### Commit-drift gate
 
 Until Phase 7 proves pinned remote execution, `app reconfigure` and `app teardown` fail loudly before any step unless the current checkout's proved commit equals the manifest's `application_commit` and the tree is clean.
+
+A deployment whose manifest commit is null (a development-override run) has no commit to equal: reconfigure and teardown fail with a dedicated message stating the deployment is unreproducible until a proved run recreates it.
 
 This is REDESIGN's commit-drift rule applied at Phase 4, not a new policy.
 
@@ -742,6 +749,10 @@ For each inventory-node or instance record with `status: installed` or `configur
 - old source path and its sha256 digest.
 
 It never infers application commit, run ID, step ID, health, target binding, or historical event sequence.
+
+Each migrated value is classified by the same mapping rules `schemas/v1/README.md` already fixes for one stored value: a `@<backend>:` value becomes an explicit secret reference; a heuristic secret name becomes a redacted literal with its sha256 digest; any other value stays a non-secret literal.
+Migration never writes plaintext into state, and a record whose classification cannot be derived is reported, not migrated.
+A record with no usable observation timestamp is also reported, not migrated, because `applied.at` is required and is never fabricated.
 
 It ignores persisted `output.*` fields.
 
@@ -869,6 +880,7 @@ Write one red test at a time in this order.
 - A dispatch value declared only by another package never enters a dependency's claim, and two deployments with different such values still share the dependency.
 - Conflicting explicit input fails before recipe code and prints no secret material.
 - Existing-claim install skips install and verifies.
+- A retry after a failed first install (state present, applied null, no claim) runs install and adds the claim only after success.
 - Failed first install adds no claim.
 - Failed reconfigure preserves applied and claim values.
 - A dependency found incompatible at commit time degrades the dispatch and adds no claim.
@@ -883,6 +895,8 @@ Write one red test at a time in this order.
 - A failed attempt never seeds another phase.
 - Migration dry-run writes nothing.
 - Migration apply writes event first, then revision 1 state with null commit, override true, and no claims.
+- A migrated record with a secret reference, and one with a heuristic secret name, classify per the `schemas/v1/README.md` mapping; plaintext never reaches state.
+- A record without a usable timestamp is reported, not migrated.
 - Repeating identical migration is a no-op.
 - Conflicting migration fails without exposing values.
 - External and removed records are reported but not migrated.
@@ -909,7 +923,7 @@ No package-state writer lands before step 5 is complete and green.
 1. Add the `.package-instance` contract and tests.
 2. Resolve instance identity from the already-built context.
 3. Add inventory host key, host root, state path, and host-lock path helpers.
-4. Reject external durable state.
+4. Reject external durable state and ship the README or release note on the temporary external-host suspension.
 
 ### 4.3 Host lock and result channel
 

@@ -1,8 +1,8 @@
 # Phase 4 design: physical package state, events, claims, and safe results
 
-Status: draft, revision 5, after three independent fresh-context review rounds.
+Status: draft, revision 6, after four independent fresh-context review rounds.
 
-Revision 2 resolved round one's twelve findings; revision 3 recorded the five consents and the marked-line result channel; revision 4 resolved round two's findings; revision 5 resolves round three's two SPEC and two Technical must-fix findings and their notes.
+Revisions 2 to 5 resolved the earlier rounds' findings; revision 6 resolves round four's shared must-fix - the development-override application dispatch had two opposite applied-write outcomes - plus that round's notes.
 
 Rachid's consent and the five contract decisions were given on 2026-09-15 and are recorded in `LOGS.md`.
 
@@ -170,6 +170,7 @@ An external SSH alias has no durable key in Phase 4.
 
 A state-bearing package command targeting an external SSH alias fails before remote execution until Phase 5 accepts its SSH host key.
 This suspends direct package commands to plain SSH aliases for the Phase 4-to-5 window; the 4.2 slice ships the README and release note saying inventory targets are the state-bearing surface meanwhile.
+The local machine is inventory node `local`: a state-bearing local install requires `ivps node path local` to resolve and fails with that named error when the inventory lacks it.
 
 ### Package instances
 
@@ -213,13 +214,13 @@ The remote child Cloudify process reports, inside its result body:
 
 Rules for a newly written successful `applied` object:
 
-- An application dispatch requires `checkout_commit` equal to the proved clean local commit recorded in its manifest and `checkout_dirty: false`.
-  The applied commit is that shared 40-hex value.
-- A direct package dispatch records `checkout_commit` when the remote tree is clean.
-- A dirty or unidentified remote tree, local or remote, never fabricates a commit: the applied object records `application_commit: null` with `development_override: true`.
-- An executed-commit mismatch on an application dispatch (`checkout_commit` differs from the manifest commit, or the remote tree is dirty) degrades the dispatch before any applied write: the event records the executed commit from the body, `applied` is left unchanged, and the run is marked degraded.
+- An application dispatch whose manifest records a proved commit requires `checkout_commit` equal to it and `checkout_dirty: false`; the applied commit is that shared 40-hex value.
+- An executed-code mismatch on such a dispatch (`checkout_commit` differs, or the remote tree is dirty) degrades the dispatch before any applied write: the event records the executed commit from the body, `applied` is left unchanged, and the run is marked degraded.
   The remote mutation already happened and is never claimed as rolled back.
-- Registry migration alone writes `application_commit: null` through the same `development_override` rule below, with its migration origin carried by its event.
+- An application dispatch whose manifest commit is null (a development-override run) has no pinned expectation: the executed-code check is vacuous for it and never degrades on mismatch.
+  Its applied object records `checkout_commit` when the remote tree is clean, and `application_commit: null` with `development_override: true` when the remote tree is dirty or unknown.
+- A direct package dispatch records `checkout_commit` when the remote tree is clean, and `application_commit: null` with `development_override: true` when it is dirty or unknown.
+- Registry migration writes `application_commit: null` with `development_override: true`, with its migration origin carried by its event.
 
 The package-state `applied` object therefore gains a `development_override` boolean in step 4.1, with one schema rule mirroring the manifest: `application_commit` null requires `development_override: true`.
 
@@ -254,7 +255,7 @@ Update every package-state valid fixture to use non-null event IDs.
 
 Add invalid fixtures for null event IDs in applied, last attempt, health, and claims, and for a null applied commit without `development_override: true`.
 
-The migrated-observation fixture gets its migration event ID, keeps `application_commit: null`, and sets `development_override: true`.
+The migrated-observation fixture gets its migration event ID, keeps `application_commit: null`, sets `development_override: true`, and is re-keyed to an `ivps:` host, since external-host records are reported but never migrated in Phase 4.
 
 ### Events
 
@@ -321,7 +322,7 @@ Produce these package-state fields:
 - Literal secret: `source_form: null`, `reference: null`, the existing sha256 digest, and `redacted: true`.
 - Every value carries the context's `secret` and `declaration` fields.
 
-The record projection populates `last_attempt.requested` for every result, `applied.values` after a successful install or reconfigure, a new claim's `values` restricted to the claim projection, and the claim-projection subset of a successfully reconfigured sole claim.
+The record projection populates `last_attempt.requested` for every result, `applied.values` after a successful install or reconfigure, a new claim's `values` restricted to the claim projection, and, on a successful reconfigure, the claim-projection subset of the reconfiguring claim's values; other claims on the same subject are untouched.
 
 Produce these event fields:
 
@@ -512,6 +513,7 @@ __CLOUDIFY_RESULT_V1__ 1 <base64-body-without-wrap>
 - The emission lives inside the child process, so the payload template, the eight byte-exact payload goldens, recipe stdin, and recipe stdout are untouched.
 - The marked line flows through the existing chain like any other line: the operator sees it live and both logs keep it.
 - The operator-side worker appends one pass-through capture stage to the received stream: a line-oriented filter that prints every line onward unchanged and additionally copies lines whose body after the host prefix starts with the marker into a private capture file.
+  The stage's read loop keeps a final line that lacks a trailing newline (the `IFS= read -r line || [[ -n $line ]]` idiom), so the stream's last bytes pass through unchanged.
   No stage may exit early or close the pipe: an early-exiting stage SIGPIPEs the chain and kills live output.
 - When the SSH channel closes, the worker validates the capture: exactly one marker line, protocol version 1, well-formed unwrapped base64, valid JSON under the result contract, at most 1 MiB of body, and the staleness rule on `finished_at`.
 - Zero marked lines, or more than one, marks the dispatch degraded; nothing is committed from an unvalidated body.
@@ -575,10 +577,13 @@ It is not a security boundary against a hostile remote root.
 
 ## Executed-code check
 
-Before the first result commit, the worker compares the body's `checkout_commit` and `checkout_dirty` against the dispatch's proved local commit.
+Before the first result commit, the worker applies the executed-code check:
 
-- Application dispatch: mismatch or dirty remote tree means the recipe that ran is not the manifest's commit. The dispatch is degraded, the event records the executed commit from the body, and no `applied` write or claim happens for any result in that body. `last_attempt` and health still record the attempt.
-- Direct dispatch: the body's checkout facts are recorded per Commit provenance; a dirty tree yields `application_commit: null` with `development_override: true`.
+- Application dispatch with a proved manifest commit: `checkout_commit` must equal it and `checkout_dirty` must be false.
+  A mismatch or dirty remote tree means the recipe that ran is not the manifest's commit: the dispatch is degraded, the event records the executed commit from the body, and no `applied` write or claim happens for any result in that body.
+  `last_attempt` and health still record the attempt.
+- Application dispatch with a null manifest commit: there is nothing to compare against, so the check never degrades; the applied write follows the development-override rule above.
+- Direct dispatch: the body's checkout facts are recorded per Commit provenance.
 
 The worker never writes the local HEAD as the applied commit when the body proves a different one.
 
@@ -858,6 +863,7 @@ Write one red test at a time in this order.
 - A non-default instance without recipe support fails before mutation.
 - Node and instance targets produce distinct durable keys and state roots.
 - Two aliases of one inventory host produce one host lock.
+- A bare local install records state under `ivps node path local` and fails with a named error when the inventory lacks `local`.
 - An external target fails before remote execution.
 
 ### Locking and result channel
@@ -874,11 +880,13 @@ Write one red test at a time in this order.
 - Recipe success, return failure, `exit`, dependency failure, and verify failure each produce one accurate result line emitted at the child's own exit.
 - A missing, duplicated, malformed, overlarge, or stale result line marks the dispatch degraded and commits nothing.
 - The `@default` pre-install block and a first-contact `cloudify init` internal install emit no results and no second marker; the dispatch reports exactly one marker and only requested-tree results.
+- A stream whose final line has no trailing newline passes through unchanged.
 - The capture tap passes every non-marker line through in order and never terminates the stream early.
 - A result whose membership is absent from the graph prevents every commit from that body.
 - A missing requested top-level result fails; an extra repeated membership commits as an ordered attempt.
 - A successful dependency result commits even when a later top-level result fails.
-- An executed-code mismatch on an application dispatch records the executed commit in its event, writes no applied, and degrades the dispatch.
+- An application dispatch with a proved manifest commit and a mismatched or dirty remote checkout degrades, records the executed commit in its event, and leaves `applied` unchanged.
+- A development-override application run records the remote commit when the remote tree is clean, and null with the override when it is dirty; the executed-code check never degrades it.
 - A partial multi-package commit keeps earlier event/state pairs valid and the manifest degraded with the last committed event ID.
 
 ### Claims, phases, provenance, and migration
@@ -916,7 +924,7 @@ No implementation test may weaken the byte-exact payload goldens or a fragile-su
 ### 4.1 State and event substrate
 
 1. Add red schema fixtures and projection tests.
-2. Add the flat context declaration-origin and package-instance fields under the fragile-surface gate.
+2. Add the flat context declaration-origin and package-instance fields under the fragile-surface gate, including the `cloudify_context_validate` accepted-shape extension (today it dies on any line outside its known shapes).
 3. Generalize the one jq schema validator.
 4. Add the shared ID helper and writer-identity helper.
 5. Add immutable event rendering and hard-link creation.
@@ -953,7 +961,7 @@ The result-line format was consented on 2026-09-15; the streamed-logging chain i
 
 ### 4.5 Claims and adoption
 
-1. Add pre-mutation compatibility checks for requested top-level packages under the host lock.
+1. Add pre-mutation compatibility checks for requested top-level packages under the host lock; this slice starts only after the REDESIGN subject-scope qualifier alignment has landed.
 2. Add commit-time compatibility checks for dependency results.
 3. Add claim-only and verify-only execution-plan decisions.
 4. Add claims only after compatible success or adoption.
@@ -989,7 +997,7 @@ Consent was given by Rachid on 2026-09-15, recorded in `LOGS.md`, for:
 The design gate (R3) is complete only after:
 
 - fresh independent SPEC and Technical reviews return `PASS` with file and line evidence on this revision;
-- the reconfigure value-ladder insert (`applied` ranked between deployment inputs and application defaults, as REDESIGN's phase-specific sources mandate) is named as a fragile visit-order contract change and gets Rachid's go before step 4.4 lands, with the pinning-test updates named in that slice;
+- the reconfigure value-ladder insert (`applied` ranked between deployment inputs and application defaults, as REDESIGN's phase-specific sources mandate) and the `applied` source label on seeded context values are fragile contract changes; they get Rachid's go before step 4.4 lands, with the pinning-test updates named in that slice;
 - the next consented REDESIGN alignment carries the subject-scope qualifier for the fail-before-mutation claim sentence, matching the dependency commit-time gate (note, round three).
 - the alignment that depends on those reviews alone (none currently open) lands with the reviews' evidence.
 

@@ -524,6 +524,22 @@ EOF
     [ "$status" -ne 0 ]
 }
 
+@test "identity: a runbook.md one level too deep is not canonical" {
+    rubric "exactly runbooks/<app>/<flavor>/runbook.md, never deeper"
+    local root="$CLOUDIFY_TMP/deep"
+    _make_runbook "$root/app/default/extra/runbook.md" <<'EOF'
+---
+deployment: deep-id
+targets: guest
+---
+EOF
+    run cloudify_runbook_identity "$root/app/default/extra/runbook.md" "$root"
+    [ "$status" -ne 0 ]
+    run cloudify_runbook_find deep-id "$root"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No runbook found for deployment 'deep-id'"* ]]
+}
+
 @test "meta: deployment: front-matter is optional, CLOUDIFY_DEPLOYMENT fills it" {
     rubric "one rule for every runbook path"
     local f="$CLOUDIFY_DIR/runbooks/myapp/default/runbook.md"

@@ -224,6 +224,28 @@ _reference_check() {
     [[ "$output" == *"unexpected: extra"* ]]
 }
 
+@test "manifest: an external binding and a backslash address round-trip" {
+    rubric "null node/instance keep their fields, and no byte is re-escaped"
+    local commit="0123456789abcdef0123456789abcdef01234567"
+    local b="$CLOUDIFY_TMP/mixed.tsv"
+    printf 'ext\tssh.example.com\t\t\tssh.example.com\nback\ta\\b\tcloudai\tinst\tinst\n' > "$b"
+    cloudify_manifest_write app default prod applying "$commit" false "$b"
+
+    run cloudify_manifest_bindings app default prod
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'ext\tssh.example.com\t\t\tssh.example.com\nback\ta\\b\tcloudai\tinst\tinst')" ]
+
+    run cloudify_manifest_describe app default prod
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"binding ext: ssh.example.com (node=<none> instance=<none> ssh=ssh.example.com)"* ]]
+    [[ "$output" == *"binding back: a\\b (node=cloudai instance=inst ssh=inst)"* ]]
+
+    # A status update re-reads the bindings and must not shift or re-escape them.
+    cloudify_manifest_update_status app default prod active "$commit" false
+    run cloudify_manifest_bindings app default prod
+    [ "$output" = "$(printf 'ext\tssh.example.com\t\t\tssh.example.com\nback\ta\\b\tcloudai\tinst\tinst')" ]
+}
+
 @test "manifest: list and describe expose identity, bindings and replayability, never a value" {
     rubric "cloudify_state_list_manifests + cloudify_manifest_describe"
     local commit="0123456789abcdef0123456789abcdef01234567"

@@ -230,15 +230,22 @@ function _cloudify_runbook_resolver_value() {
     printf '%s' "$value"
 }
 
-# cloudify_runbook_identity <path> - "application\tflavor" derived from the
-# canonical path, or rc 1 when the path is not canonical. Dies (fail closed) on a
-# path component the identity rules reject.
+# cloudify_runbook_identity <path> [<runbooks-root>] - "application\tflavor" for
+# a canonical `runbooks/<application>/<flavor>/runbook.md`, or rc 1. The path
+# must sit exactly two directory levels under the runbooks root (a deeper path is
+# not canonical) and must be under the root at all. Dies (fail closed) on a path
+# component the identity rules reject.
 function cloudify_runbook_identity() {
-    local path="${1:-}" app flavor
+    local path="${1:-}" root="${2:-}" rel app flavor
     [[ -n "$path" && "$path" == */runbook.md ]] || return 1
-    [[ "$path" == */*/*/* ]] || return 1
-    flavor="${path%/*}"; flavor="${flavor##*/}"
-    app="${path%/*}"; app="${app%/*}"; app="${app##*/}"
+    [[ -n "$root" ]] || root=$(_cloudify_runbook_root)
+    [[ -n "$root" ]] || return 1
+    rel="${path#"$root"/}"
+    [[ "$rel" != "$path" ]] || return 1
+    # Exactly <application>/<flavor>/runbook.md: two directories, never three.
+    [[ "$rel" == */*/* && "$rel" != */*/*/* ]] || return 1
+    app="${rel%%/*}"
+    flavor="${rel#*/}"; flavor="${flavor%%/*}"
     [[ -n "$app" && -n "$flavor" ]] || return 1
     _cloudify_identity_check_component "runbook application" "$app"
     _cloudify_identity_check_component "runbook flavor" "$flavor"
@@ -826,9 +833,14 @@ function _cloudify_deployment_manifest_prepare() {
     _cloudify_runbook_bindings_file "$bindings_file" "$bound"
 
     if cloudify_manifest_exists "$app" "$flavor" "$name"; then
+        local recorded_rows
+        recorded_rows=$(cloudify_manifest_bindings "$app" "$flavor" "$name") || {
+            rm -f "$bindings_file"
+            die "manifest for '$app/$flavor --name $name': cannot read the recorded bindings."
+        }
         while IFS=$'\t' read -r old_slot old_addr _ _ _; do
             [[ -n "$old_slot" ]] && recorded["$old_slot"]="$old_addr"
-        done < <(cloudify_manifest_bindings "$app" "$flavor" "$name")
+        done <<< "$recorded_rows"
         local b name_only
         for b in ${cli_targets[@]+"${cli_targets[@]}"}; do
             name_only="${b%%=*}"
@@ -945,7 +957,7 @@ function cloudify_runbook_find() {
     local f dep
     while IFS= read -r f; do
         # Only a canonical runbooks/<app>/<flavor>/runbook.md is discoverable.
-        cloudify_runbook_identity "$f" >/dev/null 2>&1 || continue
+        cloudify_runbook_identity "$f" "$root" >/dev/null 2>&1 || continue
         dep=$(_cloudify_runbook_deployment_of "$f")
         [[ "$dep" == "$id" ]] && matches+=("$f")
     done < <(find "$root" -type f -name 'runbook.md' | sort)
@@ -1172,7 +1184,11 @@ function cloudify_deployment_run() {
     # Recorded bindings: reconfigure, verify and teardown reuse them instead of
     # re-prompting. A slot the caller bound explicitly keeps the caller's value.
     if ((manifest)) && cloudify_manifest_exists "$app" "$flavor" "$name"; then
-        local rslot raddr supplied
+        local rslot raddr recorded
+        recorded=$(cloudify_manifest_bindings "$app" "$flavor" "$name") || {
+            rm -f "$bindings_file"
+            die "manifest for '$app/$flavor --name $name': cannot read the recorded bindings."
+        }
         while IFS=$'\t' read -r rslot raddr _ _ _; do
             [[ -n "$rslot" ]] || continue
             supplied=0
@@ -1181,7 +1197,7 @@ function cloudify_deployment_run() {
             done
             ((supplied)) && continue
             target_bindings+=("$rslot=$raddr")
-        done < <(cloudify_manifest_bindings "$app" "$flavor" "$name")
+        done <<< "$recorded"
     fi
 
     local -a bind_args=()

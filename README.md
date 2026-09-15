@@ -191,7 +191,7 @@ CLOUDIFY_HERMES_API_URL: "https://hermes.example.ts.net/v1"
 CLOUDIFY_HERMES_API_KEY: "sk-..."
 ```
 
-The per-package yaml is one source among five, not the single source of truth.
+The per-package yaml is one source among six, not the single source of truth.
 Missing files are silently ignored (vars stay empty).
 
 **Var sources and precedence.** Six sources feed a var, weakest to strongest:
@@ -600,7 +600,7 @@ Parallel-safe by construction: values never touch a shared file, so two
 concurrent installs of the same package with different env values each forward
 their own — no last-write-wins race. The classic per-pkg yaml
 (`~/.config/cloudify/pkgs/<pkg>.yaml`) and the global `remote-vars.yaml` remain
-supported; the full five-source ladder is documented under "Package
+supported; the full six-source ladder is documented under "Package
 Configuration" above.
 
 #### Variable scope: one dispatch, one namespace

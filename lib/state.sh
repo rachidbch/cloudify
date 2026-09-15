@@ -223,15 +223,16 @@ function _cloudify_manifest_field_file() {
 
 # _cloudify_manifest_parse_bindings <file> - one
 # `slot<TAB>address<TAB>node<TAB>instance<TAB>ssh_host` per binding, read with jq.
-# The schema already guarantees every binding carries the four keys, so a null
-# node, instance or ssh_host prints empty.
+# `join` (not `@tsv`) keeps the bytes exact: the schema forbids tabs, newlines and
+# backslashes in these tokens, and `@tsv` would escape a backslash. A null node,
+# instance or ssh_host prints empty.
 function _cloudify_manifest_parse_bindings() {
     local file="${1:-}"
     [[ -f "$file" ]] || return 1
     jq -r '.bindings | to_entries[]
         | [.key, .value.address,
            (.value.node // ""), (.value.instance // ""), (.value.ssh_host // "")]
-        | @tsv' "$file" 2>/dev/null
+        | join("\t")' "$file" 2>/dev/null
 }
 
 # _cloudify_manifest_render ... - print the manifest on stdout with jq, the one
@@ -356,6 +357,8 @@ function cloudify_manifest_write() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" status="${4:-}"
     local commit="${5:-}" dev="${6:-}" bindings="${7:-}"
     local dir manifest lock
+    command -v jq >/dev/null 2>&1 ||
+        die "manifest: 'jq' is required to write deployment state (install it: apt-get install -y jq)."
     [[ -n "${app}${flavor}${name}" ]] || die "manifest: application, flavor and deployment name are all required."
     [[ "$dev" == "true" || "$dev" == "false" ]] ||
         die "manifest: development_override '$dev' is not a boolean."
@@ -419,7 +422,7 @@ function cloudify_manifest_bindings() {
 # values). Reveals an interrupted run: `applying` is printed with its meaning.
 function cloudify_manifest_describe() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" file status dev created commit
-    local slot address node instance ssh_host
+    local line slot address node instance ssh_host rest recorded=""
     file=$(cloudify_state_manifest_file "$app" "$flavor" "$name")
     [[ -f "$file" ]] || return 1
     status=$(_cloudify_manifest_field_file "$file" status)
@@ -437,11 +440,20 @@ function cloudify_manifest_describe() {
     else
         printf 'replayable: yes\n'
     fi
-    while IFS=$'\t' read -r slot address node instance ssh_host; do
-        [[ -n "$slot" ]] || continue
+    # Parse the row by hand: `read` with IFS=$'\t' collapses consecutive tabs, so
+    # an external binding (node and instance null) would shift ssh_host into a
+    # neighbouring field.
+    recorded=$(cloudify_manifest_bindings "$app" "$flavor" "$name") || recorded=""
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        slot="${line%%$'\t'*}"; rest="${line#*$'\t'}"
+        address="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+        node="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+        instance="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+        ssh_host="$rest"
         printf 'binding %s: %s (node=%s instance=%s ssh=%s)\n' \
             "$slot" "$address" "${node:-<none>}" "${instance:-<none>}" "${ssh_host:-<none>}"
-    done < <(cloudify_manifest_bindings "$app" "$flavor" "$name")
+    done <<< "$recorded"
     if [[ "$status" == "applying" ]]; then
         printf '%s\n' 'state: applying - a run may be in flight, or it was interrupted before it could finish; classifying a stale run arrives with the run and event records (Phase 6)'
     fi

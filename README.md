@@ -460,7 +460,7 @@ task setup-container    # Install bats + libraries in container (one-time)
 task test-unit          # Sync files + run unit tests in container
 task test-integration   # Run SSH-based integration tests from localhost
 task test               # Run all tests (unit + integration)
-task lint               # Run shellcheck in container
+task lint               # Run shellcheck locally
 ```
 
 ### Writing a Package Recipe

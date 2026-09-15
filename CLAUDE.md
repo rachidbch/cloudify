@@ -53,8 +53,8 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 - **Shadow commands**: `lib/shadows/*.sh` override `sudo`, `apt-get`, `add-apt-repository`, `git` with wrappers for password injection, idempotency, auth. Recipes call bare commands — shadows handle the rest.
 - **Targets** (`lib/targets.sh`): resolve an `--on` token to (node, instance, ssh host); ivps is the inventory provider; validation only, never provisioning.
 - **Registry** (`lib/registry.sh`): observation records per (deployment, target, package) at `$(ivps node path <node>)/[<instance>/]deployments/<id>/pkgs/<pkg>/config.yaml`, cloudify-owned fallback bucket when no node resolves; written after a successful dispatch, uninstall marks `removed`, `deployment delete` sweeps. Observation only, never a precedence source (ADR-020).
-- **Runbooks** (`lib/runbooks.sh`): repo-tracked Markdown plan (`runbooks/<app>/<flavor>.md`: front-matter `deployment` + `targets`, `bash step=<type>` fences). `cloudify deployment run <id>` binds targets, preflights required vars, runs the steps (a `human-gate` step pauses), writes a run snapshot; `deployment replay` re-runs from one. See `runbooks/README.md`.
-- **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Var sources, weakest to strongest: recipe default < `remote-vars.yaml` (global) < `pkgs/<pkg>.yaml` (package) < `deployments/<id>/config.yaml` (deployment) < caller env; a name forwards only if a `.remote-vars` declaration or a file store knows it. Values may be secret references (`@backend:locator`, `@@` escapes). Loaded by `lib/vars.sh` (+ `lib/secrets.sh` backends); `lib/credentials.sh` loads only system credentials.
+- **Runbooks** (`lib/runbooks.sh`): repo-tracked Markdown plan (`runbooks/<app>/<flavor>/runbook.md`, the only discoverable shape: front-matter `deployment` + `targets`, `bash step=<type>` fences). `cloudify deployment run <id>` binds targets, preflights required vars, runs the steps (a `human-gate` step pauses), writes a run snapshot; `deployment replay` re-runs from one. See `runbooks/README.md`.
+- **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Var sources, weakest to strongest: recipe default < `remote-vars.yaml` (global) < `pkgs/<pkg>.yaml` (package) < `apps/<app>/<flavor>/defaults.yaml` (application defaults) < `deployments/<app>/<flavor>/<name>/values.yaml` (deployment) < caller env; a name forwards only if a `.remote-vars` declaration or a file store knows it. Values may be secret references (`@backend:locator`, `@@` escapes). Loaded by `lib/vars.sh` (+ `lib/secrets.sh` backends); `lib/credentials.sh` loads only system credentials.
 - **Remote payload**: `declare -f` extracts template body as literal text, `envsubst` with explicit allow-list substitutes only listed vars. Single-quoted `$VAR` references resolve on the remote side.
 - **Install guards**: stateful packages use `CLOUDIFY_FORCE`/`CLOUDIFY_CLEAR_DATA` convention. See "Install Guards" in README.md.
 - **Verification**: optional `pkg/<name>/verify.sh` defines `pkg_verify()`, sourced in a clean subshell by `_cloudify_run_verify` after every package (deep verify, incl. deps). `--no-verify` skips, `--verify`/`cloudify verify` is verify-only. See "Verification" in README.md.
@@ -73,7 +73,7 @@ TDD cycle. All tests run inside an Incus container (`cloudai:cloudify`), never o
 task setup-container   # One-time: install bats + libraries
 task test-unit         # Push + unit tests
 task test              # Push + all tests (unit + integration)
-task lint              # Push + shellcheck
+task lint              # shellcheck on this host
 ```
 
 **Push before tests.** Integration tests SSH into the container, pull from GitHub, run there.

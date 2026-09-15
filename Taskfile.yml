@@ -44,6 +44,12 @@ tasks:
       - task: sync
       - ivps exec {{.CONTAINER}} -- bash -c 'cd {{.REPO_DIR}} && bats --recursive tests/unit/'
 
+  gate:
+    desc: Fragile-surface invariant tests (value propagation + shadows) - see docs/FRAGILE.md
+    cmds:
+      - task: sync
+      - ivps exec {{.CONTAINER}} -- bash -c 'cd {{.REPO_DIR}} && bats tests/unit/golden-fixtures.bats tests/unit/vars.bats tests/unit/context.bats tests/unit/context-raw-form.bats tests/unit/context-wiring.bats tests/unit/remote-vars.bats tests/unit/remote-stdin.bats tests/unit/shadow.bats tests/unit/shadow-apt.bats tests/unit/git-shadow.bats'
+
   test-integration:
     desc: Run integration tests from localhost
     cmds:

@@ -6,7 +6,7 @@ This design supersedes the implementation contract in ADR-021.
 
 Concept definitions live in `GLOSSARY.md`.
 
-Implementation lives in `plans/state-model-v2-recovery.md` through the `PLAN.md` pointer and remains behind the project CRITICAL GATE.
+Implementation lives in `plans/state-model-v2-recovery.md` through the `PLAN.md` pointer and remains behind the project fragile-surface rule (`AGENTS.md`, `docs/FRAGILE.md`).
 
 ## Decision in one breath
 

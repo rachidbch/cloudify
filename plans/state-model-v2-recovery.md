@@ -85,7 +85,7 @@ No implementation may weaken the design or the plan silently. A required change 
 - A temporary migration reader must be the sole caller of the old format and must have a deletion task in this plan.
 - Deleting a migration reader or its fixtures must leave the surviving gates (especially `bash schemas/v1/validate.sh`) passing; name the replacement gate in the same task.
 - No code commit while a SPEC or Technical reviewer has actionable feedback on that slice.
-- Any slice that changes `lib/`, the `cloudify` router, `lib/shadows/` or `lib/shadow.sh` needs the project CRITICAL GATE first, in this order: a read-only description subagent writes the artifact explaining the bash mechanism at risk, then a plan states explicitly why the change cannot break it, then Rachid gives explicit consent, then the consent is recorded in `LOGS.md`. No tick may be claimed before all four.
+- Fragile surface (`lib/remote.sh`, `lib/vars.sh`, `lib/context.sh`, `lib/shadows/`, `lib/shadow.sh`): read `docs/FRAGILE.md` before editing any of them, name the invariants touched in the plan or commit, run `task gate`, and keep the byte-exact goldens unchanged. A contract change (visit order, format, ownership) or a pinning-test edit needs Rachid's go first. Everything else is plain TDD.
 - Plan-level reviews are bounded: stop after two consecutive rounds with no must-fix finding, log anything smaller as an implementation checklist item, and let the phase gate settle it on real code. Per-phase reviews of a real diff are the primary gate; reviewing plan prose is not.
 - `git status --short` is clean at every committed boundary.
 
@@ -292,13 +292,12 @@ Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-s
 
 Outcome: one physical installation is represented once, every mutation has an immutable event, and one deployment cannot break another.
 
-### CRITICAL GATE before any `lib/` edit (4.0)
+### Fragile-surface gate (4.0)
 
-This phase touches the remote result transport and the host lock in `lib/remote.sh`, plus the writers in `lib/state.sh`, so the gate applies in full.
+Slices here touch `lib/remote.sh` (framed-result transport, host lock) and `lib/context.sh` (the roadmapped JSON context conversion) - both on the fragile surface.
 
-- [ ] Extend the forwarding description artifact (R1.0) to cover the framed-result transport and the lock, citing the forwarding invariants it must not break.
-- [ ] State explicitly why the framed result and the host lock cannot break payload forwarding, the shadows or any recipe.
-- [ ] Obtain Rachid's explicit consent and record it in `LOGS.md`.
+- [ ] Apply the fragile-surface rule: name the invariants touched, run `task gate`, goldens unchanged.
+- [ ] The framed-result format and the context format are contract changes: Rachid's go before either lands.
 
 ### State and event substrate (4.1)
 
@@ -388,13 +387,11 @@ Not planned work for this phase: the JSON dispatch-context contract. It is roadm
 
 Outcome: classification is enforceable, no new artifact copies plaintext secrets or automatic outputs, and external-host state has durable identity.
 
-### CRITICAL GATE before any `lib/` edit (5.0)
+### Fragile-surface gate (5.0)
 
-This phase touches secret classification, the outputs channel and the SSH transport, so the gate applies in full.
+Slices here touch `lib/remote.sh` (SSH transport, `CLOUDIFY_OUTPUTS_FILE` channel) and the secret classification in `lib/vars.sh`/`lib/context.sh` - all on the fragile surface.
 
-- [ ] Extend the forwarding description artifact (R1.0) to cover secret classification, the `CLOUDIFY_OUTPUTS_FILE` channel and the SSH option set, citing the shadow and forwarding invariants at risk.
-- [ ] State explicitly why the secret, output and SSH changes cannot break payload forwarding, password injection or recipe auth.
-- [ ] Obtain Rachid's explicit consent and record it in `LOGS.md`.
+- [ ] Apply the fragile-surface rule: name the invariants touched, run `task gate`, goldens unchanged. No contract change foreseen; one only if the outputs channel format moves.
 
 - [ ] Validate explicit package and application secret declarations through one parser.
 - [ ] Keep `heuristic` as defense in depth and never call it legacy.
@@ -418,13 +415,11 @@ This phase touches secret classification, the outputs channel and the SSH transp
 
 Outcome: runs are durable, interruptions and event-state gaps are reportable, and events remain audit rather than replay commands.
 
-### CRITICAL GATE before any `lib/` edit (6.0)
+### Fragile-surface gate (6.0)
 
-This phase touches the run writer and the dispatch epilogue in `lib/runbooks.sh`, so the gate applies in full.
+The run writer and replay reader live in `lib/runbooks.sh` (off the surface), but the dispatch epilogue owns context cleanup, which is on it.
 
-- [ ] Extend the forwarding description artifact (R1.0) to cover the run snapshot writer, its replay reader and the dispatch epilogue that owns context cleanup.
-- [ ] State explicitly why the run and epilogue changes cannot break payload forwarding, the shadows or any recipe.
-- [ ] Obtain Rachid's explicit consent and record it in `LOGS.md`.
+- [ ] Apply the fragile-surface rule for the epilogue and context-lifecycle slices: name the invariants touched, run `task gate`, goldens unchanged.
 
 - [ ] Write a schema-valid run record with `running` before the first selected step.
 - [ ] Finish it as `succeeded`, `failed` or `interrupted` with writer and boot identity.
@@ -445,13 +440,11 @@ This phase touches the run writer and the dispatch epilogue in `lib/runbooks.sh`
 
 Outcome: teardown releases only owned resources and today's branch tip is never presented as yesterday's application.
 
-### CRITICAL GATE before any `lib/` edit (7.0)
+### Fragile-surface gate (7.0)
 
-This phase touches commit pinning and the teardown path across `lib/runbooks.sh`, `lib/state.sh` and `lib/remote.sh`, so the gate applies in full.
+Commit pinning and teardown cross `lib/runbooks.sh` and `lib/state.sh` (off the surface) and re-resolve targets through `lib/remote.sh`/`lib/targets.sh` (remote on the surface).
 
-- [ ] Extend the forwarding description artifact (R1.0) to cover commit resolution, remote execution and the teardown dispatch.
-- [ ] State explicitly why pinning and teardown cannot break payload forwarding, the shadows or any recipe.
-- [ ] Obtain Rachid's explicit consent and record it in `LOGS.md`.
+- [ ] Apply the fragile-surface rule for the remote-touching slices: name the invariants touched, run `task gate`, goldens unchanged.
 
 - [ ] Require a clean commit for production application runs.
 - [ ] Keep an explicit development override marked unreproducible.
@@ -474,13 +467,9 @@ This phase touches commit pinning and the teardown path across `lib/runbooks.sh`
 
 Outcome: operators inspect state through commands, all known old data is migrated once, and no migration or old-format code remains.
 
-### CRITICAL GATE before any `lib/` edit (8.0)
+### Deletion gate (8.0)
 
-This phase deletes the old readers and migration bridges, so the gate applies in full.
-
-- [ ] Extend the forwarding description artifact (R1.0) to cover every function and file about to be deleted, so the deletion is provably complete rather than hopeful.
-- [ ] State explicitly why each deletion cannot break payload forwarding, the shadows or any recipe.
-- [ ] Obtain Rachid's explicit consent and record it in `LOGS.md`.
+Nothing here is on the fragile surface: the phase deletes migration readers and bridges. Plain TDD plus the standing deletion rule - every deletion leaves `bash schemas/v1/validate.sh` and the unit suite green, with the replacement gate named in the same task.
 
 - [ ] Add `cloudify deployments` from current manifests.
 - [ ] Add `cloudify deployment show <application>[/<flavor>] --name <name>`.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lib/targets.sh — `--on` target grammar: node / instance / plain host
 # Operator-side and validation-only: resolving a target never provisions.
-# Grammar (each token must exist; the syntax asserts the kind):
+# Grammar (each target host must exist; the syntax asserts the kind):
 #   X    -> kind discovered; X both a node and an instance = error (fail closed)
 #   X:   -> X must be an ivps node
 #   X:Y  -> X must be an ivps node, Y an instance on X
@@ -116,36 +116,36 @@ function _cloudify_target_default_node() {
     printf '%s\n' "$val"
 }
 
-# _cloudify_target_resolve <token> — print "<node>\t<instance>\t<ssh_host>"
+# _cloudify_target_resolve <target_host> — print "<node>\t<instance>\t<ssh_host>"
 # Empty fields are allowed (a plain host has no node/instance). ssh_host is the
 # instance name for an instance target, the node name for a node target, and
 # `localhost` for node `local`. Validation dies here (fail closed).
 function _cloudify_target_resolve() {
-    local token="${1:-}"
-    [[ -n "$token" ]] || die "Cloudify usage error: empty target."
+    local target_host="${1:-}"
+    [[ -n "$target_host" ]] || die "Cloudify usage error: empty target host."
 
     # localhost is the local ivps node — a node like any other, not a fallback
-    if [[ "$token" == "localhost" ]]; then
+    if [[ "$target_host" == "localhost" ]]; then
         printf 'local\t\tlocalhost\n'
         return 0
     fi
 
     # A lone colon is a usage error, not a host name
-    [[ "$token" == ":" ]] && die "Target ':': missing node and instance."
+    [[ "$target_host" == ":" ]] && die "Target host ':': missing node and instance."
 
-    # Explicit forms. The pattern keeps an IPv6-looking token (which has several
+    # Explicit forms. The pattern keeps an IPv6-looking value (which has several
     # colons, or non-name characters) on the bare-name path (ROADMAP: non-urgent).
     local node_part="" instance_part=""
-    if [[ "$token" =~ ^([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]*)$ ]]; then
+    if [[ "$target_host" =~ ^([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]*)$ ]]; then
         node_part="${BASH_REMATCH[1]}"
         instance_part="${BASH_REMATCH[2]}"
-    elif [[ "$token" =~ ^:([A-Za-z0-9_.-]+)$ ]]; then
+    elif [[ "$target_host" =~ ^:([A-Za-z0-9_.-]+)$ ]]; then
         node_part=""
         instance_part="${BASH_REMATCH[1]}"
     fi
 
     if [[ -n "$node_part" || -n "$instance_part" ]]; then
-        command -v ivps >/dev/null 2>&1 || die "Target '$token': ivps is required to resolve '<node>:' and '<node>:<instance>' targets but is not installed."
+        command -v ivps >/dev/null 2>&1 || die "Target host '$target_host': ivps is required to resolve '<node>:' and '<node>:<instance>' targets but is not installed."
         # `localhost` names node `local`, consistently with the bare form
         [[ "$node_part" == "localhost" ]] && node_part=local
 
@@ -153,10 +153,10 @@ function _cloudify_target_resolve() {
         if [[ -z "$node_part" ]]; then
             node=$(_cloudify_target_active_node)
             [[ -n "$node" ]] || node=$(_cloudify_target_default_node)
-            [[ -n "$node" ]] || die "Target '$token': no active node. Set one with: eval \"\$(cloudify node use <node>)\" or export CLOUDIFY_NODE=<node>."
-            _cloudify_target_node_exists "$node" || die "Target '$token': active node '$node' (CLOUDIFY_NODE/IVPS_DEFAULT_NODE) not found in the ivps inventory."
+            [[ -n "$node" ]] || die "Target host '$target_host': no active node. Set one with: eval \"\$(cloudify node use <node>)\" or export CLOUDIFY_NODE=<node>."
+            _cloudify_target_node_exists "$node" || die "Target host '$target_host': active node '$node' (CLOUDIFY_NODE/IVPS_DEFAULT_NODE) not found in the ivps inventory."
         else
-            _cloudify_target_node_exists "$node" || die "Target '$token': node '$node' not found in the ivps inventory."
+            _cloudify_target_node_exists "$node" || die "Target host '$target_host': node '$node' not found in the ivps inventory."
         fi
 
         # X: / localhost: — node target
@@ -173,32 +173,32 @@ function _cloudify_target_resolve() {
         inst_nodes=$(_cloudify_target_instance_nodes "$instance_part" || true)
         if ! grep -qxF "$node" <<< "$inst_nodes"; then
             if _cloudify_target_node_timed_out "$node"; then
-                die "Target '$token': node '$node' did not answer the ivps inventory probe (timed out); '$instance_part' could not be confirmed. Retry when the node responds."
+                die "Target host '$target_host': node '$node' did not answer the ivps inventory probe (timed out); '$instance_part' could not be confirmed. Retry when the node responds."
             fi
-            die "Target '$token': instance '$instance_part' is not on node '$node'."
+            die "Target host '$target_host': instance '$instance_part' is not on node '$node'."
         fi
         printf '%s\t%s\t%s\n' "$node" "$instance_part" "$instance_part"
         return 0
     fi
 
-    # Bare token: discover the kind (existence is always required)
+    # Bare form: discover the kind (existence is always required)
     _cloudify_target_inventory_settle
     local is_node=false inst_nodes=""
-    _cloudify_target_node_exists "$token" && is_node=true
-    inst_nodes=$(_cloudify_target_instance_nodes "$token" || true)
+    _cloudify_target_node_exists "$target_host" && is_node=true
+    inst_nodes=$(_cloudify_target_instance_nodes "$target_host" || true)
 
     if $is_node && [[ -n "$inst_nodes" ]]; then
-        die "Target '$token' is ambiguous: it is both an ivps node and an instance. Use '$token:' for the node or '<node>:$token' for the instance."
+        die "Target host '$target_host' is ambiguous: it is both an ivps node and an instance. Use '$target_host:' for the node or '<node>:$target_host' for the instance."
     fi
     if $is_node; then
-        printf '%s\t\t%s\n' "$token" "$(_cloudify_target_node_ssh_host "$token")"
+        printf '%s\t\t%s\n' "$target_host" "$(_cloudify_target_node_ssh_host "$target_host")"
         return 0
     fi
     if [[ -n "$inst_nodes" ]]; then
         if [[ "$(wc -l <<< "$inst_nodes")" -gt 1 ]]; then
-            die "Target '$token' is ambiguous: instance '$token' exists on several nodes ($(tr '\n' ' ' <<< "$inst_nodes")). Use '<node>:$token'."
+            die "Target host '$target_host' is ambiguous: instance '$target_host' exists on several nodes ($(tr '\n' ' ' <<< "$inst_nodes")). Use '<node>:$target_host'."
         fi
-        printf '%s\t%s\t%s\n' "$inst_nodes" "$token" "$token"
+        printf '%s\t%s\t%s\n' "$inst_nodes" "$target_host" "$target_host"
         return 0
     fi
 
@@ -208,11 +208,11 @@ function _cloudify_target_resolve() {
     local timed_out
     timed_out=$(_cloudify_target_timed_out_nodes)
     if [[ -n "$timed_out" ]]; then
-        die "Target '$token': not found in the ivps inventory, and node(s) $(tr '\n' ' ' <<< "$timed_out")did not answer the inventory probe (timed out); '$token' may be an instance on one of them. Retry, or address it as <node>:$token."
+        die "Target host '$target_host': not found in the ivps inventory, and node(s) $(tr '\n' ' ' <<< "$timed_out")did not answer the inventory probe (timed out); '$target_host' may be an instance on one of them. Retry, or address it as <node>:$target_host."
     fi
 
     # Plain host (back-compat): not in the ivps inventory, ssh validates reachability
-    printf '\t\t%s\n' "$token"
+    printf '\t\t%s\n' "$target_host"
 }
 
 # cloudify_node_use <node> — print the export command (can't set the parent shell env)

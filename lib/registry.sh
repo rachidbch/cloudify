@@ -394,7 +394,7 @@ function _cloudify_registry_record_bg() {
     for pkg in ${_CLOUDIFY_BG_PKGS[$pid]:-}; do
         [[ -n "$pkg" ]] || continue
         if ! ( cloudify_registry_record_apply "$action" "$CLOUDIFY_DEPLOYMENT" "$node" "$instance" "$ssh_host" "$pkg" "$context" ); then
-            log_warn "Registry: no record written for '$pkg' on target '${ssh_host:-unaddressable}'."
+            log_warn "Registry: no record written for '$pkg' on target host '${ssh_host:-unaddressable}'."
         fi
     done
     # The parent owns the context file: remove it after the write (design

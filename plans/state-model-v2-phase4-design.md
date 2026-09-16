@@ -1,6 +1,8 @@
 # Phase 4 design: per-node deployment capture, guard, and streamed results
 
-Status: draft, revision 3 of the redone design, under ADR-026.
+Status: draft, revision 4 of the redone design, under ADR-026.
+
+Revision 3 resolved round one's findings; revision 4 resolves round two's findings and aligns the remaining stale authority text (default-name rules, the fragile-surface pin, the compatibility sentence, adoption) to ADR-026, so no reviewer can read a refused geometry back as authority.
 
 Revision 1 separated an installation record from the deployment capture; revision 2 collapses them into the single deployment tree, replaces the marked-line channel with filtered result lines, makes package version a required reported fact, reports framework work truthfully, and deletes the decision-refinement machinery.
 
@@ -24,7 +26,7 @@ This design derives from:
 
 - ADR-026 (deployment-first per-node capture) - the geometry decision;
 - ADR-021 point 8 (immutable ivps ids, now work) and ADR-022, ADR-023, ADR-024, ADR-025 where ADR-026 did not supersede them;
-- REDESIGN.md as aligned to ADR-026 and amended by this document: the capture holds the package version while the application commit lives at the deployment level; the guard does not compare versions (an amendment to the compatibility sentence); deployment names have no `default` fallback (an amendment to the naming rules);
+- REDESIGN.md as aligned to ADR-026 and amended by this document: the capture holds the package version while the application commit lives at the deployment level; the guard does not compare versions (an amendment to the compatibility sentence); deployment names have no `default` fallback (an amendment to the naming rules); an unknown result line is a dispatch-wide refusal (an amendment to the per-subject rule);
 - `schemas/v1/` (reshaped by step 4.1 under this design);
 - the flat dispatch-context contract in `lib/context.sh`;
 - the Phase 4 requirements in `plans/state-model-v2-recovery.md` (its Phase 4 checklist is redone with this design).
@@ -95,7 +97,7 @@ The software decides how many runtimes exist; cloudify decides only what it conf
 - `last_attempt`: the most recent attempt by this deployment - phase, requested value metadata, outcome, time, event ID;
 - `health`: this deployment's last verification observation - status, time, event ID.
 
-The version contract: every recipe may define `pkg_version()`, echoing the installed version of the package; a recipe that genuinely has no version echoes `none`, and the capture stores `version: null`; a recipe with neither hook nor declaration, or whose reporter fails, yields `version=unknown` on its result line and the attempt is recorded as failed.
+The version contract: every recipe may define `pkg_version()`, echoing the installed version of the package; the framework queries it after every package attempt, whatever the phase - verify and teardown lines carry it too. A recipe that genuinely has no version echoes `none`, and the capture stores `version: null`; a recipe with neither hook nor declaration, or whose reporter fails, yields `version=unknown` on its result line and the attempt is recorded as failed.
 
 Versions and instance keys are space-free and restricted to the visible charset `[A-Za-z0-9._+~:-]`; anything else reports `unknown`.
 
@@ -127,7 +129,9 @@ Matching decides what a run with no name does:
 
 An explicit name never matches: it always means that deployment.
 
-Same name with changed desired inputs is one deployment whose inputs updated in place; the change is applied by reconfigure semantics.
+Same name with changed desired inputs is one deployment whose inputs updated in place; the name is identity, not an application mechanism.
+
+Re-running install while explicit inputs differ from `applied` still fails and directs the operator to reconfigure - REDESIGN's rule stands unchanged.
 
 Capture units are not runtime counts.
 
@@ -170,7 +174,7 @@ The guard is a node-local scan of that tree.
 Rules:
 
 - Uninstall of a package instance is blocked while another deployment's capture exists for the same package and instance. The blocker names the deployments.
-- Install or configure with a configuration that differs from an existing capture of the same package instance held by another deployment is a conflict: it fails before mutation and names the deployments in conflict.
+- Install or configure with a configuration that differs from an existing capture of the same package instance held by another deployment is a conflict: it fails before mutation and names the deployments in conflict. The comparison reads that capture's `applied` values - what the other deployment last applied.
 - Same configuration: no conflict - the recipe converges the same installation, and the new deployment records its own capture.
 
 Compared values are the values the package itself declares (its `.remote-vars` names), taken from the one dispatch context; a value declared only by another package is recorded by that package's own capture, so conflicts surface there.
@@ -197,6 +201,12 @@ Before recipe code runs, two node-local scans answer the only questions worth as
 
 - Uninstall: does another deployment's capture use this package instance? Block, naming the deployments.
 - Install or configure: does another deployment's capture hold a different configuration for this package instance? Conflict, naming the deployments.
+
+Adoption is operator-asserted: `--adopt` on an install takes over an installation cloudify has no capture for - an installation exists on the machine, but the fog makes it invisible to the scan, so the flag is the trigger, not any detection.
+
+It requires configure support, runs configure instead of install, and records the capture only after success.
+
+A package without configure support refuses before mutation.
 
 Then the recipe runs, and the result lines say what happened.
 
@@ -228,6 +238,7 @@ Reconciliation after the streamed log closes:
 - A conditional dependency that never executed produces no result and blocks nothing.
 - Framework work reports truthfully and is expected: the `@default` package set (or `basics` under `--no-defaults`) on install actions, and the `required` converge from `cloudify init` on remote dispatches. Their lines carry `parent=@defaults` or `parent=@init`, and the framework sets join the expanded graph, so their lines are never unknown packages.
 - Framework capture subject: when the dispatch has a deployment, `@defaults` work captures under the run's deployment with the reserved step ID `defaults`, and init's internal install captures with the reserved step ID `init`. On paths with no deployment - direct commands and the init process itself - framework results report and never capture.
+- The reserved step IDs `defaults` and `init` are forbidden to runbook steps in validation, with fixtures, so framework attribution can never collide with authored steps.
 
 No attempt ordinal or edge ID exists: result order plus membership is the whole contract.
 
@@ -251,7 +262,7 @@ result v1: parent=- package=nginx instance=default phase=install action=install 
 - Fields are `key=value`, space-separated, no spaces in values; new fields may be appended; unknown fields are ignored by the reader.
 - No value, environment snapshot, stdout, stderr, payload, or free-form text is allowed in a result line.
 - At most 64 result and checkout lines per dispatch, each at most 512 bytes; exceeding either fails the dispatch.
-- The child also prints its checkout facts once, before its package work: `checkout v1: commit=<40-hex|unknown> dirty=true|false`. The tap collects both keys; a remote dispatch with no checkout line treats the commit as undeterminable under the executed-code check.
+- The child also prints its checkout facts once, before its package work: `checkout v1: commit=<40-hex|unknown> dirty=true|false`. The tap collects both keys; a remote dispatch with no checkout line treats the commit as undeterminable under the executed-code check. On first contact the init child and the dispatch child each print one: identical values are required, and the first line wins.
 
 The payload template, the eight byte-exact payload goldens, recipe stdin, and recipe stdout are untouched: the lines are printed by the child's framework code, like any other log line.
 
@@ -260,6 +271,8 @@ The worker appends one pass-through capture stage to the received stream: a line
 The stage's read loop keeps a final line without a trailing newline (the `IFS= read -r line || [[ -n $line ]]` idiom).
 
 The stage owns its return discipline: every match and copy runs in condition context, the stage returns 0 unconditionally at end of input, and the ERR trap is inhibited inside its subshell, so the router's `trap cleanup SIGINT SIGTERM ERR EXIT` can never fire mid-stream.
+
+The private capture file is created fresh for every dispatch (a unique temporary), so stale lines from earlier runs cannot enter it.
 
 When the channel closes, the worker validates the collected lines field by field and reconciles them against the graph.
 
@@ -361,7 +374,7 @@ Every capture change runs under the host lock:
 4. Set `next_revision = current_revision + 1`.
 5. Render the event with previous and resulting revisions.
 6. Put that event ID on every object the transition created or changed.
-7. Render and validate the complete next capture into a mode-0600 temporary file.
+7. Render and validate the complete next capture into a mode-0600 temporary file in the capture's own directory.
 8. Atomically create the event.
 9. Atomically replace the capture.
 10. Re-read the committed revision and event ID before reporting success.
@@ -401,7 +414,9 @@ The artifact becomes the per-deployment, per-package capture:
 - `package_instance` points at the schema's own `$defs/component`, further restricted to the space-free result-line charset;
 - `revision` minimum becomes 1 (conceptual revision 0 is absence), with an invalid revision-0 fixture;
 - the runbook step ID becomes nullable, with the migration writer as its only null producer, pinned by valid and invalid fixtures;
-- `applied` holds `version` - required, space-free charset, or `null` when the recipe declares none - source-form values, time, and event ID; no commit field;
+- `applied` holds `version` - required, space-free charset, or `null` when the recipe declares none or a migration proves none - source-form values, time, and event ID; no commit field;
+- the `claims` array and its `$defs/claim` are removed (the guard is the node scan), with the README field list and fixtures updated in the same slice;
+- the Phase 4 `host_key` pattern admits only `ivps:` ids - `ssh-sha256:` is never produced until Phase 5;
 - `applied.event_id`, `last_attempt.event_id`, and `health.event_id` are non-null;
 - schema and `schemas/v1/README.md` descriptions updated for the capture meaning and the uniform null-commit rule.
 
@@ -411,7 +426,7 @@ The migrated-observation fixture gets its migration event ID, override true, an 
 
 - optional `development_override` boolean, with an `allOf` rule: `application_commit` null with an application tuple present requires `development_override: true`;
 - amend the existing `allOf` that forces a string commit with an application tuple, so the rule above is reachable;
-- the registry-migration shape: `origin` required, `phase: null` only for `command_kind: migrate-registry`, non-null registry origin required for that kind; the value-source enum gains `migration`.
+- the registry-migration shape: the `command_kind` enum gains `migrate-registry`; a new `origin` property is added and required only for that command kind through the conditional rule; `phase` becomes conditionally nullable for it; the value-source enum gains `migration`;
 
 Valid and invalid fixtures are added for every new rule, and `bash schemas/v1/validate.sh` stays green before any writer code.
 
@@ -432,7 +447,7 @@ When the first capture writer lands, the runtime registry writer dies in the sam
 
 Dry-run is the default; `--apply` is required to write.
 
-It accepts an explicit old deployment id identifying the tree to inspect; records whose old deployment id has no explicit application, flavor, and deployment mapping are reported, not migrated.
+It accepts an explicit old deployment id identifying the tree to inspect, with the application, flavor, and deployment mapping mirroring `cloudify deployment migrate`'s `--application <application>/<flavor> --name <name>` flags; records whose old deployment id has no mapping are reported, not migrated.
 
 For each inventory record with `status: installed` or `configured`, it proves only: host and immutable id from the bucket, package, instance `default`, recorded version when present, observation time when present, old source-form `var.*` values, and the old path with its sha256.
 
@@ -458,7 +473,7 @@ Fail closed before remote mutation:
 - invalid package or instance component;
 - missing schema or validator;
 - malformed context or projection;
-- unresolved required redacted secret;
+- unresolved required redacted secret, or resupplied plaintext whose digest does not match;
 - guard conflict or uninstall block found by the node scan;
 - host-lock timeout;
 - commit drift on reconfigure or teardown;
@@ -628,7 +643,7 @@ This design is accepted only when:
 - Rachid approves this document in plain language;
 - fresh independent SPEC and Technical reviews return `PASS` with file and line evidence on the approved revision;
 - the two fragile-surface changes already flagged (the flat-context field shapes and the result-line format) hold their recorded consent, and the reconfigure ladder insert plus the `applied` source label get their own go before step 4.4;
-- the next consented REDESIGN alignment carries: the subject-scope qualifier for the fail-before-mutation sentence; the teardown release-after-recipe ordering; the compatibility sentence narrowed to value comparison (versions recorded, not compared); and the deployment naming rules (no `default` fallback; generated names) across REDESIGN, `schemas/v1/identity.md`, and GLOSSARY;
+- the next consented REDESIGN alignment carries: the subject-scope qualifier for the fail-before-mutation sentence, and the teardown release-after-recipe ordering (the version-comparison, default-name, and unknown-result amendments landed in REDESIGN with this revision);
 - the REDESIGN amendment of this revision (capture holds the package version; the application commit lives at the deployment level) is confirmed with this document.
 
 No code is written before all of the above.

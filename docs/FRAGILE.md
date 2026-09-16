@@ -49,9 +49,10 @@ the host AND streams live to the controller, unbuffered and unfiltered.
   (`grep -m1`, `head`) SIGPIPEs the chain and kills live output.
 - Any capture taps the stream pass-through: print every line onward, copy
   matches aside, never stop reading.
-- The Phase 4 result channel adds exactly one marked result line per dispatch,
-  emitted by the child cloudify at its own exit; it stays in the stream and in
-  both logs, and the payload bytes do not change.
+- The Phase 4 result channel is ordinary keyed lines in this stream: one
+  `result v1:` line per package attempt (framework work attributed), one
+  `checkout v1:` line per child; they stay in the stream and in both logs, and
+  the payload bytes do not change.
 
   Lives at `lib/remote.sh` (`cloudify_remote_sync` stream pipeline and the
   payload template's `exec`/`tee` pairing).

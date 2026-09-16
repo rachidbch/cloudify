@@ -192,7 +192,7 @@ One named instance of an application.
 
 Its identity is `(application name, flavor, deployment name)`.
 
-The default deployment name is `default`.
+A deployment id is human-set through `--name`, or generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed; the same name is the same deployment (ADR-026).
 
 A deployment has desired inputs under Cloudify configuration and a current manifest under Cloudify state.
 

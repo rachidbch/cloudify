@@ -83,7 +83,9 @@ The application command exports `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, and `
 
 It cannot be translated into the tuple without an explicit application and flavor supplied to migration.
 
-The default deployment name is `default`.
+There is no default deployment name.
+
+A deployment id is human-set through `--name`, or generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed; the same name is the same deployment (ADR-026).
 
 Example:
 
@@ -289,11 +291,9 @@ It does not resolve changed defaults again.
 
 If the caller environment or deployment desired inputs explicitly differ from applied state, install fails and directs the operator to reconfigure or upgrade.
 
-An installation with compatible applied state that nobody relies on may gain a reliance without mutation.
+Install is the converge: recipes are idempotent, so re-running install on the same installation is safe.
 
-An installation with differing explicit inputs and no reliance requires `--adopt`.
-
-Adoption runs package configure when supported and adds the reliance only after success.
+Adoption is operator-asserted: `--adopt` on an install takes over an installation cloudify has no capture for - it requires configure support, runs configure, and records the capture only after success.
 
 A package without configure support must be removed or reconciled explicitly before adoption.
 
@@ -362,7 +362,7 @@ Installations record which deployments rely on them, so the shared-installation 
 
 A deployment may start relying on an installation only when its requested configuration is compatible with what the installation holds and with every deployment already relying on it.
 
-Compatible means the package and package-instance identity, the applied recipe or package version, and every configuration-affecting declared value match.
+Compatible means the package and package-instance identity and every configuration-affecting declared value match; the recorded version is informational and is not compared (ADR-026).
 
 A package's configuration-affecting declared values are the values it declares itself; a value declared only by another package in the dispatch is recorded by that package's own capture (ADR-025).
 

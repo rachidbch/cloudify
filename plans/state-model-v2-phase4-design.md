@@ -1,8 +1,8 @@
 # Phase 4 design: physical package state, events, claims, and safe results
 
-Status: draft, revision 7, after five independent fresh-context review rounds.
+Status: draft, revision 8, after six independent fresh-context review rounds.
 
-Revisions 2 to 6 resolved the earlier rounds' findings; revision 7 resolves round five's two Technical must-fix findings (the live `secret <NAME>` marker and the capture tap's return discipline) and that round's notes. The SPEC review returned `PASS` on revision 6 with notes only.
+Revisions 2 to 7 resolved the earlier rounds' findings; revision 8 resolves round six's must-fix findings: the declaration re-read contradiction, and the irreconcilable claim-only and verify-only execution decisions against static graph membership, plus that round's notes.
 
 Rachid's consent and the five contract decisions were given on 2026-09-15 and are recorded in `LOGS.md`.
 
@@ -87,17 +87,14 @@ value.<NAME>.declaration: explicit|heuristic|none
 package.<PACKAGE>.instance: <validated-instance>
 ```
 
-The declaration field is derived during the existing single resolution, beside `value.<NAME>.secret`, and no later writer reopens a declaration file or value store.
+The declaration field is derived during the existing single resolution, beside `value.<NAME>.secret`, and no later writer reopens a value store.
+The one sanctioned declaration re-read is the claim projection's enumerator pass below; nothing else re-reads declarations, and no writer ever re-resolves a value.
 
 The package-instance field is derived after that resolution from the package's optional instance variable and defaults to `default`.
 
 A valid secret reference or the live `secret <NAME>` marker yields `explicit`; the marker is not future work: the context build already parses it and forces `secret: true`, and this field only surfaces that classification origin.
 The name heuristic alone yields `heuristic`, and every other name yields `none`.
 Phase 5 adds the validation and read surface on top of the existing marker; it does not introduce the marker.
-
-Otherwise a matching secret-name heuristic yields `heuristic`.
-
-Every other name yields `none`.
 
 This is a fragile context-format change and needs Rachid's go before implementation.
 
@@ -383,7 +380,7 @@ The event create primitive is fixed now, not chosen during implementation:
 1. Render one complete JSON event into a mode-0600 temporary file in the destination directory.
 2. Validate it against `event.schema.json`.
 3. Flush it to disk.
-4. Create the final name with a hard link (`ln "$tmp" "$final"`), which is the atomic create-if-absent operation and fails when the name exists.
+4. Create the final name with a hard link (`ln "$tmp" "$final"`), which is the atomic create-if-absent operation and fails when the name exists, then flush the destination directory so the link survives a crash.
 5. On an existing-name failure, generate a new event ID, re-render, and retry, bounded at three attempts, then die loudly.
 6. Remove the temporary file after a successful link.
 7. Never edit or replace a committed event.
@@ -482,6 +479,16 @@ One graph row contains:
 The graph is written to a mode-0600 private file.
 
 Membership is the reconciliation key: `(package, package_instance, phase, command_kind)`.
+
+Under the host lock, the pre-mutation decisions refine the expected graph into the decided execution plan:
+
+- An install decision keeps the subject's rows unchanged, and the dispatch runs the install action for it.
+- A skip-to-verify decision replaces the subject's install rows with verify rows, and the dispatch runs the verify action for it.
+- A claim-only decision (compatible state, claim added without mutation) removes the subject from the dispatched work entirely: the worker performs its claim transition itself, the child never runs it, and the subject is exempt from the required-report rule and emits no result.
+
+Required-report and membership then apply to decided subjects only, and body validation stays fail-closed against the decided rows.
+
+`lib/results.sh` owns graph expansion: it extends the context build's existing dependency walk to emit the parent-carrying rows, so no third `pkg_depends` parser appears.
 
 Reconciliation rules after the result body is fully validated:
 
@@ -899,6 +906,8 @@ Write one red test at a time in this order.
 - A dispatch value declared only by another package never enters a dependency's claim, and two deployments with different such values still share the dependency.
 - Conflicting explicit input fails before recipe code and prints no secret material.
 - Existing-claim install skips install and verifies.
+- A claim-only subject is exempt from the required-report rule and still receives its claim transition from the worker.
+- A verify-only decision reports a verify result that matches the refined verify row and would fail against the original install row.
 - A retry after a failed first install (state present, applied null, no claim) runs install and adds the claim only after success.
 - Failed first install adds no claim.
 - Failed reconfigure preserves applied and claim values.
@@ -942,7 +951,7 @@ No package-state writer lands before step 5 is complete and green.
 1. Add the `.package-instance` contract and tests.
 2. Resolve instance identity from the already-built context.
 3. Add inventory host key, host root, state path, and host-lock path helpers.
-4. Reject external durable state and ship the README or release note on the temporary external-host suspension and the executed-commit freshness requirement (push and let the remote refresh, or expect a degraded dispatch until Phase 7 pins execution).
+4. Reject external durable state and ship the README or release note on the temporary external-host suspension, the local-inventory prerequisite for bare local installs, and the executed-commit freshness requirement (push and let the remote refresh, or expect a degraded dispatch until Phase 7 pins execution).
 
 ### 4.3 Host lock and result channel
 
@@ -958,7 +967,7 @@ The result-line format was consented on 2026-09-15; the streamed-logging chain i
 
 ### 4.4 Phase-specific resolution
 
-1. Add applied source forms below explicit reconfigure sources.
+1. Add applied source forms below explicit reconfigure sources; this includes extending the context build to verify and teardown dispatches, which today deliberately build no context, so their requested projection is not empty.
 2. Seed verify and teardown from applied only.
 3. Require matching resupply for redacted literals.
 4. Keep install defaults from reinterpreting an existing claim.

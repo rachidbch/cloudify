@@ -18,7 +18,7 @@ Deployment inputs record what the operator wants, package state records what Clo
 
 Cloudify resolves a dispatch's values once and uses that same dispatch context for preflight, remote forwarding, state, and event metadata.
 
-A physical package instance has one state record per host, with deployment claims inside it, so two deployments cannot both claim contradictory truths about one installation.
+Deployments that rely on the same installation are guarded: one deployment cannot silently break or remove another's installation.
 
 Current deployment bindings and status live in a small manifest.
 
@@ -104,9 +104,9 @@ A binding maps one target slot to one resolved host.
 
 Bindings are current deployment state because reconfigure, verify, and teardown need them.
 
-Changing a binding with active claims is a migration, not a normal rerun.
+Changing a binding while the deployment relies on installations is a migration, not a normal rerun.
 
-Until ivps has stable node and instance IDs, renaming a host with active Cloudify state is unsupported and must fail loudly where Cloudify can detect it.
+A node or instance carries an immutable ivps id beside its mutable name; durable state follows the immutable id, so renaming a host does not orphan its state.
 
 Durable state for an external host requires a pinned SSH host-key fingerprint.
 
@@ -136,7 +136,27 @@ A deployment input is not applied state and does not claim that a command succee
 
 The deployment file replaces the ambiguous single-component deployment directory without removing the proven cross-host value scope.
 
-### Cloudify current state
+### Per-node deployment capture
+
+For an ivps node or instance, the deployment capture lives under the directory returned by `ivps node path <node>`, in a deployment-first, human-readable tree:
+
+```text
+<host-state-root>/deployments/<application>/<flavor>/<deployment-name>/
+```
+
+Walking a node's tree answers what runs on it.
+
+The deployment id is the deployment name: human-set through `--name`, else generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed.
+The same name is the same deployment; it is chosen at first run, recorded in the manifest, and reused unchanged on every host the deployment touches.
+
+A run with no name matches an existing deployment of the same runbook by resolved value source forms and bindings; a match converges that deployment, and a run that matches nothing creates a new deployment with a generated id, printed clearly.
+
+Package instances follow the same principles: the key is `default`, or the value of a recipe-declared instance variable; the same configuration is the same installation, and a different configuration is a different installation.
+
+### Cross-host deployment glue
+
+A deployment spans hosts, so no single node owns it.
+The minimal cross-host glue lives under Cloudify's own state root:
 
 ```text
 ${XDG_STATE_HOME:-~/.local/state}/cloudify/
@@ -152,22 +172,6 @@ The manifest does not duplicate package applied values.
 
 Runs and events use schema-versioned JSON.
 
-### Host package state
-
-For an ivps node or instance, Cloudify state lives under the directory returned by `ivps node path <node>`.
-
-The logical shape is:
-
-```text
-<host-state-root>/cloudify/packages/<package>/<package-instance>/state.json
-```
-
-A package instance defaults to `default`.
-
-A recipe that genuinely supports several independent installations on one host must declare and consume an explicit package-instance key.
-
-External-host state uses the same shape under Cloudify state, keyed by the accepted SSH host-key identity rather than the mutable SSH alias.
-
 ## Desired inputs, applied state, and history
 
 These are separate facts.
@@ -175,7 +179,7 @@ These are separate facts.
 - Desired inputs say what the operator supplied for future work.
 - Applied state says what the last successful dispatch applied to one physical package instance.
 - Last attempt says what Cloudify most recently tried and how it ended.
-- A claim says which deployment and runbook step currently relies on that physical package instance.
+- A reliance record says which deployment and runbook step currently uses an installation.
 - Events say what commands Cloudify observed and in which order per subject.
 
 None replaces another.
@@ -244,7 +248,7 @@ No registry writer, snapshot writer, or event writer walks value sources again.
 
 ### Phase-specific value sources
 
-Install creates a missing package claim and, when needed, a missing physical package instance.
+Install starts a reliance and, when needed, creates the missing package instance.
 
 Install resolves values in this order, strongest first:
 
@@ -255,7 +259,7 @@ Install resolves values in this order, strongest first:
 5. Global defaults.
 6. Recipe defaults.
 
-Reconfigure requires an active claim and an existing successful applied record.
+Reconfigure requires an existing reliance and a successful applied record.
 
 Reconfigure resolves values in this order, strongest first:
 
@@ -279,17 +283,17 @@ When teardown needs a literal secret represented only by a digest, the caller or
 
 Current defaults never silently change verification or teardown behavior.
 
-An install phase encountering an existing claim is an idempotent no-op followed by verification.
+An install phase encountering an existing reliance is an idempotent no-op followed by verification.
 
 It does not resolve changed defaults again.
 
 If the caller environment or deployment desired inputs explicitly differ from applied state, install fails and directs the operator to reconfigure or upgrade.
 
-An unclaimed physical package with compatible applied state may receive a new claim without mutation.
+An installation with compatible applied state that nobody relies on may gain a reliance without mutation.
 
-An unclaimed physical package with differing explicit inputs requires `--adopt`.
+An installation with differing explicit inputs and no reliance requires `--adopt`.
 
-Adoption runs package configure when supported and adds the claim only after success.
+Adoption runs package configure when supported and adds the reliance only after success.
 
 A package without configure support must be removed or reconciled explicitly before adoption.
 
@@ -335,49 +339,48 @@ A value needed by a later run must be written deliberately as a deployment input
 
 A generated secret that must survive the run is deliberately stored in a deployment input or secret backend and is never persisted as an automatic step output.
 
-## Physical package state and claims
+## Deployment capture and the shared-installation guard
 
-One physical package instance has one state record on one host.
+Each deployment captures what it did on a node in its own directory under that node's tree, human-readable, one directory per deployment per node.
 
-The record does not multiply because several deployments use the same installation.
+The capture contains, per package the deployment covers:
 
-The state record contains:
+- the package and package-instance identity;
+- `applied`, the last successful result: package version, application commit, source-form values, and time;
+- the last attempt: phase, requested value metadata, outcome, and time;
+- health: the last verification result;
+- the runbook step that owns the work;
+- a monotonically increasing revision, changed only together with an event.
 
-- `schema_version`
-- subject identity
-- monotonically increasing `revision`
-- `applied`, containing the last successful package version, application commit, source-form values, time, and event ID
-- `last_attempt`, containing phase, requested value metadata, outcome, time, and event ID
-- `health`, containing the last verification result and time
-- active deployment claims, keyed by deployment identity and stable runbook step ID
-
-A failed attempt updates `last_attempt` and health but never overwrites `applied`.
+A failed attempt updates the last attempt and health but never overwrites `applied`.
 
 A successful install or reconfigure updates `applied`.
 
 A verify updates health but not applied values.
 
-A claim may be added only when its requested configuration is compatible with the current physical package instance and every active claim.
+Installations record which deployments rely on them, so the shared-installation guard can hold: two deployments relying on one installation cannot silently break or remove each other's.
 
-Compatible means the package and package-instance identity, applied recipe commit or declared package version, and every configuration-affecting declared value match.
+A deployment may start relying on an installation only when its requested configuration is compatible with what the installation holds and with every deployment already relying on it.
 
-A package's configuration-affecting declared values are the values it declares itself; a value declared only by another package in the dispatch is claimed by that package's own state subject (ADR-025).
+Compatible means the package and package-instance identity, the applied recipe or package version, and every configuration-affecting declared value match.
+
+A package's configuration-affecting declared values are the values it declares itself; a value declared only by another package in the dispatch is recorded by that package's own capture (ADR-025).
 
 Non-secret values compare by source value, secret references compare by reference, and literal secrets compare by digest.
 
-A conflicting claim fails before mutation and names the deployments in conflict.
+A conflict fails before mutation and names the deployments in conflict.
 
-Teardown releases every claim owned by the deployment, including dependency claims without authored uninstall steps.
+Teardown releases every reliance owned by the deployment, including dependency work without authored uninstall steps.
 
-The pinned teardown phase decides which unclaimed physical packages are actually uninstalled.
+The pinned teardown phase decides which installations are actually uninstalled.
 
-An unclaimed dependency remains installed unless the pinned teardown phase explicitly names it.
+An installation nobody relies on remains installed unless the pinned teardown phase explicitly names it.
 
-The package is uninstalled only when the last active claim is released and the application teardown asks for uninstall.
+The package is uninstalled only when nothing relies on it anymore and the application teardown asks for uninstall.
 
-A force flag may override claim protection only with a destructive confirmation and an event naming every displaced claim.
+A force flag may override the guard only with a destructive confirmation and an event naming every displaced reliance.
 
-Dependencies actually touched by `pkg_depends` must report their physical state and claims.
+Dependencies actually touched by `pkg_depends` must report their state and their reliances.
 
 The remote result channel reports package identity, parent, instance, and outcome without carrying values.
 
@@ -452,9 +455,9 @@ Reconfigure and verify use the recorded bindings unless the caller supplies an e
 
 Teardown uses the recorded bindings.
 
-A deployment with active claims cannot be silently rebound to another host.
+A deployment that relies on installations cannot be silently rebound to other hosts.
 
-A successful teardown removes the current manifest and desired-input directory only after every claim and application-owned external resource has been released.
+A successful teardown removes the current manifest and desired-input directory only after every reliance and application-owned external resource has been released.
 
 Its runs and events remain history.
 
@@ -541,11 +544,11 @@ Atomic rename alone is not concurrency control.
 
 The deployment manifest pins the application commit that created the active deployment shape.
 
-Stable runbook step IDs tie claims to application steps.
+Stable runbook step IDs tie reliances to application steps.
 
-Package claims decide which physical packages belong to the deployment.
+Package reliances decide which installations belong to the deployment.
 
-The pinned runbook teardown phase decides how to release package claims and non-package resources, and in which order.
+The pinned runbook teardown phase decides how to release reliances and non-package resources, and in which order.
 
 Teardown must not rely only on the current runbook because a newer runbook may have removed a step.
 
@@ -582,15 +585,15 @@ cloudify state check
 cloudify --on <target host> show overlay-name
 ```
 
-Direct package commands remain available with stable signatures except for claim protection.
+Direct package commands remain available with stable signatures except for the shared-installation guard.
 
-A direct package command without deployment context has no deployment claim.
+A direct package command without deployment context has no deployment reliance.
 
-Direct uninstall blocks when any deployment claim exists.
+Direct uninstall blocks while any deployment relies on the installation.
 
-The destructive override requires confirmation and records every displaced claim.
+The destructive override requires confirmation and records every displaced reliance.
 
-`cloudify deployment delete` does not exist in v2; application teardown owns claim release and removal.
+`cloudify deployment delete` does not exist in v2; application teardown owns reliance release and removal.
 
 ## Migration and removal
 
@@ -624,7 +627,6 @@ The following work is not part of the state-model fix:
 - log folding as a reconstruction or drift engine
 - multi-operator writes
 - event replication or a broker
-- immutable ivps node and instance IDs
 - ivps provider and origin field normalization
 - six-list address normalization
 - ivps role and gateway redesign
@@ -641,8 +643,8 @@ The redesign is complete only when all of these are true:
 - The exact resolved context drives forwarding and all records.
 - A first install has a durable deployment input source.
 - Reconfigure uses the last successful applied state without overwriting it on failure.
-- Two deployments cannot hold contradictory claims on one physical package instance.
-- Teardown cannot remove a package still claimed by another deployment.
+- Two deployments cannot silently break or remove each other's installations.
+- Teardown cannot remove an installation another deployment still relies on.
 - A normal run cannot execute teardown steps.
 - Current target bindings survive across runs.
 - Application and deployment identities cannot collide.

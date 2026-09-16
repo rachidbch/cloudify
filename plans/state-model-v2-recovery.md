@@ -263,6 +263,8 @@ The checklist was reconciled against HEAD 6857081 after the Phase 2 repair (2026
 
 Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-stream attempt.
 
+Superseded 2026-09-15: ADR-026 redid the geometry, so the revision-9 design and this gate's evidence describe a superseded direction. The redone design restarts this gate.
+
 - [x] Write a new `plans/state-model-v2-phase4-design.md` from `REDESIGN.md`, the corrected flat context contract and the package-state/event schemas; do not copy the rejected patch. (Drafted from the live sources and reconciled against HEAD on 2026-09-15.)
 - [x] State is actual JSON and validates against `schemas/v1/package-state.schema.json` before atomic replacement. (Design: "Immutable event and state write protocol".)
 - [x] No package state writer lands before the immutable event writer exists. (Design: "Files and ownership" and step 4.1.)
@@ -290,7 +292,9 @@ Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-s
 
 ## Physical package state, events and claims (Phase 4)
 
-Outcome: one physical installation is represented once, every mutation has an immutable event, and one deployment cannot break another.
+Outcome superseded 2026-09-15 by ADR-026: the checklist below encodes the superseded package-first geometry and is redone with the new deployment-first design; the fragile-surface, testing, and gate rules still apply.
+
+Old outcome: one physical installation is represented once, every mutation has an immutable event, and one deployment cannot break another.
 
 ### Fragile-surface gate (4.0)
 

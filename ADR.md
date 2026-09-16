@@ -385,3 +385,22 @@ Decision:
 3. The state record's `applied` and `last_attempt` sections keep the full dispatch projection as observation; only claim compatibility uses the restricted set.
 
 Consequences: compatible deployments can share a dependency whose own declared values match, even when the rest of their dispatches differ. A software package that reads a value it does not declare is protected through the configuration package that declares it; an operator who changes such a value without the declaring package in the dispatch gets no claim conflict and must rely on verify to detect drift.
+
+## ADR-026: Deployment-first per-node capture in the ivps tree
+
+Status: accepted 2026-09-15 (supersedes the geometry of ADR-022 - the physical-state-first arrangement and the data-homes split; aligns ADR-023's surface where it depended on them; ADR-021 point 8's immutable ivps ids become now-work; ADR-024 and ADR-025 stand).
+
+Context: the Phase 4 design (revision 9) followed the newest normative files into a physical-state-first geometry - one state record per package instance per host with deployment claims inside - and moved deployment artefacts into Cloudify sibling trees. That departed from standing agreements: architectural information (what application runs where) must be human-readable and live primarily in the ivps node tree; Cloudify's own trees fragment the machine's story; immutable ivps ids were deferred although they are now work. Rachid directed the geometry be redone under the original constraints: a runbook may span many packages and hosts; one runbook may run multiple times producing parallel deployments; a package may serve deployments as a shared runtime or as several separate runtimes; and Cloudify cannot know how many runtimes the installed software actually produces.
+
+Decision:
+
+1. Deployment-first, per-node capture. Under each node's ivps directory, one human-readable directory per deployment running on that node. Walking a node's tree answers what runs where.
+2. The deployment id is the deployment name: human-set through `--name`, else generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix on collision. The same name is the same deployment; it is chosen at first run, recorded in the deployment manifest, and reused unchanged on every host.
+3. Same configuration is the same capture. With an explicit name, the run converges that deployment and changed inputs update it in place. Without a name, the run matches an existing deployment of the same runbook by resolved value source forms and bindings; a match converges it, and a run matching nothing creates a new deployment with a generated id, printed clearly.
+4. Package instances are keyed by configuration: `default`, or the value of the recipe-declared instance variable. The same configuration is the same installation; a different configuration is a different installation. Instance ids are never time-generated.
+5. Capture units are not runtime counts. The software decides how many runtimes exist; capture is a naming discipline that never merges what the operator separated by name and never forks what the operator left identical.
+6. The shared-installation guard stands: two deployments relying on one installation cannot silently break or remove each other's. Installations record which deployments rely on them; conflicts fail before mutation and name the deployments.
+7. Immutable identity is now work: ivps carries an immutable id per node and instance; durable state follows the immutable id, so renames are safe. The adapter seam for infra tools other than ivps stays future.
+8. Cross-host deployment glue (manifest, desired inputs) stays minimal in Cloudify's own trees; the per-node capture is the primary record.
+
+Consequences: REDESIGN's data-homes and physical-state sections are aligned in this commit; the revision-9 Phase 4 design and its review rounds are superseded and redone under this geometry; schemas and writers land only with the redone design; ADR-025's comparison rules carry into the guard mechanism.

@@ -64,7 +64,7 @@ A target slot is bound to one resolved host.
 
 That binding is persisted in the current deployment manifest because later lifecycle commands need it.
 
-Changing a binding while active claims exist is an explicit migration.
+Changing a binding while reliances exist is an explicit migration.
 
 ## package
 
@@ -88,7 +88,7 @@ Cloudify's last confirmed observation of one package instance on one host.
 
 One physical installation has one state record even when several deployments use it.
 
-The record contains a revision, the last successful applied state, the last attempt, verification health, and active deployment claims.
+The record contains a revision, the last successful applied state, the last attempt, verification health, and active reliances.
 
 The live host remains authoritative about what actually exists.
 
@@ -112,17 +112,17 @@ The last verification observation for one physical package instance.
 
 Health records the verification result and time without changing applied values.
 
-## claim
+## reliance
 
 A statement that one deployment and stable runbook step currently relies on one physical package instance.
 
-Compatible deployments may share one package instance through separate claims.
+Compatible deployments may share one package instance through separate reliances.
 
-A conflicting claim fails before mutation.
+A conflicting reliance fails before mutation.
 
-Teardown releases every claim owned by its deployment, including dependency claims without uninstall actions.
+Teardown releases every reliance owned by its deployment, including dependency reliances without uninstall actions.
 
-It may uninstall a physical package only after the last claim is released and the pinned teardown phase names that uninstall.
+It may uninstall a physical package only after the last reliance is released and the pinned teardown phase names that uninstall.
 
 ## value
 
@@ -206,7 +206,7 @@ It contains deployment identity, application commit, target bindings, lifecycle 
 
 It does not contain package applied values.
 
-A successful teardown removes the manifest only after all claims and application-owned external resources have been released.
+A successful teardown removes the manifest only after all reliances and application-owned external resources have been released.
 
 ## runbook
 
@@ -276,7 +276,7 @@ Repair requires an explicit flag and only applies deterministic local state tran
 
 ## reconfigure
 
-The explicit application phase that changes an existing claimed package instance.
+The explicit application phase that changes an existing relied-on package instance.
 
 It may rewrite configuration, restart services, rotate secrets, or update artifacts.
 
@@ -284,13 +284,13 @@ It must not silently change hosts, package ownership, or persistent-data retenti
 
 ## teardown
 
-The explicit application phase that releases the deployment's resources and package claims.
+The explicit application phase that releases the deployment's resources and package reliances.
 
-Claims identify the physical packages owned or shared by the deployment.
+Reliances identify the physical packages owned or shared by the deployment.
 
 The pinned runbook supplies teardown actions and order.
 
-A shared package is uninstalled only after its final claim is released.
+A shared package is uninstalled only after its final reliance is released.
 
 ## upgrade
 

@@ -346,7 +346,7 @@ Each deployment captures what it did on a node in its own directory under that n
 The capture contains, per package the deployment covers:
 
 - the package and package-instance identity;
-- `applied`, the last successful result: package version, application commit, source-form values, and time;
+- `applied`, the last successful result: package version (required - every package reports its installed version), source-form values, and time;
 - the last attempt: phase, requested value metadata, outcome, and time;
 - health: the last verification result;
 - the runbook step that owns the work;

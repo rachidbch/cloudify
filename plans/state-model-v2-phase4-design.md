@@ -1,22 +1,20 @@
-# Phase 4 design: per-node deployment capture, installations, and the shared-installation guard
+# Phase 4 design: per-node deployment capture, guard, and streamed results
 
-Status: draft, revision 1 of the redone design, under ADR-026.
+Status: draft, revision 2 of the redone design, under ADR-026.
 
-The previous design (revision 9, superseded) was redone because its geometry departed from standing agreements; this document re-derives the same phase under the corrected authority.
+Revision 1 separated an installation record from the deployment capture; revision 2 collapses them into the single deployment tree, replaces the marked-line channel with filtered result lines, makes package version a required reported fact, reports framework work truthfully, and deletes the decision-refinement machinery.
 
 This document authorizes no code until Rachid approves it and the review rounds return `PASS`.
 
 ## Outcome
 
-Walking a node's ivps tree answers what runs on it: one human-readable directory per deployment, per node.
-
-Every deployment that touches a host captures what it did there, per package it covers.
-
-Every package instance on a host has one installation record, which holds the physical truth - what was last applied, its health and revision - and which deployments rely on it.
-
-Two deployments relying on one installation cannot silently break or remove each other's.
+Walking a node's ivps tree answers what runs on it: one directory per deployment, one directory per package it covers, per node.
 
 Every capture change is one immutable event first, then the capture update.
+
+Every package reports its installed version; the version is required.
+
+Two deployments relying on the same installation cannot silently break or remove each other's.
 
 ## Authority and scope
 
@@ -24,21 +22,22 @@ This design derives from:
 
 - ADR-026 (deployment-first per-node capture) - the geometry decision;
 - ADR-021 point 8 (immutable ivps ids, now work) and ADR-022, ADR-023, ADR-024, ADR-025 where ADR-026 did not supersede them;
-- REDESIGN.md as aligned to ADR-026 (per-node capture, cross-host glue, deployment capture and the shared-installation guard, write protocol);
-- `schemas/v1/` (to be reshaped by step 4.1 under this design);
+- REDESIGN.md as aligned to ADR-026 and amended by this document (capture holds the package version; the application commit lives at the deployment level);
+- `schemas/v1/` (reshaped by step 4.1 under this design);
 - the flat dispatch-context contract in `lib/context.sh`;
 - the Phase 4 requirements in `plans/state-model-v2-recovery.md` (its Phase 4 checklist is redone with this design).
 
 Phase 4 includes:
 
-- per-node deployment capture and installation records;
+- the per-node deployment capture tree;
 - immutable event and capture-write machinery;
 - deployment naming and matching;
 - package-instance identity;
 - one host mutation lock;
-- the marked-line result channel on the streamed log;
+- result lines on the streamed log;
+- required package versions;
 - phase-specific resolution;
-- the reliance guard, adoption, and the uninstall override;
+- the shared-installation guard, adoption, and the uninstall override;
 - the commit-drift gate;
 - one temporary old-registry migration command;
 - deletion of the runtime registry writer.
@@ -52,21 +51,19 @@ Phase 4 does not include:
 - the adapter seam for infra tools other than ivps (future work);
 - event replay or multi-operator coordination.
 
-## Geometry: the per-node tree
+## Geometry: one tree per node
 
 For an ivps node or instance, the capture root is the directory returned by `ivps node path <node>` (plus the instance segment).
 
-Two human-readable trees live there:
+One human-readable tree lives there:
 
 ```text
-<capture-root>/deployments/<application>/<flavor>/<deployment-name>/<package>/<package-instance>.json
-<capture-root>/pkgs/<package>/<package-instance>/state.json
+<capture-root>/deployments/<application>/<flavor>/<deployment-name>/<package>/<package-instance>/state.json
 ```
 
-- `deployments/` is the architecture view: walking it answers what runs on the node and what each deployment configured.
-- `pkgs/` is the physical view: one installation record per package instance on the node, holding the physical truth and the reliances.
+Walking `<capture-root>/deployments/` answers what runs on the node, by which deployment, with which packages and package instances.
 
-One framework-owned file sits beside them, never parsed by ivps:
+One framework-owned directory sits beside it, never parsed by ivps:
 
 ```text
 <capture-root>/cloudify/.host-mutation.lock
@@ -75,6 +72,32 @@ One framework-owned file sits beside them, never parsed by ivps:
 A deployment that touches several hosts writes its capture on each host under the same deployment name; the cross-host glue in the manifest binds them.
 
 A node rename does not move anything: paths follow `ivps node path`, and the durable identity inside every record is the immutable ivps id, so a renamed node keeps its history.
+
+There is no second state tree.
+
+The capture of a deployment is what that deployment last did with a package - not a claim about the machine's runtime truth.
+
+The software decides how many runtimes exist; cloudify decides only what it configured, and records that.
+
+## What one capture holds
+
+`<...>/<deployment-name>/<package>/<package-instance>/state.json`:
+
+- `schema_version`;
+- the deployment identity: application, flavor, deployment name;
+- the host: operator-facing address and the immutable ivps id;
+- the package and the package instance;
+- the runbook step that owns the work;
+- a monotonically increasing `revision`, changed only together with an event;
+- `applied`: the last successful result this deployment applied - **version** (required), source-form values, time, event ID;
+- `last_attempt`: the most recent attempt by this deployment - phase, requested value metadata, outcome, time, event ID;
+- `health`: this deployment's last verification observation - status, time, event ID.
+
+`applied` holds no commit: the recipe provenance lives at the deployment level (manifest, events), not per package.
+
+The version is the software fact and is required: every package recipe reports its installed version, the framework queries it after every install and configure, and a missing or failing report makes the attempt failed with `version=unknown`.
+
+`health` is this deployment's last verification observation, not the machine's truth; the machine is checked by running verify.
 
 ## Deployment identity and matching
 
@@ -106,240 +129,132 @@ The software decides how many runtimes exist; the capture is a naming discipline
 
 The instance key is part of the package's configuration: `default`, or the value of the recipe-declared instance variable.
 
-The same configuration is the same installation; a different configuration is a different installation.
+Installing a package twice with the exact same configuration is the same package instance; a different configuration is a different package instance.
 
-Instance keys are never time-generated, because identical configuration must always find the same installation - that is what makes sharing the default and parallel runtimes opt-in.
+That is all cloudify can know, and it is all the capture needs: the instance key makes sharing the default and parallel runtimes opt-in.
+
+Instance keys are never time-generated.
 
 After resolution, the context records one sorted `package.<PACKAGE>.instance` field for every precomputed top-level package and dependency, and the capture and result machinery read that identity from the context.
 
 ## Commit provenance and executed-code identity
 
-Two facts are kept separate and both are proved: the local commit the operator dispatched from, and the remote checkout commit whose recipe actually ran.
+Recipe provenance lives at the deployment level: the manifest pins the application commit, and events record what ran.
 
-The remote child Cloudify process reports, inside its result body: `checkout_commit` (40-hex or null when undeterminable) and `checkout_dirty`.
+Per-package captures hold the version instead - the software fact.
 
-Rules for a newly written successful `applied` object:
+The remote child Cloudify process still reports, inside its result lines, the checkout commit it ran from and whether its tree is dirty, and the worker applies the executed-code check:
 
-- An application dispatch whose manifest records a proved commit requires `checkout_commit` equal to it and `checkout_dirty: false`; the applied commit is that shared 40-hex value.
-- An executed-code mismatch on such a dispatch (differing commit, or dirty remote tree) degrades the dispatch before any applied write: the event records the executed commit from the body, `applied` is left unchanged, and the run is marked degraded. The remote mutation already happened and is never claimed as rolled back. When the body's executed commit is null or undeterminable, the degraded event records `application_commit: null` with `development_override: true` and a summary naming the undeterminable checkout.
-- An application dispatch whose manifest commit is null (a development-override run) has no pinned expectation: the executed-code check is vacuous for it and never degrades on mismatch. Its applied object records `checkout_commit` when the remote tree is clean, and `application_commit: null` with `development_override: true` when it is dirty or unknown.
-- A direct package dispatch records `checkout_commit` when the remote tree is clean, and null with the override flag when it is dirty or unknown.
-- Registry migration writes `application_commit: null` with `development_override: true`, with its migration origin carried by its event.
+- Application dispatch with a proved manifest commit: the reported commit must equal it and the tree must be clean; a mismatch or dirty remote tree degrades the dispatch before any capture write - the event records the executed commit, `applied` is left unchanged, and the run is marked degraded. The remote mutation already happened and is never claimed as rolled back. When the reported commit is null or undeterminable, the degraded event records the null commit with `development_override: true` and a summary naming the undeterminable checkout.
+- Application dispatch with a null manifest commit (a development-override run): never degrades on this check; its manifest already carries the override.
+- Direct dispatch: the reported commit and dirty flag are recorded in the event outcome summary fields cloudify already owns; nothing durable per package carries the commit.
 
-The worker never writes the local HEAD as the applied commit when the body proves a different one.
+The worker never writes the local HEAD as the executed commit.
 
-## What the two records hold
+## The shared-installation guard, by scan
 
-The installation record (`pkgs/<package>/<package-instance>/state.json`) holds the physical truth of one package instance on one node:
+The node's deployment tree shows which deployments rely on an installation: same package, same package instance, under other deployments.
 
-- `schema_version`, host (address), host key (immutable ivps id), package, package instance;
-- a monotonically increasing `revision`, changed only together with an event;
-- `applied`: last successful result - package version, application commit, source-form values, time, event ID;
-- `last_attempt`: the most recent attempt by any deployment or direct command - phase, requested value metadata, outcome, time, event ID;
-- `health`: the last verification result - status, time, event ID;
-- `reliances`: which deployments rely on this installation, each with application, flavor, deployment name, runbook step, requested values in comparable form, and the event that recorded it.
+The guard is a node-local scan of that tree.
 
-The deployment capture (`deployments/.../<package>/<package-instance>.json`) holds what this deployment did with that package:
+Rules:
 
-- the deployment identity and the runbook step that owns the work;
-- the reliance: which installation it uses, the requested values in comparable form, since when, and the event that recorded it;
-- this deployment's last attempt for the package: phase, outcome, time, event ID.
+- Uninstall of a package instance is blocked while another deployment's capture exists for the same package and instance. The blocker names the deployments.
+- Install or configure with a configuration that differs from an existing capture of the same package instance held by another deployment is a conflict: it fails before mutation and names the deployments in conflict.
+- Same configuration: no conflict - the recipe converges the same installation, and the new deployment records its own capture.
 
-One package instance on a node has exactly one installation record, so sharing is representable and the guard has a single place to hold.
-
-The deployment capture never copies `applied` or `health`: the installation record is their only home, so two deployments sharing an installation cannot hold drifting copies.
-
-## The shared-installation guard
-
-A deployment may start relying on an installation only when its requested configuration is compatible with what the installation holds and with every reliance already recorded.
-
-Compatible means the package and package-instance identity, the applied recipe or package version, and every configuration-affecting declared value match.
-
-The compared values are the values the package itself declares (its `.remote-vars` names), taken from the one dispatch context; a value declared only by another package is recorded by that package's own reliance, so conflicts surface there.
+Compared values are the values the package itself declares (its `.remote-vars` names), taken from the one dispatch context; a value declared only by another package is recorded by that package's own capture, so conflicts surface there.
 
 Non-secret values compare by source form, secret references compare by reference, literal secrets compare by digest.
 
-In Phase 4 the version element is vacuous (`package_version` is null and reliance records store no commit); the Phase 7 version reporter populates it later.
-
-A conflict fails before mutation and names the deployments in conflict.
+In Phase 4 the version is recorded but not compared: a shared upgrade by one deployment is that deployment's act, and the other deployment's next verify observes the machine.
 
 Diagnostics print value names and comparison class only - never either value, a reference locator, or a digest.
 
-Teardown releases every reliance owned by the deployment, including dependency work without authored uninstall steps.
-
-The pinned teardown phase decides which installations are actually uninstalled.
-
-An installation nobody relies on remains installed unless the pinned teardown phase explicitly names it.
-
-The package is uninstalled only when nothing relies on it anymore and the application teardown asks for uninstall.
-
-A force flag may override the guard only with a destructive confirmation and an event naming every displaced reliance.
-
-## Decision rules under the guard
-
-Before recipe code runs, the worker decides, per requested top-level package, under the host lock:
-
-- Missing installation: run install; the reliance is recorded only after success.
-- Installation present with `applied: null` and no reliance (what a failed first install leaves behind): run install; the reliance is recorded only after success.
-- This deployment already holds the reliance and no explicit input differs: skip install and run verify.
-- Another deployment holds the reliance and everything matches: the reliance for this deployment is added without recipe mutation.
-- This or another deployment holds the reliance and explicit input differs: fail before recipe code and direct the operator to reconfigure or upgrade.
-- No reliance and explicit input differs from `applied`: the state is incompatible - require `--adopt`, require configure support, run configure, and record the reliance only after success.
-
-Dependencies are not prechecked: their compatibility is checked when their result commits, after execution.
-
-An incompatible dependency is marked degraded with its event and records no reliance; the mutation already happened and is never claimed as rolled back. Its transition follows the failed-attempt rules: `applied` preserved, `last_attempt` failed, health `degraded`.
-
-A runtime-optional dependency that never executes blocks nothing.
-
-This commit-time gate for dependencies is the same post-execution degraded pattern REDESIGN already establishes for a runtime dependency absent from the precomputed graph; the fail-before-mutation rule applies to the subjects that were checked before recipe code.
-
-Reconfigure requires an existing successful `applied` object and this deployment's reliance.
-
-Its resolution order is caller, deployment, applied, application, package, global, recipe.
-
-It fails before mutation when another reliance would become incompatible.
-
-A successful reconfigure updates the installation's `applied` values and this deployment's reliance values in one event-backed revision.
-
-Verify and teardown seed from `applied` source forms; a failed `last_attempt` is never a source.
-
-A redacted literal secret must be resupplied by caller or desired inputs and must match its stored digest before remote execution.
-
-Changed defaults do not affect an existing reliance, verify, or teardown.
-
-### Teardown
-
-For the last reliance on a package named by teardown, the reliance stays recorded while the uninstall recipe runs.
-
-On success, one transition removes the reliance, sets `applied: null`, records the successful teardown attempt, and sets health `unknown`.
-
-On failure, the reliance and `applied` are preserved, the failed attempt is recorded, and health is `degraded`.
-
-A direct uninstall of a relied-on installation is blocked while any reliance exists.
+A direct package command without deployment context has no capture and no reliance; its uninstall is still blocked by the same scan, and its installs are still conflict-checked against existing captures.
 
 The override: `CLOUDIFY_BREAK_RELIANCES` set exactly to the package instance being broken.
 
-Each displaced reliance gets its own event naming its deployment tuple and step, its own release transition, then the uninstall. Application teardown never uses the override.
+Each displaced deployment gets its own event naming its deployment tuple and step, its own capture release, then the uninstall. Application teardown never uses the override.
 
-## Expected dependency graph and reconciliation
+## Decision rules
 
-Before taking the host lock, the worker expands the same static top-level and `pkg_depends` graph the context build already walks, extended to emit parent-carrying rows.
+Recipes are idempotent by contract: re-running install is the converge.
 
-One row: immediate parent (null for top-level), package, resolved package instance, selected phase, operation kind, stable step identity when present.
+There is no skip-install, no plan refinement, and no pre-decision of outcomes - cloudify cannot know what installing will do, and the fog is accepted.
 
-The graph is written to a mode-0600 private file.
+Before recipe code runs, two node-local scans answer the only questions worth asking:
 
-Membership is the reconciliation key: `(package, package_instance, phase, command_kind)`.
+- Uninstall: does another deployment's capture use this package instance? Block, naming the deployments.
+- Install or configure: does another deployment's capture hold a different configuration for this package instance? Conflict, naming the deployments.
 
-Under the host lock, the pre-mutation decisions refine the graph into the decided execution plan:
+Then the recipe runs, and the result lines say what happened.
 
-- An install decision keeps the subject's rows.
-- A skip-to-verify decision replaces install rows with verify rows, and the dispatch runs the verify action for it.
-- A claim-only subject (reliance added without mutation) is removed from the dispatched work: the worker performs its reliance transition itself; it emits no result and is exempt from the required-report rule.
+Teardown releases this deployment's captures; the pinned teardown phase decides which packages are actually uninstalled, and the uninstall scan holds the guard.
 
-Reconciliation rules after the result body is fully validated:
+An installation this deployment covers but teardown does not name stays installed, with this deployment's capture removed and the machine untouched.
 
-- Every decided subject with dispatched work must appear in at least one result with its decided identity.
-- Every result must match a decided row by membership; a result matching nothing rejects the whole body before any commit.
-- The same membership may appear several results (one package pulled through several parents); each extra result commits as its own ordered attempt.
-- A conditional dependency never executed at runtime produces no result and blocks nothing.
-- Framework-driven pre-installs are not dispatch subjects: the `@default` package set (or `basics` under `--no-defaults`) and any package installed by the first-contact `cloudify init` branch run under a framework recording-suppression guard, emit nothing, and need no rows.
-- Results commit in body order, which is execution order, under the same host lock, each with its own event and revision.
+Dependencies actually touched by `pkg_depends` capture like any other package, with the deployment identity of the run that pulled them.
 
-No attempt ordinal or edge ID exists: body order plus membership is the whole contract.
+The remote result channel reports package identity, parent, instance, and outcome without carrying values.
 
-`lib/results.sh` owns graph expansion: it extends the context build's existing dependency walk to emit parent-carrying rows, so no third `pkg_depends` parser appears.
+The parent looks up that package's values in the precomputed dispatch context and never walks sources again.
 
-## Result channel: one marked line in the streamed log
+A runtime dependency absent from the precomputed graph still reports, and its capture fails closed: no values are invented after execution.
+
+The router's original command-line package list is not an adequate inventory of dependency work; the result lines are.
+
+## Expected results and reconciliation
+
+Before taking the host lock, the worker expands the same static top-level and `pkg_depends` graph the context build already walks.
+
+The graph is a superset of what may run, not a prediction of what will run.
+
+Reconciliation after the streamed log closes:
+
+- Every requested top-level package must have at least one result line.
+- Every result line must name a package in the graph; a result naming an unknown package fails the dispatch before any capture write.
+- The same package may appear in several results (pulled through several parents); each extra result commits as its own ordered attempt.
+- A conditional dependency that never executed produces no result and blocks nothing.
+- Framework work reports truthfully and is expected: the `@default` package set (or `basics` under `--no-defaults`) on install actions, and the `required` converge from `cloudify init` on remote dispatches. Their lines carry `parent=@defaults` or `parent=@init` and capture like any other package, attributed to the run.
+
+No attempt ordinal or edge ID exists: result order plus membership is the whole contract.
+
+## Result lines on the streamed log
 
 The live streamed log - written on the host, streamed to the controller through the payload's `exec > >(tee -a "$CLOUDIFY_LOG_FILE") 2>&1`, the SSH channel, the host-prefix stages, and the local protected log - must keep flowing unbuffered, unfiltered, and unbroken.
 
 It is a documented fragile invariant (`docs/FRAGILE.md`, section 3).
 
-The remote child aggregates per-package results into one private mode-0600 file during its run; recipe `exit`, dependency failure, or verification failure cannot bypass it.
-
-At its own exit, after all package work, the child prints exactly one line:
+Results are ordinary lines in that log, keyed for filtering:
 
 ```text
-__CLOUDIFY_RESULT_V1__ 1 <base64-body-without-wrap>
+result v1: parent=- package=nginx instance=default phase=install action=install outcome=succeeded exit=0 verification=ok version=1.24.0
 ```
 
-The emission lives inside the child process, so the payload template, the eight byte-exact payload goldens, recipe stdin, and recipe stdout are untouched.
+- The child prints one line per package attempt, when that attempt ends - live, richer logs by construction.
+- `parent` is `-` for a top-level package, the immediate package name for a dependency, `@defaults` or `@init` for framework work.
+- `version` is the reported package version, or `unknown`; `unknown` forces `outcome=failed`.
+- `outcome` is `succeeded` or `failed`; `exit` agrees with it; `verification` is `ok`, `failed`, or `not-run`, and `failed` forces `outcome=failed`.
+- `phase` comes from the action: install maps to `install`, configure to `reconfigure`, uninstall to `teardown`, verify to `verify`.
+- Fields are `key=value`, space-separated, no spaces in values; new fields may be appended; unknown fields are ignored by the reader.
+- No value, environment snapshot, stdout, stderr, payload, or free-form text is allowed in a result line.
 
-The line flows through the chain like any other line: the operator sees it live and both logs keep it.
+The payload template, the eight byte-exact payload goldens, recipe stdin, and recipe stdout are untouched: the lines are printed by the child's framework code, like any other log line.
 
-The worker appends one pass-through capture stage to the received stream: a line-oriented filter that prints every line onward unchanged and additionally copies lines whose body after the host prefix starts with the marker into a private capture file.
+The worker appends one pass-through capture stage to the received stream: a line-oriented filter that prints every line onward unchanged and additionally copies lines whose body after the host prefix starts with `result v1: ` into a private capture file.
 
 The stage's read loop keeps a final line without a trailing newline (the `IFS= read -r line || [[ -n $line ]]` idiom).
 
 The stage owns its return discipline: every match and copy runs in condition context, the stage returns 0 unconditionally at end of input, and the ERR trap is inhibited inside its subshell, so the router's `trap cleanup SIGINT SIGTERM ERR EXIT` can never fire mid-stream.
 
-When the channel closes, the worker validates the capture: exactly one marker line, protocol version 1, unwrapped base64, valid JSON under the result contract, at most 1 MiB of body, and the staleness rule.
+When the channel closes, the worker validates the collected lines field by field and reconciles them against the graph.
 
-Zero or several marked lines marks the dispatch degraded; nothing is committed from an unvalidated body.
+A requested top-level package with no line, or a line naming an unknown package, fails the dispatch before any capture write.
 
-Exactly one marker is achievable because the suppression guard also silences framework-internal package work: the framework sets the guard wherever it invokes package actions for non-dispatch reasons (the defaults block inside the dispatch child, the init branch's internal install). The guard travels by process environment on the remote host, never in the payload.
+Local dispatches write the same lines to a private temp file the worker reads directly; no stream filter is needed on the local path.
 
-The child removes its private result file after printing; a crashed child's stray file is inert and never read.
-
-Local dispatches use the same body file directly; no marked line is needed on the local path.
-
-The body is JSON, is not a persisted artifact, and gets no file under `schemas/v1/`.
-
-`lib/results.sh` owns one jq validator used by the worker.
-
-The compact body:
-
-```json
-{
-  "protocol_version": 1,
-  "child_exit_status": 0,
-  "finished_at": "2026-01-01T10:11:12Z",
-  "checkout_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
-  "checkout_dirty": false,
-  "results": [
-    {
-      "parent": null,
-      "package": "nginx",
-      "package_instance": "default",
-      "phase": "install",
-      "command_kind": "install",
-      "outcome": "succeeded",
-      "exit_status": 0,
-      "verification": "ok"
-    }
-  ]
-}
-```
-
-Exact rules:
-
-- `parent` is null for a top-level package and the immediate package name for a dependency.
-- `package` and `package_instance` identify the subject.
-- `phase` comes from the action in the emitter, never from the context's resolution phase: install maps to `install`, configure to `reconfigure`, uninstall to `teardown`, verify to `verify`.
-- `command_kind` is `install`, `configure`, `verify`, or `uninstall`.
-- `outcome` is `succeeded` or `failed`.
-- `exit_status` is 0 through 255 and agrees with outcome.
-- `verification` is `ok`, `failed`, or `not-run`; `verification: failed` forces `outcome: failed`.
-- `child_exit_status` is 0 through 255, or null when the child was killed by a signal; success for every result with a non-zero or null status fails validation.
-- `finished_at` is the child's UTC completion time.
-- `checkout_commit` and `checkout_dirty` follow the provenance rules.
-- Normal Phase 4 writes set package-state `package_version` to null because no recipe-version reporter exists.
-- No value, environment snapshot, stdout, stderr, payload, path, claim, or free-form summary is allowed.
-- Every object has exactly these fields; the body is at most 1 MiB.
-
-Staleness: the worker rejects a body whose `finished_at` predates its own dispatch start minus five minutes of clock-skew slack, treats it as a crashed predecessor's leftover, and marks the dispatch degraded.
-
-The recipe remains trusted code; the channel prevents accidental collisions and ambiguity, not a hostile remote root.
-
-## Executed-code check
-
-Before the first result commit, the worker applies the check:
-
-- Application dispatch with a proved manifest commit: `checkout_commit` must equal it and `checkout_dirty` must be false; mismatch or dirty degrades, records the executed commit in the event, and writes no `applied` or reliance for any result in the body. `last_attempt` and health still record the attempt.
-- Application dispatch with a null manifest commit: never degrades; the applied write follows the development-override rule.
-- Direct dispatch: the body's checkout facts are recorded per the provenance rules.
+The recipe remains trusted code; the key prevents accidental collisions and ambiguity, not a hostile remote root.
 
 ## One host lock
 
@@ -347,7 +262,7 @@ The worker owns the host mutation lock at `<capture-root>/cloudify/.host-mutatio
 
 The lock is keyed by the durable host only (the immutable ivps id); package and package instance never enter the key.
 
-It is acquired before any reliance reading or remote execution and held through payload execution, result-line capture, body validation, graph reconciliation, the executed-code check, and every event and capture write.
+It is acquired before any scan or remote execution and held through payload execution, result-line capture, reconciliation, the executed-code check, and every event and capture write.
 
 It is released before the deployment manifest lock is taken; the two locks are never held together.
 
@@ -378,10 +293,10 @@ ADR-024 keeps one global namespace per dispatch.
 
 Two projections come from one parsed context so they can never disagree:
 
-- the record projection, for `applied` values and `last_attempt.requested`: every resolved context name;
-- the reliance projection, for a reliance's compared values: only the names the package itself declares.
+- the capture projection, for `applied` values and `last_attempt.requested`: every resolved context name;
+- the compared projection, for a capture's guard-compared values: only the names the package itself declares.
 
-The reliance projection implements REDESIGN's "every configuration-affecting declared value" as the values the package declares (ADR-025).
+The compared projection implements REDESIGN's "every configuration-affecting declared value" as the values the package declares (ADR-025).
 
 No second value walk: declaration names come from re-running the one `.remote-vars` enumerator (`cloudify_vars_declared_names`) at commit time, intersected with the context's resolved names; values come from the context. That is a declaration read, never a value walk.
 
@@ -402,6 +317,8 @@ For each `value.<NAME>` block, the `t:`/`b:` raw transport is decoded once:
 - secret reference: `source_form` and `reference` = the reference text, `digest: null`, `redacted: false`;
 - literal secret: `source_form: null`, `reference: null`, the sha256 digest, `redacted: true`;
 - every value carries `secret` and `declaration`.
+
+Literal secrets do enter the dispatch context as resolved plaintext - by design: the target process needs them, the context is mode 0600 and swept on every exit, and everything durable holds only the reference, or redaction plus digest.
 
 Event fields per value: source label (`environment` maps to `caller`; `applied` when phase-specific resolution seeded it), `secret`, `declaration`, a reference or digest (never both, neither for non-secrets), never `source_form`, `raw`, or plaintext.
 
@@ -425,22 +342,22 @@ A crash between link and cleanup leaves a harmless stray temporary; the Phase 6 
 
 Every capture change runs under the host lock:
 
-1. Read and validate the current record, or use conceptual revision 0 when no file exists.
-2. Refuse when the record points to a missing event.
-3. Derive the complete next record.
+1. Read and validate the current capture, or use conceptual revision 0 when no file exists.
+2. Refuse when the capture points to a missing event.
+3. Derive the complete next capture.
 4. Set `next_revision = current_revision + 1`.
 5. Render the event with previous and resulting revisions.
 6. Put that event ID on every object the transition created or changed.
-7. Render and validate the complete next record into a mode-0600 temporary file.
+7. Render and validate the complete next capture into a mode-0600 temporary file.
 8. Atomically create the event.
-9. Atomically replace the record.
+9. Atomically replace the capture.
 10. Re-read the committed revision and event ID before reporting success.
 
 No write occurs when event creation fails.
 
 If the event exists and the replacement fails, the worker reports the repairable gap and fails the dispatch.
 
-A record pointing at a missing event blocks mutation.
+A capture pointing at a missing event blocks mutation.
 
 A local write failure never implies remote rollback.
 
@@ -450,7 +367,7 @@ Phase 4 provides subject-level checks; Phase 6 exposes the fleet report and repa
 
 Event IDs use the schema form `YYYYMMDDTHHMMSSZ-<8 lowercase random hex>` from `/dev/urandom`, retried on collision, never overwriting.
 
-Phase 4 generates event IDs only; events and reliance records carry `run_id: null` because the run writer is Phase 6, and fabricating a run ID no record will ever back is forbidden. Manifest `last_run_id` stays null until then.
+Phase 4 generates event IDs only; events carry `run_id: null` because the run writer is Phase 6, and fabricating a run ID no record will ever back is forbidden. Manifest `last_run_id` stays null until then.
 
 Writer identity is read once per worker: hostname, `/proc/sys/kernel/random/boot_id`, `$$`, `/proc/$$/stat` field 22.
 
@@ -462,24 +379,19 @@ Every writer checks jq, its schema, and destination prerequisites before creatin
 
 Step 4.1 reshapes the schemas before any writer exists.
 
-### Installation record (`package-state.schema.json` reshaped)
+### Package capture (`package-state.schema.json` reshaped)
+
+The artifact becomes the per-deployment, per-package capture:
 
 - `host_key` spelling becomes the immutable id: `ivps:<node-id>` or `ivps:<node-id>:<instance-id>` (external `ssh-sha256:<fingerprint>` arrives in Phase 5);
+- deployment identity fields (application, flavor, deployment name) and the runbook step ID are required;
 - `package_instance` points at the schema's own `$defs/component` (rejects `.`, `..`, edge whitespace like the frozen rule);
 - `revision` minimum becomes 1 (conceptual revision 0 is absence), with an invalid revision-0 fixture;
-- `applied` gains `development_override` with one `allOf` rule: `application_commit` null requires `development_override: true`;
-- `applied.event_id`, `last_attempt.event_id`, `health.event_id`, and every reliance `event_id` are non-null;
-- `reliances` replaces `claims`: same required fields (application, flavor, deployment, step ID, since when, run ID null in Phase 4, event ID, compared values);
-- schema and `schemas/v1/README.md` descriptions updated for the uniform null-commit rule and the reliance rename.
+- `applied` holds `version` (required, non-empty), source-form values, time, and event ID - no commit field;
+- `applied.event_id`, `last_attempt.event_id`, and `health.event_id` are non-null;
+- schema and `schemas/v1/README.md` descriptions updated for the capture meaning and the uniform null-commit rule.
 
-The migrated-observation fixture gets its migration event ID, override true, an `ivps:` host key, and non-null event IDs.
-
-### Deployment capture (new schema, `deployment-capture.schema.json`)
-
-- `schema_version`, application, flavor, deployment name, host key, runbook step ID;
-- one reliance entry: package, package instance, compared values, since when, event ID;
-- this deployment's last attempt per package: phase, outcome, time, event ID;
-- `additionalProperties: false`, real JSON, validated before replacement like every artifact.
+The migrated-observation fixture gets its migration event ID, override true, an `ivps:` immutable host key, and non-null event IDs.
 
 ### Events
 
@@ -506,7 +418,7 @@ When the first capture writer lands, the runtime registry writer dies in the sam
 
 Dry-run is the default; `--apply` is required to write.
 
-It accepts an explicit old deployment id identifying the tree to inspect, and no application mapping (the physical observation is unclaimed; the desired-input migration owns tuples).
+It accepts an explicit old deployment id identifying the tree to inspect; records whose old deployment id has no explicit application, flavor, and deployment mapping are reported, not migrated.
 
 For each inventory record with `status: installed` or `configured`, it proves only: host and immutable id from the bucket, package, instance `default`, recorded version when present, observation time when present, old source-form `var.*` values, and the old path with its sha256.
 
@@ -516,7 +428,7 @@ Each migrated value is classified by the `schemas/v1/README.md` mapping: a `@<ba
 
 Migration never writes plaintext, and a record whose classification or timestamp cannot be derived is reported, not migrated.
 
-An applied migration writes, event first: one `migrate-registry` event (revisions 0 to 1), one installation record at revision 1 (`application_commit: null`, override true), `last_attempt: null`, health `unknown` linked to the event, no reliances.
+An applied migration writes, event first: one `migrate-registry` event (revisions 0 to 1), one capture at revision 1 (`version` from the record when present, else `unknown` with the attempt marked failed, `application_commit` absent by shape), health `unknown` linked to the event, under the mapped deployment directory.
 
 It runs under the host lock, never invokes a recipe, and leaves the old source in place.
 
@@ -533,7 +445,7 @@ Fail closed before remote mutation:
 - missing schema or validator;
 - malformed context or projection;
 - unresolved required redacted secret;
-- reliance conflict on a requested top-level package;
+- guard conflict or uninstall block found by the node scan;
 - host-lock timeout;
 - commit drift on reconfigure or teardown;
 - missing `CLOUDIFY_BREAK_RELIANCES` confirmation.
@@ -542,10 +454,10 @@ May occur after mutation - degrade, never claim rollback:
 
 - child process failure;
 - result capture or validation failure;
-- stale body;
+- stale lines;
 - executed-code mismatch on a proved application dispatch;
-- unexpected membership or missing decided-subject result;
-- incompatible dependency at commit time;
+- a result naming an unknown package, or a missing requested top-level result;
+- an incompatible dependency observed at result time;
 - event-create or capture-replace failure;
 - a later commit failing after earlier ones committed.
 
@@ -557,11 +469,13 @@ Until Phase 7 proves pinned remote execution, `app reconfigure` and `app teardow
 
 A deployment whose manifest commit is null fails with a dedicated message: unreproducible until a proved run recreates it.
 
-## Commit-provenance summary for direct commands
+## Direct commands
 
-Direct commands have no deployment capture and no reliance.
+Direct package commands keep their signatures.
 
-They still write installation records: successful installs and uninstalls follow the transitions above, with the provenance rules deciding the commit or the override.
+They have no deployment capture and no reliance: their result lines still stream into the log, their installs and uninstalls are still guard-scanned against the node's deployment captures, and their version discipline still applies.
+
+An install by a direct command that another deployment later makes with the same configuration converges the same installation; the new deployment records its own capture from that point on.
 
 ## Tests frozen before implementation
 
@@ -570,21 +484,22 @@ One red test at a time, in this order.
 ### Schema and projection
 
 - Non-null event IDs everywhere new; null ones fail; revision 0 fails; `package_instance` rejects `.`, `..`, edge whitespace.
-- Null applied commit requires `development_override: true`; application event with null commit and no override fails.
+- `version` required and non-empty in `applied`; no commit field exists in the capture.
+- Application event with null commit and no override fails.
 - Migration origin required and bounded; normal events reject it.
 - Plain, escaped-at, multiline, reference-secret, explicit and heuristic literal-secret, empty, spaces, quotes, colons, and metacharacters project correctly.
 - Projections survive every value source being made unavailable.
-- The reliance projection holds only the package's declared names; the record projection holds all resolved names.
-- No fixture secret appears in any capture, event, result body, stdout, debug output, or log.
+- The compared projection holds only the package's declared names; the capture projection holds all resolved names.
+- No fixture secret appears in any capture, event, result line, stdout, debug output, or log.
 
 ### Event and capture writes
 
 - Invalid components and missing jq/schema create no directory or lock.
-- Capture files are real JSON, validated before replacement; an invalid next record leaves prior bytes unchanged.
+- Capture files are real JSON, validated before replacement; an invalid next capture leaves prior bytes unchanged.
 - Event-create failure leaves the capture unchanged; an existing event name causes regeneration, never overwrite; a stray temporary is ignored.
-- Replacement failure leaves a detectable gap; a record pointing at a missing event blocks mutation.
+- Replacement failure leaves a detectable gap; a capture pointing at a missing event blocks mutation.
 - Two results produce revisions 1 and 2 with matching event links.
-- A failed attempt preserves `applied` bytes and reliances.
+- A failed attempt preserves `applied` bytes.
 
 ### Deployment naming and matching
 
@@ -601,34 +516,30 @@ One red test at a time, in this order.
 - A bare local install requires `ivps node path local` and fails with a named error when absent.
 - An external target fails before remote execution.
 
-### Locking and result channel
+### Locking and result lines
 
 - Same-host workers serialize execution, capture, and commits; different hosts overlap; no nested locks.
 - Lock timeout prints holder metadata; the host lock releases before the manifest lock.
-- Payload bytes stay identical to all eight goldens with the channel active; recipe stdin and stdout bytes unchanged.
-- The `@default` block and an `init` internal install emit nothing; exactly one marker; results only for the decided tree.
-- Missing, duplicate, malformed, overlarge, or stale lines degrade and commit nothing.
+- Payload bytes stay identical to all eight goldens with result lines active; recipe stdin and stdout bytes unchanged.
+- `@default`, `init`, and dependency lines all appear, attributed; every requested top-level package reports.
+- Missing requested top-level results fail; a result naming an unknown package fails; repeated membership commits in order.
+- Malformed lines (bad fields, unknown outcome, version mismatch with outcome) fail the dispatch.
 - The tap keeps a final unterminated line, never exits early, and survives the router's real ERR-trap environment.
-- A result matching no decided row blocks every commit; a missing decided result fails; an extra repeated membership commits in order.
-- A dependency result commits even when a later top-level result fails.
-- Executed-code mismatch on a proved application dispatch degrades, records the executed commit, writes no `applied`; a development-override run records the remote commit when clean, null with override when dirty, never degrading.
+- Executed-code mismatch on a proved application dispatch degrades, records the executed commit, writes no capture; a development-override run never degrades on this check.
 - A partial multi-package commit keeps earlier pairs valid and the manifest degraded with the last committed event ID.
 
-### Reliances, phases, provenance, migration
+### Guard, phases, provenance, migration
 
-- Compatible deployments share one installation through separate reliances.
+- Two deployments with the same configuration share one installation through separate captures; a differing configuration is a conflict named before mutation, printing no secret material.
+- Uninstall is blocked while another deployment's capture exists, naming the deployments.
 - A value declared only by another package never enters a dependency's compared set; differing such values still allow sharing.
-- Conflicting explicit input fails before recipe code, printing no secret material.
-- Existing-reliance install skips install and verifies.
-- Failed first install adds no reliance; retry (state with null `applied`, no reliance) runs install and records the reliance only after success.
-- Failed reconfigure preserves `applied` and reliance values.
-- An incompatible dependency at commit time degrades and records no reliance.
-- An optional dependency never executed blocks nothing.
-- Shared teardown releases one reliance without uninstall; failed last uninstall preserves reliance and `applied`; success clears both and sets health `unknown`.
-- Direct uninstall over reliances fails, naming the blocking deployments; with `CLOUDIFY_BREAK_RELIANCES` each reliance gets its own naming event and release, then the uninstall.
+- Failed first install leaves a capture with null `applied` and no reliance issues; retry runs install and records `applied` only after success.
+- Failed reconfigure preserves `applied` bytes; `version=unknown` marks the attempt failed.
+- Shared teardown releases one capture without uninstall; failed last uninstall preserves the capture; success removes it and uninstalls when the teardown phase names the package.
+- Direct uninstall over another deployment's capture fails, naming the deployments; with `CLOUDIFY_BREAK_RELIANCES` each displaced deployment gets its own naming event and release, then the uninstall.
 - Reconfigure and teardown fail on commit drift, naming both commits; a null-commit manifest fails with the unreproducible message.
 - Verify and teardown seed only from successful `applied`; a failed attempt never seeds.
-- Migration dry-run writes nothing; apply writes event first, then revision 1 with null commit, override true, no reliances; identical repeat is a no-op; conflicting migration fails without exposing values; external and removed records are reported, not migrated.
+- Migration dry-run writes nothing; apply writes event first, then revision 1 with the mapped deployment capture; identical repeat is a no-op; conflicting migration fails without exposing values; external and removed records are reported, not migrated.
 - No runtime caller of the old-record reader outside the migration command.
 
 No implementation test may weaken the payload goldens or a fragile-surface pin.
@@ -639,10 +550,10 @@ No implementation test may weaken the payload goldens or a fragile-surface pin.
 
 1. Red schema fixtures and projection tests.
 2. The flat context declaration-origin and package-instance fields under the fragile-surface gate, including the `cloudify_context_validate` accepted-shape extension.
-3. Generalize the one jq schema validator; reshape the installation-record schema; add the deployment-capture schema.
+3. Generalize the one jq schema validator; reshape the package-capture schema.
 4. The shared ID helper and writer identity.
 5. Immutable event rendering and hard-link creation.
-6. Installation-record and deployment-capture rendering with event-first replacement.
+6. Capture rendering with event-first replacement.
 7. Subject-level gap detection.
 
 No capture writer lands before step 5 is green.
@@ -651,16 +562,16 @@ No capture writer lands before step 5 is green.
 
 1. The ivps deliverable: immutable id per node and instance, adopted by cloudify.
 2. The `.package-instance` contract and tests.
-3. Instance identity from the context; per-node path helpers (`deployments/`, `pkgs/`, lock).
+3. Instance identity from the context; per-node path helpers (`deployments/`, lock).
 4. Reject external durable state; ship the README or release note on the external-host suspension, the local-inventory prerequisite, the executed-commit freshness requirement, and the clock-sync expectation.
 
-### 4.3 Host lock and result channel
+### 4.3 Host lock, versions, and result lines
 
-1. Freeze the lock, body, tap, staleness, matching, and reconciliation tests.
+1. Freeze the lock, result-line, matching, and reconciliation tests.
 2. The dispatch worker and bounded host lock; deployment matching (match, converge, create-printed).
-3. Result emission around package attempts, the private file, and the marked-line emission.
-4. The pass-through capture tap, whole-body validation, and executed-code check.
-5. Whole-body validation before ordered commits.
+3. The version reporter contract and result emission around package attempts.
+4. The pass-through capture stage, line validation, and executed-code check.
+5. Reconciliation before ordered commits.
 6. Delete the runtime registry writer; split the goldens.
 7. Prove unconditional context cleanup and byte-identical payloads.
 
@@ -671,29 +582,25 @@ The result-line format was consented on 2026-09-15; the streamed-log chain is a 
 1. Applied source forms below explicit reconfigure sources; extend the context machinery to the paths that still lack it (local verify; future runbook verify and teardown dispatches).
 2. Seed verify and teardown from `applied` only.
 3. Matching resupply for redacted literals.
-4. Install defaults never reinterpret an existing reliance.
+4. Install defaults never reinterpret an existing capture.
 
-### 4.5 Reliances and adoption
+### 4.5 Guard and adoption
 
-1. Pre-mutation compatibility checks for requested top-level packages under the host lock; starts only after the REDESIGN subject-scope qualifier alignment lands.
-2. Commit-time compatibility checks for dependency results.
-3. Reliance-only and verify-only plan decisions.
-4. Reliances only after compatible success or adoption.
-5. Guarded configure-based adoption.
+1. Node-scan guard checks under the host lock; starts only after the REDESIGN subject-scope qualifier alignment lands.
+2. Adoption (`--adopt`) with guarded configure.
 
 ### 4.6 Teardown, override, and failure state
 
-1. Shared reliance release without uninstall.
-2. Last-reliance uninstall ordering.
-3. The `CLOUDIFY_BREAK_RELIANCES` override with per-reliance events.
-4. The commit-drift gate.
-5. Preserve `applied` and ownership on failure; record degraded or unknown health through event-backed transitions.
+1. Capture release on shared teardown.
+2. The `CLOUDIFY_BREAK_RELIANCES` override with per-deployment events.
+3. The commit-drift gate.
+4. Preserve `applied` on failure; record degraded or unknown health through event-backed transitions.
 
 ### 4.7 Migration and phase gate
 
 1. Consume the old registry fixtures moved in 4.3.
 2. The narrow old-record reader and dry-run command.
-3. Idempotent event-first apply for inventory hosts.
+3. Idempotent event-first apply under mapped deployment directories.
 4. Focused suites, one real shared-dependency case, lint, full unit, the Phase 4 E2E scenarios.
 5. Final SPEC and Technical implementation reviews before the phase commit.
 
@@ -705,6 +612,6 @@ This design is accepted only when:
 - fresh independent SPEC and Technical reviews return `PASS` with file and line evidence on the approved revision;
 - the two fragile-surface changes already flagged (the flat-context field shapes and the result-line format) hold their recorded consent, and the reconfigure ladder insert plus the `applied` source label get their own go before step 4.4;
 - the next consented REDESIGN alignment carries the subject-scope qualifier for the fail-before-mutation sentence and the teardown release-after-recipe ordering;
-- the REDESIGN capture-contents placement (physical truth in the installation record; the deployment capture holds the reliance and this deployment's attempt) is confirmed with this document.
+- the REDESIGN amendment of this revision (capture holds the package version; the application commit lives at the deployment level) is confirmed with this document.
 
 No code is written before all of the above.

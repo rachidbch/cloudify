@@ -536,3 +536,13 @@
 - Carried geometry-independent machinery from the superseded design: marked-line result channel, executed-code check, host lock, hard-link event creation, suppression guard, decided-plan reconciliation, schema tightening, migration, and the frozen test list (adapted to the new paths and vocabulary).
 - New work the redo surfaced: deployment matching (same configuration converges the same deployment; no-name no-match auto-creates, printed), immutable ivps ids as a 4.2 ivps deliverable, and the `CLOUDIFY_BREAK_RELIANCES` override replacing the old flag name.
 - Awaiting Rachid's plain-language approval before any review rounds.
+
+## 2026-09-15 - design revision 2: Rachid's ten-point review applied
+
+- Point 1 conceded: the separate installation record was a smuggling of the refused geometry. The single deployment tree covers everything: the shared-installation guard is a node-local scan of the deployment captures (same package and package instance under another deployment blocks uninstall, conflicts on differing configuration), and a capture is what that deployment last did, not a claim about the machine.
+- Point 2 conceded: no out-of-band channel. Results are ordinary streamed-log lines keyed `result v1:` with `key=value` fields - human-easy, extensible, no base64, no blob, no private file; the controller filters and validates.
+- Point 3 conceded: package version replaces the commit as the per-package captured fact, and it is required - every recipe reports its installed version, `version=unknown` forces the attempt failed (flagged for veto). The commit stays at the deployment level (manifest, events).
+- Point 5 conceded: truth first - the suppression guard is deleted. Framework work (the `@default` block, `cloudify init`'s internal installs) reports like any other package, attributed (`parent=@defaults`, `parent=@init`), and is expected by reconciliation.
+- Point 6 conceded: the decision-refinement machinery is deleted as fragile overengineering. Recipes are idempotent, so re-running install is the converge; conditional dependencies need no machinery because only requested top-level packages must report; the guard reduces to two node-local scans (uninstall block, install conflict).
+- Points 4, 7, 8, 9 unchanged; point 10 confirmed - literal secrets transiently in the context file are by design.
+- REDESIGN capture-contents amended in the same commit: `applied` holds the required package version, no commit field; recipe provenance stays at the deployment level.

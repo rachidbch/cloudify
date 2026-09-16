@@ -1,8 +1,10 @@
 # Phase 4 design: per-node deployment capture, guard, and streamed results
 
-Status: draft, revision 2 of the redone design, under ADR-026.
+Status: draft, revision 3 of the redone design, under ADR-026.
 
 Revision 1 separated an installation record from the deployment capture; revision 2 collapses them into the single deployment tree, replaces the marked-line channel with filtered result lines, makes package version a required reported fact, reports framework work truthfully, and deletes the decision-refinement machinery.
+
+Revision 3 resolves round one's findings: the framework capture subject, the version reporter contract and fleet sweep, space-free result-line fields, the enumerated REDESIGN amendments, and the migration carve-outs.
 
 This document authorizes no code until Rachid approves it and the review rounds return `PASS`.
 
@@ -22,7 +24,7 @@ This design derives from:
 
 - ADR-026 (deployment-first per-node capture) - the geometry decision;
 - ADR-021 point 8 (immutable ivps ids, now work) and ADR-022, ADR-023, ADR-024, ADR-025 where ADR-026 did not supersede them;
-- REDESIGN.md as aligned to ADR-026 and amended by this document (capture holds the package version; the application commit lives at the deployment level);
+- REDESIGN.md as aligned to ADR-026 and amended by this document: the capture holds the package version while the application commit lives at the deployment level; the guard does not compare versions (an amendment to the compatibility sentence); deployment names have no `default` fallback (an amendment to the naming rules);
 - `schemas/v1/` (reshaped by step 4.1 under this design);
 - the flat dispatch-context contract in `lib/context.sh`;
 - the Phase 4 requirements in `plans/state-model-v2-recovery.md` (its Phase 4 checklist is redone with this design).
@@ -87,11 +89,17 @@ The software decides how many runtimes exist; cloudify decides only what it conf
 - the deployment identity: application, flavor, deployment name;
 - the host: operator-facing address and the immutable ivps id;
 - the package and the package instance;
-- the runbook step that owns the work;
+- the runbook step that owns the work (always set by normal writes; null only for migrated captures);
 - a monotonically increasing `revision`, changed only together with an event;
 - `applied`: the last successful result this deployment applied - **version** (required), source-form values, time, event ID;
 - `last_attempt`: the most recent attempt by this deployment - phase, requested value metadata, outcome, time, event ID;
 - `health`: this deployment's last verification observation - status, time, event ID.
+
+The version contract: every recipe may define `pkg_version()`, echoing the installed version of the package; a recipe that genuinely has no version echoes `none`, and the capture stores `version: null`; a recipe with neither hook nor declaration, or whose reporter fails, yields `version=unknown` on its result line and the attempt is recorded as failed.
+
+Versions and instance keys are space-free and restricted to the visible charset `[A-Za-z0-9._+~:-]`; anything else reports `unknown`.
+
+The annotation sweep across every recipe in `pkg/` is part of step 4.3, before any E2E gate.
 
 `applied` holds no commit: the recipe provenance lives at the deployment level (manifest, events), not per package.
 
@@ -113,7 +121,7 @@ The id is chosen at first run, recorded in the deployment manifest, and reused u
 Matching decides what a run with no name does:
 
 - The run resolves its values once, through the ordinary dispatch context.
-- It matches against the existing deployments of the same application and flavor by resolved value source forms plus resolved target bindings.
+- It matches against the existing deployments of the same application and flavor by comparing its resolved value source forms and resolved bindings with each candidate deployment's captured `last_attempt.requested` values and recorded bindings (a failed-first-install capture still matches: its requested values are recorded even though `applied` is null).
 - A match converges that deployment: same capture, no new artefact.
 - No match: a new deployment is created with a generated id, and the created name is printed clearly.
 
@@ -133,6 +141,8 @@ Installing a package twice with the exact same configuration is the same package
 
 That is all cloudify can know, and it is all the capture needs: the instance key makes sharing the default and parallel runtimes opt-in.
 
+Instance keys are space-free and restricted to the visible charset `[A-Za-z0-9._+~:-]`, so they are always safe on a result line and in a path.
+
 Instance keys are never time-generated.
 
 After resolution, the context records one sorted `package.<PACKAGE>.instance` field for every precomputed top-level package and dependency, and the capture and result machinery read that identity from the context.
@@ -143,7 +153,7 @@ Recipe provenance lives at the deployment level: the manifest pins the applicati
 
 Per-package captures hold the version instead - the software fact.
 
-The remote child Cloudify process still reports, inside its result lines, the checkout commit it ran from and whether its tree is dirty, and the worker applies the executed-code check:
+The remote child reports its checkout facts on their own line (`checkout v1: commit=<40-hex|unknown> dirty=true|false`), and the worker applies the executed-code check:
 
 - Application dispatch with a proved manifest commit: the reported commit must equal it and the tree must be clean; a mismatch or dirty remote tree degrades the dispatch before any capture write - the event records the executed commit, `applied` is left unchanged, and the run is marked degraded. The remote mutation already happened and is never claimed as rolled back. When the reported commit is null or undeterminable, the degraded event records the null commit with `development_override: true` and a summary naming the undeterminable checkout.
 - Application dispatch with a null manifest commit (a development-override run): never degrades on this check; its manifest already carries the override.
@@ -213,10 +223,11 @@ The graph is a superset of what may run, not a prediction of what will run.
 Reconciliation after the streamed log closes:
 
 - Every requested top-level package must have at least one result line.
-- Every result line must name a package in the graph; a result naming an unknown package fails the dispatch before any capture write.
+- Every result line must name a package in the graph; a result naming an unknown package fails the dispatch before any capture write. This refusal is deliberately dispatch-wide - an unknown result means the graph was wrong, so nothing downstream is committed; it differs on purpose from REDESIGN's per-subject rule for a dependency absent from the precomputed graph.
 - The same package may appear in several results (pulled through several parents); each extra result commits as its own ordered attempt.
 - A conditional dependency that never executed produces no result and blocks nothing.
-- Framework work reports truthfully and is expected: the `@default` package set (or `basics` under `--no-defaults`) on install actions, and the `required` converge from `cloudify init` on remote dispatches. Their lines carry `parent=@defaults` or `parent=@init` and capture like any other package, attributed to the run.
+- Framework work reports truthfully and is expected: the `@default` package set (or `basics` under `--no-defaults`) on install actions, and the `required` converge from `cloudify init` on remote dispatches. Their lines carry `parent=@defaults` or `parent=@init`, and the framework sets join the expanded graph, so their lines are never unknown packages.
+- Framework capture subject: when the dispatch has a deployment, `@defaults` work captures under the run's deployment with the reserved step ID `defaults`, and init's internal install captures with the reserved step ID `init`. On paths with no deployment - direct commands and the init process itself - framework results report and never capture.
 
 No attempt ordinal or edge ID exists: result order plus membership is the whole contract.
 
@@ -239,6 +250,8 @@ result v1: parent=- package=nginx instance=default phase=install action=install 
 - `phase` comes from the action: install maps to `install`, configure to `reconfigure`, uninstall to `teardown`, verify to `verify`.
 - Fields are `key=value`, space-separated, no spaces in values; new fields may be appended; unknown fields are ignored by the reader.
 - No value, environment snapshot, stdout, stderr, payload, or free-form text is allowed in a result line.
+- At most 64 result and checkout lines per dispatch, each at most 512 bytes; exceeding either fails the dispatch.
+- The child also prints its checkout facts once, before its package work: `checkout v1: commit=<40-hex|unknown> dirty=true|false`. The tap collects both keys; a remote dispatch with no checkout line treats the commit as undeterminable under the executed-code check.
 
 The payload template, the eight byte-exact payload goldens, recipe stdin, and recipe stdout are untouched: the lines are printed by the child's framework code, like any other log line.
 
@@ -385,13 +398,14 @@ The artifact becomes the per-deployment, per-package capture:
 
 - `host_key` spelling becomes the immutable id: `ivps:<node-id>` or `ivps:<node-id>:<instance-id>` (external `ssh-sha256:<fingerprint>` arrives in Phase 5);
 - deployment identity fields (application, flavor, deployment name) and the runbook step ID are required;
-- `package_instance` points at the schema's own `$defs/component` (rejects `.`, `..`, edge whitespace like the frozen rule);
+- `package_instance` points at the schema's own `$defs/component`, further restricted to the space-free result-line charset;
 - `revision` minimum becomes 1 (conceptual revision 0 is absence), with an invalid revision-0 fixture;
-- `applied` holds `version` (required, non-empty), source-form values, time, and event ID - no commit field;
+- the runbook step ID becomes nullable, with the migration writer as its only null producer, pinned by valid and invalid fixtures;
+- `applied` holds `version` - required, space-free charset, or `null` when the recipe declares none - source-form values, time, and event ID; no commit field;
 - `applied.event_id`, `last_attempt.event_id`, and `health.event_id` are non-null;
 - schema and `schemas/v1/README.md` descriptions updated for the capture meaning and the uniform null-commit rule.
 
-The migrated-observation fixture gets its migration event ID, override true, an `ivps:` immutable host key, and non-null event IDs.
+The migrated-observation fixture gets its migration event ID, override true, an `ivps:` immutable host key, null step ID, null `last_attempt`, and non-null event IDs.
 
 ### Events
 
@@ -428,7 +442,7 @@ Each migrated value is classified by the `schemas/v1/README.md` mapping: a `@<ba
 
 Migration never writes plaintext, and a record whose classification or timestamp cannot be derived is reported, not migrated.
 
-An applied migration writes, event first: one `migrate-registry` event (revisions 0 to 1), one capture at revision 1 (`version` from the record when present, else `unknown` with the attempt marked failed, `application_commit` absent by shape), health `unknown` linked to the event, under the mapped deployment directory.
+An applied migration writes, event first: one `migrate-registry` event (revisions 0 to 1), one capture at revision 1 - `last_attempt: null`, `step_id: null` (the old record proves neither), `version` from the record when present else `null`, `applied` values from the old source forms, health `unknown` linked to the event - under the mapped deployment directory.
 
 It runs under the host lock, never invokes a recipe, and leaves the old source in place.
 
@@ -533,13 +547,16 @@ One red test at a time, in this order.
 - Two deployments with the same configuration share one installation through separate captures; a differing configuration is a conflict named before mutation, printing no secret material.
 - Uninstall is blocked while another deployment's capture exists, naming the deployments.
 - A value declared only by another package never enters a dependency's compared set; differing such values still allow sharing.
-- Failed first install leaves a capture with null `applied` and no reliance issues; retry runs install and records `applied` only after success.
+- Failed first install leaves a capture with null `applied`; retry runs install and records `applied` only after success.
 - Failed reconfigure preserves `applied` bytes; `version=unknown` marks the attempt failed.
+- `--adopt` records the capture only after guarded configure succeeds; unsupported configure refuses before mutation.
+- A recipe-reported version lands on the result line and in the capture; `none` stores null; a missing or failing reporter yields `version=unknown` and a failed attempt; the sweep covers every recipe in `pkg/`.
+- More than 64 lines, or a line over 512 bytes, fails the dispatch; the checkout line is collected once and drives the executed-code check.
 - Shared teardown releases one capture without uninstall; failed last uninstall preserves the capture; success removes it and uninstalls when the teardown phase names the package.
 - Direct uninstall over another deployment's capture fails, naming the deployments; with `CLOUDIFY_BREAK_RELIANCES` each displaced deployment gets its own naming event and release, then the uninstall.
 - Reconfigure and teardown fail on commit drift, naming both commits; a null-commit manifest fails with the unreproducible message.
 - Verify and teardown seed only from successful `applied`; a failed attempt never seeds.
-- Migration dry-run writes nothing; apply writes event first, then revision 1 with the mapped deployment capture; identical repeat is a no-op; conflicting migration fails without exposing values; external and removed records are reported, not migrated.
+- Migration dry-run writes nothing; apply writes event first, then revision 1 under the mapped deployment directory; identical repeat is a no-op; conflicting migration fails without exposing values; external and removed records are reported, not migrated.
 - No runtime caller of the old-record reader outside the migration command.
 
 No implementation test may weaken the payload goldens or a fragile-surface pin.
@@ -569,7 +586,7 @@ No capture writer lands before step 5 is green.
 
 1. Freeze the lock, result-line, matching, and reconciliation tests.
 2. The dispatch worker and bounded host lock; deployment matching (match, converge, create-printed).
-3. The version reporter contract and result emission around package attempts.
+3. The version reporter contract (`pkg_version()`, declared none, unknown-fails) and result emission around package attempts, plus the annotation sweep across every recipe in `pkg/`.
 4. The pass-through capture stage, line validation, and executed-code check.
 5. Reconciliation before ordered commits.
 6. Delete the runtime registry writer; split the goldens.
@@ -611,7 +628,7 @@ This design is accepted only when:
 - Rachid approves this document in plain language;
 - fresh independent SPEC and Technical reviews return `PASS` with file and line evidence on the approved revision;
 - the two fragile-surface changes already flagged (the flat-context field shapes and the result-line format) hold their recorded consent, and the reconfigure ladder insert plus the `applied` source label get their own go before step 4.4;
-- the next consented REDESIGN alignment carries the subject-scope qualifier for the fail-before-mutation sentence and the teardown release-after-recipe ordering;
+- the next consented REDESIGN alignment carries: the subject-scope qualifier for the fail-before-mutation sentence; the teardown release-after-recipe ordering; the compatibility sentence narrowed to value comparison (versions recorded, not compared); and the deployment naming rules (no `default` fallback; generated names) across REDESIGN, `schemas/v1/identity.md`, and GLOSSARY;
 - the REDESIGN amendment of this revision (capture holds the package version; the application commit lives at the deployment level) is confirmed with this document.
 
 No code is written before all of the above.

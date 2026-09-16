@@ -546,3 +546,9 @@
 - Point 6 conceded: the decision-refinement machinery is deleted as fragile overengineering. Recipes are idempotent, so re-running install is the converge; conditional dependencies need no machinery because only requested top-level packages must report; the guard reduces to two node-local scans (uninstall block, install conflict).
 - Points 4, 7, 8, 9 unchanged; point 10 confirmed - literal secrets transiently in the context file are by design.
 - REDESIGN capture-contents amended in the same commit: `applied` holds the required package version, no commit field; recipe provenance stays at the deployment level.
+
+## 2026-09-15 - one-tree limits confirmed; design cleared for review rounds
+
+- Rachid confirmed the three open items: `version=unknown` forcing the attempt failed is accepted; framework work (`@default`, `basics`, init internals) is captured, truth first; the REDESIGN amendment (capture holds the package version, no commit field) stands.
+- Rachid's question - does the one-tree principle give up true features - answered: the refused installation record's "machine truth" was an illusion (a capture by whichever deployment ran last); the honest give-ups are named and small (per-capture health and applied freshness; a node-local scan instead of one file read for the guard); verify remains the way any deployment refreshes its knowledge of the machine, per REDESIGN's authority rule. A derived human-readable index may be added later as its own slice if ever needed; not built now.
+- The redone design (revision 2) is cleared to enter the review rounds on Rachid's go.

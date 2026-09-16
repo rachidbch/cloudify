@@ -285,7 +285,7 @@ Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-s
 - [x] Include outcome, parent, package instance and phase for every attempted top-level package and dependency, with no values. (Design: "Result channel".)
 - [x] Reconcile results against every precomputed top-level package and dependency and fail closed on an unexpected package. (Design: "Expected dependency graph".)
 - [x] Freeze lock, state, event and result-frame tests before implementation. (Design: "Tests frozen before implementation".)
-- [ ] Obtain independent SPEC and Technical design reviews, both `PASS` with no actionable feedback; this gate writes no code, so it runs the reviews only and skips the E2E lines.
+- [x] Obtain independent SPEC and Technical design reviews, both `PASS` with no actionable feedback; this gate writes no code, so it runs the reviews only and skips the E2E lines. (Seven fresh-context rounds on HEAD 598ba94 through 06c5272; round seven, on revision 8 at 5da5f57, returned `PASS` from both reviewers with advisory notes only, applied in revision 9. Delegation was authorized by Rachid after an initial self-review round; the claude/codex backends were unavailable, so the independent rounds ran as fresh-context pi subagents, recorded in `LOGS.md`.)
 - [ ] Obtain explicit Rachid consent for the reviewed Phase 4 design before code.
 
 ## Physical package state, events and claims (Phase 4)

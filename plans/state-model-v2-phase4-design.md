@@ -1,8 +1,8 @@
 # Phase 4 design: physical package state, events, claims, and safe results
 
-Status: draft, revision 8, after six independent fresh-context review rounds.
+Status: draft, revision 9 (final for the gate), after seven independent fresh-context review rounds.
 
-Revisions 2 to 7 resolved the earlier rounds' findings; revision 8 resolves round six's must-fix findings: the declaration re-read contradiction, and the irreconcilable claim-only and verify-only execution decisions against static graph membership, plus that round's notes.
+Round seven returned `PASS` from both reviewers with advisory notes only; revision 9 applies those eight notes.
 
 Rachid's consent and the five contract decisions were given on 2026-09-15 and are recorded in `LOGS.md`.
 
@@ -244,6 +244,7 @@ Tighten `schemas/v1/package-state.schema.json` so:
 - every claim has a non-null `event_id`;
 - a missing state has conceptual revision 0, but the first persisted state has revision 1;
 - set the persisted `revision` minimum to 1, with an invalid revision-0 fixture, so a persisted state can never claim the absence revision;
+- point `package_instance` at the schema's own `$defs/component`, so the machine contract rejects `.` , `..`, and edge whitespace exactly like the frozen component rule;
 - update the schema and `schemas/v1/README.md` descriptions so a null applied commit reads as the uniform development-override rule (a proved old-registry migration, a direct package command, or a development-override application run); text only, no constraint change.
 
 A new or migrated state with no verification uses `health.status: unknown`, `checked_at: null`, and the event ID that created the state.
@@ -569,7 +570,7 @@ Exact rules:
 - `verification` is `ok`, `failed`, or `not-run`; `verification: failed` forces `outcome: failed`, so a package whose verification failed can never record a successful attempt.
 - `finished_at` is the child's UTC completion time.
 - `checkout_commit` and `checkout_dirty` follow Commit provenance and executed-code identity.
-- `child_exit_status` is the child cloudify process's captured exit status: an integer 0 through 255, or null when it was killed by a signal; a body reporting success for every result while the status is non-zero fails validation.
+- `child_exit_status` is the child cloudify process's captured exit status: an integer 0 through 255, or null when it was killed by a signal; a body reporting success for every result while the status is non-zero or null fails validation.
 - Normal Phase 4 writes set package-state `package_version` to null because no recipe-version reporter exists.
 - No value, environment snapshot, stdout, stderr, payload, path, nonce, claim, or free-form summary is allowed.
 - Every object has exactly these fields.
@@ -653,7 +654,7 @@ Direct package commands never create claims.
 Compatibility compares:
 
 - package and package instance;
-- last successful recipe or package version;
+- last successful recipe or package version; in Phase 4 this element is vacuous (`package_version` is null and claims store no commit), and the Phase 7 version reporter is what first populates it;
 - the claim projection: every value the package itself declares;
 - non-secrets by source form;
 - secret references by reference;
@@ -951,7 +952,7 @@ No package-state writer lands before step 5 is complete and green.
 1. Add the `.package-instance` contract and tests.
 2. Resolve instance identity from the already-built context.
 3. Add inventory host key, host root, state path, and host-lock path helpers.
-4. Reject external durable state and ship the README or release note on the temporary external-host suspension, the local-inventory prerequisite for bare local installs, and the executed-commit freshness requirement (push and let the remote refresh, or expect a degraded dispatch until Phase 7 pins execution).
+4. Reject external durable state and ship the README or release note on the temporary external-host suspension, the local-inventory prerequisite for bare local installs, the executed-commit freshness requirement (push and let the remote refresh, or expect a degraded dispatch until Phase 7 pins execution), and the clock-sync expectation behind the five-minute staleness slack.
 
 ### 4.3 Host lock and result channel
 
@@ -967,7 +968,7 @@ The result-line format was consented on 2026-09-15; the streamed-logging chain i
 
 ### 4.4 Phase-specific resolution
 
-1. Add applied source forms below explicit reconfigure sources; this includes extending the context build to verify and teardown dispatches, which today deliberately build no context, so their requested projection is not empty.
+1. Add applied source forms below explicit reconfigure sources; this includes extending the context machinery to the dispatch paths that still lack it (the local verify path and the future runbook verify and teardown dispatches), so their requested projection is not empty.
 2. Seed verify and teardown from applied only.
 3. Require matching resupply for redacted literals.
 4. Keep install defaults from reinterpreting an existing claim.

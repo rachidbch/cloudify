@@ -1105,3 +1105,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Fresh independent reviews (pi subagents; claude/codex backends unavailable, exit 1) returned SPEC FAIL with one must-fix (missing install decision for state present with null applied and no claim, the failed-first-install shape) plus five notes, and Technical FAIL with one must-fix (migration lacked a secret-classification rule for old `var.*` values) plus five notes.
 - Revision 4 resolves all eleven findings: failed-first-install retry branch; migration value classification per the schemas README mapping with fail-closed reporting; event-schema `allOf` amendment named in 4.1; claim projection via the one `.remote-vars` enumerator at commit time; development-override drift lockout; schema/README description updates in 4.1; external-host suspension release note; stale pointers and revision header.
+
+### 2026-09-15 - Phase 4 design gate: both reviews PASS on revision 8; revision 9
+
+- Seven fresh-context review rounds drove the design from 12 must-fix findings to zero: round seven returned SPEC `PASS` and Technical `PASS` with eight advisory notes, applied as revision 9. The Technical reviewer empirically verified the Bash-safety claims (ERR-trap inheritance, hard-link semantics, tap liveness) and the event/state protocol against REDESIGN step for step.
+- Note totals by round (must-fix SPEC+TECH): 12, 2, 4, 2, 2, 3, 0. All rounds ran as fresh-context pi subagents (claude/codex backends unavailable); delegation was authorized by Rachid.
+- The design now specifies: one marked result line on the preserved streamed log; executed-code provenance from the remote checkout; a decided execution plan refined under the host lock; uniform `development_override` null-commit rule; claims over own-declared values (ADR-025); commit-drift gate; `CLOUDIFY_BREAK_CLAIMS` override; hard-link immutable event creation; membership-plus-order reconciliation; temporary registry migration with a permanent schema-v1 event.
+- Remaining before code: Rachid's go on the reviewed design (five contracts already consented; two fragile changes flagged for their own go before steps 4.3/4.4).

@@ -6,22 +6,6 @@ Decision: ADR-026 (deployment-first per-node inventory in the ivps tree) and ADR
 
 This subplan sequences and gates the implementation. It holds no design: the specification and REDESIGN do.
 
-## Open decision ledger (living; on-disk memory of consents and pendings)
-
-Consented (recorded in ADR-027, LOGS.md, HISTORY.md, 2026-09-17):
-- Revision 7 accepted as the specification without a further verification pass.
-- Tree renamed: capture -> **cloudify inventory** (ivps inventory = hosts tree; cloudify inventories plugged into it).
-- `packages/` segment: `deployments/<application>/<flavor>/<deployment-name>/packages/<package>/<package-instance>/state.json`.
-- Events carry `tool_version` and non-secret `source_form` (secrets: reference or digest only); inventory derivable from the event log.
-- Reproduction anchored on package versions + value source forms; the commit stays provenance/drift guard only.
-- `_direct` reserved application namespace; bare installs synthesize ordinary deployments (virtual one-step runbook, reserved step ID `direct`); no out-of-band direct mutation.
-- Native dependencies stay report-only (structural gap accepted; dpkg owns its own reproduction).
-
-Pending Rachid's decision (blocks as noted):
-- **Host baseline v2** - his pushback: an os-release scan is not a baseline; a baseline must identify the machine origin (custom incus image). Proposal to decide: baseline = engine-origin identity (image fingerprint) read through ivps at first inventory write; `baseline: discovered|asserted|unknown`. Blocks nothing before 4.2.
-- **ivps instance identity** - ivps tracks no instance state today (ADR-009 delivered node ids only). Options: (a) ivps instance-tracking follow-up (ids + origin metadata per instance), or (b) engine-native instance UUID read through ivps. The two-host E2E hosts are `ivps launch`ed instances, so this blocks 4.2 and the phase exit gate.
-- **ivps merge** - `feature/immutable-ids` verified in the worktree (117 ok / 0 not ok focused, lint clean, ADR-009 + HISTORY); awaiting his word to `wt finish` into ivps main.
-
 ## Standing rules (inherited, not restated)
 
 - Review budgets per reviewed artifact (SDLC rule): SPEC 1 review + 1 fix + 1 verification; Technical up to 3 review/fix/verify passes; a still-failing verification escalates to Rachid.

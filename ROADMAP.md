@@ -457,3 +457,10 @@ Scope: at rest only (config holds a reference); in transit the plaintext still
 reaches the host via the payload, so single-quoting + debug masking stay
 mandatory. Backend failure = die with a clear message, never forward empty.
 Write path unchanged (`vars set --stdin` stores a literal or a reference).
+
+## Open decisions (state-model v2, pending Rachid)
+
+Concluded decisions live in ADR.md and the design docs; this section tracks only the open ones.
+
+- [ ] **Host baseline invariant (ADR-027 follow-up)**: baseline = machine origin identity, not a system scan. Proposed invariant: each inventory record binds `origin` (base image fingerprint + created-at + provider, `discovered|asserted|unknown`) to a `continuity` anchor (ivps instance id + last-seen boot id). Every dispatch compares continuity before mutation; a replaced or restored machine (new uuid, or new boot id) fails before mutation with a named message until verify or re-adoption. Needs ivps instance records (below) for instances; nothing to read today.
+- [ ] **ivps instance records**: ivps tracks no instance state (`nodes/<node>/node.json` only; the `<instance>/` dirs under a node are cloudify's old registry leftovers, unparsed by ivps). Proposal: `nodes/<node-id>/instances/<instance-id>/instance.json` (id, name, engine, base image fingerprint, created-at, uuid), written by `ivps launch`/`node adopt`, backfilled lazily; `ivps node path <node>:<instance>` returns the id-keyed dir so cloudify plugs its inventory there. Delivers both instance identity (cloudify `ivps:<node-id>:<instance-id>` keys; two-host E2E hosts are instances, blocks 4.2) and the baseline image fingerprint in one stroke.

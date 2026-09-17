@@ -36,6 +36,8 @@ Two files are normative and are the single source of truth:
 - **The design** - `REDESIGN.md`: what the system must be.
 - **The plan** - this file, through `PLAN.md`: what to do, in what order, behind which gate.
 
+The active Phase 4 execution subplan is `plans/state-model-v2-phase4-implementation.md`, reached from this plan; it moves to `plans/archived/` when Phase 4 closes.
+
 Everything else is a working note. Use them freely, put them wherever is convenient, throw them away. The only requirement is that any spec or plan change ends up in one of those two files.
 
 Four things are neither, and must not be treated as working notes:
@@ -305,6 +307,8 @@ Superseded 2026-09-15: ADR-026 redid the geometry, so the revision-9 design and 
 ## Physical package state, events and claims (Phase 4)
 
 Outcome superseded 2026-09-15 by ADR-026: the checklist below encodes the superseded package-first geometry and is redone with the new deployment-first design; the fragile-surface, testing, and gate rules still apply.
+
+Phase 4 is now executed through `plans/state-model-v2-phase4-implementation.md` (the execution subplan), built to `plans/state-model-v2-phase4-design.md` (redone revision 7, the frozen specification under ADR-026; design-review budgets closed - see the Review budget ledger). The checklist below is superseded history.
 
 Old outcome: one physical installation is represented once, every mutation has an immutable event, and one deployment cannot break another.
 

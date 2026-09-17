@@ -625,3 +625,9 @@
 - Rachid: every review budget for the turn is blown. Acknowledged - SPEC 1+1+1 fully used (verification failed and escalated), Technical 3/3 used plus one over-budget verification attempt (returned nothing). The review turn is closed; the three escalation residue fixes were applied (1e6c67e), the Technical round-two fixes were applied (revision 7, 27bc8c6), and no review runs again without his direction.
 - The review-bounds rule moved into the AGENTS.md SDLC section (one rule, one home), per his direction to carve it there.
 - Next per Rachid: plan the implementation as a subplan in plans/, referred to by the current plan; structure proposed for alignment before creation.
+
+## 2026-09-15 - Phase 4 implementation subplan created; recovery plan wired
+
+- Created `plans/state-model-v2-phase4-implementation.md` (the execution subplan): slices 4.0-4.7 as red-test-first checklists with per-slice exits, standing rules (review budgets per artifact, drift rule, fragile-surface gates, TDD/container/push), the ivps immutable-id deliverable as a dependency, the design (revision 7) as the frozen specification, and a closure section (outcome recorded back into the parent plan; subplan archived).
+- `plans/state-model-v2-recovery.md` remains the single point of entry: its Phase 4 section now points to the subplan (execution) and the design (specification); "Where things live" names the subplan; the superseded checklist stays as banner-marked history.
+- Implementation starts at 4.0/4.1 on Rachid's go.

@@ -619,3 +619,9 @@
 
 - Rachid asked where the review budget is tracked. Answer: it was only in a LOGS entry - now there is a living ledger in the recovery plan ("Review budget ledger") with exact pass counts.
 - Current counts: SPEC budget exhausted (review, fix, verification used; verification FAILed and escalated; Rachid authorized the residue fixes, applied). Technical: passes 1 and 2 used (each FAIL then fixed); pass 3 - the final verification on revision 7 - is pending; its first attempt returned no result from the delegation harness.
+
+## 2026-09-15 - review turn closed; all budgets exhausted
+
+- Rachid: every review budget for the turn is blown. Acknowledged - SPEC 1+1+1 fully used (verification failed and escalated), Technical 3/3 used plus one over-budget verification attempt (returned nothing). The review turn is closed; the three escalation residue fixes were applied (1e6c67e), the Technical round-two fixes were applied (revision 7, 27bc8c6), and no review runs again without his direction.
+- The review-bounds rule moved into the AGENTS.md SDLC section (one rule, one home), per his direction to carve it there.
+- Next per Rachid: plan the implementation as a subplan in plans/, referred to by the current plan; structure proposed for alignment before creation.

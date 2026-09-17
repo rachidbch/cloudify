@@ -1,6 +1,8 @@
 # Phase 4 design: per-node deployment capture, guard, and streamed results
 
-Status: draft, revision 5 of the redone design, under ADR-026.
+Status: draft, revision 6 of the redone design, under ADR-026.
+
+Revision 6 removes three refused-geometry residues the round-three review caught in normative files, and resolves that round's remaining must-fix findings.
 
 Revision 3 resolved round one's findings; revision 4 resolves round two's findings and aligns the remaining stale authority text (default-name rules, the fragile-surface pin, the compatibility sentence, adoption) to ADR-026, so no reviewer can read a refused geometry back as authority.
 
@@ -149,6 +151,10 @@ Instance keys are space-free and restricted to the visible charset `[A-Za-z0-9._
 
 Instance keys are never time-generated.
 
+A package declares instance support with a `.package-instance` file in its recipe directory, containing exactly the name of its instance variable; that variable must also appear in the package's `.remote-vars` declaration.
+
+The framework validates the declared name and resolves the instance key from it.
+
 After resolution, the context records one sorted `package.<PACKAGE>.instance` field for every precomputed top-level package and dependency, and the capture and result machinery read that identity from the context.
 
 ## Commit provenance and executed-code identity
@@ -174,7 +180,7 @@ The guard is a node-local scan of that tree.
 Rules:
 
 - Uninstall of a package instance is blocked while another deployment's capture exists for the same package and instance. The blocker names the deployments.
-- Install or configure with a configuration that differs from an existing capture of the same package instance held by another deployment is a conflict: it fails before mutation and names the deployments in conflict. The comparison reads that capture's `applied` values - what the other deployment last applied.
+- Install or configure with a configuration that differs from an existing capture of the same package instance held by another deployment is a conflict: it fails before mutation and names the deployments in conflict. The comparison reads that capture's `applied` values - what the other deployment last applied; when `applied` is null (a failed first install), it reads that capture's `last_attempt.requested` values instead, so a differing requested configuration is still a conflict.
 - Same configuration: no conflict - the recipe converges the same installation, and the new deployment records its own capture.
 
 Compared values are the values the package itself declares (its `.remote-vars` names), taken from the one dispatch context; a value declared only by another package is recorded by that package's own capture, so conflicts surface there.
@@ -222,6 +228,8 @@ The parent looks up that package's values in the precomputed dispatch context an
 
 A runtime dependency absent from the precomputed graph still reports, and its capture fails closed: no values are invented after execution.
 
+The classifier between the two refusal rules: a result naming a package that exists under `pkg/` but is absent from this dispatch's expanded graph is that dependency's own fail-closed capture, and the run is degraded; a result naming something that is not a known package at all is a graph error, and the dispatch fails in full before any capture write.
+
 The router's original command-line package list is not an adequate inventory of dependency work; the result lines are.
 
 ## Expected results and reconciliation
@@ -257,7 +265,7 @@ result v1: parent=- package=nginx instance=default phase=install action=install 
 - The child prints one line per package attempt, when that attempt ends - live, richer logs by construction.
 - `parent` is `-` for a top-level package, the immediate package name for a dependency, `@defaults` or `@init` for framework work.
 - `version` is the reported package version, or `unknown`; `unknown` forces `outcome=failed`.
-- `outcome` is `succeeded` or `failed`; `exit` agrees with it; `verification` is `ok`, `failed`, or `not-run`, and `failed` forces `outcome=failed`.
+- `outcome` is `succeeded` or `failed`; `exit` is the recipe's real exit status, 0 through 255 - a non-zero exit forces `outcome=failed`; `verification` is `ok`, `failed`, or `not-run`, and `failed` forces `outcome=failed`. Forced failures never alter `exit`: the line records the recipe's exit truthfully, and `outcome` is the framework's verdict.
 - `phase` comes from the action: install maps to `install`, configure to `reconfigure`, uninstall to `teardown`, verify to `verify`.
 - Fields are `key=value`, space-separated, no spaces in values; new fields may be appended; unknown fields are ignored by the reader.
 - No value, environment snapshot, stdout, stderr, payload, or free-form text is allowed in a result line.
@@ -582,7 +590,7 @@ No implementation test may weaken the payload goldens or a fragile-surface pin.
 
 1. Red schema fixtures and projection tests.
 2. The flat context declaration-origin and package-instance fields under the fragile-surface gate, including the `cloudify_context_validate` accepted-shape extension.
-3. Generalize the one jq schema validator; reshape the package-capture schema.
+3. Generalize the one jq schema validator; reshape the package-capture schema; the reserved step IDs `defaults` and `init` join runbook-step validation with fixtures.
 4. The shared ID helper and writer identity.
 5. Immutable event rendering and hard-link creation.
 6. Capture rendering with event-first replacement.

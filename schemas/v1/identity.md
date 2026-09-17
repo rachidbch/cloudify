@@ -84,7 +84,9 @@ Old desired inputs, registry records and snapshots are migration inputs only, ea
 Each tuple component is one directory level, in the order application, flavor, deployment name.
 Desired inputs live at `<config-root>/deployments/<application>/<flavor>/<deployment>/values.yaml`.
 Current state lives at `<state-root>/deployments/<application>/<flavor>/<deployment>/manifest.json`.
-On a node, the deployment capture lives at `<host-state-root>/deployments/<application>/<flavor>/<deployment>/<package>/<package-instance>/state.json`, and the installation record for one package instance lives at `<host-state-root>/pkgs/<package>/<package-instance>/state.json` (ADR-026).
+On a node, the deployment capture lives at `<host-state-root>/deployments/<application>/<flavor>/<deployment>/<package>/<package-instance>/state.json`.
+
+There is no second state tree: a package instance used by several deployments appears once per deployment that covers it, and the guard compares those captures (ADR-026).
 A reliance names its deployment with three separate fields inside its record instead of one joined key, so no separator choice can be ambiguous.
 Package-instance keys are space-free and restricted to the visible charset `[A-Za-z0-9._+~:-]`, so they are always safe on a result line and in a path.
 

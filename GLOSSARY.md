@@ -86,7 +86,7 @@ A recipe must explicitly support package instances before a caller may choose an
 
 Cloudify's last confirmed observation of one package instance on one host.
 
-Each deployment captures what it did on the node under its own directory (ADR-026); the installation record for one package instance holds the physical truth and the reliances.
+Each deployment captures what it did on the node under its own directory (ADR-026); the same package instance used by several deployments appears once per deployment, and the guard compares those captures.
 
 The record contains a revision, the last successful applied state, the last attempt, verification health, and active reliances.
 

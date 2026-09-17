@@ -285,7 +285,7 @@ When teardown needs a literal secret represented only by a digest, the caller or
 
 Current defaults never silently change verification or teardown behavior.
 
-An install phase encountering an existing reliance is an idempotent no-op followed by verification.
+Re-running install converges: an existing reliance means the recipe no-ops when the installation already exists, and verification runs.
 
 It does not resolve changed defaults again.
 
@@ -358,7 +358,7 @@ A successful install or reconfigure updates `applied`.
 
 A verify updates health but not applied values.
 
-Installations record which deployments rely on them, so the shared-installation guard can hold: two deployments relying on one installation cannot silently break or remove each other's.
+The node's deployment captures show which deployments rely on an installation: the guard scans them, so two deployments relying on one installation cannot silently break or remove each other's.
 
 A deployment may start relying on an installation only when its requested configuration is compatible with what the installation holds and with every deployment already relying on it.
 

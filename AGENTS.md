@@ -18,6 +18,7 @@ Everything else: plain TDD, no gate.
 - **Tool priority.** cloudify > ivps > incus; incus only with explicit consent.
 - **Verify stuck before killing.** A slow mutating op isn't a hang - confirm no progress (D-state, zero I/O) first. Mid-op kills leave dirty state that breaks the next run.
 - **Docs before code, logs before hypotheses.** Read README/AGENTS + logs before diagnosing; never assert an unconfirmed root cause.
+- **Review passes are bounded.** A SPEC review gets one review pass, one fixing pass, and one verification pass; a Technical review gets at most three review/fix/verify passes. A verification pass that still finds must-fix findings is an escalation to Rachid - never another loop. Reason: each extra loop iteration adds micro-drift that becomes truth in the next iteration, so drift multiplies.
 - **Superseded ADRs need surfaced consent.** ADRs are append-only, so a newer ADR contradicting an older one is normal and must not stop work. But when a decision departs from an agreed-upon ADR, surface the departure first and get explicit, well-informed consent - never follow the supersession chain silently.
 
 ## Conventions

@@ -614,3 +614,8 @@
 - Revision 7: native `pkg_depends` words become named report-only subjects in the expanded graph (declaring package as parent; no capture, no event, exempt from the version contract and guard); the classifier now has named buckets (capture / per-subject fail-closed / report-only native / graph error); migration decodes the `@base64:` transport before applying name rules, never emits an explicit classification, and lists every decoded value in the report so the operator can re-establish deliberate references.
 - Notes applied: the version sweep is the declaration mechanism (no undeclared "declaration" alternative); lock-timeout metadata is read from the lock file where the holder wrote it; `ivps node path` becomes id-keyed in the 4.2 deliverable, pinning rename safety.
 - Technical budget: review 2 used; review 3 (verification) is the last pass in budget.
+
+## 2026-09-15 - review budget ledger created; Technical verification re-run needed
+
+- Rachid asked where the review budget is tracked. Answer: it was only in a LOGS entry - now there is a living ledger in the recovery plan ("Review budget ledger") with exact pass counts.
+- Current counts: SPEC budget exhausted (review, fix, verification used; verification FAILed and escalated; Rachid authorized the residue fixes, applied). Technical: passes 1 and 2 used (each FAIL then fixed); pass 3 - the final verification on revision 7 - is pending; its first attempt returned no result from the delegation harness.

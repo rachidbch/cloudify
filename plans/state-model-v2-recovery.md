@@ -87,6 +87,18 @@ No implementation may weaken the design or the plan silently. A required change 
 - No code commit while a SPEC or Technical reviewer has actionable feedback on that slice.
 - Fragile surface (`lib/remote.sh`, `lib/vars.sh`, `lib/context.sh`, `lib/shadows/`, `lib/shadow.sh`): read `docs/FRAGILE.md` before editing any of them, name the invariants touched in the plan or commit, run `task gate`, and keep the byte-exact goldens unchanged. A contract change (visit order, format, ownership) or a pinning-test edit needs Rachid's go first. Everything else is plain TDD.
 - Reviews are bounded (Rachid, 2026-09-15): a SPEC review gets one review pass, one fixing pass, and one verification pass; a Technical review gets at most three review/fix/verify passes. A verification pass that still finds must-fix findings escalates to Rachid instead of looping. Reason: each extra loop iteration adds micro-drift that becomes truth in the next iteration. Per-phase reviews of a real diff are the primary gate; reviewing plan prose is not.
+
+### Review budget ledger (living; update at every pass)
+
+- SPEC - budget: 1 review + 1 fix + 1 verification.
+  - Review 1: used - superseded revision 2, FAIL (6 must-fix) -> fixed.
+  - Review 2: used - revision 3, FAIL (3 must-fix) -> fixed (revisions 4-6, including the escalation-authorized residue fixes).
+  - Verification: used - revision 6, FAIL (3 residue must-fix) -> escalated; Rachid authorized the fixes (applied, 1e6c67e).
+  - Status: SPEC budget exhausted. Any further SPEC pass happens only on Rachid's explicit direction.
+- Technical - budget: 3 review/fix/verify passes.
+  - Pass 1: used - superseded revision 2, FAIL (2 must-fix) -> fixed.
+  - Pass 2: used - revision 6, FAIL (2 must-fix: native dependency results refused by the classifier; migration fabricating secret classifications) -> fixed (revision 7).
+  - Pass 3 (verification): pending - first attempt on revision 7 returned no result (harness); re-run required. Remaining must-fix after this pass escalates to Rachid.
 - `git status --short` is clean at every committed boundary.
 
 Test levels are fixed. L0 is shellcheck plus syntax. L1 is the real code run on a real machine without dispatching a package. It is not a separate file: `tests/unit/context-wiring.bats` already drives the real transport with a stubbed ssh, asserting the payload text and the ssh argument string, which is exactly this level. Later slices add a driver only if nothing existing covers the new wiring. L2 is one no-verify mutation of the disposable package `fixture-split` (already in `pkg/`) with an inspection of Cloudify's own log. L3 is `PKG_VERIFY_TIMEOUT=30 cloudify verify fixture-split`. L4 is the scoped bats acceptance harness. Every level names a concrete artifact, and no driver is created before the code it drives, so none can be satisfied by an empty green file.

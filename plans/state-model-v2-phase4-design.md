@@ -428,7 +428,7 @@ The artifact becomes the per-deployment, per-package capture:
 - `applied.event_id`, `last_attempt.event_id`, and `health.event_id` are non-null;
 - schema and `schemas/v1/README.md` descriptions updated for the capture meaning and the uniform null-commit rule.
 
-The migrated-observation fixture gets its migration event ID, override true, an `ivps:` immutable host key, null step ID, null `last_attempt`, and non-null event IDs.
+The migrated-observation fixture gets its migration event ID (the event carries `development_override: true`; the capture has no commit field to bear it), an `ivps:` immutable host key, null step ID, null `last_attempt`, and non-null event IDs.
 
 ### Events
 
@@ -455,9 +455,9 @@ When the first capture writer lands, the runtime registry writer dies in the sam
 
 Dry-run is the default; `--apply` is required to write.
 
-It accepts an explicit old deployment id identifying the tree to inspect, with the application, flavor, and deployment mapping mirroring `cloudify deployment migrate`'s `--application <application>/<flavor> --name <name>` flags; records whose old deployment id has no mapping are reported, not migrated.
+It accepts an explicit old deployment id identifying the tree to inspect, with the mapping flags mirroring `cloudify deployment migrate` (`--application <application> [--flavor <flavor>] [--name <deployment>]`); records whose old deployment id has no mapping are reported, not migrated.
 
-For each inventory record with `status: installed` or `configured`, it proves only: host and immutable id from the bucket, package, instance `default`, recorded version when present, observation time when present, old source-form `var.*` values, and the old path with its sha256.
+For each inventory record with `status: installed` or `configured`, it proves only: host address from the bucket - the immutable id resolved from the inventory, with an unresolvable node reported among the not-migrated records - package, instance `default`, recorded version when present, observation time when present, old source-form `var.*` values, and the old path with its sha256.
 
 It never infers application commit, run ID, step ID, health, bindings, or history, and ignores `output.*` fields.
 

@@ -599,3 +599,9 @@
 
 - Rachid authorized the three one-line residue fixes (all pure residue removal, zero design change): the stale install-and-configure version-query sentence deleted (the every-attempt contract stands); GLOSSARY dropped "and active reliances" from the physical-package-state record contents; identity.md's two claims-geometry sentences recast to per-deployment captures and the scan guard.
 - The empty Technical review returns were the laptop sleeping, not harness flake. Both remaining passes now run on the fixed revision: the final SPEC verification pass and the Technical review 2.
+
+## 2026-09-15 - escalation fixes applied; spec reviews capped; Technical review 2 launching
+
+- Rachid authorized the escalation fixes and corrected the process: the SPEC budget was spent (review, fix, verification - verification FAILed and escalated), so running another spec verification was over the cap. No further spec reviews until he directs one.
+- Applied everything the past spec reviews identified: `schemas/v1/README.md` migration destination moved to the mapped deployment directory with reliance wording (the one must-fix); the migration command's flags cite the real interface; the development override attributed to the migration event; the immutable id resolved from the inventory with unresolvable nodes reported, not migrated.
+- State: the Technical review 2 - the one remaining pass - launches now on the fixed revision. Technical budget after this: one fix pass and one review pass remain.

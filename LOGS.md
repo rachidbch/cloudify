@@ -584,3 +584,13 @@
 - Rachid declared the looping SPEC review a failure: two iterations of it each produced drift from what was agreed, because every loop iteration adds a micro-drift that becomes truth in the next iteration, multiplying drift.
 - New standing rule (AGENTS.md constitution + recovery plan): SPEC reviews are one review pass, one fixing pass, one verification pass - a verification pass still finding must-fix escalates to Rachid. Technical reviews get at most three review/fix/verify passes, then remaining must-fix escalates.
 - Ledger for the current redone Phase 4 design: SPEC has used review 1 (revision 2) and review 2 (revision 3); its next pass is the verification pass on revision 6. Technical has used review 1 (revision 2); its next pass is review 2 on revision 6, with one fix and one review left in budget.
+
+## 2026-09-15 - ESCALATION: SPEC verification pass failed; Technical review blocked
+
+- The SPEC verification pass on revision 6 (HEAD 1a18519) returned FAIL with three must-fix findings - all one-line residue, zero design change:
+  1. The design contradicts itself on version-query scope: "every package attempt, whatever the phase" (line 102) vs a stale revision-2 leftover "after every install and configure" (line 110). As written, every verify and teardown attempt would be forced failed.
+  2. GLOSSARY.md:91 still lists "active reliances" inside the physical-package-state record contents - refused records-guard residue missed by the smuggling sweep.
+  3. identity.md:9 and :48 still carry two claims-geometry sentences ("two separate claim entries"; "the runbook step ID that names a claim").
+- Per the bounded-review rule, this is an escalation to Rachid, not another loop.
+- The Technical review 2 could not run: two consecutive delegation attempts returned empty (harness flake). Technical budget remains at review 2 of 3.
+- Proposed resolution awaiting Rachid: authorize the three one-line residue fixes, then one final SPEC verification pass and the Technical review 2 on the fixed revision.

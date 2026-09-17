@@ -421,3 +421,19 @@ Decision:
 - Native (non-cloudify) dependencies pulled by a recipe stay report-only result subjects; reproducing them is the machine package manager's own ledger.
 
 Consequences: schemas gain `tool_version`, conditional non-secret `source_form`, the `packages/` layout, and the reserved step ID `direct`; docs and GLOSSARY rename capture to cloudify inventory; direct commands gain deployment lifecycle semantics; no compatibility shims are introduced (one v2 path).
+
+## ADR-028: Host origin and continuity anchor
+
+Status: accepted (Rachid, 2026-09-18)
+
+Context: ivps and the engine can mutate hosts (restore, recreate, move), so a cloudify inventory can never claim "the machine is in this state". A host baseline is the machine's origin identity, not a system scan: an os-release-style probe cannot distinguish a pristine image from a sophisticated custom base.
+
+Decision:
+
+- Each host's inventory binds two facts, written once at first inventory write with the same immutable create-if-absent discipline as events, in the framework `cloudify/` directory beside `deployments/`:
+  - `origin`: base image fingerprint and created-at from the engine or ivps inventory (provider and image for created nodes), marked `discovered` (engine answered), `asserted` (operator supplied `--baseline <ref>`), or `unknown`;
+  - `continuity`: the immutable ivps host id plus the last-seen boot id.
+- Every dispatch compares the observed pair (host id, boot id) against the recorded continuity before any mutation. A replaced machine (new instance id) or a rewound one (same id, new boot id) fails before mutation with a named message - verify or re-adoption is the operator's next move. Cloudify never silently mutates on top of an ivps or engine act.
+- Prerequisite: ivps instance records (`nodes/<node-id>/instances/<instance-id>/instance.json`: immutable id, name, engine, base image fingerprint, created-at, engine uuid; approved by Rachid, human scanability first for both tools). Until they exist, instance hosts have no durable identity and external hosts stay suspended (Phase 5).
+
+Consequences: design gains a "Host origin and continuity" section with tests; the ivps instance-record follow-up unlocks instance inventory roots (`ivps node path <node>:<instance>`), cloudify `ivps:<node-id>:<instance-id>` keys, and the baseline fingerprint in one feature.

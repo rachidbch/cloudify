@@ -112,6 +112,22 @@ The annotation sweep across every recipe in `pkg/` is part of step 4.3, before a
 
 `applied` holds no commit: the recipe provenance lives at the deployment level (manifest, events), not per package.
 
+## Host origin and continuity
+
+ivps and the engine can mutate hosts - restore, recreate, move - so an inventory never claims "the machine is in this state".
+What it claims: this inventory describes the machine that had this origin, and cloudify can detect when that machine is gone or was rewound.
+
+At the first inventory write on a host, cloudify records two facts in the framework `cloudify/` directory beside `deployments/`, with the same immutable create-if-absent discipline as events:
+
+- `origin`: the machine's base image fingerprint and created-at from the engine or ivps inventory, marked `discovered` (engine answered), `asserted` (operator supplied `--baseline <ref>`), or `unknown` (nothing could answer, e.g. bare metal);
+- `continuity`: the immutable ivps host id plus the last-seen boot id.
+
+Every dispatch compares the observed pair (host id, boot id) against the recorded continuity before any mutation.
+A replaced machine (new instance id) or a rewound one (same id, new boot id after a snapshot restore) fails before mutation with a named message - verify or re-adoption is the operator's next move.
+Cloudify never silently mutates on top of an ivps or engine act.
+
+The origin facts come from ivps instance records (`nodes/<node-id>/instances/<instance-id>/instance.json`, ADR-028): until they exist, instance hosts have no durable identity and no origin to record.
+
 The version is the software fact and is required: every package recipe reports its installed version, the framework queries it after every package attempt, and a missing or failing report makes the attempt failed with `version=unknown`.
 
 `health` is this deployment's last verification observation, not the machine's truth; the machine is checked by running verify.
@@ -578,6 +594,7 @@ One red test at a time, in this order.
 - Node and instance targets produce distinct immutable keys and roots; two aliases of one host share one lock.
 - A bare local install requires `ivps node path local` and fails with a named error when absent.
 - An external target fails before remote execution.
+- Host origin lands as `discovered` when the ivps instance record answers, `asserted` with `--baseline`, `unknown` otherwise; a boot-id change on the same host id fails before mutation; a new host id fails; a rename keeps continuity.
 
 ### Locking and result lines
 
@@ -628,10 +645,11 @@ No inventory writer lands before step 5 is green.
 
 ### 4.2 Immutable identity, instances, and paths
 
-1. The ivps deliverable: immutable id per node and instance, adopted by cloudify; `ivps node path` becomes keyed by the id, so a rename moves nothing.
-2. The `.package-instance` contract and tests.
-3. Instance identity from the context; per-node path helpers (`deployments/`, lock).
-4. Reject external durable state; ship the README or release note on the external-host suspension, the local-inventory prerequisite, the executed-commit freshness requirement, and the clock-sync expectation.
+1. The ivps deliverable: immutable id per node (landed, ivps ADR-009) and instance records (`nodes/<node-id>/instances/<instance-id>/instance.json`, `ivps node path <node>:<instance>` id-keyed), adopted by cloudify, so a rename moves nothing.
+2. Host origin and continuity: `cloudify/host.json` written once at first inventory write (origin `discovered|asserted|unknown` from the ivps instance record or `--baseline`; continuity = host id + boot id); every dispatch checks continuity before mutation.
+3. The `.package-instance` contract and tests.
+4. Instance identity from the context; per-node path helpers (`deployments/`, lock).
+5. Reject external durable state; ship the README or release note on the external-host suspension, the local-inventory prerequisite, the executed-commit freshness requirement, and the clock-sync expectation.
 
 ### 4.3 Host lock, versions, and result lines
 

@@ -37,7 +37,8 @@ This subplan sequences and gates the implementation. It holds no design: the spe
 
 ## 4.2 Immutable identity, instances, and paths
 
-- [ ] Adopt the ivps immutable ids; per-node path helpers (`deployments/`, `cloudify/` lock directory).
+- [ ] Adopt the ivps instance records (node ids already landed, ivps ADR-009); `ivps node path <node>:<instance>` id-keyed; per-node path helpers (`deployments/`, `cloudify/` lock directory).
+- [ ] Host origin and continuity (ADR-028): `cloudify/host.json` written once (origin discovered/asserted/unknown, continuity host id + boot id); every dispatch checks continuity before mutation.
 - [ ] `.package-instance` contract: file names the instance variable; variable must appear in `.remote-vars`; validation and tests.
 - [ ] Instance identity resolved from the context (`package.<PACKAGE>.instance`).
 - [ ] External durable state rejected before remote execution; README or release note covering the external-host suspension, the local-inventory prerequisite, executed-commit freshness, and clock-sync expectation.

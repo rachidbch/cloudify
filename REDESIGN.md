@@ -150,6 +150,8 @@ This is the cloudify inventory: the ivps inventory lists the hosts; cloudify inv
 
 Walking a node's tree answers what runs on it.
 
+Host origin and continuity (ADR-028): ivps and the engine can restore, recreate, or move hosts, so the inventory never claims "the machine is in this state" - it binds the machine's origin (base image fingerprint, created-at, from ivps instance records; `discovered`, `asserted`, or `unknown`) to a continuity anchor (immutable ivps host id plus last-seen boot id), and every dispatch compares the observed pair before any mutation: a replaced or rewound machine fails before mutation until verify or re-adoption.
+
 The deployment id is the deployment name: human-set through `--name`, else generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed.
 The same name is the same deployment; it is chosen at first run, recorded in the manifest, and reused unchanged on every host the deployment touches.
 

@@ -1,8 +1,8 @@
 # Phase 4 design: per-node deployment capture, guard, and streamed results
 
-Status: draft, revision 6 of the redone design, under ADR-026.
+Status: draft, revision 7 of the redone design, under ADR-026.
 
-Revision 6 removes three refused-geometry residues the round-three review caught in normative files, and resolves that round's remaining must-fix findings.
+Revision 6 removed refused-geometry residues from normative files; revision 7 resolves round two's Technical findings: native package-manager dependencies become named report-only subjects, migration decodes the old `@base64:` transport before classifying and never fabricates an explicit classification, the version contract is sweep-added to every recipe, and the lock and rename details are pinned.
 
 Revision 3 resolved round one's findings; revision 4 resolves round two's findings and aligns the remaining stale authority text (default-name rules, the fragile-surface pin, the compatibility sentence, adoption) to ADR-026, so no reviewer can read a refused geometry back as authority.
 
@@ -99,7 +99,7 @@ The software decides how many runtimes exist; cloudify decides only what it conf
 - `last_attempt`: the most recent attempt by this deployment - phase, requested value metadata, outcome, time, event ID;
 - `health`: this deployment's last verification observation - status, time, event ID.
 
-The version contract: every recipe may define `pkg_version()`, echoing the installed version of the package; the framework queries it after every package attempt, whatever the phase - verify and teardown lines carry it too. A recipe that genuinely has no version echoes `none`, and the capture stores `version: null`; a recipe with neither hook nor declaration, or whose reporter fails, yields `version=unknown` on its result line and the attempt is recorded as failed.
+The version contract: step 4.3's sweep adds `pkg_version()` to every recipe in `pkg/`, echoing the installed version, or `none` for a package that has no version - the capture then stores `version: null`; the framework queries it after every package attempt, whatever the phase, and result lines carry it. A recipe whose reporter fails yields `version=unknown` on its result line and the attempt is recorded as failed.
 
 Versions and instance keys are space-free and restricted to the visible charset `[A-Za-z0-9._+~:-]`; anything else reports `unknown`.
 
@@ -228,13 +228,13 @@ The parent looks up that package's values in the precomputed dispatch context an
 
 A runtime dependency absent from the precomputed graph still reports, and its capture fails closed: no values are invented after execution.
 
-The classifier between the two refusal rules: a result naming a package that exists under `pkg/` but is absent from this dispatch's expanded graph is that dependency's own fail-closed capture, and the run is degraded; a result naming something that is not a known package at all is a graph error, and the dispatch fails in full before any capture write.
+The classifier has three buckets: a result naming a cloudify package in the graph captures normally; a result naming a cloudify package absent from this dispatch's expanded graph is that dependency's own fail-closed capture, and the run is degraded; a result naming a native subject is reconciled as report-only; a result naming anything else is a graph error, and the dispatch fails in full before any capture write.
 
 The router's original command-line package list is not an adequate inventory of dependency work; the result lines are.
 
 ## Expected results and reconciliation
 
-Before taking the host lock, the worker expands the same static top-level and `pkg_depends` graph the context build already walks.
+Before taking the host lock, the worker expands the same static top-level and `pkg_depends` graph the context build already walks, extended to record each `pkg_depends` word that is not a cloudify package as a native subject row with the declaring package as parent - the walk already reports such names, and `lib/results.sh` owns the expansion.
 
 The graph is a superset of what may run, not a prediction of what will run.
 
@@ -246,6 +246,7 @@ Reconciliation after the streamed log closes:
 - A conditional dependency that never executed produces no result and blocks nothing.
 - Framework work reports truthfully and is expected: the `@default` package set (or `basics` under `--no-defaults`) on install actions, and the `required` converge from `cloudify init` on remote dispatches. Their lines carry `parent=@defaults` or `parent=@init`, and the framework sets join the expanded graph, so their lines are never unknown packages.
 - Framework capture subject: when the dispatch has a deployment, `@defaults` work captures under the run's deployment with the reserved step ID `defaults`, and init's internal install captures with the reserved step ID `init`. On paths with no deployment - direct commands and the init process itself - framework results report and never capture.
+- Native subjects report like any other line and write no capture and no event; they are exempt from the version contract and from guard comparison. Their installation is real, and the captures of the cloudify packages that declared them are where their consequence is recorded.
 - The reserved step IDs `defaults` and `init` are forbidden to runbook steps in validation, with fixtures, so framework attribution can never collide with authored steps.
 
 No attempt ordinal or edge ID exists: result order plus membership is the whole contract.
@@ -302,7 +303,7 @@ It is released before the deployment manifest lock is taken; the two locks are n
 
 No package or dependency acquires another lock.
 
-The wait defaults to the existing bounded state timeout (`CLOUDIFY_LOCK_TIMEOUT`); on timeout the holder's non-secret metadata is printed: writer host, boot ID, PID with process start ticks, acquired time, host key.
+The wait defaults to the existing bounded state timeout (`CLOUDIFY_LOCK_TIMEOUT`); on timeout the holder's non-secret metadata is printed - writer host, boot ID, PID with process start ticks, acquired time, host key - read from the lock file, where the holder wrote it under the held flock.
 
 `flock` decides ownership; the metadata is diagnostic only.
 
@@ -461,7 +462,11 @@ For each inventory record with `status: installed` or `configured`, it proves on
 
 It never infers application commit, run ID, step ID, health, bindings, or history, and ignores `output.*` fields.
 
-Each migrated value is classified by the `schemas/v1/README.md` mapping: a `@<backend>:` value becomes an explicit reference; a heuristic secret name is decoded from its `@base64:` or `@@` form first, then becomes a redacted literal with the sha256 of the plaintext; anything else stays a non-secret literal.
+The old registry re-encoded every multiline value as `@base64:...`, so that prefix is transport encoding, not a proven reference.
+
+Migration decodes the transport first, then classifies: a heuristic secret name becomes a redacted literal with the sha256 of the decoded plaintext; anything else becomes a non-secret literal holding the decoded form.
+
+Migration never emits an explicit secret classification, because the old record cannot prove a reference was deliberate; every decoded value is listed in the migration report so the operator can re-establish deliberate references afterwards.
 
 Migration never writes plaintext, and a record whose classification or timestamp cannot be derived is reported, not migrated.
 
@@ -558,7 +563,7 @@ One red test at a time, in this order.
 - Same-host workers serialize execution, capture, and commits; different hosts overlap; no nested locks.
 - Lock timeout prints holder metadata; the host lock releases before the manifest lock.
 - Payload bytes stay identical to all eight goldens with result lines active; recipe stdin and stdout bytes unchanged.
-- `@default`, `init`, and dependency lines all appear, attributed; every requested top-level package reports.
+- `@default`, `init`, dependency, and native lines all appear, attributed; every requested top-level cloudify package reports; native subjects write no capture and skip the version contract.
 - Missing requested top-level results fail; a result naming an unknown package fails; repeated membership commits in order.
 - Malformed lines (bad fields, unknown outcome, version mismatch with outcome) fail the dispatch.
 - The tap keeps a final unterminated line, never exits early, and survives the router's real ERR-trap environment.
@@ -600,7 +605,7 @@ No capture writer lands before step 5 is green.
 
 ### 4.2 Immutable identity, instances, and paths
 
-1. The ivps deliverable: immutable id per node and instance, adopted by cloudify.
+1. The ivps deliverable: immutable id per node and instance, adopted by cloudify; `ivps node path` becomes keyed by the id, so a rename moves nothing.
 2. The `.package-instance` contract and tests.
 3. Instance identity from the context; per-node path helpers (`deployments/`, lock).
 4. Reject external durable state; ship the README or release note on the external-host suspension, the local-inventory prerequisite, the executed-commit freshness requirement, and the clock-sync expectation.

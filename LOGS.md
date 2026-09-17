@@ -605,3 +605,12 @@
 - Rachid authorized the escalation fixes and corrected the process: the SPEC budget was spent (review, fix, verification - verification FAILed and escalated), so running another spec verification was over the cap. No further spec reviews until he directs one.
 - Applied everything the past spec reviews identified: `schemas/v1/README.md` migration destination moved to the mapped deployment directory with reliance wording (the one must-fix); the migration command's flags cite the real interface; the development override attributed to the migration event; the immutable id resolved from the inventory with unresolvable nodes reported, not migrated.
 - State: the Technical review 2 - the one remaining pass - launches now on the fixed revision. Technical budget after this: one fix pass and one review pass remain.
+
+## 2026-09-15 - Technical review 2 applied: native subjects and honest migration; revision 7
+
+- Technical review 2 (on revision 6) returned FAIL with two must-fix findings, both verified against code:
+  1. Native package-manager dependencies (35 edges across 20+ recipes; `required` pulls ten, `basics` five) produce result lines the classifier refused - every first-contact and `@default` install would end degraded by design. The context walk provably never emits non-cloudify dependency names.
+  2. Migration's classification rule fabricated explicit secret classifications for multiline non-secret values (the old registry re-encodes every multiline value as `@base64:` transport, and `base64` is a real backend), and downgraded genuine base64 references to digests.
+- Revision 7: native `pkg_depends` words become named report-only subjects in the expanded graph (declaring package as parent; no capture, no event, exempt from the version contract and guard); the classifier now has named buckets (capture / per-subject fail-closed / report-only native / graph error); migration decodes the `@base64:` transport before applying name rules, never emits an explicit classification, and lists every decoded value in the report so the operator can re-establish deliberate references.
+- Notes applied: the version sweep is the declaration mechanism (no undeclared "declaration" alternative); lock-timeout metadata is read from the lock file where the holder wrote it; `ivps node path` becomes id-keyed in the 4.2 deliverable, pinning rename safety.
+- Technical budget: review 2 used; review 3 (verification) is the last pass in budget.

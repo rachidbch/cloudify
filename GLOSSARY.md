@@ -88,7 +88,7 @@ Cloudify's last confirmed observation of one package instance on one host.
 
 Each deployment captures what it did on the node under its own directory (ADR-026); the same package instance used by several deployments appears once per deployment, and the guard compares those captures.
 
-The record contains a revision, the last successful applied state, the last attempt, verification health, and active reliances.
+The record contains a revision, the last successful applied state, the last attempt, and verification health.
 
 The live host remains authoritative about what actually exists.
 

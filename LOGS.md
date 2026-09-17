@@ -594,3 +594,8 @@
 - Per the bounded-review rule, this is an escalation to Rachid, not another loop.
 - The Technical review 2 could not run: two consecutive delegation attempts returned empty (harness flake). Technical budget remains at review 2 of 3.
 - Proposed resolution awaiting Rachid: authorize the three one-line residue fixes, then one final SPEC verification pass and the Technical review 2 on the fixed revision.
+
+## 2026-09-15 - escalation resolved: three residue fixes authorized and applied
+
+- Rachid authorized the three one-line residue fixes (all pure residue removal, zero design change): the stale install-and-configure version-query sentence deleted (the every-attempt contract stands); GLOSSARY dropped "and active reliances" from the physical-package-state record contents; identity.md's two claims-geometry sentences recast to per-deployment captures and the scan guard.
+- The empty Technical review returns were the laptop sleeping, not harness flake. Both remaining passes now run on the fixed revision: the final SPEC verification pass and the Technical review 2.

@@ -6,7 +6,7 @@ Implementation contract: `REDESIGN.md` section "Identity", decision: `ADR.md` AD
 
 ## Scope
 
-These rules cover every machine-owned identity component: application name, flavor, deployment name, package instance, and the stable runbook step ID that names a claim.
+These rules cover every machine-owned identity component: application name, flavor, deployment name, package instance, and the stable runbook step ID that owns a capture's work.
 They apply in three places: CLI parsing, on-disk path construction, and JSON field validation.
 Every schema under `schemas/v1/` encodes them as `$defs/component`, so a violating fixture fails before any writer runs.
 The `--on` host target grammar (`X`, `X:`, `X:Y`, `:Y`) is explicitly out of scope and unchanged during the state-model work; ivps owns node and instance identity.
@@ -45,7 +45,7 @@ There is no default deployment name (ADR-026): a deployment id is human-set thro
 `k3s/default` with deployment name `default` and `xfce-guacamole/default` with deployment name `default` are two different deployments and never collide.
 Their desired inputs live in different directories: `deployments/k3s/default/default/values.yaml` and `deployments/xfce-guacamole/default/default/values.yaml` under the Cloudify configuration root.
 Their manifests live in different directories: `deployments/k3s/default/default/manifest.json` and `deployments/xfce-guacamole/default/default/manifest.json` under the Cloudify state root.
-On a shared host they meet only inside physical package state, as two separate claim entries, so one deployment can neither read nor overwrite the other's intent.
+On a shared host each deployment keeps its own capture directories, so one deployment can neither read nor overwrite the other's intent; when their installations overlap, the guard compares the captures.
 
 ## Canonical reference, CLI rendering, and parsing
 

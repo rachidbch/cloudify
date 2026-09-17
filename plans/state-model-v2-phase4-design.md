@@ -107,7 +107,7 @@ The annotation sweep across every recipe in `pkg/` is part of step 4.3, before a
 
 `applied` holds no commit: the recipe provenance lives at the deployment level (manifest, events), not per package.
 
-The version is the software fact and is required: every package recipe reports its installed version, the framework queries it after every install and configure, and a missing or failing report makes the attempt failed with `version=unknown`.
+The version is the software fact and is required: every package recipe reports its installed version, the framework queries it after every package attempt, and a missing or failing report makes the attempt failed with `version=unknown`.
 
 `health` is this deployment's last verification observation, not the machine's truth; the machine is checked by running verify.
 

@@ -404,3 +404,20 @@ Decision:
 8. Cross-host deployment glue (manifest, desired inputs) stays minimal in Cloudify's own trees; the per-node capture is the primary record.
 
 Consequences: REDESIGN's data-homes and physical-state sections are aligned in this commit; the revision-9 Phase 4 design and its review rounds are superseded and redone under this geometry; schemas and writers land only with the redone design; ADR-025's comparison rules carry into the guard mechanism.
+
+## ADR-027: Cloudify inventory - naming, layout, event content, and direct-deployment synthesis
+
+Status: accepted (Rachid, 2026-09-17)
+
+Context: the per-node state tree under ADR-026 was named "capture". Design discussion on audit and reproducibility showed four gaps: the name invited confusion with the ivps inventory and with the deleted registry; the deployment directory left no room for future non-package facts; events carried no value content, so the per-node tree was not derivable from the event log and historical values were unrecoverable once overwritten; and bare direct installs mutated hosts outside any deployment, contradicting the "nothing out-of-band" contract.
+
+Decision:
+
+- The per-node tree is named the **cloudify inventory** (ivps inventory: the hosts tree; cloudify inventories: what cloudify configured on each host, plugged into the ivps tree). The term "capture" is retired; "registry" stays reserved for the deleted old format and its migration command.
+- The deployment directory gains a `packages/` segment: `deployments/<application>/<flavor>/<deployment-name>/packages/<package>/<package-instance>/state.json`, reserving the deployment directory for future non-package facts.
+- Every event records the writing cloudify tool version, and every non-secret event value carries its `source_form`; secrets carry only a reference or a digest, never both, never a source form. Consequence: the inventory is derivable from the event log; reproduction of historical values rests on these recorded forms, never on the availability of a git commit.
+- The commit remains a provenance and drift guard only (executed-code check, commit-drift gate); reproduction is anchored on recorded package versions plus value source forms.
+- The application namespace `_direct` is reserved. A bare direct install with no `--name` synthesizes an ordinary deployment under it: generated name, virtual one-step runbook with reserved stable step ID `direct`, manifest under the uniform commit rule, full inventory, events, guard, reliance, and teardown. Bare installs never match; explicit `--name` reuses that deployment. Direct mutation outside a deployment no longer exists.
+- Native (non-cloudify) dependencies pulled by a recipe stay report-only result subjects; reproducing them is the machine package manager's own ledger.
+
+Consequences: schemas gain `tool_version`, conditional non-secret `source_form`, the `packages/` layout, and the reserved step ID `direct`; docs and GLOSSARY rename capture to cloudify inventory; direct commands gain deployment lifecycle semantics; no compatibility shims are introduced (one v2 path).

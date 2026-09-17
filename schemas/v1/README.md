@@ -59,13 +59,13 @@ Automatic `output.*` fields are discarded, and old snapshot replay plus the snap
 `<bucket>/deployments/<id>/pkgs/<pkg>/config.yaml` becomes `<host-state-root>/deployments/<application>/<flavor>/<deployment>/<pkg>/<package_instance>/state.json` following `package-state.schema.json`, under the explicitly mapped deployment (ADR-026).
 The bucket is `ivps node path <node>`, that path plus `<instance>`, or `<config-root>/registry/hosts/<ssh_host>`.
 The `applied` section comes from a record with `status: installed` or `status: configured`.
-A record with `status: removed` becomes migration history and never a capture.
+A record with `status: removed` becomes migration history and never an inventory.
 
 The deployment manifest has no current-format source: nothing on disk records a pinned commit, target bindings, lifecycle status, or run and event IDs today.
 
 Events have no current-format source: the existing log at `/tmp/cloudify/logs/<timestamp>.log` contains raw command output and is never converted into events.
 
-A `var.<NAME>` field is observation data for migration, never intent and never a capture by itself.
+A `var.<NAME>` field is observation data for migration, never intent and never an inventory by itself.
 
 ## Migration mapping rules for one stored value
 

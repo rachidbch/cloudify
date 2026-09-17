@@ -47,7 +47,7 @@ the host AND streams live to the controller, unbuffered and unfiltered.
 
 - Never buffer, filter, or early-close the stream: an early-exiting stage
   (`grep -m1`, `head`) SIGPIPEs the chain and kills live output.
-- Any capture taps the stream pass-through: print every line onward, copy
+- Any result tap keeps the stream pass-through: print every line onward, copy
   matches aside, never stop reading.
 - The Phase 4 result channel is ordinary keyed lines in this stream: one
   `result v1:` line per package attempt (framework work attributed), one
@@ -57,7 +57,7 @@ the host AND streams live to the controller, unbuffered and unfiltered.
   Lives at `lib/remote.sh` (`cloudify_remote_sync` stream pipeline and the
   payload template's `exec`/`tee` pairing).
   Pinned by `tests/unit/golden-fixtures.bats` (payload bytes) and the Phase 4
-  capture-tap tests (4.3).
+  result-tap tests (4.3).
 
 ## 2. Shadows
 

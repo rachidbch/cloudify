@@ -6,7 +6,7 @@ Implementation contract: `REDESIGN.md` section "Identity", decision: `ADR.md` AD
 
 ## Scope
 
-These rules cover every machine-owned identity component: application name, flavor, deployment name, package instance, and the stable runbook step ID that owns a capture's work.
+These rules cover every machine-owned identity component: application name, flavor, deployment name, package instance, and the stable runbook step ID that owns an inventory's work.
 They apply in three places: CLI parsing, on-disk path construction, and JSON field validation.
 Every schema under `schemas/v1/` encodes them as `$defs/component`, so a violating fixture fails before any writer runs.
 The `--on` host target grammar (`X`, `X:`, `X:Y`, `:Y`) is explicitly out of scope and unchanged during the state-model work; ivps owns node and instance identity.
@@ -45,7 +45,7 @@ There is no default deployment name (ADR-026): a deployment id is human-set thro
 `k3s/default` with deployment name `default` and `xfce-guacamole/default` with deployment name `default` are two different deployments and never collide.
 Their desired inputs live in different directories: `deployments/k3s/default/default/values.yaml` and `deployments/xfce-guacamole/default/default/values.yaml` under the Cloudify configuration root.
 Their manifests live in different directories: `deployments/k3s/default/default/manifest.json` and `deployments/xfce-guacamole/default/default/manifest.json` under the Cloudify state root.
-On a shared host each deployment keeps its own capture directories, so one deployment can neither read nor overwrite the other's intent; when their installations overlap, the guard compares the captures.
+On a shared host each deployment keeps its own inventory directories, so one deployment can neither read nor overwrite the other's intent; when their installations overlap, the guard compares the inventories.
 
 ## Canonical reference, CLI rendering, and parsing
 
@@ -84,9 +84,9 @@ Old desired inputs, registry records and snapshots are migration inputs only, ea
 Each tuple component is one directory level, in the order application, flavor, deployment name.
 Desired inputs live at `<config-root>/deployments/<application>/<flavor>/<deployment>/values.yaml`.
 Current state lives at `<state-root>/deployments/<application>/<flavor>/<deployment>/manifest.json`.
-On a node, the deployment capture lives at `<host-state-root>/deployments/<application>/<flavor>/<deployment>/<package>/<package-instance>/state.json`.
+On a node, the deployment inventory lives at `<host-state-root>/deployments/<application>/<flavor>/<deployment>/packages/<package>/<package-instance>/state.json`.
 
-There is no second state tree: a package instance used by several deployments appears once per deployment that covers it, and the guard compares those captures (ADR-026).
+There is no second state tree: a package instance used by several deployments appears once per deployment that covers it, and the guard compares those inventories (ADR-026, ADR-027).
 A reliance names its deployment with three separate fields inside its record instead of one joined key, so no separator choice can be ambiguous.
 Package-instance keys are space-free and restricted to the visible charset `[A-Za-z0-9._+~:-]`, so they are always safe on a result line and in a path.
 

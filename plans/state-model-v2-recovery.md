@@ -100,7 +100,7 @@ No implementation may weaken the design or the plan silently. A required change 
 - Technical - budget: 3 review/fix/verify passes.
   - Pass 1: used - superseded revision 2, FAIL (2 must-fix) -> fixed.
   - Pass 2: used - revision 6, FAIL (2 must-fix: native dependency results refused by the classifier; migration fabricating secret classifications) -> fixed (revision 7).
-  - Pass 3 (verification): pending - first attempt on revision 7 returned no result (harness); re-run required. Remaining must-fix after this pass escalates to Rachid.
+  - Pass 3: resolved - Rachid accepted revision 7 as the specification without the out-of-budget verification pass (2026-09-17); the missing verdict was harness flake, not findings.
 - `git status --short` is clean at every committed boundary.
 
 Test levels are fixed. L0 is shellcheck plus syntax. L1 is the real code run on a real machine without dispatching a package. It is not a separate file: `tests/unit/context-wiring.bats` already drives the real transport with a stubbed ssh, asserting the payload text and the ssh argument string, which is exactly this level. Later slices add a driver only if nothing existing covers the new wiring. L2 is one no-verify mutation of the disposable package `fixture-split` (already in `pkg/`) with an inspection of Cloudify's own log. L3 is `PKG_VERIFY_TIMEOUT=30 cloudify verify fixture-split`. L4 is the scoped bats acceptance harness. Every level names a concrete artifact, and no driver is created before the code it drives, so none can be satisfied by an empty green file.
@@ -308,7 +308,7 @@ Superseded 2026-09-15: ADR-026 redid the geometry, so the revision-9 design and 
 
 Outcome superseded 2026-09-15 by ADR-026: the checklist below encodes the superseded package-first geometry and is redone with the new deployment-first design; the fragile-surface, testing, and gate rules still apply.
 
-Phase 4 is now executed through `plans/state-model-v2-phase4-implementation.md` (the execution subplan), built to `plans/state-model-v2-phase4-design.md` (redone revision 7, the frozen specification under ADR-026; design-review budgets closed - see the Review budget ledger). The checklist below is superseded history.
+Phase 4 is now executed through `plans/state-model-v2-phase4-implementation.md` (the execution subplan), built to `plans/state-model-v2-phase4-design.md` (redone revision 8, the frozen specification under ADR-026 and ADR-027; design-review budgets closed - see the Review budget ledger). The checklist below is superseded history.
 
 Old outcome: one physical installation is represented once, every mutation has an immutable event, and one deployment cannot break another.
 

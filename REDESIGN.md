@@ -138,13 +138,15 @@ A deployment input is not applied state and does not claim that a command succee
 
 The deployment file replaces the ambiguous single-component deployment directory without removing the proven cross-host value scope.
 
-### Per-node deployment capture
+### Per-node deployment inventory
 
-For an ivps node or instance, the deployment capture lives under the directory returned by `ivps node path <node>`, in a deployment-first, human-readable tree:
+For an ivps node or instance, the deployment inventory lives under the directory returned by `ivps node path <node>`, in a deployment-first, human-readable tree:
 
 ```text
-<host-state-root>/deployments/<application>/<flavor>/<deployment-name>/
+<host-state-root>/deployments/<application>/<flavor>/<deployment-name>/packages/<package>/<package-instance>/state.json
 ```
+
+This is the cloudify inventory: the ivps inventory lists the hosts; cloudify inventories plugged into it record what cloudify configured on each (ADR-027). The `packages/` segment reserves the deployment directory for future non-package facts.
 
 Walking a node's tree answers what runs on it.
 
@@ -293,7 +295,7 @@ If the caller environment or deployment desired inputs explicitly differ from ap
 
 Install is the converge: recipes are idempotent, so re-running install on the same installation is safe.
 
-Adoption is operator-asserted: `--adopt` on an install takes over an installation cloudify has no capture for - it requires configure support, runs configure, and records the capture only after success.
+Adoption is operator-asserted: `--adopt` on an install takes over an installation cloudify has no inventory for - it requires configure support, runs configure, and records the inventory only after success.
 
 A package without configure support must be removed or reconciled explicitly before adoption.
 
@@ -339,11 +341,11 @@ A value needed by a later run must be written deliberately as a deployment input
 
 A generated secret that must survive the run is deliberately stored in a deployment input or secret backend and is never persisted as an automatic step output.
 
-## Deployment capture and the shared-installation guard
+## Deployment inventory and the shared-installation guard
 
-Each deployment captures what it did on a node in its own directory under that node's tree, human-readable, one directory per deployment per node.
+Each deployment records what it did on a node in its own directory under that node's tree, human-readable, one directory per deployment per node.
 
-The capture contains, per package the deployment covers:
+The deployment inventory contains, per package the deployment covers:
 
 - the package and package-instance identity;
 - `applied`, the last successful result: package version (required - every package reports its installed version), source-form values, and time;
@@ -358,13 +360,13 @@ A successful install or reconfigure updates `applied`.
 
 A verify updates health but not applied values.
 
-The node's deployment captures show which deployments rely on an installation: the guard scans them, so two deployments relying on one installation cannot silently break or remove each other's.
+The node's deployment inventories show which deployments rely on an installation: the guard scans them, so two deployments relying on one installation cannot silently break or remove each other's.
 
 A deployment may start relying on an installation only when its requested configuration is compatible with what the installation holds and with every deployment already relying on it.
 
 Compatible means the package and package-instance identity and every configuration-affecting declared value match; the recorded version is informational and is not compared (ADR-026).
 
-A package's configuration-affecting declared values are the values it declares itself; a value declared only by another package in the dispatch is recorded by that package's own capture (ADR-025).
+A package's configuration-affecting declared values are the values it declares itself; a value declared only by another package in the dispatch is recorded by that package's own inventory (ADR-025).
 
 Non-secret values compare by source value, secret references compare by reference, and literal secrets compare by digest.
 
@@ -388,7 +390,7 @@ The parent looks up that package's values in the precomputed dispatch context an
 
 A runtime dependency absent from the precomputed graph fails its state commit and marks the run degraded rather than inventing values after execution.
 
-A result naming a package the graph does not know is a graph error: the dispatch fails in full before any capture write (ADR-026).
+A result naming a package the graph does not know is a graph error: the dispatch fails in full before any inventory write (ADR-026).
 
 The router's original command-line package list is not an adequate inventory of dependency work.
 
@@ -498,10 +500,13 @@ Events contain:
 - subject identity
 - phase and command kind
 - value names, source labels, references or digests, and secret flags
+- the source form of every non-secret value; secrets never carry a source form (ADR-027)
+- the writing cloudify tool version
 - exit status and bounded non-secret summary
 - previous and resulting subject revision when state changes
 
 Events never contain raw stdout, stderr, rendered payloads, or literal secrets.
+With non-secret source forms recorded, the inventory is derivable from the event log; reproduction of historical values rests on these forms, never on the availability of a git commit - the commit pins provenance only (ADR-027).
 
 Detailed command output remains in the existing protected Cloudify log and is referenced by path and digest where useful.
 
@@ -587,7 +592,8 @@ cloudify state check
 cloudify --on <target host> show overlay-name
 ```
 
-Direct package commands remain available with stable signatures except for the shared-installation guard.
+Direct package commands remain available with stable signatures and stop being out-of-band: a bare install with no `--name` synthesizes a deployment under the reserved `_direct` application namespace, with a generated name, a virtual one-step runbook (stable step ID `direct`), and a manifest under the uniform commit rule (ADR-027).
+Direct deployments are ordinary deployments: full inventory and events, guard, reliance, teardown.
 
 A direct package command without deployment context has no deployment reliance.
 

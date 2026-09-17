@@ -82,11 +82,16 @@ The default package-instance key is `default`.
 
 A recipe must explicitly support package instances before a caller may choose another key.
 
+## inventory
+
+Two inventories, one plugged into the other: the ivps inventory is the hosts tree under `ivps node path`; a cloudify inventory is cloudify's per-node record of what it configured, one directory per deployment, per package, per package instance (ADR-027).
+The cloudify inventory is derivable from the event log and is never a claim about the machine's runtime truth.
+
 ## physical package state
 
 Cloudify's last confirmed observation of one package instance on one host.
 
-Each deployment captures what it did on the node under its own directory (ADR-026); the same package instance used by several deployments appears once per deployment, and the guard compares those captures.
+Each deployment records what it did on the node under its own directory in the cloudify inventory (ADR-026, ADR-027); the same package instance used by several deployments appears once per deployment, and the guard compares those inventories.
 
 The record contains a revision, the last successful applied state, the last attempt, and verification health.
 
@@ -254,9 +259,9 @@ A run stores identity and lifecycle metadata but no resolved values or automatic
 
 An immutable audit record for one observed attempt or state transition.
 
-An event links a tool, writer, run, step, deployment, subject, phase, outcome, and state revisions.
+An event links a tool, tool version, writer, run, step, deployment, subject, phase, outcome, and state revisions.
 
-It stores value names, sources, references or digests, and secret flags without raw output or literal secrets.
+It stores value names, sources, references or digests, the source form of non-secret values, and secret flags, without raw output or literal secrets.
 
 Events help detect interrupted state commits but are not executable commands.
 

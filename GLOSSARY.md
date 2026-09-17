@@ -12,7 +12,7 @@ ivps owns node identity, metadata, and lifecycle.
 
 Cloudify may keep host-bound state under the directory returned by `ivps node path <node>`.
 
-Stable node IDs and rename migration are deferred to a separate ivps decision.
+A node carries an immutable ivps id beside its mutable name (ADR-026); durable state follows the id, so renames are safe.
 
 ## instance
 
@@ -22,7 +22,7 @@ Its target form is the `Y` in `X:Y`.
 
 ivps and the engine own its lifecycle and live machine facts.
 
-Stable instance IDs are deferred to a separate ivps decision.
+An instance carries an immutable ivps id beside its mutable name (ADR-026).
 
 ## engine
 
@@ -86,7 +86,7 @@ A recipe must explicitly support package instances before a caller may choose an
 
 Cloudify's last confirmed observation of one package instance on one host.
 
-One physical installation has one state record even when several deployments use it.
+Each deployment captures what it did on the node under its own directory (ADR-026); the installation record for one package instance holds the physical truth and the reliances.
 
 The record contains a revision, the last successful applied state, the last attempt, verification health, and active reliances.
 
@@ -238,7 +238,7 @@ Preflight, remote forwarding, state, and event metadata consume that same contex
 
 A mode-0600 temporary artifact holding the complete inputs for one dispatch.
 
-It contains identities plus one source-form and runtime-value view for the top-level package and each possible dependency.
+It contains identities plus one resolved value namespace for every package the dispatch covers (ADR-024).
 
 It is the only value-resolution result for that dispatch and is removed after the parent process records the outcome.
 

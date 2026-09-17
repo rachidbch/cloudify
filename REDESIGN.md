@@ -388,6 +388,8 @@ The parent looks up that package's values in the precomputed dispatch context an
 
 A runtime dependency absent from the precomputed graph fails its state commit and marks the run degraded rather than inventing values after execution.
 
+A result naming a package the graph does not know is a graph error: the dispatch fails in full before any capture write (ADR-026).
+
 The router's original command-line package list is not an adequate inventory of dependency work.
 
 ## Application lifecycle and phases

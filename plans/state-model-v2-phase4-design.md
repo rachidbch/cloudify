@@ -1,6 +1,6 @@
 # Phase 4 design: per-node deployment capture, guard, and streamed results
 
-Status: draft, revision 4 of the redone design, under ADR-026.
+Status: draft, revision 5 of the redone design, under ADR-026.
 
 Revision 3 resolved round one's findings; revision 4 resolves round two's findings and aligns the remaining stale authority text (default-name rules, the fragile-surface pin, the compatibility sentence, adoption) to ADR-026, so no reviewer can read a refused geometry back as authority.
 
@@ -114,7 +114,7 @@ The version is the software fact and is required: every package recipe reports i
 The deployment id is the deployment name.
 
 - Human-set through `--name`: that name is the deployment, forever.
-- No name: generated as `<application>-<flavor>-<UTC-timestamp>[-suffix]`.
+- No name: generated as `<application>-<flavor>-<UTC-timestamp>[-suffix]`, validated against the component byte cap; the application and flavor segments are truncated to fit before the timestamp, and a name that still cannot fit fails with a named error before any write.
 
 The same name is the same deployment.
 
@@ -411,7 +411,7 @@ The artifact becomes the per-deployment, per-package capture:
 
 - `host_key` spelling becomes the immutable id: `ivps:<node-id>` or `ivps:<node-id>:<instance-id>` (external `ssh-sha256:<fingerprint>` arrives in Phase 5);
 - deployment identity fields (application, flavor, deployment name) and the runbook step ID are required;
-- `package_instance` points at the schema's own `$defs/component`, further restricted to the space-free result-line charset;
+- `package_instance` points at the schema's own `$defs/component`, further restricted to the space-free result-line charset (`identity.md` carries the same rule);
 - `revision` minimum becomes 1 (conceptual revision 0 is absence), with an invalid revision-0 fixture;
 - the runbook step ID becomes nullable, with the migration writer as its only null producer, pinned by valid and invalid fixtures;
 - `applied` holds `version` - required, space-free charset, or `null` when the recipe declares none or a migration proves none - source-form values, time, and event ID; no commit field;
@@ -534,7 +534,7 @@ One red test at a time, in this order.
 
 - No name and no prior match creates a generated-name deployment, printed.
 - Same configuration, no name: converges the existing deployment, no new artefact.
-- Changed configuration, no name: new generated deployment.
+- Changed configuration, no name: new generated deployment, including one whose generated name exercises the byte-cap truncation.
 - Explicit name: converges or updates that deployment; a different explicit name creates a separate deployment.
 - Bindings are part of the match: same values, different hosts, no match.
 

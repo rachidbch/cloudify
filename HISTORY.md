@@ -1136,3 +1136,4 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - ivps deliverables landed in parallel (separate repo): node ids (ADR-009, merged) and instance records (ADR-010, branch `feature/instance-inventory`, full suite 623 ok / 0 not ok, merge pending).
 - 4.1.1 schema substrate landed (`efcff74`): package-state reshaped to the deployment inventory record, events carry tool_version + non-secret source_form + migration shape; validate.sh 17/34/0 green.
 - 4.1.2 flat-context fields landed: `value.<NAME>.declaration` (explicit/heuristic/none) and sorted `package.<PACKAGE>.instance` (default key) in the dispatch context; validate enforces the charset; gate 146/0 green.
+- ADR-029: recipe default = the recipe's own on-host shell fallback; the `.remote-vars` mirror is never exported. REDESIGN/README/vars.sh clarified.

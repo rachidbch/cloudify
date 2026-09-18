@@ -196,7 +196,7 @@ Missing files are silently ignored (vars stay empty).
 
 **Var sources and precedence.** Six sources feed a var, weakest to strongest:
 
-1. recipe default (`${VAR:-default}` in the recipe — runtime truth)
+1. recipe default (`${VAR:-default}` in the recipe — applied by the recipe itself on the host; the `.remote-vars` mirror text is never exported by cloudify, so a declared-but-unsupplied name is simply not forwarded, ADR-029)
 2. `~/.config/cloudify/remote-vars.yaml` (global always-forward, `chmod 600`)
 3. `~/.config/cloudify/pkgs/<pkg>.yaml` (package values)
 4. `~/.config/cloudify/apps/<application>/<flavor>/defaults.yaml` (application defaults)

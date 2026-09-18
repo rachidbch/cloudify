@@ -659,3 +659,8 @@
 - Red tests for `value.<NAME>.declaration` and `package.<PACKAGE>.instance`; implemented in the single-resolution emit block; validate accepts the shapes and enforces the result-line charset on instance keys.
 - Test-first lesson recorded: `.remote-vars` `NAME=value` defaults are declarations, not context sources - `cloudify_vars_pkg_read` claims only supplied names (the recipe's own `${NAME:-default}` stays runtime truth). The first red scenario was wrong, not the code.
 - Diagnosed via the test's own failure output plus a localhost shell-semantics repro while the cloudai data channel flapped; gate green afterwards: 146 ok / 0 not ok (payload goldens byte-identical).
+
+## 2026-09-18 - ADR-029: recipe default = on-host fallback; (a) ruled
+
+- Rachid challenged my "stays runtime truth" compression and pushed the opposite reading (stanza lands in the context). Laid the code evidence (decl_line "never a value", pkg_read env-only branch, repro) against the ladder wording; he ruled (a): current behavior is the intent, and the ambiguity is a docs defect worth an ADR.
+- ADR-029 written; REDESIGN ladder sentences, README value-source list, vars.sh header clarified in the same commit.

@@ -5,7 +5,9 @@
 # cloudify_context_build, reached through lib/remote.sh:_cloudify_dispatch_vars)
 # is a thin precedence walker over these helpers. Target precedence (weakest ->
 # strongest), extended by the state model v2 application inputs:
-#   recipe default < global < package < application < deployment < caller env
+#   recipe default (the recipe's own on-host shell fallback, never exported
+#   by cloudify - a declared-but-unsupplied name stays absent from the context)
+#   < global < package < application < deployment < caller env
 # `application` covers an application default (apps/<app>/<flavor>/defaults.yaml)
 # and the mapped application input; its own value resolves as
 # application default < deployment value for the input name < caller env for the

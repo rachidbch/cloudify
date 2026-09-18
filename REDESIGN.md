@@ -265,6 +265,8 @@ Install resolves values in this order, strongest first:
 5. Global defaults.
 6. Recipe defaults.
 
+The recipe default is the recipe's own shell fallback on the host (`${NAME:-default}` in the recipe code): cloudify never exports the `.remote-vars` mirror text, so a declared-but-unsupplied name is absent from the dispatch context and the recipe's fallback applies on the host (ADR-029).
+
 Reconfigure requires an existing reliance and a successful applied record.
 
 Reconfigure resolves values in this order, strongest first:

@@ -437,3 +437,15 @@ Decision:
 - Prerequisite: ivps instance records (`nodes/<node-id>/instances/<instance-id>/instance.json`: immutable id, name, engine, base image fingerprint, created-at, engine uuid; approved by Rachid, human scanability first for both tools). Until they exist, instance hosts have no durable identity and external hosts stay suspended (Phase 5).
 
 Consequences: design gains a "Host origin and continuity" section with tests; the ivps instance-record follow-up unlocks instance inventory roots (`ivps node path <node>:<instance>`), cloudify `ivps:<node-id>:<instance-id>` keys, and the baseline fingerprint in one feature.
+
+## ADR-029: The recipe default is the recipe's own on-host fallback, never a cloudify-sourced value
+
+Status: accepted (Rachid, 2026-09-18)
+
+Context: the precedence ladder names `recipe default` as its weakest rung, and `.remote-vars` carries `NAME=value` defaulted stanzas. Read carelessly, the stanza looks like a value source cloudify should export when nothing else supplies the name. The implementation does the opposite: `cloudify_vars_pkg_read` claims a declared name only from the caller env, `_cloudify_vars_decl_line` states the mirror text is "never a value", and a declared-but-unsupplied name is simply absent from the dispatch context - the recipe's own `${NAME:-default}` then applies on the host (for example `pkg/guacamole/configure.sh:44` vs the `CLOUDIFY_GUACAMOLE_ADMIN_USER=guacadmin` stanza).
+
+Decision: the recipe default is the recipe's own shell fallback, evaluated by the recipe on the host. Cloudify never exports the `.remote-vars` mirror text; the mirror is declaration metadata (kind, preflight, `cloudify vars declared` display) and must mirror the recipe's fallback text. The dispatch context carries only supplied values; a declared-but-unsupplied name has no context entry. Effective host values are identical under this model and under stanza-as-source; what differs is that cloudify's context and captures record only what was actually supplied.
+
+Rejected alternative: exporting the mirror text as a `recipe`-sourced value when nothing supplies the name. It would make captures carry the full effective configuration and make matching see defaults explicitly, but it would also put repo-stored mirror text into the forwarding path - breaking the "values live in the caller env or a store, never in the repo" rule for any secret-named defaulted stanza, unless a heuristic/marker guard were added. Rejected for Phase 4; revisiting requires a new ADR.
+
+Consequences: REDESIGN's ladder sentences carry the clarification; `lib/vars.sh`'s header names the on-host fallback; the README value-source list states the non-forwarding consequence. Captures record supplied values only; recipe-internal defaults remain the recipe's private fallback. Diagnostics note: this exact confusion was resolved by reading the code path plus one localhost shell-semantics repro, not by improvising diagnostics.

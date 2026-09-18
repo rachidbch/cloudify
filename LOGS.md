@@ -647,3 +647,9 @@
 - REDESIGN inventory-contents amendment confirmed (REDESIGN.md:353, :369).
 - Incident: `incus list cloudai:` returned 502 - a manual `tailscale serve` rule on cloudai (8443 -> localhost:7681, upstream dead, not ivps-tracked) shadowed the incus API port bound to the tailscale IP. Removed the dead rule (`tailscale serve --https=8443 off`); incus path restored (200). 443 funnel entries untouched.
 - Harness note: `nohup setsid bats --report-formatter tap13` inside `ivps exec` died with the exec session twice (container bats killed at test 142; results dir must pre-exist). Foreground `task gate` used instead for the definitive run.
+
+## 2026-09-18 - 4.1.1 schema substrate: red fixtures, reshape, validate green
+
+- Red-first: rewrote the three package-state valid fixtures to the deployment-capture shape and added 6 capture + 5 event fixtures; validate.sh went red (9 failures: new-shape valids rejected, new invalids accepted).
+- Green: package-state reshaped to the per-deployment inventory (identity + step_id nullable for migration, claims removed, revision >= 1, non-null event IDs, result-line charset instance keys, ivps-only host_key, applied holds version with no commit); events gained tool_version, non-secret source_form (forbidden on secrets), development_override + uniform null-commit rule, migrate-registry command_kind with origin + nullable phase + migration value source, origin forbidden elsewhere.
+- validate.sh green: 17 valid accepted, 34 invalid rejected, 0 failures. identity.md + schemas README aligned (incl. Open points 2/3). No unit test referenced the old shape (checked state.bats/vars.bats).

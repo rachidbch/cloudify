@@ -1129,3 +1129,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Design `plans/state-model-v2-phase4-design.md` advanced to revision 8 with Rachid's consented amendments: capture renamed to cloudify inventory; `packages/` segment in the deployment path; events carry `tool_version` and non-secret `source_form`; reproduction anchored on versions+values with the commit as provenance/drift guard only; `_direct` reserved application namespace with bare installs synthesized as ordinary deployments (reserved step ID `direct`); native dependencies stay report-only.
 - Revision 7 accepted by Rachid as the specification (no further verification pass). REDESIGN.md, GLOSSARY.md, docs/FRAGILE.md, schemas/v1/README.md, schemas/v1/identity.md aligned in the same commit.
 - ivps deliverable (immutable node ids, id-keyed `ivps node path`, ADR-009) completed in ivps worktree `feature/immutable-ids`, lead-verified (117 ok / 0 not ok focused, lint clean); merge pending.
+
+### 2026-09-18 - Phase 4 implementation start: 4.0 gates green
+
+- 4.0 fragile-surface gate passed on the 64dad35 tree: invariants named in `plans/state-model-v2-phase4-implementation.md` (context field shapes: ledger file-ness, sort -u order, single write, first-write-wins, validate scope; result channel: stream chain, tap return discipline, payload goldens), `task gate` 142 ok / 0 not ok rc 0, REDESIGN inventory-contents amendment confirmed.
+- ivps deliverables landed in parallel (separate repo): node ids (ADR-009, merged) and instance records (ADR-010, branch `feature/instance-inventory`, full suite 623 ok / 0 not ok, merge pending).

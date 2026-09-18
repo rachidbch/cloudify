@@ -21,8 +21,21 @@ This subplan sequences and gates the implementation. It holds no design: the spe
 
 ## 4.0 Gates (before any code)
 
-- [ ] Fragile-surface: name the invariants touched by the two flat-context field shapes and the result-line channel; run `task gate`; the eight payload goldens byte-identical. (Format consents recorded 2026-09-15.)
-- [ ] Confirm the REDESIGN inventory-contents amendment stands (the inventory holds the package version; no commit field).
+- [x] Fragile-surface: invariants named below (2026-09-18); `task gate` green on 64dad35 tree (142 ok / 0 not ok, rc 0; the eight payload goldens byte-identical). (Format consents recorded 2026-09-15.)
+- [x] Confirm the REDESIGN inventory-contents amendment stands: REDESIGN.md:353 (`applied` holds the required package version, source-form values, time), :369 (version not compared), per-package commit absent. (2026-09-18.)
+
+Invariants named (2026-09-18, before any 4.1 edit):
+
+- Flat-context field shapes (`lib/context.sh`: `value.<NAME>.declaration`, `package.<PACKAGE>.instance`):
+  1. The claim ledger and the provenance file stay files, never arrays (six emptiness tests on the ledger scalar).
+  2. The claim ledger's `sort -u` iteration order is load-bearing: the envsubst allow-list is recovered from it (`lib/remote.sh:123`) and it pins the payload export order - the eight byte-exact goldens prove it.
+  3. The context is written once, after the walk completes, never incrementally.
+  4. First-write-wins claiming is preserved; the new fields are derived during the existing single resolution and never re-read a value source.
+  5. `cloudify_context_validate`'s accepted-shape extension only admits the two new field names; required-field and well-formedness checks are not weakened.
+- Result-line channel (`lib/remote.sh`):
+  6. The streamed-log chain (payload `exec > >(tee -a "$CLOUDIFY_LOG_FILE") 2>&1`, SSH channel, host-prefix stages, local protected log) stays unbuffered and unfiltered; the tap is pass-through and copies matches aside.
+  7. The tap stage returns 0 unconditionally in condition context with the ERR trap inhibited inside its subshell; the router's `trap cleanup SIGINT SIGTERM ERR EXIT` can never fire mid-stream.
+  8. The payload template and the eight payload goldens stay byte-identical; recipe stdin and stdout bytes are unchanged.
 
 ## 4.1 State and event substrate
 

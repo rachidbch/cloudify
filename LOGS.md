@@ -640,3 +640,10 @@
 - His pushback recorded: an os-release-style scan is NOT a host baseline - a baseline must identify the machine origin (custom incus image with sophisticated base). Baseline v2 (engine-origin identity via image fingerprint through ivps) proposed, NOT yet consented; deferred out of revision 8.
 - ivps immutable-id deliverable completed by a background subagent in a wt worktree (`feature/immutable-ids`, 3 commits: ADR-009 id-keyed storage, BW02 test fix, docs), verified by the lead: focused suites 117 ok / 0 not ok, lint clean. The subagent was killed by the harness after finishing (missing DONE marker); no work lost. Merge to ivps main pending Rachid's word. Instance ids: ivps tracks no instance state today - follow-up; cloudify's `ivps:<node-id>:<instance-id>` keys need a decision (ivps instance tracking vs engine-native instance UUIDs) before 4.2; two-host E2E hosts are `ivps launch`ed instances, so this is on the Phase 4 critical path.
 - Open items ledger lives in the subplan (`plans/state-model-v2-phase4-implementation.md`), not in session memory.
+
+## 2026-09-18 - Phase 4 implementation started; 4.0 gates green; cloudai route incident
+
+- `task gate` green on the 64dad35 tree: 142 ok / 0 not ok, rc 0 - payload goldens byte-identical with result lines not yet landed. Invariants named in the subplan 4.0 section before any 4.1 edit.
+- REDESIGN inventory-contents amendment confirmed (REDESIGN.md:353, :369).
+- Incident: `incus list cloudai:` returned 502 - a manual `tailscale serve` rule on cloudai (8443 -> localhost:7681, upstream dead, not ivps-tracked) shadowed the incus API port bound to the tailscale IP. Removed the dead rule (`tailscale serve --https=8443 off`); incus path restored (200). 443 funnel entries untouched.
+- Harness note: `nohup setsid bats --report-formatter tap13` inside `ivps exec` died with the exec session twice (container bats killed at test 142; results dir must pre-exist). Foreground `task gate` used instead for the definitive run.

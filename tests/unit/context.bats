@@ -705,3 +705,81 @@ candidate_file() {
 
     unset DEP_ONLY
 }
+
+@test "every value carries a declaration field surfacing the classification origin" {
+    declare_pkg foo \
+        "SPEC=value" \
+        "TOKEN=abc" \
+        "secret MARKERED" \
+        "MARKERED=x"
+    reset_stores
+    set_deployment SPEC deployment-value
+    set_deployment TOKEN heuristic-supplied
+    set_deployment MARKERED marker-supplied
+    set_deployment REF '@base64:YWRtaW4tc2VjcmV0'
+    unset SPEC TOKEN MARKERED REF
+    local cand
+    cand=$(candidate_file foo)
+
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+
+    [ "$(cloudify_context_read "$CTX" value.SPEC.declaration)" = "none" ]
+    [ "$(cloudify_context_read "$CTX" value.TOKEN.declaration)" = "heuristic" ]
+    [ "$(cloudify_context_read "$CTX" value.MARKERED.declaration)" = "explicit" ]
+    subrubric "a reference is explicit"
+    [ "$(cloudify_context_read "$CTX" value.REF.form)" = "reference" ]
+    [ "$(cloudify_context_read "$CTX" value.REF.declaration)" = "explicit" ]
+}
+
+@test "an explicit marker wins over the name heuristic" {
+    declare_pkg foo "secret TOKEN" "TOKEN=abc"
+    reset_stores
+    export TOKEN=abc-supplied
+    local cand
+    cand=$(candidate_file foo)
+
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+
+    [ "$(cloudify_context_read "$CTX" value.TOKEN.declaration)" = "explicit" ]
+    [ "$(cloudify_context_read "$CTX" value.TOKEN.secret)" = "true" ]
+}
+
+@test "context records one sorted package.<PACKAGE>.instance field per precomputed package" {
+    declare_pkg zebra "Z=z"
+    declare_pkg alpha "A=a"
+    reset_stores
+    unset Z A
+    local cand
+    cand=$(candidate_file zebra alpha)
+
+    cloudify_context_build install "$DEP" install "$cand" zebra alpha > /dev/null
+
+    [ "$(cloudify_context_read "$CTX" package.alpha.instance)" = "default" ]
+    [ "$(cloudify_context_read "$CTX" package.zebra.instance)" = "default" ]
+    subrubric "lines are sorted by package and never enter the value allow-list"
+    local line_a line_z
+    line_a=$(grep -n '^package\.alpha\.instance:' "$CTX" | cut -d: -f1)
+    line_z=$(grep -n '^package\.zebra\.instance:' "$CTX" | cut -d: -f1)
+    [ "$line_a" -lt "$line_z" ]
+    [ "$(grep -c '^package\.' "$CTX")" -eq 2 ]
+}
+
+@test "cloudify_context_validate accepts the extended shape and rejects a bad instance value" {
+    declare_pkg foo "SPEC=value"
+    reset_stores
+    set_deployment SPEC deployment-value
+    unset SPEC
+    local cand
+    cand=$(candidate_file foo)
+
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+    run cloudify_context_validate "$CTX"
+    [ "$status" -eq 0 ]
+
+    subrubric "an instance value off the result-line charset fails loudly"
+    local bad="$CLOUDIFY_TMP/bad-context.yaml"
+    cp "$CTX" "$bad"
+    printf 'package.foo.instance: has spaces\n' >> "$bad"
+    run cloudify_context_validate "$bad"
+    [ "$status" -ne 0 ]
+}

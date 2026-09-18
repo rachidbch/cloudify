@@ -331,10 +331,14 @@ function cloudify_context_build() {
             [[ -n "$ref" ]] && form="reference"
 
             is_secret=false
+            declaration="none"
             if [[ "$form" == "reference" ]] \
-                || [[ -n "${_ctx_secret[$name]:-}" ]] \
-                || _cloudify_context_name_is_secret "$name"; then
+                || [[ -n "${_ctx_secret[$name]:-}" ]]; then
                 is_secret=true
+                declaration="explicit"
+            elif _cloudify_context_name_is_secret "$name"; then
+                is_secret=true
+                declaration="heuristic"
             fi
             digest=""
             if [[ "$form" == "literal" && "$is_secret" == "true" ]]; then
@@ -344,6 +348,10 @@ function cloudify_context_build() {
             printf 'value.%s.source: %s\n' "$name" "$label"
             printf 'value.%s.form: %s\n' "$name" "$form"
             printf 'value.%s.secret: %s\n' "$name" "$is_secret"
+            # The classification origin, surfaced from the same inputs that set
+            # .secret: a reference or the explicit marker is explicit, the name
+            # heuristic alone is heuristic, everything else is none.
+            printf 'value.%s.declaration: %s\n' "$name" "$declaration"
             printf 'value.%s.reference: %s\n' "$name" "$ref"
             printf 'value.%s.digest: %s\n' "$name" "$digest"
             # The raw source form, in the transport encoding, so a multiline
@@ -351,6 +359,16 @@ function cloudify_context_build() {
             # the run snapshot be built without reopening a source.
             printf 'value.%s.raw: %s\n' "$name" "${_ctx_raw[$name]:-t:}"
         done
+        # One sorted package.<PACKAGE>.instance field per precomputed package:
+        # the instance key is part of the package's configuration (ADR-027).
+        # 4.1 records the default key; the .package-instance recipe contract
+        # upgrades the resolution in 4.2. Sorted, and outside the value namespace,
+        # so the payload allow-list recovery (value.<NAME>.source) never sees it.
+        local _pkg
+        while IFS= read -r _pkg; do
+            [[ -n "$_pkg" ]] || continue
+            printf 'package.%s.instance: default\n' "$_pkg"
+        done < <(printf '%s\n' "$@" | sort -u)
     } > "$out"
 
     chmod 600 "$out" 2>/dev/null || true
@@ -370,7 +388,7 @@ function cloudify_context_validate() {
     while IFS= read -r line; do
         case "$line" in
             "") continue ;;
-            context_version:*|action:*|deployment:*|phase:*|target:*|top_kind:*|value.*) ;;
+            context_version:*|action:*|deployment:*|phase:*|target:*|top_kind:*|value.*|package.*) ;;
             *) seen_bad="$line" ;;
         esac
         case "$line" in
@@ -407,6 +425,15 @@ function cloudify_context_validate() {
             *) die "context '$file': value '$_sn' has a malformed raw form." ;;
         esac
     done < <(sed -n 's/^value\.\([^.]*\)\.source:.*$/\1/p' "$file")
+
+    # Instance keys ride result lines and paths: the space-free result-line
+    # charset is a hard shape, same rule as schemas/v1/identity.md.
+    local _pk _pv
+    while IFS='|' read -r _pk _pv; do
+        [[ -n "$_pk" ]] || continue
+        [[ "$_pv" =~ ^[A-Za-z0-9._+~:-]+$ ]] \
+            || die "context '$file': instance key '$_pv' has characters outside the result-line charset."
+    done < <(sed -n 's/^package\.\([^.]*\)\.instance: \(.*\)$/\1|\2/p' "$file")
 
     return 0
 }

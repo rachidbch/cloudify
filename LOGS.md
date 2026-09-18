@@ -653,3 +653,9 @@
 - Red-first: rewrote the three package-state valid fixtures to the deployment-capture shape and added 6 capture + 5 event fixtures; validate.sh went red (9 failures: new-shape valids rejected, new invalids accepted).
 - Green: package-state reshaped to the per-deployment inventory (identity + step_id nullable for migration, claims removed, revision >= 1, non-null event IDs, result-line charset instance keys, ivps-only host_key, applied holds version with no commit); events gained tool_version, non-secret source_form (forbidden on secrets), development_override + uniform null-commit rule, migrate-registry command_kind with origin + nullable phase + migration value source, origin forbidden elsewhere.
 - validate.sh green: 17 valid accepted, 34 invalid rejected, 0 failures. identity.md + schemas README aligned (incl. Open points 2/3). No unit test referenced the old shape (checked state.bats/vars.bats).
+
+## 2026-09-18 - 4.1.2 flat-context field shapes, gate green
+
+- Red tests for `value.<NAME>.declaration` and `package.<PACKAGE>.instance`; implemented in the single-resolution emit block; validate accepts the shapes and enforces the result-line charset on instance keys.
+- Test-first lesson recorded: `.remote-vars` `NAME=value` defaults are declarations, not context sources - `cloudify_vars_pkg_read` claims only supplied names (the recipe's own `${NAME:-default}` stays runtime truth). The first red scenario was wrong, not the code.
+- Diagnosed via the test's own failure output plus a localhost shell-semantics repro while the cloudai data channel flapped; gate green afterwards: 146 ok / 0 not ok (payload goldens byte-identical).

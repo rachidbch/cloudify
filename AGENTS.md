@@ -74,7 +74,7 @@ Full suite at phase and milestone boundaries; E2E is an exit gate, never a debug
 
 **Implementation:** the lead agent writes the code and shows the moves; subagents review, research, and read large taps.
 
-**Debugging:** Read `/tmp/cloudify/logs/<timestamp>.log`. Fix one issue, push, re-test.
+**Logs and observability:** Two channels only, for debugging, background tasks and agent observability alike: cloudify's live log (`/tmp/cloudify/logs/latest.log`) and the run's TAP (`results/<suite>/report.tap`). Read them before forming any hypothesis; improvised repro scripts, custom logs and test-output greps are forbidden. Fix one issue, push, re-test.
 
 **Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues.
 

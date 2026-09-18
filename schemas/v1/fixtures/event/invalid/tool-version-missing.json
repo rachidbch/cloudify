@@ -52,6 +52,5 @@
   "log_reference": {
     "path": "/tmp/cloudify/logs/20260101T101112Z.log",
     "sha256": "45ffa9414b900d7b45cfe5d4df258d9d8ac75122da0fcd323fd6bab233248dee"
-  },
-  "tool_version": "1.0.0"
+  }
 }

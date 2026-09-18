@@ -14,7 +14,7 @@
   "application": "xfce-guacamole",
   "flavor": "disposable",
   "deployment": "default",
-  "application_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
+  "application_commit": null,
   "subject": {
     "kind": "package",
     "host": "cloudai:cloudify",

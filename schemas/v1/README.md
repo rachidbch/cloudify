@@ -10,7 +10,7 @@ These files are the contract for the v2 machine-owned artifacts.
 
 - `identity.md` - normative application, flavor, deployment name, package instance, and step ID rules.
 - `deployment-manifest.schema.json` - current state for one deployment.
-- `package-state.schema.json` - physical package state and active claims for one host, package, and package instance.
+- `package-state.schema.json` - one deployment inventory record: what one deployment last did with one package instance on one host.
 - `run.schema.json` - one execution of selected application phases.
 - `event.schema.json` - one immutable observed attempt or state transition.
 - `fixtures/<artifact>/valid/*.json` and `fixtures/<artifact>/invalid/*.json` - accepted and rejected instances per artifact.
@@ -29,11 +29,11 @@ The field is required, not optional, so a reader never has to guess an unversion
 `deployment-manifest.schema.json`: `schema_version`, `application`, `flavor`, `deployment`, `application_commit` (40-hex or null), `development_override` (true whenever the commit is null), `status` (`applying`, `active`, `degraded`), `created_at`, `bindings` (per slot: `address`, `node`, `instance`, `ssh_host`), `last_run_id`, `last_event_id`.
 Applied package values are deliberately absent, and `additionalProperties: false` makes an accidental `applied_values` field a validation failure.
 
-`package-state.schema.json`: `schema_version`, `host`, `host_key`, `package`, `package_instance`, `revision`, `applied`, `last_attempt`, `health`, `claims`.
-`applied` holds `package_version`, `application_commit` (40-hex, or null for a migrated old record or a direct package command without deployment context), `at`, `event_id`, and `values`.
-`last_attempt` holds `phase`, `outcome`, `at`, `event_id`, and `requested`.
-`health` holds `status`, `checked_at`, and `event_id`.
-Each claim holds `application`, `flavor`, `deployment`, `step_id`, `claimed_at`, `run_id`, `event_id`, and `values`.
+`package-state.schema.json`: `schema_version`, `host`, `host_key` (`ivps:<node-id>` or `ivps:<node-id>:<instance-id>`; `ssh-sha256:` arrives in Phase 5), `package`, `package_instance` (space-free result-line charset), `application`, `flavor`, `deployment`, `step_id` (null only for a migrated record), `revision` (minimum 1; conceptual revision 0 is absence), `applied`, `last_attempt`, `health`.
+`applied` holds `version` (the installed version in the result-line charset, or null when the recipe reports none or a migration proves none), `at`, `event_id` (non-null), and `values`. It holds no commit: recipe provenance lives at the deployment level.
+`last_attempt` holds `phase`, `outcome`, `at`, `event_id` (non-null), and `requested`; the whole field is null only for a migrated record.
+`health` holds `status`, `checked_at`, and `event_id` (non-null).
+There is no claims array: the guard derives reliance by scanning the node's inventory tree.
 Each value entry holds `secret` (the explicit declaration), `declaration` (`explicit`, `heuristic`, `none`), `source_form`, `reference`, `digest`, and `redacted`.
 
 `run.schema.json`: `schema_version`, `run_id`, `application`, `flavor`, `deployment`, `application_commit` (40-hex or null), `development_override` (true whenever the commit is null), `phases`, `status`, `started_at`, `ended_at`, `writer`, `interrupted`.
@@ -41,7 +41,8 @@ No resolved value and no automatic step output exists in a run record.
 `writer` holds `host`, `boot_id`, `pid`, and `process_start_ticks`.
 `interrupted` holds `at` and `reason` (`writer-process-gone`, `writer-boot-changed`).
 
-`event.schema.json`: `schema_version`, `event_id`, `at`, `tool`, `writer`, `run_id`, `step_id`, `application`, `flavor`, `deployment`, `application_commit`, `subject`, `phase`, `command_kind`, `values`, `outcome`, `state`, and an optional `log_reference`.
+`event.schema.json`: `schema_version`, `event_id`, `at`, `tool`, `tool_version`, `writer`, `run_id`, `step_id`, `application`, `flavor`, `deployment`, `application_commit`, `subject`, `phase`, `command_kind`, `values`, `outcome`, `state`, an optional `development_override`, an optional `origin` (migrate-registry events only), and an optional `log_reference`.
+`application_commit` null with an application tuple present requires `development_override: true`; `phase` is null only for `migrate-registry`, whose `origin` is `old-registry`.
 `subject` holds `kind` (`package` or `deployment`), `host`, `host_key`, `package`, and `package_instance`.
 `values` maps a value name to `source`, `secret`, `declaration`, `reference`, and `digest` and carries no plaintext form at all.
 `outcome` holds `exit_status` and a `summary` bounded to 512 characters without a newline.
@@ -131,8 +132,8 @@ No fixture, comment, or schema description contains a real credential.
 Points where `REDESIGN.md` implies a field but does not specify it, with the leanest shape chosen here.
 
 1. No `kind` discriminator field exists in any artifact; the artifact is identified by its path and its required-field set, so no writer must invent an extra field.
-2. Claims are an array of flat claim objects rather than a map keyed by a joined string, so the deployment tuple is never flattened; duplicate claims and revision monotonicity are state-check concerns, not JSON Schema constraints.
-3. The durable host key spelling is `ivps:<node>`, `ivps:<node>:<instance>`, or `ssh-sha256:<fingerprint>`; `REDESIGN.md` requires fingerprint-keyed external state but names no string form.
+2. Reliance is not stored at all: the guard derives it by scanning the node's inventory tree, so there is no claim object to shape; duplicate-record and revision-monotonicity checks are state-check concerns, not JSON Schema constraints.
+3. The durable host key spelling is `ivps:<node-id>`, `ivps:<node-id>:<instance-id>`, or (Phase 5) `ssh-sha256:<fingerprint>`; `REDESIGN.md` requires fingerprint-keyed external state but names no string form. Phase 4 admits only `ivps:` keys.
 4. Source labels are fixed to `caller`, `deployment`, `applied`, `application`, `package`, `global`, and `recipe`; `REDESIGN.md` calls the strongest source "step or caller environment", so `caller` covers both.
 5. The manifest status enum is `applying`, `active`, `degraded`; `REDESIGN.md` says an interrupted run is classified from process identity on the next read without naming a manifest status, so the classification lives in the run record.
 6. The run `interrupted` object with `at` and `reason` is chosen because `REDESIGN.md` requires an interrupted classification and a distinction between a live writer, a gone process, and a reboot, while naming no record.

@@ -35,7 +35,7 @@ An old `CLOUDIFY_DEPLOYMENT` value is accepted only as an opaque input to the te
 ## Defaults
 
 The default flavor is `default`.
-The default package instance is `default`.
+The default package instance is `default`; any instance key is space-free and restricted to the visible charset `[A-Za-z0-9._+~:-]` (the result-line charset), so it is safe in a path and on a result line.
 Defaults are applied before validation, so `k3s` resolves to the application reference `k3s/default`.
 
 There is no default deployment name (ADR-026): a deployment id is human-set through `--name`, or generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed; the same name is the same deployment.

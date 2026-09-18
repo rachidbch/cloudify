@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "host": "cloudai:cloudify",
-  "host_key": "ivps:cloudai:cloudify",
+  "host_key": "ssh-sha256:AAAA-not-a-real-fingerprint1234=",
   "package": "guacamole",
   "package_instance": "default",
   "application": "xfce-guacamole",

@@ -9,6 +9,7 @@
     "event_id",
     "at",
     "tool",
+    "tool_version",
     "writer",
     "run_id",
     "step_id",
@@ -59,34 +60,49 @@
     },
     "step_id": {
       "description": "Stable runbook step ID that produced this event, or null for a command outside a runbook step.",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "maxLength": 255,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
     },
     "application": {
       "description": "Application name, or null when the command has no deployment context.",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "minLength": 1,
       "maxLength": 255,
       "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
     },
     "flavor": {
       "description": "Flavor, or null when the command has no deployment context.",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "minLength": 1,
       "maxLength": 255,
       "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
     },
     "deployment": {
       "description": "Deployment name, or null when the command has no deployment context.",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "minLength": 1,
       "maxLength": 255,
       "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
     },
     "application_commit": {
       "description": "Cloudify commit that produced the observed attempt, or null without deployment context.",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "pattern": "^[0-9a-f]{40}$"
     },
     "subject": {
@@ -94,15 +110,36 @@
       "$ref": "#/$defs/subject"
     },
     "phase": {
-      "description": "Selected application phase.",
-      "enum": ["install", "reconfigure", "verify", "teardown"]
+      "description": "Selected application phase, or null for a migrate-registry event - the old record proves no phase.",
+      "anyOf": [
+        {
+          "enum": [
+            "install",
+            "reconfigure",
+            "verify",
+            "teardown"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "command_kind": {
       "description": "Kind of work observed: a package operation or a runbook step type.",
-      "enum": ["install", "configure", "verify", "uninstall", "launch", "run", "human-gate"]
+      "enum": [
+        "install",
+        "configure",
+        "verify",
+        "uninstall",
+        "launch",
+        "run",
+        "human-gate",
+        "migrate-registry"
+      ]
     },
     "values": {
-      "description": "Metadata for the declared values involved. A value never appears in plaintext: a non-secret value has no reference and no digest, a secret reference carries the reference, and a literal secret carries only a digest.",
+      "description": "Metadata for the declared values involved. A secret never appears beyond its reference or digest; a non-secret value carries its source form, so the inventory is derivable from the event log.",
       "type": "object",
       "propertyNames": {
         "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -121,8 +158,14 @@
     },
     "log_reference": {
       "description": "Optional pointer to the protected log holding the raw output, by path and digest.",
-      "type": ["object", "null"],
-      "required": ["path", "sha256"],
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "path",
+        "sha256"
+      ],
       "additionalProperties": false,
       "properties": {
         "path": {
@@ -135,55 +178,24 @@
           "pattern": "^[0-9a-f]{64}$"
         }
       }
+    },
+    "tool_version": {
+      "description": "Version of the writing cloudify tool, so the audit answers which cloudify wrote the event.",
+      "type": "string",
+      "minLength": 1
+    },
+    "development_override": {
+      "description": "True when this application event ran under the development override, which is what allows a null application commit.",
+      "type": "boolean"
+    },
+    "origin": {
+      "description": "Provenance origin for migration events: the only producer is the old-registry migration.",
+      "enum": [
+        "old-registry"
+      ]
     }
   },
   "allOf": [
-    {
-      "if": {
-        "properties": {
-          "application": {
-            "type": "string"
-          }
-        },
-        "required": ["application"]
-      },
-      "then": {
-        "properties": {
-          "flavor": {
-            "type": "string"
-          },
-          "deployment": {
-            "type": "string"
-          },
-          "application_commit": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "application": {
-            "type": "null"
-          }
-        },
-        "required": ["application"]
-      },
-      "then": {
-        "properties": {
-          "flavor": {
-            "type": "null"
-          },
-          "deployment": {
-            "type": "null"
-          },
-          "application_commit": {
-            "type": "null"
-          }
-        }
-      }
-    },
     {
       "if": {
         "properties": {
@@ -193,10 +205,14 @@
                 "const": "package"
               }
             },
-            "required": ["kind"]
+            "required": [
+              "kind"
+            ]
           }
         },
-        "required": ["subject"]
+        "required": [
+          "subject"
+        ]
       },
       "then": {
         "properties": {
@@ -228,10 +244,14 @@
                 "const": "deployment"
               }
             },
-            "required": ["kind"]
+            "required": [
+              "kind"
+            ]
           }
         },
-        "required": ["subject"]
+        "required": [
+          "subject"
+        ]
       },
       "then": {
         "properties": {
@@ -263,6 +283,95 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "application": {
+            "type": "string"
+          },
+          "application_commit": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "application",
+          "application_commit"
+        ]
+      },
+      "then": {
+        "properties": {
+          "development_override": {
+            "const": true
+          }
+        },
+        "required": [
+          "development_override"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command_kind": {
+            "const": "migrate-registry"
+          }
+        },
+        "required": [
+          "command_kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "origin"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "command_kind": {
+            "const": "migrate-registry"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command_kind": {
+            "enum": [
+              "install",
+              "configure",
+              "verify",
+              "uninstall",
+              "launch",
+              "run",
+              "human-gate"
+            ]
+          }
+        },
+        "required": [
+          "command_kind"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "origin"
+          ]
+        }
+      }
     }
   ],
   "$defs": {
@@ -275,7 +384,10 @@
       "allOf": [
         {
           "not": {
-            "enum": [".", ".."]
+            "enum": [
+              ".",
+              ".."
+            ]
           }
         },
         {
@@ -308,7 +420,12 @@
     "writer": {
       "description": "Writer identity: host, kernel boot ID, process ID, and the process start time in clock ticks read from /proc/<pid>/stat field 22.",
       "type": "object",
-      "required": ["host", "boot_id", "pid", "process_start_ticks"],
+      "required": [
+        "host",
+        "boot_id",
+        "pid",
+        "process_start_ticks"
+      ],
       "additionalProperties": false,
       "properties": {
         "host": {
@@ -331,32 +448,53 @@
     "subject": {
       "description": "Event subject identity. kind package names one physical package instance; kind deployment names a deployment-scoped transition such as a runbook action.",
       "type": "object",
-      "required": ["kind", "host", "host_key", "package", "package_instance"],
+      "required": [
+        "kind",
+        "host",
+        "host_key",
+        "package",
+        "package_instance"
+      ],
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "enum": ["package", "deployment"]
+          "enum": [
+            "package",
+            "deployment"
+          ]
         },
         "host": {
           "description": "Host address in --on grammar, or null for a deployment subject.",
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
         },
         "host_key": {
           "description": "Durable host identity, or null for a deployment subject.",
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^(ivps:[^/\\x00-\\x1f\\x7f]+(:[^/\\x00-\\x1f\\x7f]+)?|ssh-sha256:[A-Za-z0-9+/=]+)$"
         },
         "package": {
           "description": "Package name, or null for a deployment subject.",
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "maxLength": 255,
           "pattern": "^[a-z0-9][a-z0-9._-]*$"
         },
         "package_instance": {
           "description": "Package instance key, or null for a deployment subject.",
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "maxLength": 255,
           "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
@@ -366,12 +504,27 @@
     "value_metadata": {
       "description": "Metadata for one declared value. No plaintext form exists in an event.",
       "type": "object",
-      "required": ["source", "secret", "declaration", "reference", "digest"],
+      "required": [
+        "source",
+        "secret",
+        "declaration",
+        "reference",
+        "digest"
+      ],
       "additionalProperties": false,
       "properties": {
         "source": {
           "description": "Source label that supplied the value. caller covers a runbook step environment and the caller environment.",
-          "enum": ["caller", "deployment", "applied", "application", "package", "global", "recipe"]
+          "enum": [
+            "caller",
+            "deployment",
+            "applied",
+            "application",
+            "package",
+            "global",
+            "recipe",
+            "migration"
+          ]
         },
         "secret": {
           "description": "Explicit secret declaration for this value name.",
@@ -379,17 +532,32 @@
         },
         "declaration": {
           "description": "How the secret classification was obtained.",
-          "enum": ["explicit", "heuristic", "none"]
+          "enum": [
+            "explicit",
+            "heuristic",
+            "none"
+          ]
         },
         "reference": {
           "description": "The @<backend>:<locator> secret reference when the source was a reference.",
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^@[A-Za-z0-9_-]+:.+$"
         },
         "digest": {
           "description": "sha256 digest of a literal secret.",
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "source_form": {
+          "description": "The source form of a non-secret value. Secrets never carry one: a reference or a digest is the only secret content.",
+          "type": "string",
+          "minLength": 1
         }
       },
       "allOf": [
@@ -400,7 +568,9 @@
                 "const": "none"
               }
             },
-            "required": ["declaration"]
+            "required": [
+              "declaration"
+            ]
           },
           "then": {
             "properties": {
@@ -417,7 +587,9 @@
                 "const": "heuristic"
               }
             },
-            "required": ["declaration"]
+            "required": [
+              "declaration"
+            ]
           },
           "then": {
             "properties": {
@@ -434,7 +606,9 @@
                 "const": false
               }
             },
-            "required": ["secret"]
+            "required": [
+              "secret"
+            ]
           },
           "then": {
             "properties": {
@@ -454,7 +628,9 @@
                 "const": true
               }
             },
-            "required": ["secret"]
+            "required": [
+              "secret"
+            ]
           },
           "then": {
             "anyOf": [
@@ -464,7 +640,9 @@
                     "type": "string"
                   }
                 },
-                "required": ["reference"]
+                "required": [
+                  "reference"
+                ]
               },
               {
                 "properties": {
@@ -472,7 +650,9 @@
                     "type": "string"
                   }
                 },
-                "required": ["digest"]
+                "required": [
+                  "digest"
+                ]
               }
             ]
           }
@@ -484,7 +664,9 @@
                 "type": "string"
               }
             },
-            "required": ["reference"]
+            "required": [
+              "reference"
+            ]
           },
           "then": {
             "properties": {
@@ -493,18 +675,60 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "secret": {
+                "const": false
+              }
+            },
+            "required": [
+              "secret"
+            ]
+          },
+          "then": {
+            "required": [
+              "source_form"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "secret": {
+                "const": true
+              }
+            },
+            "required": [
+              "secret"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "source_form"
+              ]
+            }
+          }
         }
       ]
     },
     "outcome": {
       "description": "Bounded non-secret outcome.",
       "type": "object",
-      "required": ["exit_status", "summary"],
+      "required": [
+        "exit_status",
+        "summary"
+      ],
       "additionalProperties": false,
       "properties": {
         "exit_status": {
           "description": "Exit status of the observed command, or null when no status was observed.",
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0
         },
         "summary": {
@@ -518,17 +742,26 @@
     "state": {
       "description": "Subject revisions around this event.",
       "type": "object",
-      "required": ["previous_revision", "resulting_revision"],
+      "required": [
+        "previous_revision",
+        "resulting_revision"
+      ],
       "additionalProperties": false,
       "properties": {
         "previous_revision": {
           "description": "Subject revision before the transition, or null when no state changed.",
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0
         },
         "resulting_revision": {
           "description": "Subject revision after the transition, or null when no state changed.",
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0
         }
       }

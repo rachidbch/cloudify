@@ -3,7 +3,7 @@
   "host": "cloudai:cloudify",
   "host_key": "ivps:cloudai:cloudify",
   "package": "guacamole",
-  "package_instance": "default",
+  "package_instance": ".",
   "application": "xfce-guacamole",
   "flavor": "disposable",
   "deployment": "main",

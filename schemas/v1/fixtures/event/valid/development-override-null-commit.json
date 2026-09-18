@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "event_id": "20260101T101112Z-a1b2c3d4",
+  "event_id": "20260918T091000Z-2b3c4d5e",
   "at": "2026-01-01T10:11:12Z",
   "tool": "cloudify",
   "writer": {
@@ -10,11 +10,11 @@
     "process_start_ticks": 91726345
   },
   "run_id": "20260101T101112Z-a1b2c3d4",
-  "step_id": "install-guacamole",
-  "application": "xfce-guacamole",
-  "flavor": "disposable",
-  "deployment": "default",
-  "application_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
+  "step_id": "install-nginx",
+  "application": "k3s",
+  "flavor": "default",
+  "deployment": "dev",
+  "application_commit": null,
   "subject": {
     "kind": "package",
     "host": "cloudai:cloudify",
@@ -42,8 +42,8 @@
     }
   },
   "outcome": {
-    "exit_status": 0,
-    "summary": "install succeeded"
+    "exit_status": 1,
+    "summary": "install failed on dirty tree"
   },
   "state": {
     "previous_revision": 0,
@@ -53,5 +53,6 @@
     "path": "/tmp/cloudify/logs/20260101T101112Z.log",
     "sha256": "45ffa9414b900d7b45cfe5d4df258d9d8ac75122da0fcd323fd6bab233248dee"
   },
-  "tool_version": "1.0.0"
+  "tool_version": "1.0.0",
+  "development_override": true
 }

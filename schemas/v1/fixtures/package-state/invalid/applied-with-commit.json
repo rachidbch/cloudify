@@ -30,7 +30,8 @@
         "redacted": false
       }
     },
-    "version": "1.5.5"
+    "version": "1.5.5",
+    "application_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736"
   },
   "last_attempt": {
     "phase": "install",

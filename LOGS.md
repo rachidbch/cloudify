@@ -664,3 +664,9 @@
 
 - Rachid challenged my "stays runtime truth" compression and pushed the opposite reading (stanza lands in the context). Laid the code evidence (decl_line "never a value", pkg_read env-only branch, repro) against the ladder wording; he ruled (a): current behavior is the intent, and the ambiguity is a docs defect worth an ADR.
 - ADR-029 written; REDESIGN ladder sentences, README value-source list, vars.sh header clarified in the same commit.
+
+## 2026-09-18 - ssh test transport landed; 4.1.3 verified through it
+
+- Root cause of the evening's flake class: the cloudify test container had lost its DHCP lease (no default route, tailscale logged out, no ssh). Fixed: networkd restart, tailscale re-auth with the original tags, `rbc` user + NOPASSWD sudo created (Tailscale SSH maps the tailnet identity to it; root identity preserved for bats via `sudo -n env HOME=/root`).
+- New transport: `tests/remote-bats.sh` - one plain `ssh cloudify` per run (Tailscale SSH, no options): tar-streams the tree, runs bats remotely, streams live TAP back to `results/<name>.tap`, tears the run dir down; ssh exit = run exit. `task test-unit`/`task gate` use it; `*:container` variants keep the clean-room runs for phase gates. Rule carved in AGENTS.md (Test transport).
+- Full unit suite through the shim: 663 ok / 0 not ok, rc 0 - includes 4.1.3's generic-validator test.

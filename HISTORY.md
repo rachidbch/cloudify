@@ -1137,3 +1137,5 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - 4.1.1 schema substrate landed (`efcff74`): package-state reshaped to the deployment inventory record, events carry tool_version + non-secret source_form + migration shape; validate.sh 17/34/0 green.
 - 4.1.2 flat-context fields landed: `value.<NAME>.declaration` (explicit/heuristic/none) and sorted `package.<PACKAGE>.instance` (default key) in the dispatch context; validate enforces the charset; gate 146/0 green.
 - ADR-029: recipe default = the recipe's own on-host shell fallback; the `.remote-vars` mirror is never exported. REDESIGN/README/vars.sh clarified.
+- Test transport switched to one plain `ssh X` per run (Tailscale SSH) via `tests/remote-bats.sh`; container kept as clean-room gate authority. Full unit suite through it: 663 ok / 0 not ok.
+- 4.1.3: `cloudify_state_validate_file <schema> <file>` generalizes the jq checker; manifest validation delegates.

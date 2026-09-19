@@ -10,15 +10,15 @@ target=${CLOUDIFY_TEST_TARGET:-cloudify}
 mkdir -p "results/$name"
 set +e
 tar -C . -cf - lib tests pkg schemas runbooks cloudify 2>/dev/null \
-  | ssh "$target" "
+  | ssh "root@$target" "
       set -u
-      d=\$HOME/cloudify-run
+      d=/root/cloudify-run
       rm -rf \"\$d\" && mkdir -p \"\$d\"
       tar -xf - -C \"\$d\"
       cd \"\$d\"
-      sudo -n env HOME=/root bats $*
+      bats $*
       rc=\$?
-      sudo -n rm -rf \"\$d\"
+      rm -rf \"\$d\"
       exit \$rc
     " 2>&1 | tee "results/$name.tap"
 rc=${PIPESTATUS[1]}

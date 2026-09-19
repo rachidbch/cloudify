@@ -75,7 +75,7 @@ Full suite at phase and milestone boundaries; E2E is an exit gate, never a debug
 **Implementation:** the lead agent writes the code and shows the moves; subagents review, research, and read large taps.
 
 **Logs and observability:** Two channels only, for debugging, background tasks and agent observability alike: cloudify's live log (`/tmp/cloudify/logs/latest.log`) and the run's TAP (`results/<suite>/report.tap`). Read them before forming any hypothesis; improvised repro scripts, custom logs and test-output greps are forbidden. Fix one issue, push, re-test.
-**Test transport:** plain `ssh X` (Tailscale SSH, no options, no incus daemon) is the only test transport: one ssh session streams the tree to the test target (`CLOUDIFY_TEST_TARGET`, default `cloudify`), runs bats there, streams the TAP back live, and the ssh exit is the run's exit. Never `ivps exec`, never the incus API, never per-command round trips, never backgrounded remote runs. A repeat of the improvisation trap escalates to Rachid immediately.
+**Test transport:** plain `ssh root@X` (Tailscale SSH, no options, no incus daemon) is the only test transport: one ssh session streams the tree to the test target (`X` = `CLOUDIFY_TEST_TARGET`, default `cloudify`), runs bats there, streams the TAP back live, and the ssh exit is the run's exit. Never `ivps exec`, never the incus API, never per-command round trips, never backgrounded remote runs. A repeat of the improvisation trap escalates to Rachid immediately.
 
 **Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues.
 

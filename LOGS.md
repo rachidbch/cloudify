@@ -678,3 +678,7 @@
 
 - `tests/e2e/two-host-application.bats` run from the controller on the post-transport tree: 4 scenarios green (install, verify, no-context-survives, interruption), 4 later-phase scenarios skipped by name, 0 failures; both disposable hosts launched on cloudai via `ivps launch` and torn down (0 leftovers). The suite dispatches via plain `ssh root@<host>` - the canonical form proven end to end.
 - Transport coverage: unit suites through the shim (663 ok / 0 not ok) + two-host E2E green. The k3s fleet E2E stays plan-gated to the Phase 9 final gate (heavy: four nodes, live ACL mutation; unrelated to the state model) - its controller-side transport is the same ssh form proven here.
+## 2026-09-18 - 4.1.4 event-id and writer-identity helpers
+
+- cloudify_state_event_id + cloudify_state_writer_identity (cached per worker; tool version = CLOUDIFY_VERSION or git describe, else unknown). Green: event.bats 2/2, state.bats 18/0, lint clean.
+- jq quirk found by the tests: test("...(-[0-9a-f]{4}){4}...") returns false on jq 1.6/1.7 (bounded repetition over a capture group); schemas spell patterns out and new code must too.

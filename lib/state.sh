@@ -274,6 +274,35 @@ function _cloudify_manifest_render() {
           }'
 }
 
+# cloudify_state_event_id - UTC second plus 8 random hex from /dev/urandom.
+# Collision handling belongs to the event writer's create-if-absent link,
+# which regenerates; the generator itself is pure and never overwrites.
+function cloudify_state_event_id() {
+    printf '%s-%s\n' "$(date -u '+%Y%m%dT%H%M%SZ')" "$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+}
+
+# cloudify_state_writer_identity - who is writing, read once per worker:
+# hostname, kernel boot id, pid, process start ticks (proc stat field 22 -
+# what distinguishes a reused pid) and the cloudify tool version. Cached in
+# the worker so every event of one dispatch carries identical identity.
+_CLOUDIFY_STATE_WRITER=""
+function cloudify_state_writer_identity() {
+    if [[ -z "$_CLOUDIFY_STATE_WRITER" ]]; then
+        local ticks
+        ticks=$(cut -d' ' -f22 /proc/$$/stat)
+        local version="${CLOUDIFY_VERSION:-}"
+        [[ -n "$version" ]] || version=$(git -C "${CLOUDIFY_SCHEMA_DIR%/schemas/v1}" describe --always --dirty 2>/dev/null || echo unknown)
+        _CLOUDIFY_STATE_WRITER=$(jq -n \
+            --arg host "$(hostname)" \
+            --arg boot "$(cat /proc/sys/kernel/random/boot_id)" \
+            --argjson pid "$$" \
+            --argjson ticks "$ticks" \
+            --arg tool "$version" \
+            '{host: $host, boot_id: $boot, pid: $pid, process_start_ticks: $ticks, tool_version: $tool}')
+    fi
+    printf '%s\n' "$_CLOUDIFY_STATE_WRITER"
+}
+
 # _cloudify_manifest_require_tools - jq and the schema tree, checked before any
 # write. A host that cannot validate a manifest must not create one.
 function _cloudify_manifest_require_tools() {

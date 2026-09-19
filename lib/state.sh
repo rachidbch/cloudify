@@ -297,22 +297,37 @@ function _cloudify_manifest_shape_hint() {
     ' 2>/dev/null
 }
 
-# _cloudify_manifest_reference_check <file> - the one validator. Prints the
-# rejection reason. rc 0 accepted, 1 the checker is unusable (jq or the schema
-# tree is missing), 2 rejected.
-function _cloudify_manifest_reference_check() {
-    local file="${1:-}" checker schema hint
+# cloudify_state_validate_file <schema> <file> - the one generic schema
+# validator: any schema in the tree, any file. Prints the rejection reason.
+# rc 0 accepted, 1 the checker is unusable (jq or a missing input), 2 rejected.
+function cloudify_state_validate_file() {
+    local schema="${1:-}" file="${2:-}"
+    [[ -f "$schema" && -f "$file" ]] || return 1
     command -v jq >/dev/null 2>&1 || return 1
-    checker="$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq"
-    schema="$CLOUDIFY_SCHEMA_DIR/deployment-manifest.schema.json"
-    [[ -f "$checker" && -f "$schema" ]] || return 1
+    [[ -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" ]] || return 1
     if ! jq -e . "$file" >/dev/null 2>&1; then
         printf '%s\n' 'not valid JSON'
         return 2
     fi
-    if jq -e --slurpfile schema "$schema" -f "$checker" "$file" >/dev/null 2>&1; then
+    if jq -e --slurpfile schema "$schema" -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" "$file" >/dev/null 2>&1; then
         return 0
     fi
+    printf '%s\n' "rejected by the schema"
+    return 2
+}
+
+# _cloudify_manifest_reference_check <file> - the manifest validation front:
+# delegates to cloudify_state_validate_file and enriches the rejection with the
+# manifest shape hint (missing/unexpected fields from the schema itself).
+# rc 0 accepted, 1 the checker is unusable (jq or the schema tree is missing), 2 rejected.
+function _cloudify_manifest_reference_check() {
+    local file="${1:-}" schema="$CLOUDIFY_SCHEMA_DIR/deployment-manifest.schema.json" rc=0
+    command -v jq >/dev/null 2>&1 || return 1
+    [[ -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" && -f "$schema" ]] || return 1
+    cloudify_state_validate_file "$schema" "$file" && return 0
+    rc=$?
+    [[ $rc -eq 2 ]] || return $rc
+    local hint
     hint=$(_cloudify_manifest_shape_hint "$file")
     printf '%s\n' "rejected by the schema${hint:+ ($(printf '%s' "$hint" | paste -sd'; ' -))}"
     return 2

@@ -357,3 +357,35 @@ _reference_check() {
     [[ "$output" == *"rejected by the schema"* ]]
     [ ! -f "$(cloudify_state_manifest_file app default stage)" ]
 }
+
+@test "cloudify_state_validate_file is the one generic schema validator" {
+    local good="$CLOUDIFY_SCHEMA_DIR/fixtures/event/valid/install-succeeded-reference-secret.json"
+    local bad="$CLOUDIFY_SCHEMA_DIR/fixtures/event/invalid/raw-stdout.json"
+
+    rubric "accepts a valid fixture against its own schema"
+    run cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/event.schema.json" "$good"
+    [ "$status" -eq 0 ]
+
+    rubric "rejects an invalid fixture with a reason"
+    run cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/event.schema.json" "$bad"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"rejected by the schema"* ]]
+
+    rubric "missing inputs are unusable, never silent rejection"
+    run cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/event.schema.json" "$CLOUDIFY_TMP/nope.json"
+    [ "$status" -eq 1 ]
+    run cloudify_state_validate_file "$CLOUDIFY_TMP/nope.schema.json" "$good"
+    [ "$status" -eq 1 ]
+
+    rubric "the manifest reference check delegates to it"
+    local commit="0123456789abcdef0123456789abcdef01234567"
+    cloudify_manifest_write app default prod applying "$commit" false "$BINDINGS"
+    local file
+    file=$(cloudify_state_manifest_file app default prod)
+    run _cloudify_manifest_reference_check "$file"
+    [ "$status" -eq 0 ]
+    printf '{"schema_version":1}\n' > "$file"
+    run _cloudify_manifest_reference_check "$file"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"rejected by the schema"* ]]
+}

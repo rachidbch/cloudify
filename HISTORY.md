@@ -1139,3 +1139,4 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - ADR-029: recipe default = the recipe's own on-host shell fallback; the `.remote-vars` mirror is never exported. REDESIGN/README/vars.sh clarified.
 - Test transport switched to one plain `ssh X` per run (Tailscale SSH) via `tests/remote-bats.sh`; container kept as clean-room gate authority. Full unit suite through it: 663 ok / 0 not ok.
 - 4.1.3: `cloudify_state_validate_file <schema> <file>` generalizes the jq checker; manifest validation delegates.
+- ssh transport proven on the two-host application E2E: 4 green / 4 skipped-by-name / 0 failures, hosts torn down. Keep condition met.

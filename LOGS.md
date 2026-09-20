@@ -685,3 +685,8 @@
 ## 2026-09-18 - 4.1.6 event-first inventory apply primitive
 
 - cloudify_state_inventory_apply: read/validate current (rev 0 when absent) -> gap refusal on missing referenced events -> stamp next capture (revision, event id on changed objects only) -> validate capture + event -> hard-link event -> atomic record replace -> re-read before success. Green: event.bats 8/8, state.bats clean, lint rc 0.
+## 2026-09-18 - 4.1.7 subject-level gap check; 4.1 substrate complete
+
+- cloudify_state_inventory_check: read-only rc 0/1/2; refs enumeration shared with apply's refusal (_cloudify_state_event_refs). event.bats 9/9, state.bats + context.bats green, lint rc 0.
+- 4.1 slice complete: schemas (4.1.1), context fields (4.1.2), generic validator (4.1.3), id/identity helpers (4.1.4), immutable event writer (4.1.5), event-first inventory apply (4.1.6), gap check (4.1.7) - no inventory writer landed before the event writer, per the slice rule.
+- Performance note: one apply = ~8 jq spawns (~200 ms) + at most 3 event stats; invisible next to recipe dispatch. The gap check reads one record - no fleet scans (fleet reporting is the Phase 6 state check).

@@ -6,6 +6,15 @@ set -Eeuo pipefail
 [[ -n "${_CLOUDIFY_PACKAGES_LOADED:-}" ]] && return 0
 _CLOUDIFY_PACKAGES_LOADED=1
 
+# Result-line channel (Phase 4.3): pkg_depends emits one `result v1:` line per
+# package attempt. Source the module here so any caller that has packages.sh
+# also has the emitters; the router sources both and the guard makes the
+# second load a no-op.
+if [[ -z "${_CLOUDIFY_RESULTS_LOADED:-}" ]]; then
+    # shellcheck source=/dev/null
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/results.sh"
+fi
+
 #== SCRIPT SUB-COMMANDS: PACKAGE MANAGEMENT
 
 # Does a package exist ?
@@ -262,6 +271,11 @@ function cloudify_print_package_recipe() {
 # =Note= This will fail if executed on remote host. This is expected.
 function cloudify_install_default_packages {
     local pkg
+    # Framework attribution: the @default set reports parent=@defaults on its
+    # result lines (design: framework work reports truthfully). Consumed at
+    # runtime by pkg_depends -> cloudify_result_emit.
+    # shellcheck disable=SC2034
+    CLOUDIFY_RESULT_PARENT=@defaults
     # shellcheck disable=SC2119
     for pkg in $(cloudify_list_default_packages); do
         msg "${GREEN}Installing ${pkg%%*( )} cloudify package${RESET}"

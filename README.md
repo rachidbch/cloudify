@@ -480,6 +480,7 @@ pkg/hermes/
 ├── README.md         # Optional — user-facing docs (what it is, config vars, exposure, gotchas)
 ├── docs/             # Optional — extended docs for packages needing more than a single README
 ├── .remote-vars      # Optional — var NAMES forwarded from caller env (see below)
+├── .version          # Required — package version, one line (result lines + inventory)
 └── @default          # Optional — tag file (empty file)
 ```
 
@@ -499,6 +500,8 @@ Packages with non-obvious config, exposure, or gotchas ship a `README.md` (and, 
 #### Recipe conventions
 
 Recipes are plain bash scripts. They run with `set -Eeuo pipefail` inherited from the main router. The `pkg_*` API functions are available automatically (no sourcing needed). The script runs inside the target environment (local or remote via SSH), so commands like `curl`, `apt-get`, and `bash` are available directly.
+
+**`.version` (required):** every recipe package declares its version in a one-line `.version` file. It is the package's declared version — dev-owned, trusted, never probed from the machine (packages are opaque). Initialize new packages to `1.0.0` and bump when the package meaningfully changes. The framework puts it on the package's `result v1:` line and stores it in the inventory; a missing, empty or off-charset declaration records the attempt as failed (`version=unknown`).
 
 #### Minimal examples
 
@@ -678,6 +681,20 @@ cloudify verify <pkg>                 verify a package
 ```
 
 `PKG_VERIFY_TIMEOUT` (seconds) is read from `pkgs/<pkg>.yaml` or the environment. Slow-starting services (e.g. first web-UI builds) should raise it. For remote installs it is forwarded automatically.
+
+#### Result lines
+
+Every package attempt prints one machine-readable line to the log, when the attempt ends - on the host and in the streamed controller log alike:
+
+```
+result v1: parent=- package=nginx instance=default phase=install action=install outcome=succeeded exit=0 verification=ok version=1.24.0
+```
+
+- `parent` is `-` for a top-level package, the declaring package for a dependency pulled via `pkg_depends`, `@defaults`/`@init` for framework work.
+- `outcome` is `succeeded` or `failed` - the framework's verdict. A non-zero recipe exit, a failed verification, or an unknown version force `failed`; `exit` stays the recipe's real status either way.
+- `version` is the package's declared `.version` (see "Recipe conventions"); `unknown` means the declaration was missing or malformed; native fallback subjects (installed straight through apt, no cloudify package) report `none`.
+
+These lines are the future inventory feed (state-model-v2): ordinary keyed lines in the log, safe to grep, carrying no values or secrets.
 
 ### Shadow Command System
 

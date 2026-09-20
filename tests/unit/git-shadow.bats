@@ -23,36 +23,36 @@ teardown() {
 # - bug: the option hits first -> "Not a valid git url", return 1
 # - fixed: URL parsed, then "path ... doesn't exist" branch fires, return 1
 @test "git clone with --depth=1 parses URL, does not reject the option" {
-    run git clone --depth=1 https://github.com/user/repo.git /nonexistent-dir-xyz/repo
+    run git clone --depth=1 https://github.com/user/repo.git "$CLOUDIFY_TMP/nonexistent-parent/repo"
     [ "$status" -eq 1 ]
-    echo "$output" | grep -q "path /nonexistent-dir-xyz doesn't exist"
+    echo "$output" | grep -q "path $CLOUDIFY_TMP/nonexistent-parent doesn't exist"
     echo "$output" | grep -qv "Not a valid git url"
 }
 
 @test "git clone with space-separated option (--depth 1) parses URL" {
-    run git clone --depth 1 https://github.com/user/repo.git /nonexistent-dir-xyz/repo
+    run git clone --depth 1 https://github.com/user/repo.git "$CLOUDIFY_TMP/nonexistent-parent/repo"
     [ "$status" -eq 1 ]
-    echo "$output" | grep -q "path /nonexistent-dir-xyz doesn't exist"
+    echo "$output" | grep -q "path $CLOUDIFY_TMP/nonexistent-parent doesn't exist"
     echo "$output" | grep -qv "Not a valid git url"
 }
 
 @test "git clone with --recurse-submodules parses URL" {
-    run git clone --recurse-submodules https://github.com/user/repo.git /nonexistent-dir-xyz/repo
+    run git clone --recurse-submodules https://github.com/user/repo.git "$CLOUDIFY_TMP/nonexistent-parent/repo"
     [ "$status" -eq 1 ]
-    echo "$output" | grep -q "path /nonexistent-dir-xyz doesn't exist"
+    echo "$output" | grep -q "path $CLOUDIFY_TMP/nonexistent-parent doesn't exist"
     echo "$output" | grep -qv "Not a valid git url"
 }
 
 @test "non-optioned git clone still parses URL (regression)" {
-    run git clone https://github.com/user/repo.git /nonexistent-dir-xyz/repo
+    run git clone https://github.com/user/repo.git "$CLOUDIFY_TMP/nonexistent-parent/repo"
     [ "$status" -eq 1 ]
-    echo "$output" | grep -q "path /nonexistent-dir-xyz doesn't exist"
+    echo "$output" | grep -q "path $CLOUDIFY_TMP/nonexistent-parent doesn't exist"
     echo "$output" | grep -qv "Not a valid git url"
 }
 
 @test "git clone with URL first, then path + trailing option" {
-    run git clone https://github.com/user/repo.git /nonexistent-dir-xyz/repo -b main
+    run git clone https://github.com/user/repo.git "$CLOUDIFY_TMP/nonexistent-parent/repo" -b main
     [ "$status" -eq 1 ]
-    echo "$output" | grep -q "path /nonexistent-dir-xyz doesn't exist"
+    echo "$output" | grep -q "path $CLOUDIFY_TMP/nonexistent-parent doesn't exist"
     echo "$output" | grep -qv "Not a valid git url"
 }

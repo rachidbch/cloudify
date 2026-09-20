@@ -104,7 +104,7 @@ The software decides how many runtimes exist; cloudify decides only what it conf
 - `last_attempt`: the most recent attempt by this deployment - phase, requested value metadata, outcome, time, event ID;
 - `health`: this deployment's last verification observation - status, time, event ID.
 
-The version contract: step 4.3's sweep adds `pkg_version()` to every recipe in `pkg/`, echoing the installed version, or `none` for a package that has no version - the inventory then stores `version: null`; the framework queries it after every package attempt, whatever the phase, and result lines carry it. A recipe whose reporter fails yields `version=unknown` on its result line and the attempt is recorded as failed.
+The version contract (amended 2026-09-20, Rachid's ruling: packages are opaque and their devs are trusted, so the framework never probes a machine for a version): every package declares its version in a dev-owned `pkg/<name>/.version` file - one line, the package's version, charset-safe, initialized fleet-wide to `1.0.0` and bumped by the dev when the package meaningfully changes. The framework reads the declaration, never executes a reporter; result lines carry it and the inventory stores it. A missing, empty or off-charset declaration yields `version=unknown` and the attempt is recorded as failed; native fallback subjects (no cloudify package dir) declare nothing, report `none` and are exempt. This replaces the earlier per-recipe `pkg_version()` reporter-function contract; `none` no longer exists for cloudify packages.
 
 Versions and instance keys are space-free and restricted to the visible charset `[A-Za-z0-9._+~:-]`; anything else reports `unknown`.
 
@@ -616,7 +616,7 @@ One red test at a time, in this order.
 - Failed first install leaves a valid inventory with null `applied`; retry runs install and records `applied` only after success.
 - Failed reconfigure preserves `applied` bytes; `version=unknown` marks the attempt failed.
 - `--adopt` records the inventory only after guarded configure succeeds; unsupported configure refuses before mutation.
-- A recipe-reported version lands on the result line and in the inventory; `none` stores null; a missing or failing reporter yields `version=unknown` and a failed attempt; the sweep covers every recipe in `pkg/`.
+- A declared version (`.version` file) lands on the result line and in the inventory; a missing or off-charset declaration yields `version=unknown` and a failed attempt; the declaration gate covers every recipe in `pkg/` (amended 2026-09-20).
 - More than 64 lines, or a line over 512 bytes, fails the dispatch; the checkout line is collected once and drives the executed-code check.
 - Shared teardown releases one inventory without uninstall; failed last uninstall preserves the inventory; success removes it and uninstalls when the teardown phase names the package.
 - Direct uninstall over another deployment's inventory fails, naming the deployments; with `CLOUDIFY_BREAK_RELIANCES` each displaced deployment gets its own naming event and release, then the uninstall.
@@ -655,7 +655,7 @@ No inventory writer lands before step 5 is green.
 
 1. Freeze the lock, result-line, matching, and reconciliation tests.
 2. The dispatch worker and bounded host lock; deployment matching (match, converge, create-printed); the `_direct` synthesis for bare installs (generated deployment, virtual `direct` step, manifest with the uniform commit rule).
-3. The version reporter contract (`pkg_version()`, declared none, unknown-fails) and result emission around package attempts, plus the annotation sweep across every recipe in `pkg/`.
+- The version contract (amended 2026-09-20: declared `.version` file per package, initialized `1.0.0`, devs trusted and packages opaque) and result emission around package attempts, including native subjects and framework work.
 4. The pass-through result stage, line validation, and executed-code check.
 5. Reconciliation before ordered commits.
 6. Delete the runtime registry writer; split the goldens.

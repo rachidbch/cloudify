@@ -47,8 +47,13 @@ setup_test_env() {
     export DEBUG=false
     export CLOUDIFY_LOG_LEVEL=INFO
 
-    # Set script dir to the real cloudify repo
-    export CLOUDIFY_SCRIPT_DIR="/root/cloudify"
+    # The repo tree UNDER TEST - the tree bats is running from, never a
+    # mirror: under the shim the tests run in a fresh extraction
+    # (/root/cloudify-run), while /root/cloudify is the clean-room mirror
+    # (task sync) and may be stale. Tests that source/walk repo paths must
+    # see the same bytes the run is testing. BATS_TEST_DIRNAME is tests/unit;
+    # the repo root is two levels up.
+    export CLOUDIFY_SCRIPT_DIR="$(cd "${BATS_TEST_DIRNAME:-$PWD}/../.." && pwd)"
 }
 
 # Teardown the test environment

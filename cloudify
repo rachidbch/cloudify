@@ -269,7 +269,8 @@ function _cloudify_execute_package_action() {
             # NOT attempted — fail fast with a clear message + remediation.
             # R1: the same one-resolution path runs on the local path too, so one
             # precedence governs local and remote installs (I9).
-            if ! ( _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install $defaults; cloudify_install_package $defaults ); then
+            if ! ( _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install $defaults; # shellcheck disable=SC2034 # consumed by pkg_depends result emission
+                CLOUDIFY_RESULT_PARENT=@defaults; cloudify_install_package $defaults ); then
                 msg "${RED}@default package(s) failed to install — your requested package(s) were NOT attempted.${RESET}"
                 msg "${RED}Fix the failure above, or re-run with --no-defaults to install only basics + your package(s).${RESET}"
                 exit 1
@@ -453,6 +454,10 @@ function main() {
                 break
             fi
             cloudify_init_paths
+            # Framework attribution: init's converge reports parent=@init on its
+            # result lines (design: framework work reports truthfully).
+            # shellcheck disable=SC2034 # consumed by pkg_depends result emission
+            CLOUDIFY_RESULT_PARENT=@init
             cloudify_install_package required
             command -v rsync >/dev/null 2>&1 || cloudify_install_package rsync
             # shellcheck source=/dev/null

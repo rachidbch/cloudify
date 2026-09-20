@@ -63,7 +63,7 @@ Invariants named (2026-09-18, before any 4.1 edit):
 - [~] The bounded host lock landed (9fce0e8: flock fd 200, holder metadata, timeout prints it); the dispatch worker wiring is next.
 - [ ] The `_direct` synthesis: bare install creates the generated deployment under the reserved namespace with the virtual `direct` step and manifest under the uniform commit rule; `--name` reuses; bare never matches.
 - [ ] Deployment matching: same configuration converges; no match creates a generated-name deployment, printed.
-- [ ] `pkg_version()` sweep across every recipe in `pkg/` (`none` stores null; failures yield `version=unknown` and a failed attempt); result emission around package attempts, including native subjects and framework work.
+- [x] `.version` declaration sweep: every recipe package declares its version in a one-line `.version` file (initialized `1.0.0` fleet-wide; Rachid's 2026-09-20 ruling replaces the `pkg_version()` reporter functions - packages opaque, devs trusted); result emission around package attempts, including native subjects and framework work. (results.bats 20/20)
 - [ ] The pass-through result stage (read idiom, return discipline, ERR-trap inhibited); line-by-line validation; the executed-code check.
 - [ ] Reconciliation before ordered commits (classifier buckets; membership; body order).
 - [ ] Delete the runtime registry writer; split the goldens (payload half untouched; registry fixtures to migration).

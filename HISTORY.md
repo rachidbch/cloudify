@@ -1141,3 +1141,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - 4.1.3: `cloudify_state_validate_file <schema> <file>` generalizes the jq checker; manifest validation delegates.
 - ssh transport proven on the two-host application E2E: 4 green / 4 skipped-by-name / 0 failures, hosts torn down. Keep condition met.
 - 4.2 landed: instance records adopted (ivps ADR-010 merged), inventory path helpers, host origin/continuity baseline, .package-instance contract, external-host release note. Full unit suite via the ssh shim: 680 ok / 0 not ok.
+
+### 2026-09-20 - Phase 4.3: result-line emission landed; version contract amended to declared `.version`
+
+- Result-line emission landed: one `result v1:` line per package attempt, printed by the child's framework code (`pkg_depends` in lib/package-api.sh, emitters in new lib/results.sh), attributed `parent=-`/dependency/`@defaults`/`@init`; frozen line tests 20/20. Payload goldens byte-identical under strict compare (18/0) - the re-pin ruling resolved as zero-diff, nothing to audit. Fragile gate 149/0.
+- Version contract amended (Rachid's ruling, same-day surfacing + consent in session): packages are opaque, devs trusted - the per-recipe `pkg_version()` reporter-function sweep is replaced by a dev-owned `pkg/<name>/.version` declaration (one line, initialized `1.0.0` fleet-wide, bump on meaningful change). Framework reads the file, never probes the machine; missing/empty/off-charset reads `unknown` = failed attempt; native fallback subjects report `none`, exempt. Design doc + implementation plan amended in this commit per the normative-file rule.
+- Test harness hardened: CLOUDIFY_SCRIPT_DIR in the shared test helper now resolves to the tree under test (was the stale clean-room mirror); git-shadow clone tests use a hermetic scratch discriminator; the .version declaration gate refuses a wrong root. Full unit suite 701/701.

@@ -329,6 +329,86 @@ function cloudify_state_record_dir() {
         "$(cloudify_state_inventory_root "$node" "${inst:-}")" "$app" "$flavor" "$dep" "$pkg" "$key"
 }
 
+# cloudify_state_host_baseline_path <capture-root> - the ADR-028 host record:
+# origin (image, created_at; discovered/asserted/unknown) beside the
+# continuity anchor, written once at first inventory write.
+function cloudify_state_host_baseline_path() {
+    printf '%s/cloudify/host.json\n' "${1:?}"
+}
+
+# cloudify_state_host_baseline_init <capture-root> <discovered|asserted|unknown> [origin-json]
+# - create-if-absent (hard link), never overwriting: the origin is recorded
+# once; `discovered` reads the engine-sourced record through the local ivps
+# inventory, `asserted` takes the operator's origin JSON, `unknown` records
+# that nothing could answer. Idempotent: an existing record is a no-op.
+function cloudify_state_host_baseline_init() {
+    local root="${1:?}" mode="${2:-}"
+    local bp
+    bp=$(cloudify_state_host_baseline_path "$root")
+    [[ -f "$bp" ]] && return 0
+    _cloudify_state_event_require_tools
+    local host_id origin_json="null"
+    host_id=$(basename "$root")
+    if [[ "$mode" == discovered ]]; then
+        if command -v ivps >/dev/null 2>&1 && \
+            origin_json=$(ivps node show "${CLOUDIFY_BASELINE_TARGET:-$host_id}" --json 2>/dev/null); then
+            : # engine-sourced facts captured below
+        else
+            origin_json="null"
+            mode="unknown"
+        fi
+    fi
+    mkdir -p "$(dirname "$bp")"
+    [[ -n "$origin_json" ]] || origin_json="null"
+    local tmp="$bp.tmp$$"
+    jq -n --arg host_id "$host_id" --arg mode "$mode" \
+        --argjson origin "$origin_json" --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" '
+        {schema_version: 1,
+         origin: {mode: $mode,
+                  image: ($origin.image // null),
+                  created_at: ($origin.created_at // null),
+                  engine: ($origin.engine // null)},
+         continuity: {host_id: $host_id, boot_id: null},
+         recorded_at: $ts}' > "$tmp" \
+        || { rm -f "$tmp"; die "baseline: cannot render the host origin."; }
+    mkdir -p "$(dirname "$bp")"
+    chmod 600 "$tmp"
+    sync "$tmp" 2>/dev/null || true
+    if ! ln "$tmp" "$bp" 2>/dev/null; then
+        rm -f "$tmp"
+        [[ -f "$bp" ]] && return 0
+        die "baseline: could not commit '$bp'."
+    fi
+    rm -f "$tmp"
+    sync -d "$(dirname "$bp")" 2>/dev/null || true
+    return 0
+}
+
+# cloudify_state_host_baseline_check <capture-root> <observed-boot-id> - the
+# ADR-028 continuity comparison: the machine present must be the machine the
+# baseline describes. Same boot id: refreshes last-seen and passes. A changed
+# boot id on the same host id means the machine was rewound or replaced: a
+# named refusal, never a silent mutation. No baseline: rc 1 (caller inits).
+function cloudify_state_host_baseline_check() {
+    local root="${1:?}" boot="${2:?}" bp
+    bp=$(cloudify_state_host_baseline_path "$root")
+    [[ -f "$bp" ]] || { printf 'baseline: none at %s\n' "$bp"; return 1; }
+    local last
+    last=$(jq -r '.continuity.boot_id // empty' "$bp")
+    if [[ -n "$last" && "$last" != "$boot" ]]; then
+        printf 'baseline: host %s was rewound or replaced (last-seen boot %s, now %s); verify or re-adopt.\n' \
+            "$(jq -r .continuity.host_id "$bp")" "$last" "$boot"
+        return 2
+    fi
+    local tmp="$bp.tmp$$"
+    if ! jq --arg boot "$boot" '.continuity.boot_id = $boot' "$bp" > "$tmp" \
+            || ! mv "$tmp" "$bp"; then
+        rm -f "$tmp"
+        die "baseline: cannot record last-seen boot id."
+    fi
+    return 0
+}
+
 # cloudify_state_event_id - UTC second plus 8 random hex from /dev/urandom.
 # Collision handling belongs to the event writer's create-if-absent link,
 # which regenerates; the generator itself is pure and never overwrites.

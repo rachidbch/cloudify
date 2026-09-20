@@ -694,3 +694,7 @@
 
 - ivps: feature/instance-inventory merged to main and pushed (ADR-010 live); a stray garbage-named file the child committed was dropped and PLAN.md restored to its untracked-pointer convention (apparmor plan preserved at plans/apparmor-plan-saved.md).
 - cloudify 4.2.1: cloudify_state_inventory_root / cloudify_state_record_dir / cloudify_state_host_lock_path - the inventory tree and host lock resolve through plain `ivps node path` (id-keyed dirs), with named local-inventory errors and full component validation. Green: inventory.bats 3/3, state.bats clean, lint rc 0.
+## 2026-09-18 - 4.2.2 host baseline + continuity check
+
+- cloudify_state_host_baseline_init/check at <capture-root>/cloudify/host.json: origin discovered (ivps instance record) / asserted / unknown - failed discovery downgrades discovered->unknown instead of stamping a lying mode; continuity = host id + last-seen boot id, refreshed on match, refusal on change (rewound-or-replaced) per ADR-028.
+- Incident during the slice: cloudai dropped off the tailnet entirely (ping dead, ~150s) - node-side flap, recovered on its own; the shim surfaced it immediately as a plain connect failure (the loud-first-use property working as designed).

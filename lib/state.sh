@@ -373,6 +373,30 @@ function cloudify_state_event_create() {
     done
 }
 
+# _cloudify_state_event_refs <record> - the event ids one record links to
+# (applied, last attempt, health; absent when the object is null). One jq read.
+function _cloudify_state_event_refs() {
+    jq -r '.applied.event_id // empty, (.last_attempt | if . then .event_id else empty end), .health.event_id // empty' "$1"
+}
+
+# cloudify_state_inventory_check <record> - subject-level gap check: rc 0 when
+# the record is schema-valid and every referenced event is committed; rc 2
+# names the first gap; rc 1 when the record is missing or invalid. Read-only.
+function cloudify_state_inventory_check() {
+    local record="${1:?}" eid
+    [[ -f "$record" ]] || { printf 'inventory check: no record at %s\n' "$record"; return 1; }
+    cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$record" >/dev/null \
+        || { printf 'inventory check: %s is not a valid record\n' "$record"; return 1; }
+    while IFS= read -r eid; do
+        [[ -n "$eid" ]] || continue
+        if [[ ! -f "$(cloudify_state_events_root)/${eid:0:4}-${eid:4:2}/$eid.json" ]]; then
+            printf 'inventory check: %s references missing event %s\n' "$record" "$eid"
+            return 2
+        fi
+    done < <(_cloudify_state_event_refs "$record")
+    return 0
+}
+
 # cloudify_state_inventory_apply <record-path> <event-body> <next-capture> -
 # the event-first inventory transition. Reads and validates the current record
 # (conceptual revision 0 when absent), refuses a record pointing at a missing
@@ -400,7 +424,7 @@ function cloudify_state_inventory_apply() {
             if [[ ! -f "$(cloudify_state_events_root)/${eid:0:4}-${eid:4:2}/$eid.json" ]]; then
                 die "inventory: '$record' references missing event '$eid'; verify before mutating."
             fi
-        done < <(jq -r '.applied.event_id // empty, (.last_attempt | if . then .event_id else empty end), .health.event_id' "$record")
+        done < <(_cloudify_state_event_refs "$record")
     fi
     local next_rev=$((cur_rev + 1))
 

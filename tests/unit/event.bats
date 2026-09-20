@@ -188,3 +188,25 @@ _capture() {
     [ "$(find "$HOME/.local/state/cloudify/events" -name '*.json' | wc -l)" -eq "$events_before" ]
     [ "$(jq -S . "$record")" = "$before" ]
 }
+
+@test "inventory check: read-only gap detection" {
+    local record="$CLOUDIFY_TMP/state.json" body="$CLOUDIFY_TMP/ev.json" next="$CLOUDIFY_TMP/next.json"
+    _apply_event_body > "$body"
+    _capture > "$next"
+    local id
+    id=$(cloudify_state_inventory_apply "$record" "$body" "$next")
+
+    run cloudify_state_inventory_check "$record"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+
+    subrubric "a missing referenced event is named, and the check is read-only"
+    find "$HOME/.local/state/cloudify/events" -name "$id.json" -delete
+    run cloudify_state_inventory_check "$record"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"$id"* ]]
+    [ ! -f "$HOME/.local/state/cloudify/events/${id:0:4}-${id:4:2}/$id.json" ]
+
+    run cloudify_state_inventory_check "$CLOUDIFY_TMP/nope.json"
+    [ "$status" -eq 1 ]
+}

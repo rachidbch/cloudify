@@ -101,3 +101,90 @@ _event_body() {
     [ -f "$root/${id:0:4}-${id:4:2}/$id.json" ]
     [ -f "$root/2026-09/.event-stray.json" ]
 }
+
+_apply_event_body() {
+    jq -n '{schema_version:1, at:"2026-09-18T10:00:00Z", tool:"cloudify", tool_version:"t",
+        writer:{host:"c", boot_id:"3f2a1b0c-4d5e-6f70-8192-a3b4c5d6e7f8", pid:1, process_start_ticks:1},
+        run_id:null, step_id:"install-guac", application:"k3s", flavor:"default", deployment:"main",
+        application_commit:"0123456789abcdef0123456789abcdef01234567",
+        subject:{kind:"package", host:"cloudai:cloudify", host_key:"ivps:cloudai:cloudify",
+                 package:"guacamole", package_instance:"default"},
+        phase:"install", command_kind:"install", values:{},
+        outcome:{exit_status:0, summary:"apply"}}'
+}
+
+_capture() {
+    jq -n '{schema_version:1, host:"cloudai:cloudify", host_key:"ivps:cloudai:cloudify",
+        package:"guacamole", package_instance:"default",
+        application:"k3s", flavor:"default", deployment:"main", step_id:"install-guac",
+        applied:{version:"1.5.5", at:"2026-09-18T10:00:01Z", values:{}},
+        last_attempt:{phase:"install", outcome:"succeeded", at:"2026-09-18T10:00:01Z", requested:{}},
+        health:{status:"unknown", checked_at:null}}'
+}
+
+@test "inventory apply: event first, then revision 1 on a fresh record" {
+    local record="$CLOUDIFY_TMP/state.json" body="$CLOUDIFY_TMP/ev.json" next="$CLOUDIFY_TMP/next.json"
+    _apply_event_body > "$body"
+    _capture > "$next"
+    local id
+    id=$(cloudify_state_inventory_apply "$record" "$body" "$next")
+    [[ "$id" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]]
+
+    local event_file
+    event_file="$HOME/.local/state/cloudify/events/${id:0:4}-${id:4:2}/$id.json"
+    [ -f "$event_file" ]
+    [ "$(jq -r .state.previous_revision "$event_file")" = "0" ]
+    [ "$(jq -r .state.resulting_revision "$event_file")" = "1" ]
+
+    [ "$(jq -r .revision "$record")" = "1" ]
+    [ "$(jq -r .applied.event_id "$record")" = "$id" ]
+    [ "$(jq -r .last_attempt.event_id "$record")" = "$id" ]
+    run cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$record"
+    [ "$status" -eq 0 ]
+}
+
+@test "inventory apply: second transition stamps only the changed object" {
+    local record="$CLOUDIFY_TMP/state.json" next2="$CLOUDIFY_TMP/next2.json"
+    local body="$CLOUDIFY_TMP/ev.json" id1
+    _apply_event_body > "$body"
+    _capture > "$CLOUDIFY_TMP/next.json"
+    id1=$(cloudify_state_inventory_apply "$record" "$body" "$CLOUDIFY_TMP/next.json")
+
+    jq '.last_attempt = {phase:"reconfigure", outcome:"failed", at:"2026-09-18T11:00:00Z", requested:{}}' \
+        "$record" > "$next2"
+    local id2
+    id2=$(cloudify_state_inventory_apply "$record" "$body" "$next2")
+    [ "$id2" != "$id1" ]
+
+    [ "$(jq -r .revision "$record")" = "2" ]
+    [ "$(jq -r .applied.event_id "$record")" = "$id1" ]
+    [ "$(jq -r .last_attempt.event_id "$record")" = "$id2" ]
+}
+
+@test "inventory apply: missing referenced event blocks mutation; invalid next capture writes nothing" {
+    local record="$CLOUDIFY_TMP/state.json" body="$CLOUDIFY_TMP/ev.json" next="$CLOUDIFY_TMP/next.json"
+    _apply_event_body > "$body"
+    _capture > "$next"
+    local id1
+    id1=$(cloudify_state_inventory_apply "$record" "$body" "$next")
+    local before
+    before=$(jq -S . "$record")
+
+    subrubric "a record pointing at a missing event refuses to mutate"
+    find "$HOME/.local/state/cloudify/events" -name "$id1.json" -delete
+    jq '.last_attempt = {phase:"verify", outcome:"failed", at:"2026-09-18T12:00:00Z", requested:{}}' \
+        "$record" > "$next"
+    run cloudify_state_inventory_apply "$record" "$body" "$next"
+    [ "$status" -ne 0 ]
+    [ "$(jq -S . "$record")" = "$before" ]
+
+    subrubric "an invalid next capture creates no event and leaves prior bytes"
+    _capture > "$next"
+    jq 'del(.applied)' "$next" > "$CLOUDIFY_TMP/bad-next.json"
+    local events_before
+    events_before=$(find "$HOME/.local/state/cloudify/events" -name '*.json' | wc -l)
+    run cloudify_state_inventory_apply "$record" "$body" "$CLOUDIFY_TMP/bad-next.json"
+    [ "$status" -ne 0 ]
+    [ "$(find "$HOME/.local/state/cloudify/events" -name '*.json' | wc -l)" -eq "$events_before" ]
+    [ "$(jq -S . "$record")" = "$before" ]
+}

@@ -373,6 +373,94 @@ function cloudify_state_event_create() {
     done
 }
 
+# cloudify_state_inventory_apply <record-path> <event-body> <next-capture> -
+# the event-first inventory transition. Reads and validates the current record
+# (conceptual revision 0 when absent), refuses a record pointing at a missing
+# event, stamps the next capture (revision +1; the new event id on every object
+# the transition changed), validates event and capture, hard-links the event,
+# then atomically replaces the record and re-reads it before reporting
+# success. Prints the committed event id.
+function cloudify_state_inventory_apply() {
+    local record="${1:?}" event_body="${2:?}" next="${3:?}"
+    command -v jq >/dev/null 2>&1 ||
+        die "inventory: 'jq' is required to write state."
+    [[ -f "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" && -f "$CLOUDIFY_SCHEMA_DIR/event.schema.json" && -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" ]] ||
+        die "inventory: the schema tree is missing under '$CLOUDIFY_SCHEMA_DIR'."
+    [[ -f "$event_body" && -f "$next" ]] || die "inventory: event body or next capture missing."
+
+    local cur_rev=0 cur_empty=true
+    if [[ -f "$record" ]]; then
+        cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$record" >/dev/null \
+            || die "inventory: '$record' is not a valid record; refusing to mutate."
+        cur_rev=$(jq -r '.revision' "$record")
+        cur_empty=false
+        local eid
+        while IFS= read -r eid; do
+            [[ -n "$eid" ]] || continue
+            if [[ ! -f "$(cloudify_state_events_root)/${eid:0:4}-${eid:4:2}/$eid.json" ]]; then
+                die "inventory: '$record' references missing event '$eid'; verify before mutating."
+            fi
+        done < <(jq -r '.applied.event_id // empty, (.last_attempt | if . then .event_id else empty end), .health.event_id' "$record")
+    fi
+    local next_rev=$((cur_rev + 1))
+
+    local id workdir
+    workdir=$(dirname "$record")
+    id=$(cloudify_state_event_id)
+    mkdir -p "$workdir"
+    local cap_tmp ev_dir ev_tmp
+    cap_tmp=$(mktemp "$workdir/.inventory-XXXXXX.json")
+    ev_dir=$(cloudify_state_events_root)/${id:0:4}-${id:4:2}
+    mkdir -p "$ev_dir"
+    ev_tmp=$(mktemp "$ev_dir/.event-XXXXXX.json")
+
+    jq --slurpfile cur <(if [[ "$cur_empty" == true ]]; then echo '{}'; else cat "$record"; fi) \
+        --argjson rev "$next_rev" --arg eid "$id" '
+        . as $next | $cur[0] as $cur
+        | .revision = $rev
+        | .applied = (if $next.applied == $cur.applied then $next.applied
+                      else (if $next.applied == null then null else ($next.applied | .event_id = $eid) end) end)
+        | .last_attempt = (if $next.last_attempt == $cur.last_attempt then $next.last_attempt
+                      else (if $next.last_attempt == null then null else ($next.last_attempt | .event_id = $eid) end) end)
+        | .health = (if $next.health == $cur.health then $next.health
+                      else (if $next.health == null then null else ($next.health | .event_id = $eid) end) end)
+    ' "$next" > "$cap_tmp" \
+        || { rm -f "$cap_tmp" "$ev_tmp"; die "inventory: the next capture is not valid JSON."; }
+    if ! cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$cap_tmp" >/dev/null; then
+        rm -f "$cap_tmp" "$ev_tmp"
+        die "inventory: the next capture failed schema validation; nothing written."
+    fi
+
+    jq --arg id "$id" --argjson prev "$cur_rev" --argjson result "$next_rev" '
+        .event_id = $id
+        | .state = {previous_revision: $prev, resulting_revision: $result}' "$event_body" > "$ev_tmp" \
+        || { rm -f "$cap_tmp" "$ev_tmp"; die "inventory: the event body is not valid JSON."; }
+    if ! cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/event.schema.json" "$ev_tmp" >/dev/null; then
+        rm -f "$cap_tmp" "$ev_tmp"
+        die "inventory: the rendered event failed schema validation; nothing written."
+    fi
+
+    chmod 600 "$cap_tmp" "$ev_tmp"
+    sync "$cap_tmp" "$ev_tmp" 2>/dev/null || true
+    if ! ln "$ev_tmp" "$ev_dir/$id.json" 2>/dev/null; then
+        rm -f "$cap_tmp" "$ev_tmp"
+        die "inventory: could not commit event '$id'."
+    fi
+    rm -f "$ev_tmp"
+    sync -d "$ev_dir" 2>/dev/null || true
+    if ! mv "$cap_tmp" "$record" 2>/dev/null; then
+        die "inventory: the event '$id' is committed but the capture replace failed; repair before mutating (state check)."
+    fi
+    sync -d "$workdir" 2>/dev/null || true
+
+    local got_rev got_id
+    got_rev=$(jq -r '.revision' "$record")
+    got_id=$(jq -r '.applied.event_id // .last_attempt.event_id // .health.event_id' "$record")
+    [[ "$got_rev" == "$next_rev" && ("$got_id" == "$id" || -f "$(cloudify_state_events_root)/${id:0:4}-${id:4:2}/$id.json") ]] \
+        || die "inventory: the committed record does not read back revision $next_rev with event $id."
+    printf '%s\n' "$id"
+}
+
 # _cloudify_manifest_require_tools - jq and the schema tree, checked before any
 # write. A host that cannot validate a manifest must not create one.
 function _cloudify_manifest_require_tools() {

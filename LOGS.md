@@ -707,3 +707,6 @@
 - Second lease rupture root-caused: docker link churn floods networkd's netlink buffer (rmem_max not namespaced - unraisable inside the container), one DHCP set times out, eth0 enters Failed state, networkd never retries.
 - Fix applied IN THE CONTAINER (Rachid: "fix the container"): /usr/local/sbin/netlink-watchdog + 30s systemd timer - no default route on eth0 -> restart systemd-networkd. Verified no-op on healthy route; a rupture now self-heals in <=30s instead of dying for days.
 - Optional node-side root fix (needs his sudo on cloudai): /etc/sysctl.d/90-netlink-buffers.conf with net.core.rmem_max/wmem_max = 8388608 - raises the cap networkd is refused to raise. Pending; the watchdog covers until then.
+## 2026-09-18 - 4.3.1 the bounded host mutation lock
+
+- cloudify_state_host_lock/unlock on the 4.2.1 lock path: flock fd 200, CLOUDIFY_LOCK_TIMEOUT bounded, holder metadata (writer identity + host key + acquired time) written under the held lock and reported on timeout. Held in the calling shell (exporter idiom) - run-subshell invocation dies with the process, which is the correct lifecycle. Green: inventory.bats 6/0, state/event suites clean, lint rc 0.

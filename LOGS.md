@@ -710,3 +710,9 @@
 ## 2026-09-18 - 4.3.1 the bounded host mutation lock
 
 - cloudify_state_host_lock/unlock on the 4.2.1 lock path: flock fd 200, CLOUDIFY_LOCK_TIMEOUT bounded, holder metadata (writer identity + host key + acquired time) written under the held lock and reported on timeout. Held in the calling shell (exporter idiom) - run-subshell invocation dies with the process, which is the correct lifecycle. Green: inventory.bats 6/0, state/event suites clean, lint rc 0.
+## 2026-09-20 - result-line emission: golden re-pin ruled (a)
+
+- Rachid ruled: re-pin the eight payload goldens once after implementing the `result v1:` emission in the payload's framework section; the re-pin diff is reviewed as evidence that only emission lines moved. Literally-untouched payload was rejected (it would require a second channel - refused design).
+- Context recorded: outcome reporting already streamed informally as recipe stdout and was never pinned (goldens freeze the dispatched script's bytes, not runtime output); the structured framework-printed line is the first template print added since R1.3, hence the first golden re-pin.
+- Test-economy ruling: the byte-exact payload tripwire stays - it is transport-integrity insurance that already caught Phase 2 defects; outcome tests alone are blind to quoting/forwarding corruption.
+- Slice order constraint recorded: emission and the pkg_version() sweep land together (emission without the sweep would mark every attempt version=unknown = failed).

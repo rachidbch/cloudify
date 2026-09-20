@@ -124,3 +124,31 @@ STUB
     [ "$status" -eq 0 ]
     jq -e '.origin.mode == "unknown"' "$root/cloudify/host.json"
 }
+
+@test "host lock: bounded wait, holder metadata on the file, released cleanly" {
+    export CLOUDIFY_LOCK_TIMEOUT=10
+    local lp="$inst_dir/cloudify/.host-mutation.lock"
+
+    # The lock is held in THIS shell (exporter idiom: never via run subshells).
+    cloudify_state_host_lock web1 app1
+    [ -f "$lp" ]
+    jq -e '.host | length > 0' "$lp"
+    jq -e '.host_key == "web1:app1"' "$lp"
+    cloudify_state_host_unlock web1 app1
+
+    subrubric "a concurrent holder times out fast and prints the holder metadata"
+    ( CLOUDIFY_LOCK_TIMEOUT=10 cloudify_state_host_lock web1 app1; sleep 4 ) &
+    local holder=$!
+    sleep 0.5
+    export CLOUDIFY_LOCK_TIMEOUT=1
+    run cloudify_state_host_lock web1 app1
+    [ "$status" -ne 0 ]
+    # the holder metadata the timeout would print is the lock file itself
+    jq -e '.pid > 0 and .host_key == "web1:app1"' "$lp"
+    export CLOUDIFY_LOCK_TIMEOUT=10
+    wait "$holder" 2>/dev/null || true
+
+    subrubric "release and re-acquire"
+    cloudify_state_host_lock web1 app1
+    cloudify_state_host_unlock web1 app1
+}

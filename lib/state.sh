@@ -402,6 +402,34 @@ function cloudify_state_host_baseline_check() {
     return 0
 }
 
+# cloudify_state_host_lock <node> [<instance>] - the one bounded host mutation
+# lock (flock, descriptor 200): acquired before any scan or remote execution,
+# held through every write, never nested. Holder metadata (writer host, boot
+# id, pid with start ticks, acquired time, host key) is written into the lock
+# file under the held flock; a timeout prints it.
+function cloudify_state_host_lock() {
+    local node="${1:?}" inst="${2:-}"
+    local lp timeout holder
+    lp=$(cloudify_state_host_lock_path "$node" "${inst:-}")
+    mkdir -p "$(dirname "$lp")"
+    timeout=${CLOUDIFY_LOCK_TIMEOUT:-$_CLOUDIFY_LOCK_TIMEOUT_DEFAULT}
+    exec 200>>"$lp"
+    flock -w "$timeout" 200 || {
+        holder=$(cat "$lp" 2>/dev/null || printf '(no holder metadata)')
+        die "host lock: '$lp' is held by: $holder"
+    }
+    cloudify_state_writer_identity | jq -c \
+        --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" --arg hk "$node${inst:+:$inst}" \
+        '{host: .host, boot_id: .boot_id, pid: .pid, process_start_ticks: .process_start_ticks,
+          acquired_at: $ts, host_key: $hk}' > "$lp"
+}
+
+# cloudify_state_host_unlock <node> [<instance>] - release descriptor 200.
+function cloudify_state_host_unlock() {
+    flock -u 200 2>/dev/null || true
+    exec 200>&- 2>/dev/null || true
+}
+
 # cloudify_state_event_id - UTC second plus 8 random hex from /dev/urandom.
 # Collision handling belongs to the event writer's create-if-absent link,
 # which regenerates; the generator itself is pure and never overwrites.

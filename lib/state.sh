@@ -308,13 +308,6 @@ _cloudify_state_check_package() {
         die "Invalid package name '${1:-}' (leading alphanumeric, then lowercase, digits, '.' '_' '-')."
 }
 
-# _cloudify_state_check_instance <key> - the space-free result-line charset
-# (schemas/v1/identity.md): always safe on a result line and in a path.
-_cloudify_state_check_instance() {
-    [[ "${1:-}" =~ ^[A-Za-z0-9._+~:-]+$ ]] ||
-        die "Invalid package instance '${1:-}' (space-free result-line charset [A-Za-z0-9._+~:-])."
-}
-
 # cloudify_state_record_dir <node> [<instance>] <app> <flavor> <deployment>
 #   <package> <instance> - the per-deployment inventory record directory on
 # the host; every component is validated before anything is printed.
@@ -324,7 +317,7 @@ function cloudify_state_record_dir() {
     _cloudify_identity_check_component "flavor" "$flavor"
     _cloudify_identity_check_component "deployment name" "$dep"
     _cloudify_state_check_package "$pkg"
-    _cloudify_state_check_instance "$key"
+    _cloudify_identity_check_instance "package instance" "$key"
     printf '%s/%s/%s/%s/packages/%s/%s\n' \
         "$(cloudify_state_inventory_root "$node" "${inst:-}")" "$app" "$flavor" "$dep" "$pkg" "$key"
 }

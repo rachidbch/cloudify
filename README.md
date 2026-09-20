@@ -282,6 +282,8 @@ command line, and the replay's own snapshot records the values it replayed.
 
 ### Host Inventory
 
+**Phase 4 note (state model):** durable inventory is written only for hosts the local ivps inventory resolves (`ivps node path`); an external SSH host is refused before any remote execution - its durable state waits for the SSH host-key acceptance phase. Dispatches additionally expect a proved checkout commit on application runs and a synchronized clock on the host (event ids are UTC-second based).
+
 Define hosts in `inventory/`:
 
 ```

@@ -364,10 +364,24 @@ function cloudify_context_build() {
         # 4.1 records the default key; the .package-instance recipe contract
         # upgrades the resolution in 4.2. Sorted, and outside the value namespace,
         # so the payload allow-list recovery (value.<NAME>.source) never sees it.
-        local _pkg
+        local _pkg _inst_var _inst_val
         while IFS= read -r _pkg; do
             [[ -n "$_pkg" ]] || continue
-            printf 'package.%s.instance: default\n' "$_pkg"
+            # The instance key is part of the package's configuration
+            # (ADR-027): a .package-instance file names the variable whose
+            # resolved value selects the instance; no marker means default.
+            _inst_var=$(cat "$CLOUDIFY_DIR/pkg/$_pkg/.package-instance" 2>/dev/null || true)
+            _inst_val="default"
+            if [[ -n "$_inst_var" ]]; then
+                _cloudify_identity_check_name "package instance variable" "$_inst_var"
+                cloudify_vars_declared_names "$_pkg" | cut -f1 | grep -qx "$_inst_var" \
+                    || die "package '$_pkg': instance variable '$_inst_var' is not declared in .remote-vars."
+                _inst_val="${!_inst_var:-}"
+                [[ -n "$_inst_val" ]] \
+                    || die "package '$_pkg': instance variable '$_inst_var' is unsupplied; refusing to guess the instance key."
+                _cloudify_identity_check_instance "package instance" "$_inst_val"
+            fi
+            printf 'package.%s.instance: %s\n' "$_pkg" "$_inst_val"
         done < <(printf '%s\n' "$@" | sort -u)
     } > "$out"
 

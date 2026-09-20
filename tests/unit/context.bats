@@ -783,3 +783,36 @@ candidate_file() {
     run cloudify_context_validate "$bad"
     [ "$status" -ne 0 ]
 }
+
+@test "package instance: the .package-instance marker selects the variable's resolved value" {
+    declare_pkg foo "API_HOST=eu-1"
+    echo "API_HOST" > "$CLOUDIFY_DIR/pkg/foo/.package-instance"
+    reset_stores
+    export API_HOST=eu-west-3
+    local cand
+    cand=$(candidate_file foo)
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+    [ "$(cloudify_context_read "$CTX" package.foo.instance)" = "eu-west-3" ]
+}
+
+@test "package instance: a marker whose variable is not declared fails the build" {
+    declare_pkg foo "API_HOST=eu-1"
+    echo "GHOST_VAR" > "$CLOUDIFY_DIR/pkg/foo/.package-instance"
+    reset_stores
+    unset API_HOST GHOST_VAR
+    local cand
+    cand=$(candidate_file foo)
+    run cloudify_context_build install "$DEP" install "$cand" foo
+    [ "$status" -ne 0 ]
+}
+
+@test "package instance: a declared but unsupplied marker variable fails before mutation" {
+    declare_pkg foo "API_HOST="
+    echo "API_HOST" > "$CLOUDIFY_DIR/pkg/foo/.package-instance"
+    reset_stores
+    unset API_HOST
+    local cand
+    cand=$(candidate_file foo)
+    run cloudify_context_build install "$DEP" install "$cand" foo
+    [ "$status" -ne 0 ]
+}

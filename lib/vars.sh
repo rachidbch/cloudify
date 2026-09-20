@@ -150,9 +150,20 @@ function _cloudify_identity_valid_name() {
     [[ "${1:-}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
 }
 
+function _cloudify_identity_check_instance() {
+    _cloudify_identity_valid_instance "${2:-}" ||
+        die "Invalid ${1:-instance key} '${2:-}' (space-free result-line charset [A-Za-z0-9._+~:-])."
+}
+
 function _cloudify_identity_check_name() {
     _cloudify_identity_valid_name "${2:-}" ||
         die "Invalid ${1:-name} '${2:-}' (expected a letter or '_' followed by letters, digits or '_')."
+}
+
+# _cloudify_identity_valid_instance <value> - the space-free result-line
+# charset (schemas/v1/identity.md): safe on a result line and in a path.
+function _cloudify_identity_valid_instance() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9._+~:-]+$ ]]
 }
 
 # _cloudify_identity_valid_step_id <value> - the frozen stable runbook step ID

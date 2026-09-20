@@ -274,6 +274,61 @@ function _cloudify_manifest_render() {
           }'
 }
 
+# --- inventory paths (ADR-026): the tree lives on the host, under the
+# id-keyed directory ivps hands back; the host lock sits beside it. ---
+
+# cloudify_state_inventory_root <node> [<instance>] - the per-node inventory
+# root: the id-keyed directory ivps hands back for the host. A host the local
+# ivps inventory cannot resolve is a named error before anything is created
+# (the local-inventory prerequisite).
+function cloudify_state_inventory_root() {
+    local node="${1:?}" inst="${2:-}"
+    command -v ivps >/dev/null 2>&1 ||
+        die "inventory: 'ivps' is required to resolve the node path (the local-inventory prerequisite)."
+    local d
+    d=$(ivps node path "$node${inst:+:$inst}") ||
+        die "inventory: the local ivps inventory cannot resolve '$node${inst:+:$inst}' (host unknown or node path failed)."
+    [[ -n "$d" ]] || die "inventory: 'ivps node path $node${inst:+:$inst}' returned nothing."
+    printf '%s/deployments\n' "$d"
+}
+
+# cloudify_state_host_lock_path <node> [<instance>] - the one host mutation
+# lock, keyed by the host only (never by package or instance).
+function cloudify_state_host_lock_path() {
+    local node="${1:?}" inst="${2:-}"
+    local root
+    root=$(cloudify_state_inventory_root "$node" "${inst:-}")
+    printf '%s/cloudify/.host-mutation.lock\n' "$(dirname "$root")"
+}
+
+# _cloudify_state_check_package <name> - the package-name shape from the
+# inventory schema.
+_cloudify_state_check_package() {
+    [[ "${1:-}" =~ ^[a-z0-9][a-z0-9._-]*$ ]] ||
+        die "Invalid package name '${1:-}' (leading alphanumeric, then lowercase, digits, '.' '_' '-')."
+}
+
+# _cloudify_state_check_instance <key> - the space-free result-line charset
+# (schemas/v1/identity.md): always safe on a result line and in a path.
+_cloudify_state_check_instance() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9._+~:-]+$ ]] ||
+        die "Invalid package instance '${1:-}' (space-free result-line charset [A-Za-z0-9._+~:-])."
+}
+
+# cloudify_state_record_dir <node> [<instance>] <app> <flavor> <deployment>
+#   <package> <instance> - the per-deployment inventory record directory on
+# the host; every component is validated before anything is printed.
+function cloudify_state_record_dir() {
+    local node="${1:?}" inst="${2:-}" app="${3:?}" flavor="${4:?}" dep="${5:?}" pkg="${6:?}" key="${7:?}"
+    _cloudify_identity_check_component "application" "$app"
+    _cloudify_identity_check_component "flavor" "$flavor"
+    _cloudify_identity_check_component "deployment name" "$dep"
+    _cloudify_state_check_package "$pkg"
+    _cloudify_state_check_instance "$key"
+    printf '%s/%s/%s/%s/packages/%s/%s\n' \
+        "$(cloudify_state_inventory_root "$node" "${inst:-}")" "$app" "$flavor" "$dep" "$pkg" "$key"
+}
+
 # cloudify_state_event_id - UTC second plus 8 random hex from /dev/urandom.
 # Collision handling belongs to the event writer's create-if-absent link,
 # which regenerates; the generator itself is pure and never overwrites.

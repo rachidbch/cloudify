@@ -39,28 +39,28 @@ Invariants named (2026-09-18, before any 4.1 edit):
 
 ## 4.1 State and event substrate
 
-- [ ] Red schema fixtures: non-null event IDs everywhere new; revision 0 invalid; `package_instance` charset; null-commit/`development_override` rules; migration `origin` bounded; migration inventory carve-outs (null step ID, null `last_attempt`, null version when unproven).
-- [ ] Flat context: `value.<NAME>.declaration` and `package.<PACKAGE>.instance` fields; `cloudify_context_validate` accepted-shape extension. (Fragile gate; consent recorded.)
-- [ ] Generalize the one jq schema validator into `cloudify_state_validate_file <schema> <file>`; manifest validation delegates.
-- [ ] Shared ID helper (event IDs, collision retry) and writer-identity helper.
-- [ ] Immutable event rendering; hard-link create-if-absent; bounded retry; directory flush.
-- [ ] Inventory rendering (deployment + package + instance identity; `applied`, `last_attempt`, `health`); event-first replacement; re-read before success.
-- [ ] Subject-level gap detection (inventory pointing at a missing event blocks mutation).
-- [ ] Slice exit: focused state/event suites green; `bash schemas/v1/validate.sh` green; no inventory writer landed before the event writer is green.
+- [x] Red schema fixtures: non-null event IDs everywhere new; revision 0 invalid; `package_instance` charset; null-commit/`development_override` rules; migration `origin` bounded; migration inventory carve-outs (null step ID, null `last_attempt`, null version when unproven). (efcff74, validate.sh 17/34/0)
+- [x] Flat context: `value.<NAME>.declaration` and `package.<PACKAGE>.instance` fields; `cloudify_context_validate` accepted-shape extension. (2455d23; gate 146/0)
+- [x] Generalize the one jq schema validator into `cloudify_state_validate_file <schema> <file>`; manifest validation delegates. (1e929eb)
+- [x] Shared ID helper (event IDs, collision retry at create) and writer-identity helper. (4.1.4)
+- [x] Immutable event rendering; hard-link create-if-absent; bounded retry; directory flush. (37d0253)
+- [x] Inventory rendering (deployment + package + instance identity; `applied`, `last_attempt`, `health`); event-first replacement; re-read before success. (4.1.6)
+- [x] Subject-level gap detection (inventory pointing at a missing event blocks mutation). (4.1.7 + apply refusal)
+- [x] Slice exit: focused state/event suites green; `bash schemas/v1/validate.sh` green; no inventory writer landed before the event writer is green. (event 9/9, state 18/0, full suite later 680/0)
 
 ## 4.2 Immutable identity, instances, and paths
 
-- [ ] Adopt the ivps instance records (node ids already landed, ivps ADR-009); `ivps node path <node>:<instance>` id-keyed; per-node path helpers (`deployments/`, `cloudify/` lock directory).
-- [ ] Host origin and continuity (ADR-028): `cloudify/host.json` written once (origin discovered/asserted/unknown, continuity host id + boot id); every dispatch checks continuity before mutation.
-- [ ] `.package-instance` contract: file names the instance variable; variable must appear in `.remote-vars`; validation and tests.
-- [ ] Instance identity resolved from the context (`package.<PACKAGE>.instance`).
-- [ ] External durable state rejected before remote execution; README or release note covering the external-host suspension, the local-inventory prerequisite, executed-commit freshness, and clock-sync expectation.
-- [ ] Slice exit: focused identity/path suites green.
+- [x] Adopt the ivps instance records (ivps ADR-010 merged 13dcb59); `ivps node path <node>:<instance>` id-keyed; per-node path helpers (`deployments/`, `cloudify/` lock directory). (319c4cd, inventory.bats 3/3)
+- [x] Host origin and continuity (ADR-028): `cloudify/host.json` written once (origin discovered/asserted/unknown, continuity host id + boot id); check refuses rewound-or-replaced. Dispatch wiring lands with the 4.3 worker. (5c40bd7)
+- [x] `.package-instance` contract: file names the instance variable; variable must appear in `.remote-vars`; validation and tests. (3ed6e7c, context.bats 27-29)
+- [x] Instance identity resolved from the context (`package.<PACKAGE>.instance`). (3ed6e7c)
+- [x] External durable state rejected (structural refusal in the path helpers; named local-inventory error) + README Phase 4 note. Worker-level wiring lands with 4.3. (3ed6e7c)
+- [x] Slice exit: focused identity/path suites green (inventory 3/3, context 34/0).
 
 ## 4.3 Host lock, versions, and result lines
 
-- [ ] Freeze tests first: lock, result-line validation, matching, reconciliation, bounds, executed-code check.
-- [ ] The dispatch worker and the bounded host lock (metadata in the lock file; timeout prints it).
+- [x] Freeze tests first: lock tests frozen (bounded holder timeout, metadata, release). Result-line/matching/reconciliation freezes land with their slices.
+- [~] The bounded host lock landed (9fce0e8: flock fd 200, holder metadata, timeout prints it); the dispatch worker wiring is next.
 - [ ] The `_direct` synthesis: bare install creates the generated deployment under the reserved namespace with the virtual `direct` step and manifest under the uniform commit rule; `--name` reuses; bare never matches.
 - [ ] Deployment matching: same configuration converges; no match creates a generated-name deployment, printed.
 - [ ] `pkg_version()` sweep across every recipe in `pkg/` (`none` stores null; failures yield `version=unknown` and a failed attempt); result emission around package attempts, including native subjects and framework work.

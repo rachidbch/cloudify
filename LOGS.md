@@ -682,3 +682,6 @@
 
 - cloudify_state_event_id + cloudify_state_writer_identity (cached per worker; tool version = CLOUDIFY_VERSION or git describe, else unknown). Green: event.bats 2/2, state.bats 18/0, lint clean.
 - jq quirk found by the tests: test("...(-[0-9a-f]{4}){4}...") returns false on jq 1.6/1.7 (bounded repetition over a capture group); schemas spell patterns out and new code must too.
+## 2026-09-18 - 4.1.6 event-first inventory apply primitive
+
+- cloudify_state_inventory_apply: read/validate current (rev 0 when absent) -> gap refusal on missing referenced events -> stamp next capture (revision, event id on changed objects only) -> validate capture + event -> hard-link event -> atomic record replace -> re-read before success. Green: event.bats 8/8, state.bats clean, lint rc 0.

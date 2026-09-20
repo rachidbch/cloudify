@@ -303,6 +303,76 @@ function cloudify_state_writer_identity() {
     printf '%s\n' "$_CLOUDIFY_STATE_WRITER"
 }
 
+# cloudify_state_events_root - the event root under the Cloudify state root:
+# audit records are per-run history, not node architecture (ADR-026).
+function cloudify_state_events_root() {
+    printf '%s\n' "${XDG_STATE_HOME:-$HOME/.local/state}/cloudify/events"
+}
+
+function _cloudify_state_event_require_tools() {
+    command -v jq >/dev/null 2>&1 ||
+        die "event: 'jq' is required to write events (install it: apt-get install -y jq)."
+    [[ -f "$CLOUDIFY_SCHEMA_DIR/event.schema.json" && -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" ]] ||
+        die "event: the schema checker is missing under '$CLOUDIFY_SCHEMA_DIR'."
+}
+
+# cloudify_state_event_create <body-file> [event-id] - the one immutable event
+# writer. Renders body + event_id (+ `at` when the body has none) into a 0600
+# temporary in the destination, validates against event.schema.json, flushes,
+# then hard-links create-if-absent and flushes the directory. An existing name
+# is never overwritten: generated ids regenerate (bounded at three), a pinned
+# id fails loudly. Prints the committed event id.
+function cloudify_state_event_create() {
+    local body="${1:-}" id="${2:-}"
+    [[ -f "$body" ]] || die "event: body file '$body' missing."
+    _cloudify_state_event_require_tools
+    local root final tmp tries=0 body_json
+    while :; do
+        [[ -n "$id" ]] || id=$(cloudify_state_event_id)
+        root=$(cloudify_state_events_root)
+        final="$root/${id:0:4}-${id:4:2}/$id.json"
+        if [[ -e "$final" ]]; then
+            if [[ -n "${2:-}" ]]; then
+                die "event: '$final' already exists; refusing to overwrite a pinned event id."
+            fi
+            id=""
+            tries=$((tries + 1))
+            (( tries < 3 )) || die "event: no free event id after 3 attempts."
+            continue
+        fi
+        mkdir -p "$(dirname "$final")"
+        body_json=$(jq -c --arg id "$id" --arg now "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" '
+            .event_id = $id
+            | if (has("at") and .at != null) then . else .at = $now end' "$body") \
+            || die "event: body '$body' is not valid JSON."
+        tmp=$(mktemp "$(dirname "$final")/.event-XXXXXX.json")
+        printf '%s\n' "$body_json" > "$tmp"
+        chmod 600 "$tmp"
+        if ! cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/event.schema.json" "$tmp" >/dev/null; then
+            rm -f "$tmp"
+            die "event: the rendered event failed schema validation."
+        fi
+        sync "$tmp" 2>/dev/null || true
+        if ln "$tmp" "$final" 2>/dev/null; then
+            rm -f "$tmp"
+            sync -d "$(dirname "$final")" 2>/dev/null || true
+            printf '%s\n' "$id"
+            return 0
+        fi
+        rm -f "$tmp"
+        if [[ -e "$final" ]]; then
+            if [[ -n "${2:-}" ]]; then
+                die "event: '$final' already exists; refusing to overwrite a pinned event id."
+            fi
+            id=""
+            tries=$((tries + 1))
+            (( tries < 3 )) || die "event: no free event id after 3 attempts."
+            continue
+        fi
+        die "event: could not hard-link the event into '$final'."
+    done
+}
+
 # _cloudify_manifest_require_tools - jq and the schema tree, checked before any
 # write. A host that cannot validate a manifest must not create one.
 function _cloudify_manifest_require_tools() {

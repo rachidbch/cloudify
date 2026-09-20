@@ -257,19 +257,20 @@ The router's original command-line package list is not an adequate inventory of 
 
 ## Expected results and reconciliation
 
-Before taking the host lock, the worker expands the same static top-level and `pkg_depends` graph the context build already walks, extended to record each `pkg_depends` word that is not a cloudify package as a native subject row with the declaring package as parent - the walk already reports such names, and `lib/results.sh` owns the expansion.
+(Amended 2026-09-20, Rachid's ruling: no recipe-text graph is computed for reconciliation. Packages are opaque and the run's own reports are the facts; the frozen static expansion, its native-subject pre-registration, and the dispatch-wide "unknown name" refusal are removed.)
 
-The graph is a superset of what may run, not a prediction of what will run.
+The worker reconciles the collected result lines against the two fact sources it already holds: the dispatch's requested package words, and what the lines themselves report (package, parent, class).
 
 Reconciliation after the streamed log closes:
 
-- Every requested top-level package must have at least one result line.
-- Every result line must name a package in the graph; a result naming an unknown package fails the dispatch before any inventory write. This refusal is deliberately dispatch-wide - an unknown result means the graph was wrong, so nothing downstream is committed; it differs on purpose from REDESIGN's per-subject rule for a dependency absent from the precomputed graph.
+- Every requested top-level package must have at least one result line naming it with `parent=-` (a dependency-class appearance does not satisfy the request); a gap fails the dispatch before any inventory write.
+- Every result line's `parent` must be `-`, `@defaults`, `@init`, or a cloudify package name; anything else is a malformed dispatch and fails before any inventory write.
+- A reported name that is not a cloudify package is a native subject: report-only, no inventory, no event, exempt from the version contract and from guard comparison. Its installation is real, and the inventory records of the cloudify packages that declared it are where its consequence is recorded. There is no dispatch-wide "unknown name" refusal: reports can only name work the run attempted, broken reports are caught by line validation, and unexpected work is recorded as observed.
 - The same package may appear in several results (pulled through several parents); each extra result commits as its own ordered attempt.
 - A conditional dependency that never executed produces no result and blocks nothing.
-- Framework work reports truthfully and is expected: the `@default` package set (or `basics` under `--no-defaults`) on install actions, and the `required` converge from `cloudify init` on remote dispatches. Their lines carry `parent=@defaults` or `parent=@init`, and the framework sets join the expanded graph, so their lines are never unknown packages.
+- Framework work reports truthfully and is expected: the `@default` package set (or `basics` under `--no-defaults`) on install actions, and the `required` converge from `cloudify init` on remote dispatches. Their lines carry `parent=@defaults` or `parent=@init`.
+- A top-level result naming a cloudify package outside the requested words is classified `unrequested` and recorded as observed; reconciliation does not fail on it, and the worker surfaces it at commit time.
 - Framework inventory subject: when the dispatch has a deployment, `@defaults` work is recorded under the run's deployment with the reserved step ID `defaults`, and init's internal install is recorded with the reserved step ID `init`. On paths with no deployment - direct commands and the init process itself - framework results report and never record an inventory.
-- Native subjects report like any other line and write no inventory and no event; they are exempt from the version contract and from guard comparison. Their installation is real, and the inventory records of the cloudify packages that declared them are where their consequence is recorded.
 - The reserved step IDs `defaults` and `init` are forbidden to runbook steps in validation, with fixtures, so framework attribution can never collide with authored steps.
 
 No attempt ordinal or edge ID exists: result order plus membership is the whole contract.

@@ -696,6 +696,8 @@ result v1: parent=- package=nginx instance=default phase=install action=install 
 
 These lines are the future inventory feed (state-model-v2): ordinary keyed lines in the log, safe to grep, carrying no values or secrets.
 
+The child also prints one checkout line before its package work — `checkout v1: commit=<40-hex|unknown> dirty=true|false` — stating which commit of cloudify the host runs. On dispatches tied to a deployment, the worker compares it against the commit the manifest declares: a mismatch (or an undeterminable commit) degrades the run and no inventory is written — you cannot take credit from uncommitted code. A collection stage rides the log pipeline: it passes every line through untouched and copies the keyed lines aside for the worker. Malformed keyed lines (bad fields, bad enums, broken consistency, over the 64-line/512-byte caps) fail the dispatch.
+
 ### Shadow Command System
 
 Package recipes call `sudo`, `apt-get`, `add-apt-repository`, and `git` as plain commands — no password handling, no idempotency checks, no authentication logic. These commands are **shadowed** by wrapper functions that transparently inject the necessary behavior. This is what makes a one-line recipe like `apt-get install -y entr` work both locally and on a remote host over SSH.

@@ -273,10 +273,17 @@ function cloudify_remote_sync() {
         payload_file=$(mktemp "$CLOUDIFY_TMP/cloudify-payload-XXXXXX")
         chmod 600 "$payload_file"
         printf '%s\n' "$cloudify_remote_payload" > "$payload_file"
+        # The result channel's collection file: fresh per dispatch, so stale
+        # lines from earlier runs cannot enter it. The pass-through tap stage
+        # below appends the keyed lines; the log keeps flowing whole.
+        local results_file
+        results_file=$(mktemp "$CLOUDIFY_TMP/cloudify-results-XXXXXX")
+        export CLOUDIFY_RESULTS_FILE="$results_file"
         ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" -o "ConnectTimeout=10" \
             "$CLOUDIFY_REMOTE_USER@$host" 'bash -s' < "$payload_file" 2>&1 \
             | stdbuf -oL sed "s/^/$host: /" \
             | stdbuf -oL sed "s/^${host}: \$//" \
+            | cloudify_results_tap "$results_file" \
             | tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}" >&2 \
             || cloudify_remote_exit_code=$?
         rm -f "$payload_file"

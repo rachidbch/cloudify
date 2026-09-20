@@ -215,6 +215,8 @@ function cloudify_configure_package() {
     local pkg
     local configure_path
     local -a failed_packages=()
+    # The child's checkout line: once per process, before package work.
+    cloudify_results_print_checkout
     for pkg in "$@"; do
         if [[ "$pkg" == @* || "$pkg" == \#* ]]; then
             msg "${RED}Error: Illegal tag. Cloudify_configure_package does not accept tags as arguments. Ignoring \"$pkg\".${RESET}"
@@ -289,6 +291,9 @@ function cloudify_install_default_packages {
 #   cloudify_install_package  pkg [pkg...]                      Install one or serveral packages designated by name
 #                                                               Tags can't be used as arguments of cloudify_install_packages
 function cloudify_install_package {
+    # The child's checkout line: what code this host runs, before any package
+    # work (the executed-code check consumes it). Printed once per process.
+    cloudify_results_print_checkout
     # Install specific packages
     local pkg
     for pkg in "$@"; do

@@ -64,7 +64,7 @@ Invariants named (2026-09-18, before any 4.1 edit):
 - [ ] The `_direct` synthesis: bare install creates the generated deployment under the reserved namespace with the virtual `direct` step and manifest under the uniform commit rule; `--name` reuses; bare never matches.
 - [ ] Deployment matching: same configuration converges; no match creates a generated-name deployment, printed.
 - [x] `.version` declaration sweep: every recipe package declares its version in a one-line `.version` file (initialized `1.0.0` fleet-wide; Rachid's 2026-09-20 ruling replaces the `pkg_version()` reporter functions - packages opaque, devs trusted); result emission around package attempts, including native subjects and framework work. (results.bats 20/20)
-- [ ] The pass-through result stage (read idiom, return discipline, ERR-trap inhibited); line-by-line validation; the executed-code check.
+- [x] The pass-through result stage (read idiom, return discipline, ERR-trap inhibited); line-by-line validation; the executed-code check. (results-pipeline.bats 18/18; tap wired into the stream in lib/remote.sh, payload goldens untouched; child prints `checkout v1:` once per process; full suite 719/0; gate 149/0)
 - [ ] Reconciliation before ordered commits (classifier buckets; membership; body order).
 - [ ] Delete the runtime registry writer; split the goldens (payload half untouched; registry fixtures to migration).
 - [ ] Prove unconditional context cleanup and byte-identical payload goldens.

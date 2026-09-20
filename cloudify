@@ -252,6 +252,11 @@ function _cloudify_execute_package_action() {
         _cloudify_context_file_init
     fi
     if [[ "$action" == "install" ]]; then
+        # Local collection file for the result channel: fresh per dispatch; the
+        # in-process child appends its lines directly (remote dispatches collect
+        # through the stream's tap stage instead).
+        CLOUDIFY_RESULTS_FILE=$(mktemp "$CLOUDIFY_TMP/cloudify-results-XXXXXX")
+        export CLOUDIFY_RESULTS_FILE
         # Auto-install @default packages first (idempotent — apt skips already-installed)
         # With --no-defaults, install only basics (essential tooling) instead of all defaults
         local defaults
@@ -289,6 +294,8 @@ function _cloudify_execute_package_action() {
         is_setup_in_progress=true
     elif [[ "$action" == "configure" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_configure_package ${pkgs[*]}${RESET}"
+        CLOUDIFY_RESULTS_FILE=$(mktemp "$CLOUDIFY_TMP/cloudify-results-XXXXXX")
+        export CLOUDIFY_RESULTS_FILE
         ( _cloudify_dispatch_vars /dev/null configure "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_configure_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"

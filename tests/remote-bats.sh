@@ -12,8 +12,7 @@ set +e
 tar -C . -cf - lib tests pkg schemas runbooks cloudify 2>/dev/null \
   | ssh "root@$target" "
       set -u
-      d=/root/cloudify-run
-      rm -rf \"\$d\" && mkdir -p \"\$d\"
+      d=\$(mktemp -d /root/cloudify-run-XXXXXX)   # unique per run: two concurrent runs must not collide
       tar -xf - -C \"\$d\"
       cd \"\$d\"
       bats $*

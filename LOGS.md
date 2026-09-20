@@ -698,3 +698,7 @@
 
 - cloudify_state_host_baseline_init/check at <capture-root>/cloudify/host.json: origin discovered (ivps instance record) / asserted / unknown - failed discovery downgrades discovered->unknown instead of stamping a lying mode; continuity = host id + last-seen boot id, refreshed on match, refusal on change (rewound-or-replaced) per ADR-028.
 - Incident during the slice: cloudai dropped off the tailnet entirely (ping dead, ~150s) - node-side flap, recovered on its own; the shim surfaced it immediately as a plain connect failure (the loud-first-use property working as designed).
+## 2026-09-18 - 4.2.3/4.2.4 landed; second lease rupture on cloudai (same class)
+
+- .package-instance contract wired into the context build; charset helper deduplicated into the shared identity validators; README Phase 4 note (external hosts, proved commit, clock). Full unit suite through the shim: 680 ok / 0 not ok.
+- Second lease rupture on the cloudify container (first was Sep 15): eth0 lost address + default route again after a load spike (15-min load 14), tailscale logged out, ssh dead; repaired identically (networkd restart + tailscale re-auth). Recurrence makes the two hardenings decision-ready: incus-native address reservation (device override ipv4.address) + an in-container watchdog timer (no default route -> restart networkd). Pending Rachid's go.

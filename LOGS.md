@@ -690,3 +690,7 @@
 - cloudify_state_inventory_check: read-only rc 0/1/2; refs enumeration shared with apply's refusal (_cloudify_state_event_refs). event.bats 9/9, state.bats + context.bats green, lint rc 0.
 - 4.1 slice complete: schemas (4.1.1), context fields (4.1.2), generic validator (4.1.3), id/identity helpers (4.1.4), immutable event writer (4.1.5), event-first inventory apply (4.1.6), gap check (4.1.7) - no inventory writer landed before the event writer, per the slice rule.
 - Performance note: one apply = ~8 jq spawns (~200 ms) + at most 3 event stats; invisible next to recipe dispatch. The gap check reads one record - no fleet scans (fleet reporting is the Phase 6 state check).
+## 2026-09-18 - ivps instance records merged; 4.2.1 inventory path helpers
+
+- ivps: feature/instance-inventory merged to main and pushed (ADR-010 live); a stray garbage-named file the child committed was dropped and PLAN.md restored to its untracked-pointer convention (apparmor plan preserved at plans/apparmor-plan-saved.md).
+- cloudify 4.2.1: cloudify_state_inventory_root / cloudify_state_record_dir / cloudify_state_host_lock_path - the inventory tree and host lock resolve through plain `ivps node path` (id-keyed dirs), with named local-inventory errors and full component validation. Green: inventory.bats 3/3, state.bats clean, lint rc 0.

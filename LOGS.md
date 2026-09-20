@@ -702,3 +702,8 @@
 
 - .package-instance contract wired into the context build; charset helper deduplicated into the shared identity validators; README Phase 4 note (external hosts, proved commit, clock). Full unit suite through the shim: 680 ok / 0 not ok.
 - Second lease rupture on the cloudify container (first was Sep 15): eth0 lost address + default route again after a load spike (15-min load 14), tailscale logged out, ssh dead; repaired identically (networkd restart + tailscale re-auth). Recurrence makes the two hardenings decision-ready: incus-native address reservation (device override ipv4.address) + an in-container watchdog timer (no default route -> restart networkd). Pending Rachid's go.
+## 2026-09-18 - cloudify container: netlink watchdog applied (lease self-heal)
+
+- Second lease rupture root-caused: docker link churn floods networkd's netlink buffer (rmem_max not namespaced - unraisable inside the container), one DHCP set times out, eth0 enters Failed state, networkd never retries.
+- Fix applied IN THE CONTAINER (Rachid: "fix the container"): /usr/local/sbin/netlink-watchdog + 30s systemd timer - no default route on eth0 -> restart systemd-networkd. Verified no-op on healthy route; a rupture now self-heals in <=30s instead of dying for days.
+- Optional node-side root fix (needs his sudo on cloudai): /etc/sysctl.d/90-netlink-buffers.conf with net.core.rmem_max/wmem_max = 8388608 - raises the cap networkd is refused to raise. Pending; the watchdog covers until then.

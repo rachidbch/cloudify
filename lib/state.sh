@@ -878,6 +878,45 @@ function cloudify_manifest_describe() {
 _DIRECT_APP="_direct"
 _DIRECT_FLAVOR="direct"
 
+# _cloudify_state_unique_name <base> <app> <flavor> - a deployment name unique
+# against existing deployments: <base>, or <base>-<4hex> (bounded retries,
+# then a named death - never a silent reuse). Shared by the `_direct`
+# synthesis and application matching.
+_cloudify_state_unique_name() {
+    local base="${1:?}" app="${2:?}" flavor="${3:?}" name dir attempt
+    name="$base"
+    for attempt in 1 2 3 4 5; do
+        dir=$(cloudify_state_deployment_dir "$app" "$flavor" "$name") \
+            || die "state: generated deployment name '$name' is not a valid component."
+        [[ -d "$dir" ]] || { printf '%s\n' "$name"; return 0; }
+        name="${base}-$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    done
+    die "state: could not generate a unique deployment name from '$base' after $attempt attempts."
+}
+
+# _cloudify_state_commit_rule - the uniform commit rule, one `dev<TAB>commit`
+# line: a proved current commit when the tree is identified and clean, else a
+# null commit with the development override. Shared by every deployment
+# synthesis (direct and application matching).
+_cloudify_state_commit_rule() {
+    if cloudify_tree_unreproducible "${CLOUDIFY_SCRIPT_DIR:-$PWD}"; then
+        printf 'true\t\n'
+    else
+        printf 'false\t%s\n' "$(cloudify_commit_of "${CLOUDIFY_SCRIPT_DIR:-$PWD}")"
+    fi
+}
+
+# cloudify_state_deployment_create <app> <flavor> <name> <bindings-file>
+# The created deployment: manifest status `applying` (the discoverable
+# interrupted state until the worker projects the outcome) under the uniform
+# commit rule, bindings exactly as given.
+cloudify_state_deployment_create() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}" bindings="${4:?}"
+    local dev commit
+    IFS=$'\t' read -r dev commit <<< "$(_cloudify_state_commit_rule)"
+    cloudify_manifest_write "$app" "$flavor" "$name" applying "$commit" "$dev" "$bindings"
+}
+
 # cloudify_state_direct_generated_name <pkg>
 # Propose a unique generated deployment name. The package segment is
 # truncated so the whole name fits the 255-byte component cap; a name whose
@@ -885,20 +924,13 @@ _DIRECT_FLAVOR="direct"
 # retries, then a named death - never a silent reuse).
 function cloudify_state_direct_generated_name() {
     local pkg="${1:?cloudify_state_direct_generated_name: package required}"
-    local cap=255 ts base name dir attempt
+    local cap=255 ts base
     ts=$(date -u +%Y%m%dT%H%M%SZ)
     base="${pkg}-${ts}"
     if (( ${#base} > cap )); then
         base="${pkg:0:cap-${#ts}-1}-${ts}"
     fi
-    name="$base"
-    for attempt in 1 2 3 4 5; do
-        dir=$(cloudify_state_deployment_dir "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$name") \
-            || die "direct: generated deployment name '$name' is not a valid component."
-        [[ -d "$dir" ]] || { printf '%s\n' "$name"; return 0; }
-        name="${base}-$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    done
-    die "direct: could not generate a unique deployment name for '$pkg' after $attempt attempts."
+    _cloudify_state_unique_name "$base" "$_DIRECT_APP" "$_DIRECT_FLAVOR"
 }
 
 # cloudify_state_direct_synthesize <pkg> <node> <instance> <ssh-host>
@@ -910,13 +942,9 @@ function cloudify_state_direct_generated_name() {
 function cloudify_state_direct_synthesize() {
     local pkg="${1:?cloudify_state_direct_synthesize: package required}"
     local node="${2:-}" instance="${3:-}" ssh_host="${4:-}"
-    local name commit="" dev=false bindings address
+    local name dev commit bindings address
     name=$(cloudify_state_direct_generated_name "$pkg")
-    if cloudify_tree_unreproducible "${CLOUDIFY_SCRIPT_DIR:-$PWD}"; then
-        dev=true
-    else
-        commit=$(cloudify_commit_of "${CLOUDIFY_SCRIPT_DIR:-$PWD}")
-    fi
+    IFS=$'\t' read -r dev commit <<< "$(_cloudify_state_commit_rule)"
     if [[ -n "$ssh_host" ]]; then
         address="$ssh_host"
     else

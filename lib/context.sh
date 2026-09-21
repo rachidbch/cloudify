@@ -461,6 +461,106 @@ function cloudify_context_source_of() {
     _cloudify_vars_source_label "${1:-}" "${2:-}"
 }
 
+#-- One-context projection (state-model-v2 4.3) --
+
+# The one parsed context: cloudify_context_load fills it once, every consumer
+# (matching, the guard, the worker's commits) reads the copy, so two
+# projections can never disagree and no value is ever re-resolved.
+# -gA: a global associative even when this file is first sourced from inside
+# a function (a bats setup), where a plain declare would stay local and the
+# name would later fall back to an indexed array.
+declare -gA _CLOUDIFY_CONTEXT=()
+
+# cloudify_context_load <file> - parse the flat context once into
+# _CLOUDIFY_CONTEXT[key]=value (one shell split at the first ': '). Fail
+# closed: missing file, empty file, malformed line, missing context_version.
+function cloudify_context_load() {
+    local file="${1:-}" line key val
+    [[ -n "$file" && -f "$file" ]] || die "context load: no context file '$file'."
+    [[ -s "$file" ]] || die "context load: context file '$file' is empty."
+    _CLOUDIFY_CONTEXT=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        [[ "$line" == *": "* ]] || die "context load: malformed line: $line"
+        key="${line%%: *}"   # shortest suffix matching ': *' = split at the FIRST ': '
+        val="${line#*: }"    # shortest prefix removal = the rest, verbatim
+        _CLOUDIFY_CONTEXT["$key"]="$val"
+    done < "$file"
+    [[ "${_CLOUDIFY_CONTEXT[context_version]:-}" == "1" ]] ||
+        die "context load: unsupported or missing context_version."
+    return 0
+}
+
+# _cloudify_context_value_field <name> <field> - one field of a value block;
+# fails closed when the field is absent (emptiness is a legal value).
+_cloudify_context_value_field() {
+    local name="${1:-}" field="${2:-}"
+    [[ -n "${_CLOUDIFY_CONTEXT[value.$name.$field]+x}" ]] ||
+        die "context: value '$name' is missing field '$field'."
+    printf '%s' "${_CLOUDIFY_CONTEXT[value.$name.$field]}"
+}
+
+# cloudify_context_value_json <name> - the comparable value object of one
+# resolved name, exactly schemas/v1/package-state.schema.json $defs/value:
+# a non-secret keeps its decoded source form, a secret reference its
+# reference, a literal secret only its digest. Fail closed on a missing
+# field, inconsistent secret metadata or a malformed digest; plaintext of a
+# literal secret never enters the object.
+function cloudify_context_value_json() {
+    local name="${1:?}"
+    local form secret declaration reference digest raw text
+    form=$(_cloudify_context_value_field "$name" form)
+    secret=$(_cloudify_context_value_field "$name" secret)
+    declaration=$(_cloudify_context_value_field "$name" declaration)
+    reference=$(_cloudify_context_value_field "$name" reference)
+    digest=$(_cloudify_context_value_field "$name" digest)
+    raw=$(_cloudify_context_value_field "$name" raw)
+    case "$form" in literal | reference) ;; *) die "context: value '$name' has malformed form '$form'." ;; esac
+    case "$secret" in true | false) ;; *) die "context: value '$name' has malformed secret '$secret'." ;; esac
+    case "$declaration" in explicit | heuristic | none) ;; *) die "context: value '$name' has malformed declaration '$declaration'." ;; esac
+    if [[ "$form" == reference ]]; then
+        [[ "$secret" == true ]] || die "context: value '$name' is a reference but not marked secret."
+        [[ "$reference" =~ ^@[A-Za-z0-9_-]+:.+$ ]] || die "context: value '$name' has a malformed reference."
+        jq -cn --arg ref "$reference" --arg d "$declaration" \
+            '{secret: true, declaration: $d, source_form: $ref, reference: $ref, digest: null, redacted: false}'
+        return 0
+    fi
+    if [[ "$secret" == true ]]; then
+        [[ -z "$reference" ]] || die "context: value '$name' is a literal secret but carries a reference."
+        [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "context: value '$name' has a malformed digest."
+        jq -cn --arg digest "$digest" --arg d "$declaration" \
+            '{secret: true, declaration: $d, source_form: null, reference: null, digest: $digest, redacted: true}'
+        return 0
+    fi
+    [[ -z "$reference" && -z "$digest" ]] || die "context: value '$name' is not secret but carries a reference or digest."
+    [[ "$declaration" == "none" ]] || die "context: value '$name' is not secret but declares '$declaration'."
+    case "$raw" in
+        t:*) text="${raw#t:}" ;;
+        b:*) text=$(printf '%s' "${raw#b:}" | base64 -d) \
+                || die "context: value '$name' has a malformed base64 raw form." ;;
+        *) die "context: value '$name' has a malformed raw form." ;;
+    esac
+    jq -cn --arg sf "$text" \
+        '{secret: false, declaration: "none", source_form: $sf, reference: null, digest: null, redacted: false}'
+}
+
+# cloudify_context_values_json [name...] - the comparable projection of the
+# given resolved names (default: none, {}): one JSON object mapping NAME to
+# its comparable value object. The inventory projection passes every resolved
+# name; the compared projection passes one package's declared names only.
+function cloudify_context_values_json() {
+    local n
+    # One `NAME\t<compact-json>` line per name; jq -cn already terminates each
+    # object with a newline, so no extra separator is printed.
+    { for n in "$@"; do
+        printf '%s\t' "$n"
+        cloudify_context_value_json "$n"
+      done; } | jq -cRn '
+        reduce inputs as $line ({};
+            ($line | split("\t")) as $p
+            | . + {($p[0]): ($p[1:] | join("\t") | fromjson)})'
+}
+
 # cloudify_context_read <context-file> <field> - print one field, rc 1 when the
 # field is absent. Exact key match: no regex, no partial keys.
 function cloudify_context_read() {

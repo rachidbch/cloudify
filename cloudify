@@ -117,6 +117,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/targets.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/registry.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/state.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/context.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/matching.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/runbooks.sh"
 
 #== INITIALIZATION

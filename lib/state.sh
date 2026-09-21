@@ -864,3 +864,78 @@ function cloudify_manifest_describe() {
     fi
     return 0
 }
+
+#== `_direct` synthesis (state-model-v2 4.3; ADR-027) ==
+#
+# A bare `cloudify install <pkg>` with no --name synthesizes an ordinary
+# deployment under the reserved application namespace `_direct`: generated
+# name `<pkg>-<UTC-timestamp>[-suffix]`, virtual one-step runbook whose stable
+# step ID is `direct` (nothing is written for it; the worker knows the step),
+# and a manifest under the uniform commit rule - the proved current commit, or
+# a null commit with development_override when the tree is unreproducible.
+# Bare installs never match; an explicit --name is that deployment, every time.
+
+_DIRECT_APP="_direct"
+_DIRECT_FLAVOR="direct"
+
+# cloudify_state_direct_generated_name <pkg>
+# Propose a unique generated deployment name. The package segment is
+# truncated so the whole name fits the 255-byte component cap; a name whose
+# deployment directory already exists gains a `-<4hex>` suffix (bounded
+# retries, then a named death - never a silent reuse).
+function cloudify_state_direct_generated_name() {
+    local pkg="${1:?cloudify_state_direct_generated_name: package required}"
+    local cap=255 ts base name dir attempt
+    ts=$(date -u +%Y%m%dT%H%M%SZ)
+    base="${pkg}-${ts}"
+    if (( ${#base} > cap )); then
+        base="${pkg:0:cap-${#ts}-1}-${ts}"
+    fi
+    name="$base"
+    for attempt in 1 2 3 4 5; do
+        dir=$(cloudify_state_deployment_dir "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$name") \
+            || die "direct: generated deployment name '$name' is not a valid component."
+        [[ -d "$dir" ]] || { printf '%s\n' "$name"; return 0; }
+        name="${base}-$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    done
+    die "direct: could not generate a unique deployment name for '$pkg' after $attempt attempts."
+}
+
+# cloudify_state_direct_synthesize <pkg> <node> <instance> <ssh-host>
+# Create the synthesized deployment: directory, one binding for the host the
+# direct command runs on (slot `direct` - a direct deployment is an ordinary
+# one: guard, reliance, teardown all read this binding), manifest (status
+# applying, uniform commit rule); prints the generated name. The virtual
+# `direct` step exists in the worker, not on disk.
+function cloudify_state_direct_synthesize() {
+    local pkg="${1:?cloudify_state_direct_synthesize: package required}"
+    local node="${2:-}" instance="${3:-}" ssh_host="${4:-}"
+    local name commit="" dev=false bindings address
+    name=$(cloudify_state_direct_generated_name "$pkg")
+    if cloudify_tree_unreproducible "${CLOUDIFY_SCRIPT_DIR:-$PWD}"; then
+        dev=true
+    else
+        commit=$(cloudify_commit_of "${CLOUDIFY_SCRIPT_DIR:-$PWD}")
+    fi
+    if [[ -n "$ssh_host" ]]; then
+        address="$ssh_host"
+    else
+        address="$node${instance:+:$instance}"
+    fi
+    bindings=$(mktemp "$CLOUDIFY_TMP/direct-bindings-XXXXXX")
+    printf 'direct\t%s\t%s\t%s\t%s\n' "$address" "$node" "$instance" "$ssh_host" > "$bindings"
+    cloudify_manifest_write "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$name" applying "$commit" "$dev" "$bindings"
+    rm -f "$bindings"
+    printf '%s\n' "$name"
+}
+
+# cloudify_state_direct_resolve <name> <pkg>
+# Resolution is identity: an explicit --name names that deployment every time
+# and creates nothing (creation happens at the first commit, like any other
+# deployment). Prints app<TAB>flavor<TAB>name. Bare installs never resolve -
+# the caller synthesizes instead.
+function cloudify_state_direct_resolve() {
+    local name="${1:-}" pkg="${2:-}"
+    [[ -n "$name" ]] || die "cloudify_state_direct_resolve: bare installs synthesize; do not resolve."
+    printf '%s\t%s\t%s\n' "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$name"
+}

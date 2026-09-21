@@ -749,3 +749,10 @@
 - Router wait loop now removes the dispatch context unconditionally (success, failure, no-deployment) - the writer used to own that on one path.
 - Suites touched and green: registry-retired/registry/registry-delete/golden-fixtures/context-raw-form/characterization/red-archive (69/0), full unit 705/0, gate 139/0, lint clean.
 - Findings for the record: `cloudify_is_package` signals by output and always exits 0 (bit the classifier - wrapped as _cloudify_results_is_package); `cloudify_registry_get` cats the whole record (no value lookup); bash -n is meaningless on .bats files (bats preprocesses @test) - bats runs are the only valid parse check for suites.
+
+## 2026-09-20 - `_direct` synthesis landed (state-model-v2 4.3)
+
+- lib/state.sh: `cloudify_state_direct_generated_name` (<pkg>-<UTC-timestamp>, 255-byte component cap with pkg-segment truncation, collision suffix), `cloudify_state_direct_synthesize <pkg> <node> <instance> <ssh-host>` (deployment dir + one `direct`-slot binding for the host + manifest status=applying under the uniform commit rule - proved commit, or null + development_override), `cloudify_state_direct_resolve` (explicit --name = identity, creates nothing). Reserved step ids defaults/init/direct now rejected in runbook parsing with a named error.
+- Schema find: the deployment-manifest requires minProperties 1 on bindings - a direct deployment therefore binds the host it installed on (which is what makes guard/reliance/teardown work for it later). manifest JSON null renders as the string "null" through cloudify_manifest_field.
+- Test-authoring: container run trees have no .git (shim tar), so commit-rule tests build their own scratch repo; name-uniqueness assertions must tolerate the second-boundary (suffix OR next timestamp).
+- Evidence: direct-synthesis.bats 7/7 + runbooks suite 52/0 (59/0 together); full unit 712 for 1 (the second-boundary flake, fixed and re-proven 7/7); lint clean.

@@ -148,6 +148,25 @@ _declare() {
     [ "$(printf '%s' "$(_field "${lines[2]}" 4)" | base64 -d)" = "Open the URL and confirm the desktop renders." ]
 }
 
+@test "parse rejects reserved framework step ids (defaults, init, direct)" {
+    rubric "framework attribution owns defaults/init/direct; authored steps can never collide"
+    local f="$CLOUDIFY_TMP/reserved.md"
+    for id in defaults init direct; do
+        _make_runbook "$f" <<EOF
+---
+deployment: demo
+targets: guest
+---
+\`\`\`bash step=run phase=install id=$id
+echo taken
+\`\`\`
+EOF
+        run cloudify_runbook_parse "$f"
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"reserved for framework attribution"* ]]
+    done
+}
+
 @test "parse accepts a generic run step (no target, no pkg)" {
     rubric "run is a passthrough: target and pkg optional"
     local f="$CLOUDIFY_TMP/run.md"

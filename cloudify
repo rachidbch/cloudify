@@ -831,23 +831,16 @@ function main() {
             wait "$_bg_pid" && _bg_rc=0 || _bg_rc=$?
             if [[ "$_bg_rc" -eq 0 ]]; then
                 msg "  ${GREEN}${_bg_host}: OK${RESET}"
-                # _cloudify_registry_record_bg removes the dispatch context when
-                # it writes a record. It returns early when there is no deployment
-                # (a direct package command), so remove it here too: the file
-                # carries resolved values and must not outlive the dispatch.
-                _cloudify_registry_record_bg "$_bg_pid"
-                if [[ -n "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]:-}" && -e "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}" ]]; then
-                    rm -f "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}"
-                fi
             else
                 msg "  ${RED}${_bg_host}: FAILED (exit ${_bg_rc})${RESET}"
                 had_failures=true
                 failed_count=$((failed_count + 1))
-                # Failure path: no record write, so the parent removes the
-                # dispatch context itself (design section 5).
-                if [[ -n "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]:-}" && -e "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}" ]]; then
-                    rm -f "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}"
-                fi
+            fi
+            # Unconditional context cleanup: the dispatch context carries
+            # resolved values and must not outlive the dispatch - success,
+            # failure, or no deployment (design section 5).
+            if [[ -n "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]:-}" && -e "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}" ]]; then
+                rm -f "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}"
             fi
         done
 

@@ -345,7 +345,9 @@ lib/
   containers.sh       Container operations via ivps (launch, delete, IP lookup)
   credentials.sh      System credential management: save, load, section-based prompting
   deployments.sh      Deployment-wide store: deployment CRUD (ADR-011)
-  registry.sh         Observation registry: per-(deployment, target, package) records
+  registry.sh         Legacy registry storage, read-only: records are no longer
+                      written at runtime (state-model-v2 replaces them); migration
+                      (4.7) consumes them, `deployment delete` sweeps them
   runbooks.sh         Runbook engine: parse, target binding, preflight, run, replay
   pkg-config.sh       Sources lib/vars.sh for package-config consumers (reader lives there)
   vars.sh             Six-source var helpers + precedence walker core + resolver
@@ -406,11 +408,13 @@ value ever reaches a command line, so neither can appear in a process list.
 
 ### The dispatch context
 
-Resolving once is the point. The payload, the registry record and the run snapshot must
-agree, so they all consume one artifact instead of each walking the sources.
+Resolving once is the point. The payload and the run snapshot must agree, so they
+both consume one artifact instead of each walking the sources. (The registry record
+that used to be a third consumer is retired: dispatches are recorded by the
+deployment inventory built from result lines - state-model-v2.)
 
 - The **parent** is the `cloudify` process you ran. It creates the context path, forks one
-dispatch job per target, waits for them, then writes each registry record.
+dispatch job per target, waits for them, then removes each dispatch context.
 - The **child** is the backgrounded job for one target. It resolves the values into its
 own shell, fills the context, renders the payload and ships it.
 - The context is a **file** because it crosses from the child (writer) to the parent

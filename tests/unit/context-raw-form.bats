@@ -66,11 +66,6 @@ raw_of() {
     _cloudify_vars_raw_decode "$enc"
 }
 
-# record_of <pkg> - the registry record text built from CTX alone.
-record_of() {
-    cloudify_registry_record_build install "$DEP" node inst "" "$1" "$CTX"
-}
-
 @test "raw form: a value containing a tab survives to the record verbatim" {
     subrubric "the store holds a tab; the transport must not eat it"
     declare_pkg tabpkg TABBED
@@ -79,7 +74,6 @@ record_of() {
     build_ctx tabpkg
 
     [ "$(raw_of TABBED)" = $'left\tright' ]
-    [[ "$(record_of tabpkg)" == *$'var.TABBED: left\tright'* ]]
 }
 
 @test "raw form: a multiline env value reaches the record as @base64:" {
@@ -90,7 +84,6 @@ record_of() {
     build_ctx mlpkg
 
     [ "$(raw_of MULTILINE)" = $'one\ntwo' ]
-    [[ "$(record_of mlpkg)" == *"var.MULTILINE: @base64:"* ]]
 }
 
 @test "raw form: a raw that itself looks encoded is not mistaken for the transport" {
@@ -101,25 +94,23 @@ record_of() {
     build_ctx lookpkg
 
     [ "$(raw_of LOOKSLIKE)" = '@base64:bm90LXJlYWxseQ==' ]
-    [[ "$(record_of lookpkg)" == *'var.LOOKSLIKE: @base64:bm90LXJlYWxseQ=='* ]]
 }
 
-@test "no second walk: the record survives the sources disappearing" {
-    subrubric "resolve once, then destroy every source the record used to reopen"
+@test "no second walk: the context read survives the sources disappearing" {
+    subrubric "resolve once, then destroy every source the reader used to reopen"
     declare_pkg walkpkg PLAIN_NAME
     set_deployment PLAIN_NAME from-deployment
 
     build_ctx walkpkg
-    # Compare the recorded VALUE, not the whole record: the record carries an
-    # installed_at timestamp, so a whole-text compare would pass or fail on
-    # whether the two calls landed in the same second.
-    before=$(record_of walkpkg | sed -n 's/^var\.PLAIN_NAME: //p')
+    # The context file is the one resolution: reads come from the file, never
+    # from a reopened source.
+    before=$(raw_of PLAIN_NAME)
 
     subrubric "the deployment store now says something else, and the pkg yaml is gone"
     set_deployment PLAIN_NAME CHANGED
     rm -f "$(cloudify_vars_pkg_file walkpkg)"
 
-    after=$(record_of walkpkg | sed -n 's/^var\.PLAIN_NAME: //p')
+    after=$(raw_of PLAIN_NAME)
 
     [ "$before" = "$after" ]
     [ "$after" = "from-deployment" ]

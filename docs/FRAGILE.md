@@ -13,7 +13,8 @@ Chain: caller env -> ladder walk (`lib/vars.sh`) -> one dispatch context
   context, never a value store again.
   Lives at `lib/context.sh` `cloudify_context_build`, `lib/registry.sh`
   `cloudify_registry_record_build`.
-  Pinned by `tests/unit/context-raw-form.bats` ("no second walk", x2).
+  Pinned by `tests/unit/context-raw-form.bats` ("no second walk", x2 - reads
+  come from the context file alone, even with every source deleted or changed).
 - Ladder order is weakest -> strongest (recipe default < global < package <
   application < deployment < caller env), first-write-wins via the claim ledger.
   A `KEY:` line (present-but-empty) is a claim, not an absence.

@@ -130,13 +130,6 @@ _snapshot_value() {
     local payload_value
     payload_value=$(sed -n "s/.*export SHARED_INPUT='\\(.*\\)'.$/\\1/p" "$payload" | head -1)
 
-    subrubric "registry record (independent raw walk over the same name)"
-    local record registry_value
-    record=$(cloudify_registry_record_build install "$DEP" "" "" charhost charpkg)
-    registry_value=$(_field var.SHARED_INPUT "$record")
-    step "registry var.SHARED_INPUT=$registry_value"
-    [ "$registry_value" = "caller-value" ]
-
     subrubric "run snapshot (deployment store + the resolver view)"
     local rb="$CLOUDIFY_TMP/char.md"
     _make_runbook "$rb" <<'EOF'
@@ -156,10 +149,9 @@ EOF
     step "snapshot value.SHARED_INPUT=$snapshot_value"
     [ "$snapshot_value" = "caller-value" ]
 
-    subrubric "v2: one resolution feeds all three records"
-    step "payload=$payload_value registry=$registry_value snapshot=$snapshot_value"
-    [ "$registry_value" = "$payload_value" ]
-    [ "$registry_value" = "$snapshot_value" ]
+    subrubric "v2: one resolution feeds the payload and the snapshot"
+    step "payload=$payload_value snapshot=$snapshot_value"
+    [ "$payload_value" = "$snapshot_value" ]
 
     subrubric "no literal secret in payload or log"
     ! grep -q "placeholder-secret-must-not-leak" "$payload"

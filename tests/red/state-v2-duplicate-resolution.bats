@@ -134,9 +134,7 @@ _payload_value() {
     subrubric "build the three records (the same dispatch, one value)"
     cloudify_remote_sync charhost install redpkg >/dev/null 2>&1
     local payload="$CAPTURE_DIR/payload-charhost"
-    local record registry_value rb snap snapshot_value payload_value
-    record=$(cloudify_registry_record_build install "$DEP" "" "" charhost redpkg)
-    registry_value=$(_field var.SHARED_INPUT "$record")
+    local rb snap snapshot_value payload_value
 
     rb="$CLOUDIFY_TMP/red.md"
     _make_runbook "$rb" <<'EOF'
@@ -158,15 +156,11 @@ EOF
 
     payload_value=$(_payload_value "$payload" SHARED_INPUT)
     snapshot_value=$(_snapshot_value "$snap" SHARED_INPUT)
-    step "payload=$payload_value registry=$registry_value snapshot=$snapshot_value"
+    step "payload=$payload_value snapshot=$snapshot_value"
 
     subrubric "v2: every record carries the one resolved value"
-    if [[ "$payload_value" != "$registry_value" ]]; then
-        echo "v2 contract violated: payload has '$payload_value', registry has '$registry_value' for SHARED_INPUT (one dispatch, two walks)" >&2
-        return 1
-    fi
-    if [[ "$registry_value" != "$snapshot_value" ]]; then
-        echo "v2 contract violated: registry has '$registry_value', snapshot has '$snapshot_value' for SHARED_INPUT (the snapshot reads the deployment store alone)" >&2
+    if [[ "$payload_value" != "$snapshot_value" ]]; then
+        echo "v2 contract violated: payload has '$payload_value', snapshot has '$snapshot_value' for SHARED_INPUT (one dispatch, two walks)" >&2
         return 1
     fi
 }

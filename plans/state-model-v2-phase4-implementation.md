@@ -59,13 +59,13 @@ Invariants named (2026-09-18, before any 4.1 edit):
 
 ## 4.3 Host lock, versions, and result lines
 
-- [x] Freeze tests first: lock tests frozen (bounded holder timeout, metadata, release). Result-line/matching/reconciliation freezes land with their slices.
+- [x] Freeze tests first: lock tests frozen (bounded holder timeout, metadata, release); result-line freeze (results.bats 20/20), reconciliation freeze (results-reconcile.bats 9/9), matching freeze still pending (lands with the matching slice).
 - [~] The bounded host lock landed (9fce0e8: flock fd 200, holder metadata, timeout prints it); the dispatch worker wiring is next.
-- [ ] The `_direct` synthesis: bare install creates the generated deployment under the reserved namespace with the virtual `direct` step and manifest under the uniform commit rule; `--name` reuses; bare never matches.
+- [x] The `_direct` synthesis: bare install creates the generated deployment under the reserved namespace with the virtual `direct` step and manifest under the uniform commit rule; `--name` reuses; bare never matches. (state.sh: generated_name/synthesize/resolve; reserved step ids defaults/init/direct rejected in runbook parse; direct-synthesis.bats 7/7)
 - [ ] Deployment matching: same configuration converges; no match creates a generated-name deployment, printed.
 - [x] `.version` declaration sweep: every recipe package declares its version in a one-line `.version` file (initialized `1.0.0` fleet-wide; Rachid's 2026-09-20 ruling replaces the `pkg_version()` reporter functions - packages opaque, devs trusted); result emission around package attempts, including native subjects and framework work. (results.bats 20/20)
 - [x] The pass-through result stage (read idiom, return discipline, ERR-trap inhibited); line-by-line validation; the executed-code check. (results-pipeline.bats 18/18; tap wired into the stream in lib/remote.sh, payload goldens untouched; child prints `checkout v1:` once per process; full suite 719/0; gate 149/0)
-- [ ] Reconciliation before ordered commits (classifier buckets; membership; body order).
+- [~] Reconciliation before ordered commits (classifier buckets; membership; body order): membership + parent legitimacy + classifier landed (results-reconcile.bats 9/9; design amended lean - no recipe-text graph); the ordered commits themselves land with the dispatch worker.
 - [x] Delete the runtime registry writer; split the goldens (payload half untouched; registry fixtures to migration). (writer cluster + router call removed; storage kept read-only for migration + sweep; registry-record goldens moved to tests/fixtures/legacy-registry/ as legacy samples; registry-retired.bats pins the retirement. 69/0 across registry/golden/raw-form/characterization suites)
 - [x] Prove unconditional context cleanup and byte-identical payload goldens. (router wait-loop removes the dispatch context on success, failure and no-deployment alike; payload goldens byte-identical in strict compare; full suite 705/0; gate 139/0)
 - [ ] Slice exit: focused lock/result suites green; `task gate` green.

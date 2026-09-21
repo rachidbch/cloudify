@@ -25,6 +25,11 @@ setup_test_env() {
     # Disable colors for test output
     export CLOUDIFY_DISABLE_COLORS=true
 
+    # Sandbox isolation: the state root prefers XDG_STATE_HOME over HOME, so an
+    # operator shell that exports XDG would route test events into the real
+    # events tree. Tests that exercise the override set their own value.
+    unset XDG_STATE_HOME
+
     # Skip credential prompts
     export CLOUDIFY_SKIPCREDENTIALS=true
 

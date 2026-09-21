@@ -561,6 +561,69 @@ function cloudify_context_values_json() {
             | . + {($p[0]): ($p[1:] | join("\t") | fromjson)})'
 }
 
+# cloudify_context_event_value_json <name> - one declared value in the EVENT
+# shape (schemas/v1/event.schema.json $defs/value_metadata): a source label
+# (context `environment` maps to `caller`), the secret flag and declaration,
+# reference or digest for secrets, and the source form for non-secrets only.
+# Never raw, never plaintext of a secret. Fail closed like the comparable
+# projection.
+function cloudify_context_event_value_json() {
+    local name="${1:?}"
+    local source form secret declaration reference digest raw text
+    source=$(_cloudify_context_value_field "$name" source)
+    form=$(_cloudify_context_value_field "$name" form)
+    secret=$(_cloudify_context_value_field "$name" secret)
+    declaration=$(_cloudify_context_value_field "$name" declaration)
+    reference=$(_cloudify_context_value_field "$name" reference)
+    digest=$(_cloudify_context_value_field "$name" digest)
+    raw=$(_cloudify_context_value_field "$name" raw)
+    [[ "$source" == environment ]] && source=caller
+    case "$source" in
+        caller | deployment | applied | application | package | global | recipe) ;;
+        *) die "context: value '$name' has unknown source label '$source'." ;;
+    esac
+    case "$form" in literal | reference) ;; *) die "context: value '$name' has malformed form '$form'." ;; esac
+    case "$secret" in true | false) ;; *) die "context: value '$name' has malformed secret '$secret'." ;; esac
+    case "$declaration" in explicit | heuristic | none) ;; *) die "context: value '$name' has malformed declaration '$declaration'." ;; esac
+    if [[ "$secret" == true ]]; then
+        [[ -z "$digest" || "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
+            || die "context: value '$name' has a malformed digest."
+        [[ -z "$reference" || "$reference" =~ ^@[A-Za-z0-9_-]+:.+$ ]] \
+            || die "context: value '$name' has a malformed reference."
+        jq -cn --arg source "$source" --arg d "$declaration" \
+            --arg ref "$reference" --arg digest "$digest" \
+            '{source: $source, secret: true, declaration: $d,
+              reference: (if $ref == "" then null else $ref end),
+              digest: (if $digest == "" then null else $digest end)}'
+        return 0
+    fi
+    [[ -z "$reference" && -z "$digest" ]] || die "context: value '$name' is not secret but carries a reference or digest."
+    [[ "$declaration" == "none" ]] || die "context: value '$name' is not secret but declares '$declaration'."
+    case "$raw" in
+        t:*) text="${raw#t:}" ;;
+        b:*) text=$(printf '%s' "${raw#b:}" | base64 -d) \
+                || die "context: value '$name' has a malformed base64 raw form." ;;
+        *) die "context: value '$name' has a malformed raw form." ;;
+    esac
+    jq -cn --arg source "$source" --arg sf "$text" \
+        '{source: $source, secret: false, declaration: "none",
+          reference: null, digest: null, source_form: $sf}'
+}
+
+# cloudify_context_event_values_json [name...] - the event projection of the
+# given resolved names (default: none, {}): one JSON object mapping NAME to
+# its event-shape value metadata.
+function cloudify_context_event_values_json() {
+    local n
+    { for n in "$@"; do
+        printf '%s\t' "$n"
+        cloudify_context_event_value_json "$n"
+      done; } | jq -cRn '
+        reduce inputs as $line ({};
+            ($line | split("\t")) as $p
+            | . + {($p[0]): ($p[1:] | join("\t") | fromjson)})'
+}
+
 # cloudify_context_read <context-file> <field> - print one field, rc 1 when the
 # field is absent. Exact key match: no regex, no partial keys.
 function cloudify_context_read() {

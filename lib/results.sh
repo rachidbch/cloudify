@@ -270,6 +270,22 @@ function cloudify_results_print_checkout() {
     printf 'checkout v1: commit=%s dirty=%s\n' "$commit" "$dirty"
 }
 
+# _cloudify_results_fields <body> <assoc-name> - one `result v1:` line's
+# key=value fields into the caller's associative array (a nameref, so no
+# second parser ever drifts from the line format). The caller declares the
+# array; validation owns the shape rules.
+_cloudify_results_fields() {
+    local body="${1:?}"
+    local -n _fields="${2:?}"
+    local kv key val
+    _fields=()
+    for kv in ${body#"result v1: "}; do
+        key="${kv%%=*}"
+        val="${kv#*=}"
+        _fields["$key"]="$val"
+    done
+}
+
 # _cloudify_results_is_package <name> - true only when the name is a cloudify
 # package directory. cloudify_is_package signals by OUTPUT (the name when
 # found, empty when not) and always exits 0, so its rc is never the test.

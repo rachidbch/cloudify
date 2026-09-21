@@ -114,6 +114,12 @@ function _cloudify_state_run_locked() {
     [[ -n "$lockfile" && $# -gt 0 ]] || die "Usage: _cloudify_state_run_locked <lockfile> <cmd...>"
     command -v flock >/dev/null 2>&1 ||
         die "cloudify state: 'flock' is required (util-linux) but not installed."
+    # Test-only invariant assertion: the host lock (fd 200) and the manifest
+    # lock are never held together (design: one host lock section). Off in
+    # production; worker tests run with it on.
+    if [[ "${CLOUDIFY_ASSERT_NO_HOST_LOCK:-}" == "1" && -e "/proc/$$/fd/200" ]]; then
+        die "state: the manifest lock must never be taken while the host lock (fd 200) is held."
+    fi
     _cloudify_state_ensure_file_dir "$lockfile"
     local timeout="${CLOUDIFY_LOCK_TIMEOUT:-$_CLOUDIFY_LOCK_TIMEOUT_DEFAULT}"
     (
@@ -400,6 +406,23 @@ function cloudify_state_host_baseline_check() {
         die "baseline: cannot record last-seen boot id."
     fi
     return 0
+}
+
+# cloudify_state_host_key_of <node> [<instance>] - the durable host identity
+# (schema host_key shape): ivps:<node-id> or ivps:<node-id>:<instance-id>,
+# derived from the id-keyed directory ivps hands back (nodes/<nid>[/instances
+# /<iid>]).
+cloudify_state_host_key_of() {
+    local node="${1:?}" inst="${2:-}" root base iid nid
+    root=$(cloudify_state_inventory_root "$node" "$inst")   # <id-dir>/deployments
+    base=$(dirname "$root")                                  # the id-keyed dir
+    if [[ "$base" == */instances/* ]]; then
+        iid="${base##*/}"
+        nid=$(basename "$(dirname "$(dirname "$base")")")
+        printf 'ivps:%s:%s\n' "$nid" "$iid"
+    else
+        printf 'ivps:%s\n' "${base##*/}"
+    fi
 }
 
 # cloudify_state_host_lock <node> [<instance>] - the one bounded host mutation
@@ -720,12 +743,14 @@ function cloudify_manifest_validate_file() {
 
 #== Manifest writes ==
 
-# _cloudify_manifest_render_write <dir> <manifest> <app> <flavor> <name> <status> <commit> <dev> <bindings-file>
+# _cloudify_manifest_render_write <dir> <manifest> <app> <flavor> <name> <status> <commit> <dev> <bindings-file> [last-event-id]
 # Runs inside the lock: carry created_at and the last IDs over, render, validate,
 # then move into place (atomic rename; the lock is what serializes writers).
+# A non-empty 10th argument pins last_event_id explicitly (the worker's
+# projection); empty keeps the carry-over behavior.
 function _cloudify_manifest_render_write() {
     local dir="$1" manifest="$2" app="$3" flavor="$4" name="$5" status="$6"
-    local commit="$7" dev="$8" bindings="$9"
+    local commit="$7" dev="$8" bindings="$9" last_event_override="${10:-}"
     local created last_run last_event tmp
     created=""
     last_run=""
@@ -738,6 +763,7 @@ function _cloudify_manifest_render_write() {
         [[ "$last_event" == "null" ]] && last_event=""
     fi
     [[ -n "$created" ]] || created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    [[ -n "$last_event_override" ]] && last_event="$last_event_override"
 
     tmp=$(mktemp "$dir/.manifest.XXXXXX") || die "manifest: cannot create a temporary file under '$dir'."
     chmod 600 "$tmp" 2>/dev/null || true
@@ -753,12 +779,14 @@ function _cloudify_manifest_render_write() {
     mv "$tmp" "$manifest" || die "manifest: cannot move '$tmp' into place."
 }
 
-# cloudify_manifest_write <app> <flavor> <name> <status> <commit> <dev> <bindings-file>
+# cloudify_manifest_write <app> <flavor> <name> <status> <commit> <dev> <bindings-file> [last-event-id]
 # One manifest writer. Every write takes the manifest lock (REDESIGN: the lock is
 # taken before the first manifest writer lands) and lands by atomic rename.
+# The optional 8th argument pins last_event_id (the dispatch worker's
+# projection); omitted, the previously recorded value is carried over.
 function cloudify_manifest_write() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" status="${4:-}"
-    local commit="${5:-}" dev="${6:-}" bindings="${7:-}"
+    local commit="${5:-}" dev="${6:-}" bindings="${7:-}" last_event="${8:-}"
     local dir manifest lock
     # The tools and the schema tree are checked BEFORE anything is created, so a
     # host that cannot validate never gets a deployment directory or a lock file.
@@ -775,7 +803,7 @@ function cloudify_manifest_write() {
     lock="$dir/.manifest.lock"
     cloudify_state_ensure_dir "$dir"
     _cloudify_state_run_locked "$lock" _cloudify_manifest_render_write \
-        "$dir" "$manifest" "$app" "$flavor" "$name" "$status" "$commit" "$dev" "$bindings"
+        "$dir" "$manifest" "$app" "$flavor" "$name" "$status" "$commit" "$dev" "$bindings" "$last_event"
 }
 
 # cloudify_manifest_update_status <app> <flavor> <name> <status> <commit> <dev>

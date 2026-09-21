@@ -279,7 +279,7 @@ function cloudify_worker_process() {
     shift 11 || true
     local -a words=("$@")
 
-    local failed="" rc=0
+    local failed=""
     _WORKER_ACTION="$action" _WORKER_STEP="$step"
     _WORKER_DEGRADED_RUN=false
     _WORKER_APP="$app" _WORKER_FLAVOR="$flavor" _WORKER_NAME="$name"

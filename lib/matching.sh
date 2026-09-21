@@ -80,12 +80,11 @@ function cloudify_state_match_deployment() {
     # The run's target triple comes from the same one parsed context. Parsed
     # by hand: read collapses consecutive tabs, so an empty instance field
     # would shift localhost into it.
-    local target="${_CLOUDIFY_CONTEXT[target]:-}" node="" inst="" ssh="" rest
+    local target="${_CLOUDIFY_CONTEXT[target]:-}" node="" inst="" rest
     [[ -n "$target" ]] || die "matching: the dispatch context names no target."
     node="${target%%$'\t'*}"
     rest="${target#*$'\t'}"
     inst="${rest%%$'\t'*}"
-    ssh="${rest#*$'\t'}"
 
     # The run's covered package set: package.<PKG>.instance lines of the one
     # parsed context, `pkg<TAB>instance`, sorted.
@@ -114,9 +113,8 @@ function cloudify_state_match_deployment() {
                 ;;
         esac
     done
-    # Names are [A-Z_][A-Z0-9_]* - space-free, so the unquoted expansion is
-    # line-safe under sort.
     local run_values
+    # shellcheck disable=SC2046  # names are [A-Z_][A-Z0-9_]* - space-free
     run_values=$(cloudify_context_values_json $(printf '%s\n' "${vnames[@]}" | sort))
     local run_bindings_sorted
     run_bindings_sorted=$(sort "$bindings")

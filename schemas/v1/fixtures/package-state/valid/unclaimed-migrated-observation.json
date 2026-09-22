@@ -20,7 +20,8 @@
         "source_form": "overlay2",
         "reference": null,
         "digest": null,
-        "redacted": false
+        "redacted": false,
+        "source": "migration"
       }
     }
   },

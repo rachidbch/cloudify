@@ -34,7 +34,7 @@ Applied package values are deliberately absent, and `additionalProperties: false
 `last_attempt` holds `phase`, `outcome`, `at`, `event_id` (non-null), and `requested`; the whole field is null only for a migrated record.
 `health` holds `status`, `checked_at`, and `event_id` (non-null).
 There is no claims array: the guard derives reliance by scanning the node's inventory tree.
-Each value entry holds `secret` (the explicit declaration), `declaration` (`explicit`, `heuristic`, `none`), `source_form`, `reference`, `digest`, and `redacted`.
+Each value entry holds `source` (the resolution source at apply time; `caller` marks a set value, ADR-030), `secret` (the explicit declaration), `declaration` (`explicit`, `heuristic`, `none`), `source_form`, `reference`, `digest`, and `redacted`.
 
 `run.schema.json`: `schema_version`, `run_id`, `application`, `flavor`, `deployment`, `application_commit` (40-hex or null), `development_override` (true whenever the commit is null), `phases`, `status`, `started_at`, `ended_at`, `writer`, `interrupted`.
 No resolved value and no automatic step output exists in a run record.

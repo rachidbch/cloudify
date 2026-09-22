@@ -20,7 +20,7 @@
         "reference": null,
         "digest": null,
         "redacted": false,
-        "source": "caller"
+        "source": "environment"
       },
       "CLOUDIFY_GUACAMOLE_RDP_PASSWORD": {
         "secret": true,

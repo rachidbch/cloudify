@@ -91,18 +91,18 @@ _run_bindings() {
 
 # _literal <text> - the comparable value object of a non-secret literal.
 _literal() {
-    printf '{"secret":false,"declaration":"none","source_form":%s,"reference":null,"digest":null,"redacted":false}' \
+    printf '{"source":"caller","secret":false,"declaration":"none","source_form":%s,"reference":null,"digest":null,"redacted":false}' \
         "$(jq -Rn --arg v "$1" '$v')"
 }
 
 # _refsec <reference> - the comparable value object of a secret reference.
 _refsec() {
-    printf '{"secret":true,"declaration":"explicit","source_form":"%s","reference":"%s","digest":null,"redacted":false}' "$1" "$1"
+    printf '{"source":"caller","secret":true,"declaration":"explicit","source_form":"%s","reference":"%s","digest":null,"redacted":false}' "$1" "$1"
 }
 
 # _litsec <sha256:hex> - the comparable value object of a literal secret.
 _litsec() {
-    printf '{"secret":true,"declaration":"explicit","source_form":null,"reference":null,"digest":"%s","redacted":true}' "$1"
+    printf '{"source":"caller","secret":true,"declaration":"explicit","source_form":null,"reference":null,"digest":"%s","redacted":true}' "$1"
 }
 
 # _seed_manifest <app> <flavor> <name> <binding-line...> - a candidate's

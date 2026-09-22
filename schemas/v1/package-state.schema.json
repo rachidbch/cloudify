@@ -148,6 +148,7 @@
       "description": "One declared value held in its comparable source form. A non-secret value keeps its source form, a secret reference keeps the reference, and a literal secret keeps only redaction plus a digest so the plaintext never reaches persisted state.",
       "type": "object",
       "required": [
+        "source",
         "secret",
         "declaration",
         "source_form",
@@ -195,6 +196,18 @@
         "redacted": {
           "description": "True when only a digest of the value is held.",
           "type": "boolean"
+        },
+        "source": {
+          "description": "Resolution source of the value at apply time (ADR-030). caller marks a set value - one the operator supplied directly; it outranks the stores at reconfigure until unset. A set value reseeded through reconfigure keeps its caller label.",
+          "enum": [
+            "caller",
+            "deployment",
+            "application",
+            "package",
+            "global",
+            "recipe",
+            "migration"
+          ]
         }
       },
       "allOf": [

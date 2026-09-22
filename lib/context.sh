@@ -508,7 +508,8 @@ _cloudify_context_value_field() {
 # literal secret never enters the object.
 function cloudify_context_value_json() {
     local name="${1:?}"
-    local form secret declaration reference digest raw text
+    local source form secret declaration reference digest raw text
+    source=$(_cloudify_context_value_field "$name" source)
     form=$(_cloudify_context_value_field "$name" form)
     secret=$(_cloudify_context_value_field "$name" secret)
     declaration=$(_cloudify_context_value_field "$name" declaration)
@@ -518,18 +519,23 @@ function cloudify_context_value_json() {
     case "$form" in literal | reference) ;; *) die "context: value '$name' has malformed form '$form'." ;; esac
     case "$secret" in true | false) ;; *) die "context: value '$name' has malformed secret '$secret'." ;; esac
     case "$declaration" in explicit | heuristic | none) ;; *) die "context: value '$name' has malformed declaration '$declaration'." ;; esac
+    case "$source" in
+        environment) source=caller ;;
+        deployment | application | package | global | recipe) ;;
+        *) die "context: value '$name' has unknown source label '$source'." ;;
+    esac
     if [[ "$form" == reference ]]; then
         [[ "$secret" == true ]] || die "context: value '$name' is a reference but not marked secret."
         [[ "$reference" =~ ^@[A-Za-z0-9_-]+:.+$ ]] || die "context: value '$name' has a malformed reference."
-        jq -cn --arg ref "$reference" --arg d "$declaration" \
-            '{secret: true, declaration: $d, source_form: $ref, reference: $ref, digest: null, redacted: false}'
+        jq -cn --arg src "$source" --arg ref "$reference" --arg d "$declaration" \
+            '{source: $src, secret: true, declaration: $d, source_form: $ref, reference: $ref, digest: null, redacted: false}'
         return 0
     fi
     if [[ "$secret" == true ]]; then
         [[ -z "$reference" ]] || die "context: value '$name' is a literal secret but carries a reference."
         [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "context: value '$name' has a malformed digest."
-        jq -cn --arg digest "$digest" --arg d "$declaration" \
-            '{secret: true, declaration: $d, source_form: null, reference: null, digest: $digest, redacted: true}'
+        jq -cn --arg src "$source" --arg digest "$digest" --arg d "$declaration" \
+            '{source: $src, secret: true, declaration: $d, source_form: null, reference: null, digest: $digest, redacted: true}'
         return 0
     fi
     [[ -z "$reference" && -z "$digest" ]] || die "context: value '$name' is not secret but carries a reference or digest."
@@ -540,8 +546,10 @@ function cloudify_context_value_json() {
                 || die "context: value '$name' has a malformed base64 raw form." ;;
         *) die "context: value '$name' has a malformed raw form." ;;
     esac
-    jq -cn --arg sf "$text" \
-        '{secret: false, declaration: "none", source_form: $sf, reference: null, digest: null, redacted: false}'
+    # The resolution source travels with the comparable form (ADR-030): caller
+    # marks a set value - the fact the reconfigure ladder discriminates on.
+    jq -cn --arg src "$source" --arg sf "$text" \
+        '{source: $src, secret: false, declaration: "none", source_form: $sf, reference: null, digest: null, redacted: false}'
 }
 
 # cloudify_context_values_json [name...] - the comparable projection of the

@@ -765,3 +765,10 @@
 - Process: XDG_STATE_HOME leaks from the interactive shell into repro scripts and routed repro events into the REAL events root - three test events written there were trashed; repro scripts now unset it. The frozen suite is the completion gate: the local repro missed a stale collection fixture that cost two debug cycles.
 - Evidence: worker.bats 8/8, deployment-matching.bats 12/12, full unit 733/0, gate 139/0, lint clean, schemas 17 valid / 34 invalid / 0 failures.
 - Follow-up: the XDG_STATE_HOME leak is now structural - `setup_test_env` unsets it, so a local bats run from a shell that exports XDG cannot reach the real events root (state/event/worker suites re-proven 35/0).
+
+## 2026-09-21 - 4.4 opened: ADR-030 + provenance substrate
+
+- The ladder debate converged through four rounds of scenario tracing (env-shadow case was the one that killed store>applied; store-edit case killed applied>store; set-provenance resolved both without a divergence gate). Model shipped: set values outrank the store until `deployment unset`; non-set values never seed.
+- Substrate: $defs/value gains required `source` (enum caller|deployment|application|package|global|recipe|migration; events already carry it; inventory mirrors it so the record answers the ladder's one question - is this set?). The comparable projection (cloudify_context_values_json) reads value.<NAME>.source from the one parsed context and maps environment->caller; all three render branches carry it.
+- Reseeding rule (design text): a set value reseeded through reconfigure KEEPS its caller label - otherwise the set-mark would erode on the second reconfigure and the store would resurrect the shadowed value. `applied` as a label belongs to verify/teardown seedings, which never rewrite applied state.
+- Evidence: matching/worker/state/event/context 76/0 focused, full unit 733/0, gate 139/0, lint clean.

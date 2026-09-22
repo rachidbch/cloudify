@@ -19,8 +19,7 @@
         "source_form": "cloudai:cloudify",
         "reference": null,
         "digest": null,
-        "redacted": false,
-        "source": "caller"
+        "redacted": false
       },
       "CLOUDIFY_GUACAMOLE_RDP_PASSWORD": {
         "secret": true,

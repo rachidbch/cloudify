@@ -148,8 +148,11 @@ record() { # record <pkg> [inst]
     [ "$(jq -r .applied.version "$(record nginx)")" = "1.24.0" ]
     # The native subject wrote no inventory and no event.
     [ ! -e "$(cloudify_state_record_dir web1 "" _direct direct "$DEP_NAME" native-tool default)" ]
-    # Every record's requested values carry the full resolved projection.
+    # Every record's requested values carry the full resolved projection,
+    # provenance included: PORT came from the caller env, so it is a set value.
     [ "$(jq -r '.last_attempt.requested.PORT.source_form' "$(record nginx)")" = "8080" ]
+    [ "$(jq -r '.last_attempt.requested.PORT.source' "$(record nginx)")" = "caller" ]
+    [ "$(jq -r '.applied.values.PORT.source' "$(record nginx)")" = "caller" ]
 
     # Manifest: success ends active with the last committed event id.
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "active" ]

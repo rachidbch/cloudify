@@ -781,3 +781,10 @@
 - jq 1.6 regex trap extended: test("[\\\\u0001]") matches ordinary text in a character class - string contains() instead (container runs 1.7, workstation 1.6: behaviors differ; the suite is the arbiter).
 - Test traps: GNU grep BRE does not interpret \\xHH escapes ($'...' quoting does); `sort` puts TOKEN before TOKREF.
 - Evidence: applied-seeding.bats 5/5, full unit 738/0, gate 139/0, lint clean.
+
+## 2026-09-21 - wiring + the naming rule (4.4)
+
+- _cloudify_dispatch_vars is the one choke point for dispatch contexts (local, remote-payload, runbook) because remote values resolve parent-side into the payload - one seeding block covers all configure paths. Remote configure is NOT a second wiring site.
+- Trap re-hit and caught by the frozen suite: die inside $(...) does not propagate when errexit is off (bats run disables it) - the producer's "no inventory record" death was swallowed and the dispatch ran unseeded with rc 0. Every producer call site now carries `|| return 1`.
+- ADR-031 killed a whole planned mechanism (matching resupply + digest-mismatch rejection): the naming rule makes unprovable equality a refusal, one message shape for every fork cause (values, bindings, covered set, interrupted candidate, uncompared secret).
+- Evidence: 30/0 across matching + seeding + wiring + worker; full unit 743/0; gate 139/0; lint clean.

@@ -73,8 +73,8 @@ Invariants named (2026-09-18, before any 4.1 edit):
 ## 4.4 Phase-specific resolution
 
 - [x] Gate: the reconfigure ladder insert and the `applied` source label hold Rachid's go (fragile change). (Consented 2026-09-21, ADR-030: set-scoped seeding - reconfigure resolves caller env > applied[set] > deployment > application > package > global > recipe; non-set applied values never seed; install unchanged.)
-- [ ] The set-scoped reconfigure ladder (ADR-030): applied[set] seeds between caller env and deployment desired inputs; non-set applied values never seed; context machinery extended to the paths that still lack it.
-- [ ] Verify and teardown seed from `applied` only.
+- [~] The set-scoped reconfigure ladder (ADR-030): the machinery landed (seed producer `cloudify_context_applied_seed` with the reconfigure set-filter and the verify/teardown full filter; the build seeds applied[set] before the store read - label `environment`, a set value keeps its caller identity through reseeding - and everything after it for verify/teardown - label `applied`; the post-walk check demands digest-matching resupply for literal secrets, unsupplied or mismatching dies named). Remaining: wire the seed into the live dispatch paths (configure action, local verify, the future runbook verify/teardown dispatches).
+- [~] Verify and teardown seed from `applied` only (build level landed, applied-seeding.bats: the store resupplies over the record, env over everything; dispatch-path wiring pending).
 - [ ] The applied record and its events carry each value's resolution source (`caller` marks a set value); the comparable value objects that matching consumes carry it too.
 - [ ] The applied-inputs read surface (`cloudify deployment show`) and `cloudify deployment unset <id> <NAME>` as an event-backed inventory transition.
 - [ ] Matching resupply for redacted literals; digest-mismatch rejection.

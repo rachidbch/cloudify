@@ -155,6 +155,56 @@ function cloudify_context_candidate_names() {
     return 0
 }
 
+
+# cloudify_context_applied_seed <mode> <node> <instance> <app> <flavor> <name>
+# The applied-seed file for one deployment on one host (ADR-030): one
+# `NAME\x1fkind\x1fdigest\x1fraw` line per applied value, records sorted and
+# merged first-per-name (the namespace is dispatch-global).
+#   kind=value  - seedable: a non-secret (its source form) or a secret
+#                 reference (the reference text; the backend resolves it)
+#   kind=secret - a literal secret: digest-only in applied, a demand marker -
+#                 it can never seed, the caller must resupply it
+# mode reconfigure filters to SET values (source=caller); verify and teardown
+# take every applied value. Prints the seed path (0600, context dir). A
+# deployment with no applied record on the host dies named: reconfigure,
+# verify and teardown all require one.
+function cloudify_context_applied_seed() {
+    local mode="${1:?}" node="${2:?}" inst="${3:-}" app="${4:?}" flavor="${5:?}" name="${6:?}"
+    local pkg_root seed records rec rows
+    pkg_root="$(cloudify_state_inventory_root "$node" "$inst")/$app/$flavor/$name/packages"
+    records=$(find "$pkg_root" -mindepth 3 -maxdepth 3 -name state.json 2>/dev/null | sort)
+    [[ -n "$records" ]] ||
+        die "applied seed: no inventory record for deployment $app/$flavor/$name on '$node${inst:+:$inst}'."
+    seed=$(mktemp "${CLOUDIFY_CONTEXT_DIR:-/tmp}/.applied-seed-XXXXXX") || die "applied seed: cannot create the seed file."
+    chmod 600 "$seed" 2>/dev/null || true
+    local -A seen=()
+    while IFS= read -r rec; do
+        [[ -f "$rec" ]] || continue
+        rows=$(jq -r --arg mode "$mode" '
+            .applied.values // {} | to_entries[]
+            | select(if $mode == "reconfigure" then .value.source == "caller" else true end)
+            | .key as $k | .value as $v
+            | (if ($v.secret and $v.redacted) then "secret" else "value" end) as $kind
+            | (if $kind == "secret" then null
+               elif $v.secret then $v.reference
+               else $v.source_form end) as $form
+            | [$k, $kind, ($v.digest // ""),
+               (if $form == null then ""
+                elif ($form | contains("\n") or contains("\t") or contains("\u0001")) then "b:" + ($form | @base64)
+                else "t:" + $form end)]
+            | join("\u001f")' "$rec" 2>/dev/null) || continue
+        local line n kind digest raw rest
+        while IFS= read -r line; do
+            [[ -n "$line" ]] || continue
+            n="${line%%$'\x1f'*}"
+            [[ -n "${seen[$n]+x}" ]] && continue
+            seen[$n]=1
+            printf '%s\n' "$line" >> "$seed"
+        done <<< "$rows"
+    done <<< "$records"
+    printf '%s\n' "$seed"
+}
+
 # _cloudify_context_sha256 <text> - lowercase hex digest, computed at build time.
 _cloudify_context_sha256() {
     printf '%s' "${1:-}" | sha256sum | cut -d' ' -f1
@@ -168,6 +218,43 @@ _cloudify_context_cleanup_tmp() {
         rm -f "$f"
     done
     return 0
+}
+
+
+# _cloudify_context_seed_walk <label> - one applied-seed pass: emit every
+# seedable entry into the ladder with the given provenance label
+# (`environment` for reconfigure set values - a set value keeps its caller
+# identity through reseeding, ADR-030; `applied` for verify/teardown). Only
+# declared candidate names seed; framework-owned names are refused by the
+# emit itself. no-clobber keeps a pre-set caller env value winning.
+_cloudify_context_seed_walk() {
+    local label="$1" seed="${CLOUDIFY_APPLIED_SEED:-}" line n kind digest raw
+    [[ -n "$seed" && -f "$seed" ]] || return 0
+    while IFS=$'\x1f' read -r n kind digest raw; do
+        [[ -n "$n" ]] || continue
+        [[ -n "${_ctx_candidate[$n]:-}" ]] || continue
+        [[ "$kind" == value ]] || continue
+        _cloudify_vars_emit "$n" "$(_cloudify_vars_raw_decode "$raw")" no-clobber "" "$label"
+    done < "$seed"
+}
+
+# _cloudify_context_seed_check - after the walk, every literal-secret demand
+# marker must be resupplied (caller env or a store) with a plaintext whose
+# digest matches the recorded one. Unsupplied or mismatching dies named
+# before any dispatch - a set secret never falls back to a recipe default.
+_cloudify_context_seed_check() {
+    local seed="${CLOUDIFY_APPLIED_SEED:-}" line n kind digest got
+    [[ -n "$seed" && -f "$seed" ]] || return 0
+    while IFS=$'\x1f' read -r n kind digest raw; do
+        [[ "$kind" == "secret" ]] || continue
+        [[ -n "${_ctx_candidate[$n]:-}" ]] || continue
+        if [[ -z "${!n:-}" ]]; then
+            die "applied seed: value '$n' is a literal secret in the applied state (digest only); resupply it in the caller environment or the deployment store."
+        fi
+        got=$(_cloudify_context_sha256 "${!n}")
+        [[ "sha256:$got" == "$digest" ]] ||
+            die "applied seed: resupplied value '$n' does not match the applied digest; refusing to forward it."
+    done < "$seed"
 }
 
 # cloudify_context_build <action> <deployment> <phase> <declared-names-file> <packages...>
@@ -252,8 +339,20 @@ function cloudify_context_build() {
     # The ladder, unchanged: deployment, then application defaults, then the
     # mapped application inputs, then packages rightmost-first with
     # dependencies, then global, then caller env (inv 4, extended by Phase 3).
+    # Applied seeding (ADR-030). Reconfigure: SET values seed between the
+    # caller env and the deployment store (env > applied[set] > store) - the
+    # pass runs BEFORE the store read, so the seed's claim wins the ledger
+    # while a pre-set caller env value still wins through no-clobber.
+    if [[ "$phase" == "reconfigure" ]]; then
+        _cloudify_context_seed_walk environment
+    fi
     if [[ -n "$deployment" ]]; then
         cloudify_vars_deployment_read "$deployment" > /dev/null
+    fi
+    # Verify and teardown: every applied value seeds BELOW the store, so the
+    # caller env and the deployment inputs resupply over the record.
+    if [[ "$phase" == "verify" || "$phase" == "teardown" ]]; then
+        _cloudify_context_seed_walk applied
     fi
     if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" ]]; then
         _cloudify_load_yaml_vars "$(cloudify_vars_app_file "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR")" \
@@ -288,6 +387,10 @@ function cloudify_context_build() {
     if (( ${#candidates[@]} )); then
         cloudify_vars_env_read "${candidates[@]}" > /dev/null
     fi
+
+    # Literal-secret demand markers: resupplied and digest-checked, or the
+    # dispatch dies named before any payload is built.
+    _cloudify_context_seed_check
 
     local top_kind="package"
     [[ "$action" == "verify" ]] && top_kind="verified"

@@ -772,3 +772,12 @@
 - Substrate: $defs/value gains required `source` (enum caller|deployment|application|package|global|recipe|migration; events already carry it; inventory mirrors it so the record answers the ladder's one question - is this set?). The comparable projection (cloudify_context_values_json) reads value.<NAME>.source from the one parsed context and maps environment->caller; all three render branches carry it.
 - Reseeding rule (design text): a set value reseeded through reconfigure KEEPS its caller label - otherwise the set-mark would erode on the second reconfigure and the store would resurrect the shadowed value. `applied` as a label belongs to verify/teardown seedings, which never rewrite applied state.
 - Evidence: matching/worker/state/event/context 76/0 focused, full unit 733/0, gate 139/0, lint clean.
+
+## 2026-09-21 - the ladder insert (4.4, ADR-030)
+
+- Mechanics discovered before inserting: env wins through pre-set + emit's no-clobber branch (not visit order); store-vs-store precedence IS visit order via the claim ledger. So the reconfigure seed pass runs BEFORE the deployment read (seed claims first, store refused; a pre-set env value still wins inside emit) and the verify/teardown pass runs right AFTER it (store claims first, seed fills).
+- Provenance discipline: reconfigure seeds emit with label `environment` so the new record keeps source=caller (set-mark does not erode through reseeding); verify/teardown seeds emit with label `applied` (hop-true, matches the event enum; those paths never rewrite applied state).
+- Seed file: one `NAME\\x1fkind\\x1fdigest\\x1fraw` line per value (kind=value seedable via source form or reference; kind=secret = digest-only demand marker), records sorted, first-per-name, candidate-gated in the walk.
+- jq 1.6 regex trap extended: test("[\\\\u0001]") matches ordinary text in a character class - string contains() instead (container runs 1.7, workstation 1.6: behaviors differ; the suite is the arbiter).
+- Test traps: GNU grep BRE does not interpret \\xHH escapes ($'...' quoting does); `sort` puts TOKEN before TOKREF.
+- Evidence: applied-seeding.bats 5/5, full unit 738/0, gate 139/0, lint clean.

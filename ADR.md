@@ -466,3 +466,13 @@ Decision:
 - Install is unchanged - same rungs, same order, same exports; only the commit writes the provenance field.
 
 Consequences: no silent resurrection and no dead store-edit door, so no divergence gate is needed; the package-state value object gains the required source field (schema plus fixtures); the comparable value objects that matching consumes carry source; README documents the set/unset model. Rejected: applied above deployment for all values (freezes the store), applied below deployment for all values (resurrects shadowed values), applied non-set as a rung (store redundancy that buffers deliberate deletion).
+
+## ADR-031: An unnamed run creates only the first deployment of an application; a second deployment requires a name
+
+Status: accepted (Rachid, 2026-09-21)
+
+Context: matching had to decide converge-or-fork by comparing a run's resolved values against each candidate deployment's recorded requested values. Literal secrets are stored as digests only, so an unnamed run that did not resupply a recorded secret could not be proven identical - the planned "matching resupply" machinery (demand the plaintext, digest-check it) was growing a third comparison outcome and a silent-fork hazard: a second deployment created because a secret could not be compared, then installing with a recipe fallback secret.
+
+Decision: deploy the same application twice and at least one deployment must be named. An unnamed run with zero existing deployments of that application and flavor creates the first one (generated id, printed). An unnamed run facing existing deployments converges only on proven identity; a differing - or unprovable - configuration refuses with a named error listing the deployments. The matching-resupply machinery is not built; nothing forks silently.
+
+Consequences: matching's comparison survives unchanged for convergence detection; its create path only runs at zero deployments; the fork cases (differing values, differing bindings, differing covered set, interrupted candidate, unprovable secret) all end in the same named refusal directing the operator to --name. REDESIGN's matching sentence is amended in the same commit.

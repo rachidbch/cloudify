@@ -155,7 +155,7 @@ Host origin and continuity (ADR-028): ivps and the engine can restore, recreate,
 The deployment id is the deployment name: human-set through `--name`, else generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed.
 The same name is the same deployment; it is chosen at first run, recorded in the manifest, and reused unchanged on every host the deployment touches.
 
-A run with no name matches an existing deployment of the same runbook by resolved value source forms and bindings; a match converges that deployment, and a run that matches nothing creates a new deployment with a generated id, printed clearly.
+A run with no name matches an existing deployment of the same runbook by resolved value source forms and bindings; a match converges that deployment. A run that matches nothing while deployments already exist refuses, naming them: deploying the same application twice requires naming at least one (ADR-031). A run with no name and no existing deployment creates the first one with a generated id, printed clearly.
 
 Package instances follow the same principles: the key is `default`, or the value of a recipe-declared instance variable; the same configuration is the same installation, and a different configuration is a different installation.
 

@@ -163,8 +163,23 @@ function cloudify_state_match_deployment() {
         return 0
     done
 
-    # No match: a new deployment with a generated id; the created name is
-    # printed clearly.
+    # A deployment exists but none converged: a second deployment of this
+    # application requires a name (ADR-031, Rachid's ruling 2026-09-21). A
+    # differing - or unprovable - configuration refuses, naming the existing
+    # deployments; never a silent fork, and never a converge on unproven
+    # equality (a digest-only secret the run did not resupply is exactly
+    # that: unprovable).
+    if (( ${#candidates[@]} > 0 )); then
+        local listed=""
+        local cname2
+        for cname2 in "${candidates[@]}"; do
+            listed+="${listed:+, }${cname2}"
+        done
+        die "matching: application $app/$flavor already has deployment(s): $listed. An unnamed run only creates the FIRST deployment; re-running one or adding another needs --name."
+    fi
+
+    # No deployment exists: the first one is created with a generated id and
+    # the created name is printed clearly.
     name=$(cloudify_state_deployment_generated_name "$app" "$flavor")
     cloudify_state_deployment_create "$app" "$flavor" "$name" "$bindings"
     printf 'matching: no deployment matched; created %s/%s/%s\n' "$app" "$flavor" "$name" >&2

@@ -148,7 +148,7 @@ Matching decides what a run with no name does:
 - The run resolves its values once, through the ordinary dispatch context.
 - It matches against the existing deployments of the same application and flavor by comparing its resolved value source forms and resolved bindings with each candidate deployment's recorded `last_attempt.requested` values and recorded bindings (a failed-first-install inventory still matches: its requested values are recorded even though `applied` is null).
 - A match converges that deployment: same inventory, no new artefact.
-- No match: a new deployment is created with a generated id, and the created name is printed clearly.
+- No match while deployments already exist: a named refusal listing them - deploying the same application twice requires naming at least one (ADR-031, amended 2026-09-21). No match with zero existing deployments: the first deployment is created with a generated id, and the created name is printed clearly.
 
 An explicit name never matches: it always means that deployment.
 
@@ -585,7 +585,7 @@ One red test at a time, in this order.
 
 - No name and no prior match creates a generated-name deployment, printed.
 - Same configuration, no name: converges the existing deployment, no new artefact.
-- Changed configuration, no name: new generated deployment, including one whose generated name exercises the byte-cap truncation.
+- Changed configuration, no name: named refusal listing the existing deployments (ADR-031); the byte-cap truncation still applies to the FIRST deployment's generated name.
 - Explicit name: converges or updates that deployment; a different explicit name creates a separate deployment.
 - Bindings are part of the match: same values, different hosts, no match.
 
@@ -671,7 +671,7 @@ The result-line format was consented on 2026-09-15; the streamed-log chain is a 
 
 1. The set-scoped reconfigure ladder above; extend the context machinery to the paths that still lack it (local verify; future runbook verify and teardown dispatches).
 2. Seed verify and teardown from `applied` only.
-3. Matching resupply for redacted literals.
+3. Matching resupply for redacted literals - superseded by ADR-031 (a second deployment requires a name; unprovable equality refuses), not built.
 4. Install defaults never reinterpret an existing inventory.
 5. The applied-inputs read surface (`deployment show`) and `cloudify deployment unset <id> <NAME>` as an event-backed inventory transition.
 

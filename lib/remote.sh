@@ -118,6 +118,26 @@ function _cloudify_dispatch_vars() {
     if (( ${#pkgs[@]} )); then
         cloudify_context_candidate_names "${pkgs[@]}" > "$cand_file"
     fi
+    # Applied seeding (4.4, ADR-030): a configure dispatch under an active
+    # application reference resolves as a reconfigure of that deployment - the
+    # applied SET values seed between the caller env and the stores. A bare
+    # configure (no reference) stays an unseeded raw dispatch. The seed is
+    # produced parent-side, so local, remote-payload and runbook configure
+    # dispatches all flow through this one point.
+    if [[ "$action" == "configure" && -z "${CLOUDIFY_APPLIED_SEED:-}" ]] \
+        && _cloudify_deployment_tuple_active; then
+        local _st="${CLOUDIFY_CONTEXT_TARGET:-${_CLOUDIFY_CUR_TARGET:-}}" _snode _srest _sinst
+        [[ -n "$_st" ]] || die "configure: no target resolved for the applied seed."
+        _snode="${_st%%$'\t'*}"
+        _srest="${_st#*$'\t'}"
+        _sinst="${_srest%%$'\t'*}"
+        # || return 1: the producer dies inside $(...) and errexit may be off
+        # in the caller (bats run subshells) - the failure must be explicit.
+        CLOUDIFY_APPLIED_SEED=$(cloudify_context_applied_seed reconfigure \
+            "$_snode" "$_sinst" \
+            "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME") || return 1
+        export CLOUDIFY_APPLIED_SEED
+    fi
     cloudify_context_build "$action" "$deployment" "$phase" "$cand_file" \
         "${pkgs[@]}" > /dev/null
     # The context's resolved names ARE the payload's allow-list entries, and the

@@ -332,6 +332,34 @@ function cloudify_package_verify_path() {
 #   install+verify and verify-only paths). errexit-safe via if-check (F1).
 # - Timeout: ${PKG_VERIFY_TIMEOUT:-30} seconds. Sleeps 2s between attempts.
 # Returns 0 on success, 1 on timeout.
+
+# _cloudify_verify_seed_env <pkg> - local verify under an active application
+# reference resolves every applied value of that deployment into the calling
+# shell before the recipe runs (phase verify: the seed sits below the caller
+# env and the deployment store, so inputs resupply over the record). Without
+# a reference it is a no-op: the legacy unseeded verify path.
+_cloudify_verify_seed_env() {
+    local pkg="${1:?}"
+    _cloudify_deployment_tuple_active || return 0
+    [[ -n "${CLOUDIFY_APPLIED_SEED:-}" ]] && return 0
+    local st="${CLOUDIFY_CONTEXT_TARGET:-${_CLOUDIFY_CUR_TARGET:-}}"
+    local node rest inst cand
+    [[ -n "$st" ]] || die "verify: no target resolved for the applied seed."
+    node="${st%%$'\t'*}"
+    rest="${st#*$'\t'}"
+    inst="${rest%%$'\t'*}"
+    # || return 1: explicit failure - the producer dies inside $(()) and the
+    # caller's errexit may be off (bats run subshells).
+    CLOUDIFY_APPLIED_SEED=$(cloudify_context_applied_seed verify "$node" "$inst" \
+        "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME") || return 1
+    export CLOUDIFY_APPLIED_SEED
+    [[ -n "${CLOUDIFY_CONTEXT_FILE:-}" ]] || _cloudify_context_file_init
+    cand=$(mktemp "$CLOUDIFY_TMP/cloudify-candidates-XXXXXX")
+    cloudify_context_candidate_names "$pkg" > "$cand"
+    cloudify_context_build verify "${CLOUDIFY_DEPLOYMENT:-deployment}" verify "$cand" "$pkg" > /dev/null
+    rm -f "$cand"
+}
+
 function _cloudify_run_verify() {
     local pkg="$1"
     local verify_path

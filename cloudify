@@ -298,7 +298,7 @@ function _cloudify_execute_package_action() {
         PKG_DEBUG "${YELLOW}cloudify_configure_package ${pkgs[*]}${RESET}"
         CLOUDIFY_RESULTS_FILE=$(mktemp "$CLOUDIFY_TMP/cloudify-results-XXXXXX")
         export CLOUDIFY_RESULTS_FILE
-        ( _cloudify_dispatch_vars /dev/null configure "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_configure_package "${pkgs[@]}" ) &
+        ( _cloudify_dispatch_vars /dev/null configure "${CLOUDIFY_DEPLOYMENT:-}" reconfigure "${pkgs[@]}"; cloudify_configure_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
@@ -317,6 +317,7 @@ function _cloudify_execute_package_action() {
             _rc=0
             for _vpkg in "${pkgs[@]}"; do
                 [[ -d "$CLOUDIFY_DIR/pkg/$_vpkg" ]] || die "Not a cloudify package: $_vpkg"
+                _cloudify_verify_seed_env "$_vpkg"
                 _cloudify_run_verify "$_vpkg" || _rc=1
             done
             exit "$_rc"

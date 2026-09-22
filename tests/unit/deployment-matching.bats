@@ -214,7 +214,7 @@ EOF
     [ "$got" = "main" ]
 }
 
-@test "no match: a differing value forks a new generated deployment, name printed" {
+@test "no match: a differing value refuses - a second deployment requires a name" {
     _seed_manifest web default main $'primary\tlocalhost\tweb1\t\tlocalhost'
     _seed_record web default main nginx default "{\"PORT\":$(_literal 9090)}"
 
@@ -226,17 +226,14 @@ EOF
     )
     bf=$(_run_bindings $'primary\tlocalhost\tweb1\t\tlocalhost')
 
-    got=$(cloudify_state_match_deployment web default "$ctx" "$bf")
-    [[ "$got" =~ ^web-default-[0-9]{8}T[0-9]{6}Z ]]
-    [ "$got" != "main" ]
-    [ "$(cloudify_manifest_field web default "$got" status)" = "applying" ]
-    # The run's bindings land on the created deployment.
-    cloudify_manifest_bindings web default "$got" > "$CLOUDIFY_TMP/got-bindings"
-    grep -q $'^primary\tlocalhost\tweb1\t\tlocalhost$' "$CLOUDIFY_TMP/got-bindings"
-    [ "$(_record_count web default)" -eq 2 ]
+    run cloudify_state_match_deployment web default "$ctx" "$bf"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"main"* ]]
+    [[ "$output" == *"--name"* ]]
+    [ "$(_record_count web default)" -eq 1 ]
 }
 
-@test "no match: bindings are part of the match - same values, different hosts" {
+@test "no match: bindings differ - refuses, a second deployment requires a name" {
     _seed_manifest web default main $'primary\tlocalhost\tweb1\t\tlocalhost'
     _seed_record web default main nginx default "{\"PORT\":$(_literal 8080)}"
 
@@ -248,9 +245,10 @@ EOF
     )
     bf=$(_run_bindings $'primary\tlocalhost\tother\t\totherhost')
 
-    got=$(cloudify_state_match_deployment web default "$ctx" "$bf")
-    [[ "$got" =~ ^web-default- ]]
-    [ "$got" != "main" ]
+    run cloudify_state_match_deployment web default "$ctx" "$bf"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"main"* ]]
+    [ "$(_record_count web default)" -eq 1 ]
 }
 
 @test "match: secrets compare by reference for references and by digest for literal secrets" {
@@ -294,9 +292,9 @@ EOF
     _seed_manifest web default main $'primary\tlocalhost\tweb1\t\tlocalhost'
     _seed_record web default main nginx default "{\"PORT\":$(_literal 8080)}"
     _seed_record web default main redis default '{}'
-    got=$(cloudify_state_match_deployment web default "$ctx" "$bf")
-    [[ "$got" =~ ^web-default- ]]
-    [ "$got" != "main" ]
+    run cloudify_state_match_deployment web default "$ctx" "$bf"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"main"* ]]
 
     subrubric "a candidate missing a covered package does not match"
     rm -rf "$(cloudify_state_deployment_dir web default main)" \
@@ -304,12 +302,12 @@ EOF
         "$(cloudify_state_record_dir web1 '' web default main redis default)"
     _seed_manifest web default main $'primary\tlocalhost\tweb1\t\tlocalhost'
     _seed_record web default main redis default '{}'
-    got=$(cloudify_state_match_deployment web default "$ctx" "$bf")
-    [[ "$got" =~ ^web-default- ]]
-    [ "$got" != "main" ]
+    run cloudify_state_match_deployment web default "$ctx" "$bf"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"main"* ]]
 }
 
-@test "no match: an interrupted candidate (manifest without records) never matches" {
+@test "no match: an interrupted candidate refuses - re-running it needs a name" {
     _seed_manifest web default main $'primary\tlocalhost\tweb1\t\tlocalhost'
 
     local ctx bf got
@@ -320,9 +318,10 @@ EOF
     )
     bf=$(_run_bindings $'primary\tlocalhost\tweb1\t\tlocalhost')
 
-    got=$(cloudify_state_match_deployment web default "$ctx" "$bf")
-    [[ "$got" =~ ^web-default- ]]
-    [ "$got" != "main" ]
+    run cloudify_state_match_deployment web default "$ctx" "$bf"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"main"* ]]
+    [ "$(_record_count web default)" -eq 1 ]
 }
 
 @test "namespace: matching never crosses _direct" {

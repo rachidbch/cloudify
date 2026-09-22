@@ -100,7 +100,7 @@ The software decides how many runtimes exist; cloudify decides only what it conf
 - the package and the package instance;
 - the runbook step that owns the work (always set by normal writes; null only for migrated inventory records);
 - a monotonically increasing `revision`, changed only together with an event;
-- `applied`: the last successful result this deployment applied - **version** (required), source-form values, time, event ID;
+- `applied`: the last successful result this deployment applied - **version** (required), source-form values each with their resolution source (`caller` marks a set value, ADR-030), time, event ID;
 - `last_attempt`: the most recent attempt by this deployment - phase, requested value metadata, outcome, time, event ID;
 - `health`: this deployment's last verification observation - status, time, event ID.
 
@@ -379,7 +379,7 @@ For each `value.<NAME>` block, the `t:`/`b:` raw transport is decoded once:
 
 Literal secrets do enter the dispatch context as resolved plaintext - by design: the target process needs them, the context is mode 0600 and swept on every exit, and everything durable holds only the reference, or redaction plus digest.
 
-Event fields per value: source label (`environment` maps to `caller`; `applied` when phase-specific resolution seeded it), `secret`, `declaration`, a reference or digest for secrets (never both), the `source_form` for every non-secret value (secrets never carry one), never `raw` or plaintext.
+Event fields per value: source label (`environment` maps to `caller`), `secret`, `declaration`, a reference or digest for secrets (never both), the `source_form` for every non-secret value (secrets never carry one), never `raw` or plaintext. The inventory record's value objects carry the same source label (amended 2026-09-21, ADR-030: reconfigure seeding discriminates on it - `caller` at apply time marks a set value).
 Events also carry the writing cloudify tool version.
 With non-secret source forms in events, the inventory is derivable from the event log: the log is the truth, the inventory its materialized view.
 Reproduction of historical values rests on these recorded forms, never on the availability of a git commit; the commit pins provenance only.
@@ -624,6 +624,7 @@ One red test at a time, in this order.
 - A bare direct install creates an `_direct` deployment with a generated printed name and a manifest; a repeated bare install creates another; `--name` reuses that deployment; direct uninstall goes through the guard.
 - Reconfigure and teardown fail on commit drift, naming both commits; a null-commit manifest fails with the unreproducible message.
 - Verify and teardown seed only from successful `applied`; a failed attempt never seeds.
+- Reconfigure seeding is set-scoped (ADR-030): a caller-supplied value survives reconfigure with no store entry; a store-supplied value never blocks a store edit; a deleted store entry lets the recipe default return; a set literal secret demands resupply with a digest check; `deployment unset` clears the set-mark through an event-backed transition and the next reconfigure lets the store govern the name again.
 - Migration dry-run writes nothing; apply writes event first, then revision 1 under the mapped deployment directory; identical repeat is a no-op; conflicting migration fails without exposing values; external and removed records are reported, not migrated.
 - No runtime caller of the old-record reader outside the migration command.
 
@@ -666,10 +667,13 @@ The result-line format was consented on 2026-09-15; the streamed-log chain is a 
 
 ### 4.4 Phase-specific resolution
 
-1. Applied source forms below explicit reconfigure sources; extend the context machinery to the paths that still lack it (local verify; future runbook verify and teardown dispatches).
+(Amended 2026-09-21, Rachid's ruling, ADR-030: reconfigure seeding is set-scoped. The discriminator is provenance, not application - a value whose resolution source at apply time was the caller environment is "set". Reconfigure resolves, strongest first: caller environment > applied set values > deployment desired inputs > application defaults > package defaults > global defaults > recipe defaults. A set value outranks the store until `cloudify deployment unset` clears the mark; applied non-set values never seed - the store re-supplies them, and a deleted store entry lets the recipe default return. The applied record and its events carry each value's resolution source; a set literal secret is digest-only and demands resupply with a digest check. `cloudify deployment show` renders the applied inputs with set/store provenance. Install is unchanged - same rungs, same order, same exports; only the commit writes the provenance field.)
+
+1. The set-scoped reconfigure ladder above; extend the context machinery to the paths that still lack it (local verify; future runbook verify and teardown dispatches).
 2. Seed verify and teardown from `applied` only.
 3. Matching resupply for redacted literals.
 4. Install defaults never reinterpret an existing inventory.
+5. The applied-inputs read surface (`deployment show`) and `cloudify deployment unset <id> <NAME>` as an event-backed inventory transition.
 
 ### 4.5 Guard and adoption
 

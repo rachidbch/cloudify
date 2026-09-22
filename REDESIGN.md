@@ -272,12 +272,17 @@ Reconfigure requires an existing reliance and a successful applied record.
 Reconfigure resolves values in this order, strongest first:
 
 1. Step or caller environment.
-2. Deployment desired inputs.
-3. Previously applied source values.
+2. Previously applied values that were set (caller-sourced at apply time; ADR-030).
+3. Deployment desired inputs.
 4. Application defaults.
 5. Package defaults.
 6. Global defaults.
 7. Recipe defaults.
+
+A set value outranks the store until it is explicitly unset (`cloudify deployment unset`): a value the operator supplied directly never moves because a default under it shifted.
+Applied values that were store-supplied never seed: the store re-supplies them when present, and a deleted store entry lets the recipe default return - the deletion is honored, not buffered.
+
+The applied record carries each value's resolution source, and `cloudify deployment show` renders the applied inputs with their set/store provenance, secrets masked to reference or digest.
 
 Verify uses the previously applied source values by default.
 

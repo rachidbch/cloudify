@@ -449,3 +449,20 @@ Decision: the recipe default is the recipe's own shell fallback, evaluated by th
 Rejected alternative: exporting the mirror text as a `recipe`-sourced value when nothing supplies the name. It would make captures carry the full effective configuration and make matching see defaults explicitly, but it would also put repo-stored mirror text into the forwarding path - breaking the "values live in the caller env or a store, never in the repo" rule for any secret-named defaulted stanza, unless a heuristic/marker guard were added. Rejected for Phase 4; revisiting requires a new ADR.
 
 Consequences: REDESIGN's ladder sentences carry the clarification; `lib/vars.sh`'s header names the on-host fallback; the README value-source list states the non-forwarding consequence. Captures record supplied values only; recipe-internal defaults remain the recipe's private fallback. Diagnostics note: this exact confusion was resolved by reading the code path plus one localhost shell-semantics repro, not by improvising diagnostics.
+
+## ADR-030: Reconfigure seeds from applied set values - a value you set outranks the store until you unset it
+
+Status: accepted (Rachid, 2026-09-21)
+
+Context: The reconfigure ladder needed a seeding rule for previously applied values. Trace the shadow case: install with the deployment store holding PORT=8080 and the caller environment PORT=4000 applies 4000 and records applied=4000. An unscoped ladder fails both ways: applied below the deployment store resurrects 8080 at reconfigure (a never-applied value silently applied because nobody re-supplied the env), and applied above the store freezes it (store edits never land - the door install's refusal points to is dead).
+
+Decision:
+
+- The discriminator is provenance, not application. A value whose resolution source at apply time was the caller environment is "set"; a store-supplied value is not. The applied record and its events carry each value's resolution source (the event enum: caller, deployment, application, package, global, recipe, migration); the interface renders source=caller as "set".
+- Reconfigure resolves, strongest first: caller environment > applied set values > deployment desired inputs > application defaults > package defaults > global defaults > recipe defaults.
+- Applied non-set values never seed: the store re-supplies them when present, and when the store entry is gone the recipe's on-host default is the honest state - the operator deleted the declaration.
+- `cloudify deployment show` gains an applied-inputs section (names, source forms, set/store, secrets masked to reference or digest), and `cloudify deployment unset <id> <NAME>` clears the set-mark through an event-backed inventory transition (host lock, one event, revision bump). The operator's model: a value you set outranks everything until you unset it; a value the store supplied stays the store's to change.
+- A set literal secret is digest-only in applied and cannot seed: reconfigure fails before mutation demanding resupply, digest-checked. Only an explicit environment act changes a set secret.
+- Install is unchanged - same rungs, same order, same exports; only the commit writes the provenance field.
+
+Consequences: no silent resurrection and no dead store-edit door, so no divergence gate is needed; the package-state value object gains the required source field (schema plus fixtures); the comparable value objects that matching consumes carry source; README documents the set/unset model. Rejected: applied above deployment for all values (freezes the store), applied below deployment for all values (resurrects shadowed values), applied non-set as a rung (store redundancy that buffers deliberate deletion).

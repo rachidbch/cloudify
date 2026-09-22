@@ -72,9 +72,11 @@ Invariants named (2026-09-18, before any 4.1 edit):
 
 ## 4.4 Phase-specific resolution
 
-- [ ] Gate: the reconfigure ladder insert and the `applied` source label hold Rachid's go (fragile change).
-- [ ] Applied source forms below explicit reconfigure sources; context machinery extended to the paths that still lack it.
+- [x] Gate: the reconfigure ladder insert and the `applied` source label hold Rachid's go (fragile change). (Consented 2026-09-21, ADR-030: set-scoped seeding - reconfigure resolves caller env > applied[set] > deployment > application > package > global > recipe; non-set applied values never seed; install unchanged.)
+- [ ] The set-scoped reconfigure ladder (ADR-030): applied[set] seeds between caller env and deployment desired inputs; non-set applied values never seed; context machinery extended to the paths that still lack it.
 - [ ] Verify and teardown seed from `applied` only.
+- [ ] The applied record and its events carry each value's resolution source (`caller` marks a set value); the comparable value objects that matching consumes carry it too.
+- [ ] The applied-inputs read surface (`cloudify deployment show`) and `cloudify deployment unset <id> <NAME>` as an event-backed inventory transition.
 - [ ] Matching resupply for redacted literals; digest-mismatch rejection.
 - [ ] Install never applies changed explicit inputs - REDESIGN's rule stands.
 - [ ] Slice exit: focused resolution suites green.

@@ -146,6 +146,16 @@ _manifest() { # _manifest <binding-line...>
     [ "$n_user" -eq 2 ]
 }
 
+@test "list: one rich line per deployment - status, pkgs, hosts, user values" {
+    _manifest $'primary\tlocalhost\tweb1\t\tweb1'
+    _seed_record web1 nginx "{\"PORT\": $(_nv deployment 8080), \"TOKEN\": $(_nv caller abc)}"
+    _seed_record web1 openssl "{}"
+
+    run cloudify_deployment_list
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | grep -q "web/default/main.*active.*2 pkgs.*1 host.*1 user value"
+}
+
 @test "show: multiple bindings render slot -> host; per-host values stay nested" {
     _manifest $'primary\tlocalhost\tweb1\t\tweb1' $'db\tlocalhost\tdb1\t\tdb1'
     _seed_record web1 nginx "{\"PORT\": $(_nv deployment 8080)}"

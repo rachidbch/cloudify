@@ -474,8 +474,15 @@ function cloudify_state_writer_identity() {
     if [[ -z "$_CLOUDIFY_STATE_WRITER" ]]; then
         local ticks
         ticks=$(cut -d' ' -f22 /proc/$$/stat)
+        # Strict SemVer, single-sourced: the env override wins (tests), then
+        # the repo's VERSION file, then git describe, else unknown.
         local version="${CLOUDIFY_VERSION:-}"
-        [[ -n "$version" ]] || version=$(git -C "${CLOUDIFY_SCHEMA_DIR%/schemas/v1}" describe --always --dirty 2>/dev/null || echo unknown)
+        if [[ -z "$version" ]]; then
+            version=$(head -n 1 "${CLOUDIFY_SCHEMA_DIR%/schemas/v1}/VERSION" 2>/dev/null || true)
+        fi
+        if [[ -z "$version" ]]; then
+            version=$(git -C "${CLOUDIFY_SCHEMA_DIR%/schemas/v1}" describe --always --dirty 2>/dev/null || echo unknown)
+        fi
         _CLOUDIFY_STATE_WRITER=$(jq -n \
             --arg host "$(hostname)" \
             --arg boot "$(cat /proc/sys/kernel/random/boot_id)" \

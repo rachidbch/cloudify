@@ -90,12 +90,53 @@ _cloudify_deployment_ensure() {
 # the manifest the run wrote is (REDESIGN: list current manifests, not
 # historical run files).
 cloudify_deployment_list() {
-    local app flavor dep path count=0
+    local app flavor dep _path count=0
+    local status sdisp slot node instance rest bline rec n uv hosts pkgs hplural uvplural uvdisp
+    local -A seen_uv
     if declare -F cloudify_state_list_manifests >/dev/null; then
-        while IFS=$'\t' read -r app flavor dep path; do
+        while IFS=$'\t' read -r app flavor dep _path; do
             [[ -n "$app" ]] || continue
-            printf '%s/%s --name %s (%s)\n' "$app" "$flavor" "$dep" "$path"
             count=$((count + 1))
+            status=$(cloudify_manifest_field "$app" "$flavor" "$dep" status 2>/dev/null) || status="-"
+            [[ "$status" == "null" || -z "$status" ]] && status="-"
+            sdisp="$status"
+            [[ "$status" == active ]] && sdisp="${GREEN}active${RESET}"
+            [[ "$status" == degraded ]] && sdisp="${RED}degraded${RESET}"
+            [[ "$status" == applying ]] && sdisp="${ORANGE}applying${RESET}"
+            hosts=0 pkgs=0 uv=0
+            seen_uv=()
+            local bf
+            bf=$(mktemp "$CLOUDIFY_TMP/list-bindings-XXXXXX")
+            cloudify_manifest_bindings "$app" "$flavor" "$dep" > "$bf" 2>/dev/null || true
+            while IFS= read -r bline; do
+                [[ -n "$bline" ]] || continue
+                hosts=$((hosts + 1))
+                slot="${bline%%$'\t'*}"
+                rest="${bline#*$'\t'}"          # address TAB node TAB instance TAB ssh
+                rest="${rest#*$'\t'}"           # skip the address field
+                node="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+                instance="${rest%%$'\t'*}"
+                local root
+                root=$(cloudify_state_inventory_root "$node" "$instance" 2>/dev/null) || continue
+                while IFS= read -r rec; do
+                    [[ -f "$rec" ]] || continue
+                    pkgs=$((pkgs + 1))
+                    while IFS= read -r n; do
+                        [[ -n "$n" ]] && seen_uv["$n"]=1
+                    done < <(jq -r '.applied.values // {} | to_entries[] | select(.value.source == "caller") | .key' "$rec" 2>/dev/null)
+                done < <(find "$root/$app/$flavor/$dep/packages" -mindepth 3 -maxdepth 3 -name state.json 2>/dev/null | sort)
+            done < "$bf"
+            rm -f "$bf"
+            for n in "${!seen_uv[@]}"; do uv=$((uv + 1)); done
+            hplural="s"; (( hosts == 1 )) && hplural=""
+            uvdisp="-"
+            if (( uv > 0 )); then
+                uvplural="s"; (( uv == 1 )) && uvplural=""
+                uvdisp="$uv user value$uvplural"
+                [[ -n "${YELLOW:-}" ]] && uvdisp="${YELLOW}$uv user value$uvplural${RESET}"
+            fi
+            printf '%s/%s/%s\t%s\t%d pkgs\t%d host%s\t%s\n' \
+                "$app" "$flavor" "$dep" "$sdisp" "$pkgs" "$hosts" "$hplural" "$uvdisp"
         done < <(cloudify_state_list_manifests)
     fi
     [[ $count -gt 0 ]] || echo "(no deployments)"

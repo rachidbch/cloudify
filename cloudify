@@ -13,6 +13,7 @@ function usage() {
     IMPORTANT: --on <host> must come BEFORE install/uninstall, not after.
     examples:
         cloudify help                                   print this usage help
+        cloudify --version                              print the version (strict semver, VERSION file)
         cloudify init                                   Full setup: PATH, tools, credentials (once per machine)
         cloudify credentials|c                          Set all credentials interactively
         cloudify credentials <section>                  Set specific credentials (remote, local, github, gitlab)
@@ -443,6 +444,10 @@ function main() {
         case "$1" in
         -h | --help | help)
             usage
+            break
+            ;;
+        -V | --version | version)
+            printf 'cloudify %s\n' "$(head -n 1 "$CLOUDIFY_SCRIPT_DIR/VERSION" 2>/dev/null || printf 'unknown')"
             break
             ;;
         -v)

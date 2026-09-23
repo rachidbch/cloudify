@@ -79,6 +79,8 @@ Full suite at phase and milestone boundaries; E2E is an exit gate, never a debug
 
 **Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues.
 
+**Versioning:** strict SemVer. The `VERSION` file at the repo root is the single source; `cloudify --version` prints it; `CLOUDIFY_VERSION` overrides it in tests. Bump per semver whenever the tool meaningfully changes (breaking: MAJOR, behavior/features: MINOR, fixes: PATCH).
+
 **Normative files:** the design (`REDESIGN.md`) and the plan (`plans/<current>.md` via `PLAN.md`) are the single source of truth. Everything else is a working note I may use freely, except `schemas/v1/` (machine-enforced), `AGENTS.md` (process) and `LOGS.md`/`HISTORY.md` (required records). Every spec or plan change must land in a normative file, and a design change lands in `REDESIGN.md` in the same commit as the decision that authorizes it.
 
 **ADRs:** self-contained, never referencing a path that can move or be deleted. `REDESIGN.md` and `PLAN.md` are the only stable references an ADR may name.

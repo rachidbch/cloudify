@@ -198,7 +198,7 @@
           "type": "boolean"
         },
         "source": {
-          "description": "Resolution source of the value at apply time (ADR-030). caller marks a set value - one the operator supplied directly; it outranks the stores at reconfigure until unset. A set value reseeded through reconfigure keeps its caller label.",
+          "description": "Resolution source of the value at apply time (ADR-030). caller marks a set value - one the operator supplied directly; it outranks the stores at reconfigure until unset. applied marks a value whose caller pin was released by `deployment unset`: it stays in effect on the machine, but the ladder (store, then recipe default) governs the next reconfigure.",
           "enum": [
             "caller",
             "deployment",
@@ -206,7 +206,8 @@
             "package",
             "global",
             "recipe",
-            "migration"
+            "migration",
+            "applied"
           ]
         }
       },

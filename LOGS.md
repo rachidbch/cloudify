@@ -788,3 +788,11 @@
 - Trap re-hit and caught by the frozen suite: die inside $(...) does not propagate when errexit is off (bats run disables it) - the producer's "no inventory record" death was swallowed and the dispatch ran unseeded with rc 0. Every producer call site now carries `|| return 1`.
 - ADR-031 killed a whole planned mechanism (matching resupply + digest-mismatch rejection): the naming rule makes unprovable equality a refusal, one message shape for every fork cause (values, bindings, covered set, interrupted candidate, uncompared secret).
 - Evidence: 30/0 across matching + seeding + wiring + worker; full unit 743/0; gate 139/0; lint clean.
+
+## 2026-09-23 - the screen, the unset, and the silenced shell
+
+- The screen evolved through six design rounds with Rachid (two-section -> marker column -> values under packages -> hosts level -> lighter single list): the USER marker is a dedicated column that works by absence (blank = store), hosts come from the manifest bindings (slot -> host when several), and divergence needs no special marker - both truths print in their own blocks.
+- The unset signature is deployment + package + var list (records are per package); `applied` becomes the source label for a released pin (value stays in effect, the ladder governs the next reconfigure) - the package-state enum gained it, the event enum already had it; command_kind `unset` carries null phase (conditional extended like migrate-registry).
+- Bug hunt of the day: `exec 200>&- 2>/dev/null` in cloudify_state_host_unlock permanently silenced the shell's stderr (exec redirections persist!). Symptom: unset's named refusal invisible, rc 1 silent. Debug path taught two probe traps: `$$` inside a subshell reports the PARENT pid (use $BASHPID for fd probes), and a sed-in-place debug line can survive a python "restore" that targeted pristine text - grep before believing a cleanup.
+- Test traps: bats `run` subshells may have errexit off (die in $(()) swallowed - every producer call carries `|| return 1`); seeded records must reference real events (the gap check refuses mutants); `store` is not a schema label - store-sourced values carry their origin (`deployment`).
+- Evidence: deployment-show-unset.bats 6/6, full unit 749/0, gate 139/0, lint clean.

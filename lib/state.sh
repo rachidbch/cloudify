@@ -450,7 +450,12 @@ function cloudify_state_host_lock() {
 # cloudify_state_host_unlock <node> [<instance>] - release descriptor 200.
 function cloudify_state_host_unlock() {
     flock -u 200 2>/dev/null || true
-    exec 200>&- 2>/dev/null || true
+    # Never `exec 200>&- 2>/dev/null`: redirections on exec persist in the
+    # shell, so that form permanently silenced every later message. Guard the
+    # close instead - a plain exec with a bad fd exits a non-interactive shell.
+    if [[ -e "/proc/$BASHPID/fd/200" ]]; then
+        exec 200>&-
+    fi
 }
 
 # cloudify_state_event_id - UTC second plus 8 random hex from /dev/urandom.

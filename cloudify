@@ -660,8 +660,22 @@ function main() {
                     ;;
                 show)
                     shift
-                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment show <id>"
-                    cloudify_deployment_show "$1"
+                    local _show_id="" _show_user=""
+                    while [[ -n "${1:-}" ]]; do
+                        case "$1" in
+                            --user-values) _show_user=1 ;;
+                            *)
+                                if [[ -z "$_show_id" ]]; then _show_id="$1"; else die "Usage: cloudify deployment show <id> [--user-values]"; fi
+                                ;;
+                        esac
+                        shift
+                    done
+                    [[ -n "$_show_id" ]] || die "Usage: cloudify deployment show <id> [--user-values]"
+                    cloudify_deployment_show "$_show_id" "$_show_user"
+                    ;;
+                unset)
+                    shift
+                    cloudify_deployment_unset "$@"
                     ;;
                 migrate)
                     shift
@@ -672,7 +686,7 @@ function main() {
                     cloudify_deployment_replay "$@"
                     ;;
                 *)
-                    die "Usage: cloudify deployment <list|show|migrate|replay> [args]"
+                    die "Usage: cloudify deployment <list|show|unset|migrate|replay> [args]"
                     ;;
             esac
             break

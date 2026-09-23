@@ -663,7 +663,7 @@ function _cloudify_runbook_emit_step() {
     [[ -n "$id" ]] || id=$(printf '%02d' "$index")
     _cloudify_identity_check_step_id "step id" "$id"
     case "$id" in
-        defaults | init | direct)
+        defaults | init | direct | unset)
             die "Runbook '$path': line $line: step id '$id' is reserved for framework attribution."
             ;;
     esac

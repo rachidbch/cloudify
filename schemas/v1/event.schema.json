@@ -110,7 +110,7 @@
       "$ref": "#/$defs/subject"
     },
     "phase": {
-      "description": "Selected application phase, or null for a migrate-registry event - the old record proves no phase.",
+      "description": "Selected application phase, or null for a phase-less event (migrate-registry, unset) - no recipe phase was involved.",
       "anyOf": [
         {
           "enum": [
@@ -135,7 +135,8 @@
         "launch",
         "run",
         "human-gate",
-        "migrate-registry"
+        "migrate-registry",
+        "unset"
       ]
     },
     "values": {
@@ -341,7 +342,10 @@
       "then": {
         "properties": {
           "command_kind": {
-            "const": "migrate-registry"
+            "enum": [
+              "migrate-registry",
+              "unset"
+            ]
           }
         }
       }
@@ -357,7 +361,8 @@
               "uninstall",
               "launch",
               "run",
-              "human-gate"
+              "human-gate",
+              "unset"
             ]
           }
         },

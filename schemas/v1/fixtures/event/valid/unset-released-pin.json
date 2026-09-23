@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "event_id": "20260921T170000Z-0000000a",
+  "at": "2026-09-21T17:00:00Z",
+  "tool": "cloudify",
+  "tool_version": "t",
+  "writer": {
+    "host": "c",
+    "boot_id": "3f2a1b0c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "pid": 1,
+    "process_start_ticks": 1
+  },
+  "run_id": null,
+  "step_id": "unset",
+  "application": "web",
+  "flavor": "default",
+  "deployment": "main",
+  "application_commit": "0123456789abcdef0123456789abcdef01234567",
+  "subject": {
+    "kind": "package",
+    "host": "web1",
+    "host_key": "ivps:n1",
+    "package": "nginx",
+    "package_instance": "default"
+  },
+  "phase": null,
+  "command_kind": "unset",
+  "values": {
+    "TOKEN": {
+      "source": "applied",
+      "secret": true,
+      "declaration": "explicit",
+      "reference": null,
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "outcome": {
+    "exit_status": 0,
+    "summary": "unset TOKEN: caller pin released"
+  },
+  "state": {
+    "previous_revision": 1,
+    "resulting_revision": 2
+  }
+}

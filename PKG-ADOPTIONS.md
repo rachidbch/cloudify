@@ -24,10 +24,12 @@ The flow per entry (agreed with Rachid):
   Findings: docker `open-webui`; unit `open-webui.service`, plus `sshd.service`.
   Recipe mapping: `open-webui`.
   Status: awaiting round two.
-- [ ] `cloudai:affine` - recipe exists, machine shows nothing.
-  Findings: `affine` recipe in pkg/; no docker containers, no custom units visible.
-  Open question: dead deployment (recipe removed from machine) or invisible install method?
-  Status: awaiting Rachid's ruling.
+- [ ] `cloudai:affine` - IN PROGRESS (the pilot adoption).
+  Investigation complete: deployed by cloudify from our repo (clone + remote + init cookie on the instance); the service RUNS (node 24, listening :8787, live state.db, master token already stored offline by Rachid). The census missed it because it is a systemd USER unit, not system-level.
+  Applied values: all recipe defaults (port 8787, dir ~/PROJECTS/affine); no user-supplied values ever (no store file, no declaration before now). Server config surface verified from source: AFFINE_PORT, AFFINE_RATE_LIMIT, AFFINE_RATE_WINDOW_MS, AFFINE_DB (env) + optional .linear-api-key file (compatibility key: clients bearing the real Linear key get an anonymous context; file ABSENT on this machine).
+  Rulings so far: record observed effective values as recipe-sourced; backup is EXTERNAL (S3, another agent) - cloudify only writes the contract (what + watch-fors, in pkg/affine/README.md); deployment shape is a first-class application runbook (affine/default/main), not _direct.
+  Done: pkg upgraded (split install/configure, all knobs declared, secret marker for the key, v1.1.0); runbooks/affine/default/runbook.md written.
+  Remaining: prove configure on the machine (L2/L3), external backup per the README contract, manual event-first adoption write (affine/default/main, version 1.1.0, observed values recipe-sourced, health via verify), tick this box.
 - [ ] Complete the census for the flapped five: `cloudai:piface`, `cloudai:pir`, `cloudai:seed`, `cloudai:xf-test`, `cloudai:youtube-mcp`.
   Findings: cloudai's incus daemon endpoint timed out on 2026-09-23 (known flap); retry when it settles.
 

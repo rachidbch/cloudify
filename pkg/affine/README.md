@@ -21,6 +21,23 @@ Stack:
   interfaces — gate access at the network boundary (Tailscale Service /
   `tailscale serve`), same posture as piface.
 
+## Knobs (declared in `.remote-vars`; the server reads exactly these env names)
+
+- `AFFINE_PORT` (default 8787) — listen port, baked into the systemd user unit.
+- `AFFINE_RATE_LIMIT` (default 100) / `AFFINE_RATE_WINDOW_MS` (default 60000) — rate limiting.
+- `AFFINE_DIR` (default `~/PROJECTS/affine`) / `AFFINE_DB` (default `<dir>/data/state.db`) — locations.
+- `AFFINE_LINEAR_API_KEY` (optional, secret) — when set, `configure` writes it to `<dir>/.linear-api-key` (0600). Compatibility door: clients bearing the real Linear API key get an anonymous, non-admin context. Unset leaves any existing file untouched (removing a credential is explicit).
+
+`configure.sh` converges files only (unit + key file, restart, expect 401). The sqlite database is domain data and is never touched by cloudify.
+
+## Backup contract (owned by an EXTERNAL process; cloudify never backs up or restores)
+
+**What to back up:** `<AFFINE_DIR>/data/` in its entirety — `state.db` with its `-shm`/`-wal` siblings. That one directory is the complete soul of the deployment: users, teams, projects, credentials.
+
+**Watch for — backup:** the database is live sqlite; a plain `cp` of a writing database can tear. Use an online snapshot (`sqlite3 data/state.db ".backup <dest>"`) or a stop → copy → start window. If `data/admin-token.json` is ever present it is a master credential: encrypt it or exclude it — never store it plaintext in a bucket.
+
+**Watch for — restore:** fresh instance → `cloudify --on <host> install affine` → stop the service → replace `data/` with the snapshot → start → an unauthenticated POST must answer 401. Do not restore the git clone, `node_modules`, or the unit file — the recipe and the recorded values rebuild those.
+
 ## First boot — the MASTER token (read this)
 
 On a fresh `data/`, the server mints the **master** identity (`role: master`)

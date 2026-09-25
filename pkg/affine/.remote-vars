@@ -1,0 +1,13 @@
+# pkg/affine - declared names (values live in the caller env or
+# ~/.config/cloudify/pkgs/affine.yaml, never in the repo). The server reads
+# exactly these env names (src/config.mjs); the recipe default stays runtime
+# truth - keep the two in sync. AFFINE_DIR's default is dynamic
+# ($HOME/PROJECTS/affine), hence declared optional with no mirror text.
+# Secrets must not contain single quotes or control chars (payload landmine L1).
+AFFINE_PORT=8787
+AFFINE_RATE_LIMIT=100
+AFFINE_RATE_WINDOW_MS=60000
+AFFINE_DIR=
+AFFINE_DB=
+secret AFFINE_LINEAR_API_KEY
+AFFINE_LINEAR_API_KEY=

@@ -34,7 +34,12 @@ Stack:
 
 **What to back up:** `<AFFINE_DIR>/data/` in its entirety — `state.db` with its `-shm`/`-wal` siblings. That one directory is the complete soul of the deployment: users, teams, projects, credentials.
 
-**Watch for — backup:** the database is live sqlite; a plain `cp` of a writing database can tear. Use an online snapshot (`sqlite3 data/state.db ".backup <dest>"`) or a stop → copy → start window. If `data/admin-token.json` is ever present it is a master credential: encrypt it or exclude it — never store it plaintext in a bucket.
+**Watch for — backup:** the database is live sqlite; a plain `cp` of a writing database can tear. Use an online snapshot (`sqlite3 data/state.db ".backup <dest>"`) or a stop → copy → start window.
+
+**Credentials are not bucket material (the rule: back up irreplaceable state, rebuild what is recorded):**
+
+- `data/admin-token.json` (if ever present) is the master credential. Its backup is the operator's offline copy — that is the point of the first-boot ritual. The bucket must never hold a second live copy: encrypt or exclude.
+- `.linear-api-key` is configuration, not state: its home is cloudify's secret store (`AFFINE_LINEAR_API_KEY`), from which `configure` regenerates the file. If a hand-placed key file exists on any machine, the fix is to declare it (`vars set` + reconfigure) — never to back up the stray file.
 
 **Watch for — restore:** fresh instance → `cloudify --on <host> install affine` → stop the service → replace `data/` with the snapshot → start → an unauthenticated POST must answer 401. Do not restore the git clone, `node_modules`, or the unit file — the recipe and the recorded values rebuild those.
 

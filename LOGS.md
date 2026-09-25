@@ -797,3 +797,4 @@
 - Test traps: bats `run` subshells may have errexit off (die in $(()) swallowed - every producer call carries `|| return 1`); seeded records must reference real events (the gap check refuses mutants); `store` is not a schema label - store-sourced values carry their origin (`deployment`).
 - Evidence: deployment-show-unset.bats 6/6, full unit 749/0, gate 139/0, lint clean.
 - Small-slice discipline (Rachid's pushback): asking before filling a small, already-designed gap was lazy - list line + --version built same turn. Lesson recorded.
+- Census traps: ivps exec eats inner flags without `--` (the first sweep silently matched nothing - always sanity-check one instance before believing a fleet-wide scan); dpkg-name matching is blind to docker/tarball service installs, so the real sweep needed docker ps + /etc/systemd/system. cloudai daemon flap blocked 5 instances; retry later, no sleep-loops.

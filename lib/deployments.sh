@@ -160,7 +160,17 @@ function _cloudify_deployment_tuple_of() {
     declare -F cloudify_runbook_find >/dev/null 2>&1 || return 1
     declare -F _cloudify_runbook_tuple_for >/dev/null 2>&1 || return 1
     runbook=$(cloudify_runbook_find "$id" 2>/dev/null) || return 1
-    _cloudify_runbook_tuple_for "$runbook" "${CLOUDIFY_DEPLOYMENT_NAME:-default}"
+    # The deployment name: the caller's export wins, else the LAST segment of
+    # a dotted store id (app.name / app.flavor.name) names the deployment,
+    # else the plain default. `deployment show affine.main` must land on the
+    # deployment `app run affine --name main` created - name main.
+    local name="${CLOUDIFY_DEPLOYMENT_NAME:-}"
+    if [[ -z "$name" && "$id" == *.* ]]; then
+        name="${id##*.}"
+        _cloudify_identity_valid_component "$name" || name="default"
+    fi
+    [[ -n "$name" ]] || name="default"
+    _cloudify_runbook_tuple_for "$runbook" "$name"
 }
 
 # cloudify_deployment_show <id> — the read surface for one deployment. Prints

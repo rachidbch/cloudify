@@ -468,3 +468,9 @@ Concluded decisions live in ADR.md and the design docs; this section tracks only
 ## Controller state durability (2026-09-23, surfaced by the affine adoption backup contract)
 
 - [ ] The controller's own state is irreplaceable with no cure today: `~/.config/cloudify/` (credentials + every stored value incl. secrets in plaintext behind 0600), `~/.local/state/cloudify/` (manifests + the event audit log), `~/.config/ivps/` (the inventory tree, now also holding the per-host package records). A controller loss orphans every deployment: machines keep running, cloudify forgets identities, audit, values, inventories. Cure TBD: a backup/export path (must encrypt the secret-bearing parts - the bucket is never a second live copy of a credential), or a documented external-backup scope. Interim: PKG-ADOPTIONS backup contracts name it in the external agent's scope.
+
+## Human-readable ivps inventory (2026-09-27, Rachid's requirement)
+
+- [ ] Walking the ivps tree raw must be human-readable. Today paths are immutable-id-keyed (`nodes/<16-hex>/instances/<16-hex>/...`, rename-safe per ADR-026 point 7 / ADR-028) and only `ivps node path <name>` resolves them; instance records were approved under "human scanability first" and the paths fail that bar.
+- Direction (Rachid's suggestion): ivps gains a `rename` command, and renames play well with cloudify even though ivps neither knows nor needs to know about cloudify. Candidate shape: name symlinks over id directories (`instances/affine -> ba529b51adee257b`) - names stay walkable, state stays id-keyed and rename-safe. Any alternative must keep both properties.
+- This is ivps-repo work; the entry records cloudify's stake. Cloudify keys durable state on the immutable ids, never on ivps names.

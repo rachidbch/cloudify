@@ -254,7 +254,7 @@ The checklist was reconciled against HEAD 6857081 after the Phase 2 repair (2026
 
 - [x] Keep only `runbooks/<application>/<flavor>/runbook.md` discovery. (Done 2026-09-14: `cloudify_runbook_find` searches only `runbook.md` and filters every candidate through `cloudify_runbook_identity`, which now takes the runbooks root and requires the path to sit exactly two levels under it, so `runbooks/<app>/<flavor>/extra/runbook.md` is not canonical. `tests/unit/runbooks.bats`, "a Markdown file that is not runbook.md is invisible" and "a runbook.md one level too deep is not canonical".)
 - [x] Keep only nested desired inputs at `deployments/<application>/<flavor>/<deployment>/values.yaml`. (`cloudify_deployment_values_file` (`lib/deployments.sh:42-46`) is the one path; every reader goes through `_cloudify_deployment_config` (`:60`).)
-- [x] Keep existing `cloudify deployment migrate` as the sole reader of the old single-ID desired-input file and mark it for deletion in the read surface phase (Phase 8); the migration step (4.7) introduces `cloudify state migrate-registry` as the sole old-registry reader. (`_cloudify_deployment_id_config` has exactly one caller, `cloudify_deployment_migrate` (`lib/deployments.sh:33`, `:308`), and the command is marked temporary (`cloudify:44`). `cloudify state migrate-registry` does not exist yet; it is forward work at 4.7, not this phase.)
+- [x] Keep existing `cloudify deployment migrate` as the sole reader of the old single-ID desired-input file and mark it for deletion in the read surface phase (Phase 8); the migration step (4.7) introduces `cloudify state migrate-registry` as the sole old-registry reader. (`_cloudify_deployment_id_config` has exactly one caller, `cloudify_deployment_migrate` (`lib/deployments.sh:33`, `:308`), and the command is marked temporary (`cloudify:44`). `cloudify state migrate-registry` does not exist yet; it is forward work at 4.7, not this phase. Dropped 2026-09-23 - see 4.7.)
 - [x] Prove `inputs:` and `map:` use one parser and that a mapping feeds only names a package in the dispatch declares. (`cloudify_runbook_inputs` and `cloudify_runbook_map` share `_cloudify_runbook_fm_value` (`lib/runbooks.sh:254`, `:273`, `:294`); the declared-name gate is `_ctx_candidate` (`lib/context.sh:287`), asserted by `tests/unit/context.bats`, "application inputs: a mapping is names only".)
 - [x] Prove bare `app run` selects install then verify and can never select teardown through `--yes`. (`lib/runbooks.sh:413`; `--yes` is consumed only by the human gate (`:1324`); `tests/unit/runbook-exec.bats:308`, `tests/unit/runbooks.bats:684`.)
 - [x] Prove selected-phase preflight checks only the selected phases. (`_cloudify_runbook_select_steps` feeds the required-name loop (`lib/runbooks.sh:1094-1113`); `tests/unit/runbooks.bats:1019`, `tests/unit/runbook-exec.bats:338`.)
@@ -356,7 +356,7 @@ Not planned work for this phase: the JSON dispatch-context contract. It is roadm
 - [ ] Commit successful dependency results, not only CLI package words.
 - [ ] Release the host lock before updating the manifest.
 - [ ] Once package state is written here, stop the runtime registry observation writer: the v2 package state becomes the single record of what landed, and the old registry record-write path is deleted rather than kept beside it.
-- [ ] Split `tests/unit/golden-fixtures.bats` in the same slice: delete only the registry-record half and its `tests/fixtures/golden/registry/*` cases, and keep the `tests/fixtures/golden/payload/*` matrix that the byte-exact proof (R1.3) depends on. The record-format fixtures move to the `cloudify state migrate-registry` reader's suite in the migration step (4.7).
+- [ ] Split `tests/unit/golden-fixtures.bats` in the same slice: delete only the registry-record half and its `tests/fixtures/golden/registry/*` cases, and keep the `tests/fixtures/golden/payload/*` matrix that the byte-exact proof (R1.3) depends on. The record-format fixtures are simply deleted (4.7's migrate-registry reader was dropped 2026-09-23 - the legacy registry is empty of real data; see 4.7).
 - [ ] Keep the context-removal ownership installed in the Phase 2 repair (R1) working when the registry writer goes: the wait-loop removal becomes unconditional and the process EXIT trap stays, both proved by the same success, failure and interruption test.
 - [ ] Keep only the migration command's registry reader until Phase 8 deletes it.
 
@@ -395,13 +395,7 @@ Not planned work for this phase: the JSON dispatch-context contract. It is roadm
 
 ### Migration and the Phase 4 gate (4.7)
 
-- [ ] Add temporary `cloudify state migrate-registry` as the sole old-registry reader.
-- [ ] Map only facts the registry proves; write `application_commit: null` and a migration event when the old record cannot prove provenance.
-- [ ] Make migration dry-run first, idempotent and value-safe.
-- [ ] Run focused package API, context, state, event, registry, router and runbook suites.
-- [ ] Run one real shared-dependency case only after L0 through L3 pass.
-- [ ] Run `task lint` and the full unit suite.
-- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
+Dropped 2026-09-23, Rachid's ruling (HISTORY.md): the fleet census found the legacy registry empty of real data (E2E residue only), so `cloudify state migrate-registry` never ships and adoption is operator-driven (see PKG-ADOPTIONS.md). The former checklist - sole old-registry reader; provable-facts mapping with `application_commit: null` plus a migration event; dry-run first, idempotent, value-safe; focused suites; one real shared-dependency case after L0-L3; lint + full unit; phase exit gate - is void with the slice.
 
 ## Explicit secrets, ephemeral outputs and SSH identity (Phase 5)
 

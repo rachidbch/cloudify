@@ -8,7 +8,7 @@ The flow per entry (agreed with Rachid):
 2. Value table presented: recorded/effective values + confidence flags (`heuristic`, `stale?`, `unknown`).
 3. Rachid corrects the wrong values.
 4. Deployment shape proposed (name, application/flavor, packages).
-5. Disciplined write: guarded `--adopt` (or event-first write), inventory only after a successful configure.
+5. Disciplined write (configure-gated, ruled 2026-09-27): the observation write records the event + inventory record; the manifest goes `active` only after one real `configure` converges the adopted machine. A live probe proves health, not convergence (a hand-edited unit survives a probe and dies only at configure).
 
 ## Adoption queue
 
@@ -30,7 +30,7 @@ The flow per entry (agreed with Rachid):
   Rulings so far: record observed effective values as recipe-sourced; backup is EXTERNAL (S3, another agent) - cloudify only writes the contract (what + watch-fors, in pkg/affine/README.md); deployment shape is a first-class application runbook (affine/default/main), not _direct.
   Done: pkg upgraded (split install/configure, all knobs declared, secret marker for the key, v1.1.0); runbooks/affine/default/runbook.md written.
   Adoption write done (event 20260925T165713Z-33a7fe9b, kind adopt): deployment affine/default/main, package affine@default v1.1.0 on cloudai:affine, observed values recipe-sourced (port 8787, dir), last_attempt null (no cloudify attempt ever ran), health ok from the live 401 probe, manifest active pinned at 8a274ce. The production machine was never touched (read-only probe only).
-  Remaining: the twin proof (reconstructed instance, runbook end to end, configure convergence on a port change) and the external baseline backup per the README contract.
+  Remaining: the twin proof (reconstructed instance, runbook end to end, configure convergence on a port change; ruled: run it as `--name twin`), the missing `pkg/affine/uninstall.sh` the runbook teardown promises (ruled: write it before the twin proof), the earned configure on cloudai:affine (its manifest `active` was written at adoption with consent, as the adoption-mechanics test; configure-gated is the pattern going forward), and the external baseline backup per the README contract.
 - [ ] Complete the census for the flapped five: `cloudai:piface`, `cloudai:pir`, `cloudai:seed`, `cloudai:xf-test`, `cloudai:youtube-mcp`.
   Findings: cloudai's incus daemon endpoint timed out on 2026-09-23 (known flap); retry when it settles.
 

@@ -2,13 +2,13 @@
 
 Trigger: the affine adoption exposed identity confusion (the runbook `deployment:` field, the flat run store, the dotted-id lookup workaround). Decision recorded in REDESIGN (Cross-host deployment glue, 2026-09-25 amendment): no deployment or run id in the runbook; runs identify by timestamp under their deployment.
 
-## Open decision (session start)
+## Decided before the session (Rachid, 2026-09-27)
 
-- Runs home shape: per-deployment `deployments/<a>/<f>/<n>/runs/<utc>.yaml` (walking one deployment tells its whole story; matches Rachid's instinct) versus the currently sketched root-level `runs/<run-id>.json`. Recommendation: per-deployment. Events stay at the root (global audit).
+- Runs home: per-deployment `deployments/<a>/<f>/<n>/runs/<utc>.json` - walking one deployment tells its whole story; JSON per REDESIGN ("runs and events use schema-versioned JSON"); events stay at the root as the global audit. Recorded in REDESIGN (Data homes) the same day. Events stay at the root (global audit).
 
 ## Session checklist (red test first, per item)
 
-- [ ] Decision: runs home shape (above), recorded in REDESIGN the same commit.
+- [x] Decision: runs home shape - per-deployment (Rachid, 2026-09-27), recorded in REDESIGN with the decision commit.
 - [ ] Engine: derive the run key from identity (path + name + timestamp); every writer moves to the state-tree home. No `CLOUDIFY_DEPLOYMENT` id threading.
 - [ ] Runbook parse: drop `deployment:` from the front-matter contract; validation rejects it with a named error pointing at the removal.
 - [ ] Migrate the two runbooks (affine, xfce-guacamole): field removed.

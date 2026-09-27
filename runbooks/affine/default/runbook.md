@@ -1,5 +1,4 @@
 ---
-deployment: affine.main
 targets: server
 ---
 

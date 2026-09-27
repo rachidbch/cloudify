@@ -230,7 +230,7 @@ function cloudify_remote_sync() {
             _ctx_own=1
         fi
         _cloudify_dispatch_vars "$_pkg_vars_list" "$_ctx_action" "$_ctx_deployment" "$_ctx_phase" \
-            "${_ctx_pkgs[@]}"
+            "${_ctx_pkgs[@]}" || return 1
         if [[ -n "$_ctx_own" ]]; then
             # Remove the self-created context only when THIS function returns, so
             # the provenance labels are still readable for the debug rendering

@@ -135,3 +135,25 @@ _seed_record() {
 
     [ -z "${CLOUDIFY_APPLIED_SEED:-}" ]
 }
+
+@test "a failed value-context build aborts the dispatch - no payload ships" {
+    # Twin-proof finding 2: the caller must guard _cloudify_dispatch_vars.
+    # Tuple active + target set, but NO inventory record: the seed producer
+    # dies "no inventory record". The dispatch must abort before any ssh;
+    # before the guard it shipped an empty payload and exited green.
+    export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
+    export CLOUDIFY_DEPLOYMENT=web.main
+    local stub_dir
+    stub_dir=$(mktemp -d)
+    printf '#!/bin/bash\necho "SSH-CALLED $*" >> "%s/ssh.log"\nexit 0\n' "$stub_dir" > "$stub_dir/ssh"
+    chmod +x "$stub_dir/ssh"
+    # The `if !` wrapper suspends errexit for the command - the mode the
+    # router's wrapped dispatch contexts run in (the twin-proof swallow). bats'
+    # own ERR trap (inherited through set -E) would abort the call instead, so
+    # the test clears it first to mirror a trap-clean dispatch context.
+    trap - ERR
+    local rc=0
+    if ! PATH="$stub_dir:$PATH" cloudify_remote_sync web1 configure nginx; then rc=1; fi
+    [ "$rc" -eq 1 ]
+    [[ ! -f "$stub_dir/ssh.log" ]]
+}

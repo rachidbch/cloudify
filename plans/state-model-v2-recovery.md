@@ -122,7 +122,7 @@ The clean baseline (R0) changes no runtime code and the Phase 4 design gate (R3)
 
 The Phase 3 audit (R2) re-ran this block on its final HEAD: full unit suite 657 ok / 0 not ok (`results/phase3-a4/report.tap`), two-host E2E 4 scenarios green with the 4 later-phase scenarios skipped by name and both disposable hosts torn down (`results/phase3-e2e2/report.tap`), lint rc 0, `git status --short` clean, SPEC review PASS and Technical review PASS with file:line evidence. Its own gate lines carry the detail under R2.3.
 
-The fleet E2E (`tests/e2e/k3s-multi-cluster.bats`, four throwaway nodes, live ACL mutation, up to fifteen minutes per node) is not a per-phase gate: it validates k3s UX rather than the state model, so it runs once at the Phase 9 final gate, where the tailnet and ACL restore is part of the exit criteria.
+The k3s multi-cluster E2E (`tests/e2e/k3s-multi-cluster.bats`, four throwaway nodes, live ACL mutation, up to fifteen minutes per node) is not a per-phase gate: it validates k3s UX rather than the state model, so it runs once at the Phase 9 final gate, where the tailnet and ACL restore is part of the exit criteria.
 If the two-host E2E is genuinely unrunnable for a phase, that is a blocker to raise with Rachid, not a line to tick with a substitute.
 
 ## Known implementation risks carried into the Phase 2 repair (R1)
@@ -534,7 +534,7 @@ Outcome: code, language, docs and operator workflow describe one v2 system and t
 - [ ] Run the full unit suite once on final HEAD.
 - [ ] Run one disposable two-host application through install, verify, reconfigure, interruption, shared claim, conflict, first teardown and last teardown.
 - [ ] Scan every new artifact and Cloudify log for the fixture secret.
-- [ ] Run the full fleet E2E once, only now, as the final exit gate, and record its result in `HISTORY.md`.
+- [ ] Run the full k3s multi-cluster E2E once, only now, as the final exit gate, and record its result in `HISTORY.md`.
 - [ ] Teardown every disposable resource and prove policy restoration.
 
 ### Mandatory independent completion reviews

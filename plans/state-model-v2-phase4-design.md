@@ -10,7 +10,7 @@ Revision 3 resolved round one's findings; revision 4 resolves round two's findin
 
 Revision 1 separated an installation record from the deployment inventory; revision 2 collapses them into the single deployment tree, replaces the marked-line channel with filtered result lines, makes package version a required reported fact, reports framework work truthfully, and deletes the decision-refinement machinery.
 
-Revision 3 resolves round one's findings: the framework inventory subject, the version reporter contract and fleet sweep, space-free result-line fields, the enumerated REDESIGN amendments, and the migration carve-outs.
+Revision 3 resolves round one's findings: the framework inventory subject, the version reporter contract and package-wide sweep, space-free result-line fields, the enumerated REDESIGN amendments, and the migration carve-outs.
 
 This document authorizes no code until Rachid approves it and the review rounds return `PASS`.
 
@@ -104,7 +104,7 @@ The software decides how many runtimes exist; cloudify decides only what it conf
 - `last_attempt`: the most recent attempt by this deployment - phase, requested value metadata, outcome, time, event ID;
 - `health`: this deployment's last verification observation - status, time, event ID.
 
-The version contract (amended 2026-09-20, Rachid's ruling: packages are opaque and their devs are trusted, so the framework never probes a machine for a version): every package declares its version in a dev-owned `pkg/<name>/.version` file - one line, the package's version, charset-safe, initialized fleet-wide to `1.0.0` and bumped by the dev when the package meaningfully changes. The framework reads the declaration, never executes a reporter; result lines carry it and the inventory stores it. A missing, empty or off-charset declaration yields `version=unknown` and the attempt is recorded as failed; native fallback subjects (no cloudify package dir) declare nothing, report `none` and are exempt. This replaces the earlier per-recipe `pkg_version()` reporter-function contract; `none` no longer exists for cloudify packages.
+The version contract (amended 2026-09-20, Rachid's ruling: packages are opaque and their devs are trusted, so the framework never probes a machine for a version): every package declares its version in a dev-owned `pkg/<name>/.version` file - one line, the package's version, charset-safe, initialized across every package to `1.0.0` and bumped by the dev when the package meaningfully changes. The framework reads the declaration, never executes a reporter; result lines carry it and the inventory stores it. A missing, empty or off-charset declaration yields `version=unknown` and the attempt is recorded as failed; native fallback subjects (no cloudify package dir) declare nothing, report `none` and are exempt. This replaces the earlier per-recipe `pkg_version()` reporter-function contract; `none` no longer exists for cloudify packages.
 
 Versions and instance keys are space-free and restricted to the visible charset `[A-Za-z0-9._+~:-]`; anything else reports `unknown`.
 
@@ -423,7 +423,7 @@ An inventory pointing at a missing event blocks mutation.
 
 A local write failure never implies remote rollback.
 
-Phase 4 provides subject-level checks; Phase 6 exposes the fleet report and repair command as `cloudify state check`.
+Phase 4 provides subject-level checks; Phase 6 exposes the cross-host report and repair command as `cloudify state check`.
 
 ## IDs, writer identity, validation
 

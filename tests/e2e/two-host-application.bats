@@ -9,8 +9,8 @@
 # Scenarios are tagged with the phase that unlocks them. A phase runs only its
 # own; the rest stay visible and skipped, never deleted and never silently green.
 #
-# MUTATES the fleet: it launches two throwaway containers on $REMOTE and deletes
-# them in teardown_file. Nothing else on the fleet is touched.
+# MUTATES the tailnet: it launches two throwaway containers on $REMOTE and deletes
+# them in teardown_file. Nothing else on the tailnet is touched.
 #
 # Requirements: `cloudify` on PATH (the local branch), ivps, and SSH reach to the
 # remote. The branch must be PUSHED: each host bootstraps cloudify from GitHub.

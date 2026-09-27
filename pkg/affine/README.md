@@ -30,6 +30,18 @@ Stack:
 
 `configure.sh` converges files only (unit + key file, restart, expect 401). The sqlite database is domain data and is never touched by cloudify.
 
+## Uninstall
+
+```bash
+cloudify --on <host> uninstall affine              # stop + disable the unit, remove it
+cloudify --on <host> uninstall affine --clear-data # additionally wipe <AFFINE_DIR> (source + data + master token)
+```
+
+Plain teardown stops the service but keeps `data/` (the external backup
+process owns it) and the clone (install rebuilds it). Idempotent: an already-
+absent install succeeds with nothing to do. Dependencies (git, mise, node) are
+never removed.
+
 ## Backup contract (owned by an EXTERNAL process; cloudify never backs up or restores)
 
 **What to back up:** `<AFFINE_DIR>/data/` in its entirety — `state.db` with its `-shm`/`-wal` siblings. That one directory is the complete soul of the deployment: users, teams, projects, credentials.

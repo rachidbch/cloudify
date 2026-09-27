@@ -172,6 +172,8 @@ ${XDG_STATE_HOME:-~/.local/state}/cloudify/
   external-hosts/<host-id>/...
 ```
 
+(Amended 2026-09-25, Rachid's ruling: the runbook front matter carries no deployment or run id. A run needs no operator-chosen key: the deployment is assembled at run time - application and flavor from the runbook path, name from `--name`, hosts from `--target` - and a run identifies itself by its UTC timestamp under that deployment. Run history lives in the state tree, never in the flat configuration store; the exact runs placement is settled by the run-store cleanup slice, which also removes the legacy `deployments/<id>/runs` folders and the dotted-id lookup workaround.)
+
 The manifest contains the deployment identity, application commit, target bindings, lifecycle status, creation time, last run ID, and last event ID.
 
 The manifest does not duplicate package applied values.

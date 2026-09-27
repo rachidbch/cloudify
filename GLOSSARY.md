@@ -193,9 +193,9 @@ An application is a plan in git, not current state.
 
 ## deployment
 
-One named instance of an application.
+One named instance of an application - the long-lived thing that exists between runs, holds the desired inputs, the manifest, and the run history.
 
-Its identity is `(application name, flavor, deployment name)`.
+Its identity is `(application name, flavor, deployment name)`, materialized as the path `deployments/<application>/<flavor>/<deployment name>` under the state root.
 
 A deployment id is human-set through `--name`, or generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed; the same name is the same deployment (ADR-026).
 
@@ -216,6 +216,8 @@ A successful teardown removes the manifest only after all reliances and applicat
 ## runbook
 
 The Markdown program for one application flavor at `runbooks/<application>/<flavor>/runbook.md`.
+
+Its front matter declares target slots (roles bound to hosts at run time) and, when needed, names-only application inputs and their mappings. It carries NO deployment or run id: identity comes from the path, the deployment name from `--name`, and runs identify by timestamp (the legacy `deployment:` field is removed by the run-store cleanup).
 
 Its typed shell steps have stable IDs and belong to explicit or defaulted lifecycle phases.
 
@@ -249,7 +251,11 @@ It is the only value-resolution result for that dispatch and is removed after th
 
 ## run
 
-One execution of selected application phases.
+One execution of selected application phases - one playing of the runbook.
+
+A run is a LOG ENTRY of its deployment, not a thing the operator names: the deployment is the persistent instance (chosen with `--name`), runs are its history, and a run identifies itself by its UTC timestamp.
+
+Runs accumulate; none replaces another. Replay addresses them by time: the newest by default, or `--at <timestamp prefix>`.
 
 Its record is written before the first selected step and ends as `succeeded`, `failed`, or `interrupted`.
 

@@ -8,7 +8,7 @@ Canonical: `runbooks/<application>/<flavor>/runbook.md`. It is the only discover
 The application identity (`<application>/<flavor>`) is derived from the path, not from the file body.
 The default flavor is `default`.
 A `run` or `human-gate` step must declare an explicit `phase=`.
-A run whose `deployment:` front-matter is absent falls back to `CLOUDIFY_DEPLOYMENT`.
+REMOVED by the run-store cleanup (2026-09-25 ruling): the `deployment:` front-matter field and its `CLOUDIFY_DEPLOYMENT` fallback carry no deployment or run identity - identity derives from the runbook path plus `--name`, and runs identify by timestamp. The two existing runbooks migrate with the cleanup.
 
 Rules:
 - No ad-hoc scripts, no host commands: only `ivps` and `cloudify`.

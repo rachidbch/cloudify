@@ -55,12 +55,14 @@ touches the database.
 ## Teardown
 
 ```bash step=uninstall target=server pkg=affine id=teardown-affine
-cloudify --on "$TARGET_SERVER" uninstall affine
+cloudify --on "$TARGET_SERVER" --clear-data uninstall affine
 ```
 
-```bash
-cloudify deployment delete affine.main
-```
+Flags go before the action (`--clear-data uninstall`, not `uninstall --clear-data`).
+Without `--clear-data` the database (`data/`) stays for the external backup
+process; with it the whole directory dies.
 
-The database (`data/`) is removed by the package uninstall only with
-`--clear-data`; without it the data stays for the external backup process.
+The deployment record sweep (`deployment delete`) arrives with the state-model
+work; until then, removing the manifest and the values store by hand is the
+operator's teardown (`~/.local/state/cloudify/deployments/<app>/<flavor>/<name>`
+and `~/.config/cloudify/deployments/<app>/<flavor>/<name>`).

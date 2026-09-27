@@ -73,7 +73,18 @@ export CLOUDIFY_LOCAL_BIN="$HOME"/.local/bin
 : "${EDITOR:=vim}" && export EDITOR
 export CLOUDIFY_RECIPE_FILENAME="init.sh"
 export CLOUDIFY_BOOTSTRAP_URL="https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh"
-export CLOUDIFY_TMP=/tmp/cloudify
+# Per-process scratch (Rachid-consented 2026-09-27; tmp/tmp-isolation-description.md):
+# a fixed shared dir let any exiting process sweep every other live process's
+# temps. The ROOT is env-overridable (tests sandbox it); the scratch dir itself
+# is unconditionally fresh per process, so an inherited CLOUDIFY_TMP is never
+# reused. Logs keep the fixed home under the ROOT (remote.sh + init_log).
+: "${CLOUDIFY_TMP_ROOT:=/tmp/cloudify}" && export CLOUDIFY_TMP_ROOT
+mkdir -p "$CLOUDIFY_TMP_ROOT"
+# Bounded orphan control: scratch dirs of processes killed before their own
+# cleanup, older than a day, are swept at startup; fresh siblings stay.
+find "$CLOUDIFY_TMP_ROOT" -maxdepth 1 -name 'tmp-*' -type d -mmin +1440 -exec rm -rf {} + 2>/dev/null || true
+CLOUDIFY_TMP="$(mktemp -d "$CLOUDIFY_TMP_ROOT/tmp-XXXXXXXXXXXX")"
+export CLOUDIFY_TMP
 export CLOUDIFY_CONTEXT_DIR="${CLOUDIFY_TMP}/context"
 
 #== ENVIRONMENT

@@ -106,19 +106,20 @@ function cleanup() {
     if [[ "${CLOUDIFY_LOG_LEVEL:-INFO}" == "DEBUG" ]]; then
         return 0
     fi
-    if [[ -d "$CLOUDIFY_TMP" ]]; then
-        if [[ -d "$CLOUDIFY_TMP/logs" ]]; then
-            find "$CLOUDIFY_TMP" -mindepth 1 -maxdepth 1 ! -name 'logs' -exec rm -rf {} +
-        else
-            rm -rf "${CLOUDIFY_TMP}"
-        fi
+    # Per-process scratch: remove only THIS process's dir (the pre-fix sweep of
+    # the fixed shared root deleted sibling processes' live temps - the
+    # twin-proof verify crash). Orphans are bounded by the startup stale sweep.
+    if [[ -n "${CLOUDIFY_TMP:-}" && -d "$CLOUDIFY_TMP" ]]; then
+        rm -rf "${CLOUDIFY_TMP}"
     fi
 }
 
 # Initialize log file for this cloudify session
 function cloudify_init_log() {
     [[ -n "${CLOUDIFY_LOG_FILE:-}" && -f "${CLOUDIFY_LOG_FILE:-}" ]] && return 0
-    export CLOUDIFY_LOG_DIR="$CLOUDIFY_TMP/logs"
+    # Fixed documented log home under the TMP root (matches lib/remote.sh's
+    # payload logging); never moves with the per-process scratch dir.
+    export CLOUDIFY_LOG_DIR="${CLOUDIFY_TMP_ROOT:-/tmp/cloudify}/logs"
     mkdir -p "$CLOUDIFY_LOG_DIR"
     local timestamp
     timestamp=$(date +%Y%m%d-%H%M%S)

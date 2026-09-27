@@ -212,24 +212,22 @@ echo "\${LOCAL_VAR:-unset}" > "$CLOUDIFY_TMP/local-var-out"
 EOF
     printf 'LOCAL_VAR: fromyaml\n' > "$cfg/pkgs/localtest.yaml"
 
-    # The router pins CLOUDIFY_TMP (cloudify constants, overriding the env), and
-    # the dispatch context now lives in the swept context subdirectory
-    # (CLOUDIFY_CONTEXT_DIR = $CLOUDIFY_TMP/context). Only files this run
-    # creates are captured.
+    # The router assigns a fresh per-process scratch dir under CLOUDIFY_TMP_ROOT
+    # (env-respected, so the suite sandbox works); the dispatch context lives in
+    # that dir's context/ subdirectory. Only files this run creates are captured.
     local ctx_root before_file saved ctx_path ctx_pid ctx
-    ctx_root=$(sed -n 's/^export CLOUDIFY_TMP=//p' "$CLOUDIFY_SCRIPT_DIR/cloudify" | head -1)
-    ctx_root="$ctx_root/context"
+    ctx_root="$CLOUDIFY_TMP"
     # The router creates this on its first run (cloudify_init_paths), so a fresh
     # container must not make this test depend on an earlier run having done it.
     mkdir -p "$ctx_root"
     [ -d "$ctx_root" ]
     before_file="$CLOUDIFY_TMP/ctx-before"
-    ls "$ctx_root"/cloudify-context-* > "$before_file" 2>/dev/null || true
+    ls "$ctx_root"/tmp-*/context/cloudify-context-* > "$before_file" 2>/dev/null || true
     saved="$CLOUDIFY_TMP/ctx-captured"
     ctx_path="$CLOUDIFY_TMP/ctx-path"
     (
         for ((_i = 0; _i < 2000; _i++)); do
-            for _f in "$ctx_root"/cloudify-context-*; do
+            for _f in "$ctx_root"/tmp-*/context/cloudify-context-*; do
                 [[ -f "$_f" && -s "$_f" ]] || continue
                 # The @default pre-pass fills the same file first (an empty name
                 # set); wait for the fixture's name to appear.
@@ -250,6 +248,7 @@ EOF
         CLOUDIFY_CREDENTIALS_DIR="$cfg" \
         CLOUDIFY_CREDENTIALS_FILE="$cfg/credentials" \
         CLOUDIFY_TMP="$CLOUDIFY_TMP" \
+        CLOUDIFY_TMP_ROOT="$CLOUDIFY_TMP" \
         CLOUDIFY_LOCAL_BIN="$CLOUDIFY_TMP/.local/bin" \
         CLOUDIFY_SCRIPT_DIR="$CLOUDIFY_SCRIPT_DIR" \
         CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_DISABLE_COLORS=true DEBUG=true \

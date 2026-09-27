@@ -437,7 +437,7 @@ runbooks on the same application. Lifecycle: explore manually (agent runbook)
 
 - [ ] `~/.config/cloudify/credentials` is per OPERATOR machine and single-valued: one
 remote SSH user/password and one local sudo password, used for every target.
-Heterogeneous fleets (different admin credentials per host) are not expressible.
+Heterogeneous host sets (different admin credentials per host) are not expressible.
 Decide later: host-scoped credentials (e.g. per-node in the ivps tree, or a host
 section in the credentials file) vs relying on per-host SSH keys/MagicSSH.
 No urgent driver.

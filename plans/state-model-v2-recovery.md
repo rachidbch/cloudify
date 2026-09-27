@@ -395,7 +395,7 @@ Not planned work for this phase: the JSON dispatch-context contract. It is roadm
 
 ### Migration and the Phase 4 gate (4.7)
 
-Dropped 2026-09-23, Rachid's ruling (HISTORY.md): the fleet census found the legacy registry empty of real data (E2E residue only), so `cloudify state migrate-registry` never ships and adoption is operator-driven (see PKG-ADOPTIONS.md). The former checklist - sole old-registry reader; provable-facts mapping with `application_commit: null` plus a migration event; dry-run first, idempotent, value-safe; focused suites; one real shared-dependency case after L0-L3; lint + full unit; phase exit gate - is void with the slice.
+Dropped 2026-09-23, Rachid's ruling (HISTORY.md): the host census (ivps instances, read-only) found the legacy registry empty of real data (E2E residue only), so `cloudify state migrate-registry` never ships and adoption is operator-driven (see PKG-ADOPTIONS.md). The former checklist - sole old-registry reader; provable-facts mapping with `application_commit: null` plus a migration event; dry-run first, idempotent, value-safe; focused suites; one real shared-dependency case after L0-L3; lint + full unit; phase exit gate - is void with the slice.
 
 ## Explicit secrets, ephemeral outputs and SSH identity (Phase 5)
 

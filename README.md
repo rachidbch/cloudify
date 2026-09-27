@@ -11,7 +11,7 @@ Cloudify installs development tools and system packages on Ubuntu/Debian machine
 - **A growing number of package recipes** — apt packages, GitHub releases, custom scripts
 - **Remote execution** — install on any host reachable via SSH
 - **Tag-based filtering** — group hosts and packages with `@tag` files
-- **Host inventory** — define your fleet in `inventory/<host>/`
+- **Host inventory** — define your hosts in `inventory/<host>/`
 - **Plugin API** — stable `pkg_*` functions for writing new recipes
 - **Install/configure split** — `install.sh` + `configure.sh` (ADR-008), `cloudify configure` re-runs the run phase without re-downloading
 - **Deployments** — applications across nodes with per-deployment vars (ADR-011), `CLOUDIFY_DEPLOYMENT` context

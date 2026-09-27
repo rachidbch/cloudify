@@ -1,4 +1,4 @@
-# PKG-ADOPTIONS - taking the existing fleet into the deployment model
+# PKG-ADOPTIONS - taking the existing hosts into the deployment model
 
 Census of 2026-09-23 (ivps instances, read-only scans). The legacy registry is empty of real data, so every existing installation is the fog case: adoption, operator-driven.
 

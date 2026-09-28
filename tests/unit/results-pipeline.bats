@@ -247,6 +247,22 @@ make_collected() {
     [ "$(cloudify_results_check_executed "$CLOUDIFY_TMP/collected" 0123456789abcdef0123456789abcdef01234567 true)" = "ok-dev" ]
 }
 
+@test "executed-code: no declared commit means no claim - a bare dispatch never degrades" {
+    # A bare/_direct dispatch declares no commit (expected empty): the
+    # discipline is vacuous - an unknown or absent checkout line is an
+    # observation, not a violation. Guards non-git controllers and the
+    # rsync-mirrored integration targets, whose honest report is
+    # 'commit=unknown'. A declared commit still degrades on the same evidence.
+    make_collected 'checkout v1: commit=unknown dirty=false'
+    [ "$(cloudify_results_check_executed "$CLOUDIFY_TMP/collected" "" false)" = "ok" ]
+
+    : > "$CLOUDIFY_TMP/collected"
+    [ "$(cloudify_results_check_executed "$CLOUDIFY_TMP/collected" "" false)" = "ok" ]
+
+    make_collected 'checkout v1: commit=unknown dirty=false'
+    [ "$(cloudify_results_check_executed "$CLOUDIFY_TMP/collected" 0123456789abcdef0123456789abcdef01234567 false)" = "degraded-unknown" ]
+}
+
 @test "executed-code: init and dispatch children must agree; first line wins" {
     local c1=0123456789abcdef0123456789abcdef01234567 c2=fedcba98fedcba98fedcba98fedcba98fedcba98
     { printf 'checkout v1: commit=%s dirty=false\n' "$c1"

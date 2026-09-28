@@ -407,7 +407,9 @@ function cloudify_results_classify() {
 # cloudify_results_check_executed <collection-file> <expected-commit> \
 #                                 <dev-override:true|false>
 # The executed-code verdict. One word on stdout:
-#   ok                  the proved commit matches the manifest
+#   ok                  the proved commit matches the manifest, or no commit
+#                       was declared (a bare/_direct dispatch: no claim, no
+#                       violation - guards non-git controllers)
 #   ok-dev              a development-override run never degrades
 #   degraded-missing    no checkout line reached the worker
 #   degraded-unknown    the child could not determine its own commit
@@ -419,6 +421,10 @@ function cloudify_results_check_executed() {
         printf 'ok-dev\n'
         return 0
     fi
+    # No declared commit: the executed-code discipline is a claim check -
+    # nothing was claimed, so unknown or absent checkout evidence is an
+    # honest observation, never a degradation.
+    [[ -n "$expected" ]] || { printf 'ok\n'; return 0; }
     local first="" line body
     local -a checkouts=()
     [[ -f "$file" ]] || { printf 'degraded-missing\n'; return 0; }

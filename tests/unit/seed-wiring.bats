@@ -157,3 +157,21 @@ _seed_record() {
     [ "$rc" -eq 1 ]
     [[ ! -f "$stub_dir/ssh.log" ]]
 }
+
+@test "remote verify dispatch: the router provides the resolved target to the applied seed" {
+    # The seed block reads CLOUDIFY_CONTEXT_TARGET (else the localhost-only
+    # _CLOUDIFY_CUR_TARGET); until the router exported the resolved triple,
+    # every runbook verify or configure step under an active tuple died
+    # "no target resolved for the applied seed" (the two-host e2e finding).
+    _seed_record "{\"ASET\": $(_nv caller 4000)}"
+    export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
+    unset CLOUDIFY_CONTEXT_TARGET
+    export CLOUDIFY_REMOTE_USER=root CLOUDIFY_REMOTE_PWD=dummy CLOUDIFY_SKIPCREDENTIALS=true
+    local stub_dir out
+    stub_dir=$(mktemp -d)
+    printf '#!/bin/bash\necho "SSH-CALLED $*" >> "%s/ssh.log"\ncat >/dev/null\nexit 0\n' "$stub_dir" "$stub_dir" > "$stub_dir/ssh"
+    chmod +x "$stub_dir/ssh"
+    out=$(PATH="$stub_dir:$PATH" bash cloudify --on web1 verify nginx 2>&1) || true
+    [[ -f "$stub_dir/ssh.log" ]]
+    [[ "$out" != *"no target resolved"* ]]
+}

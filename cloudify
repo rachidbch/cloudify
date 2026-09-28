@@ -381,6 +381,11 @@ function _cloudify_dispatch() {
                 _cloudify_execute_package_action verify "${_vp[@]}"
             else
                 PKG_DEBUG_LN "${GREEN}cloudify_remote $host verify $verify_pkgs${RESET}"
+                # The resolved triple for THIS dispatch: the applied-seed block
+                # reads it parent-side (never a command argument); before this
+                # export, runbook verify/configure steps under an active tuple
+                # died "no target resolved for the applied seed".
+                export CLOUDIFY_CONTEXT_TARGET="${_target_of_host[$host]:-}"
                 cloudify_remote "$host" "verify $verify_pkgs" && is_setup_in_progress=true
             fi
         done
@@ -405,6 +410,9 @@ function _cloudify_dispatch() {
             # shellcheck disable=SC2031
             [[ "$action" == "install" ]] && export CLOUDIFY_FORCE=true
             # --clear-data implies CLOUDIFY_FORCE (already set above if --clear-data)
+            # The resolved triple for THIS dispatch (same rationale as the verify
+            # path): the applied-seed block reads it parent-side.
+            export CLOUDIFY_CONTEXT_TARGET="${_target_of_host[$host]:-}"
             cloudify_remote "$host" "$packages" && is_setup_in_progress=true
             # $! is the pid cloudify_remote just backgrounded; attach the metadata
             # the final wait loop needs for the registry record (T3).

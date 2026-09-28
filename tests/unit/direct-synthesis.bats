@@ -90,6 +90,20 @@ teardown() {
     [ "$(cloudify_manifest_field _direct direct "$name" development_override)" = "true" ]
 }
 
+@test "synthesize: CLOUDIFY_DEVELOPMENT_OVERRIDE=1 forces the dev-push record on a clean tree" {
+    # The dev-push ruling extended to bare dispatches: an operator (or the
+    # integration harness, which rsync-mirrors the tree - no git identity)
+    # declares the push; the manifest records the override instead of
+    # pinning a commit the child cannot attest.
+    git init -q "$CLOUDIFY_TMP/repo2"
+    git -C "$CLOUDIFY_TMP/repo2" -c user.email=t@t -c user.name=t commit -q --allow-empty -m seed
+    local name
+    CLOUDIFY_SCRIPT_DIR="$CLOUDIFY_TMP/repo2" CLOUDIFY_DEVELOPMENT_OVERRIDE=1 \
+        name=$(cloudify_state_direct_synthesize nginx "" "" localhost)
+    [ "$(cloudify_manifest_field _direct direct "$name" application_commit)" = "null" ]
+    [ "$(cloudify_manifest_field _direct direct "$name" development_override)" = "true" ]
+}
+
 @test "repeated bare installs synthesize distinct deployments; neither matches the other" {
     local a b
     a=$(cloudify_state_direct_synthesize nginx "" "" localhost)

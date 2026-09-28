@@ -87,6 +87,11 @@ for test_file in "${TEST_FILES[@]}"; do
 
     # 5. Set env vars for cloudify remote execution
     export CLOUDIFY_DIR="$PROJECT_DIR"
+    # The harness dev-pushes: task sync rsync-mirrors the tree into the
+    # container (no .git, no commit identity), so the executed-code check
+    # would degrade every dispatch as unattestable. Declare the dev push -
+    # the same first-class override the runbook path honors.
+    export CLOUDIFY_DEVELOPMENT_OVERRIDE=1
     export CLOUDIFY_REMOTE_USER=root
     export CLOUDIFY_REMOTE_PWD=dummy
     export CLOUDIFY_SKIPCREDENTIALS=true

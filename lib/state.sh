@@ -951,7 +951,12 @@ _cloudify_state_unique_name() {
 # null commit with the development override. Shared by every deployment
 # synthesis (direct and application matching).
 _cloudify_state_commit_rule() {
-    if cloudify_tree_unreproducible "${CLOUDIFY_SCRIPT_DIR:-$PWD}"; then
+    # The dev-push ruling (first-class for runbook deployments) extends to
+    # bare dispatches: a forced override records the deployment as a
+    # development push, never pinning a commit the child cannot attest.
+    if [[ "${CLOUDIFY_DEVELOPMENT_OVERRIDE:-}" == "1" ]]; then
+        printf 'true\t\n'
+    elif cloudify_tree_unreproducible "${CLOUDIFY_SCRIPT_DIR:-$PWD}"; then
         printf 'true\t\n'
     else
         printf 'false\t%s\n' "$(cloudify_commit_of "${CLOUDIFY_SCRIPT_DIR:-$PWD}")"

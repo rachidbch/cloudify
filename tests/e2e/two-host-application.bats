@@ -41,7 +41,7 @@ setup_file() {
     # run, so a per-test `date +%s` token now fails verify by design.
     # Written to a file because bats runs @test in subshells where
     # setup_file exports do not propagate.
-    printf 'K3S_TOKEN=e2e-stable-%s\n' "$(date +%Y%m%d%H%M%S)" > "$WD/token.env"
+    printf 'export K3S_TOKEN=e2e-stable-%s\n' "$(date +%Y%m%d%H%M%S)" > "$WD/token.env"
 
     echo "── launching two disposable hosts on $REMOTE ──"
     for h in "$HOST_A" "$HOST_B"; do

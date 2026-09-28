@@ -124,16 +124,21 @@ function _cloudify_dispatch_vars() {
     # configure (no reference) stays an unseeded raw dispatch. The seed is
     # produced parent-side, so local, remote-payload and runbook configure
     # dispatches all flow through this one point.
-    if [[ "$action" == "configure" && -z "${CLOUDIFY_APPLIED_SEED:-}" ]] \
+    if [[ "$action" =~ ^(configure|verify)$ && -z "${CLOUDIFY_APPLIED_SEED:-}" ]] \
         && _cloudify_deployment_tuple_active; then
         local _st="${CLOUDIFY_CONTEXT_TARGET:-${_CLOUDIFY_CUR_TARGET:-}}" _snode _srest _sinst
-        [[ -n "$_st" ]] || die "configure: no target resolved for the applied seed."
+        [[ -n "$_st" ]] || die "$action: no target resolved for the applied seed."
         _snode="${_st%%$'\t'*}"
         _srest="${_st#*$'\t'}"
         _sinst="${_srest%%$'\t'*}"
         # || return 1: the producer dies inside $(...) and errexit may be off
         # in the caller (bats run subshells) - the failure must be explicit.
-        CLOUDIFY_APPLIED_SEED=$(cloudify_context_applied_seed reconfigure \
+        # configure seeds the SET values (reconfigure mode); verify seeds every
+        # applied value below the store (verify mode) - the walk's phase gate
+        # consumes whichever mode this is.
+        local _mode=reconfigure
+        [[ "$action" == "verify" ]] && _mode=verify
+        CLOUDIFY_APPLIED_SEED=$(cloudify_context_applied_seed "$_mode" \
             "$_snode" "$_sinst" \
             "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME") || return 1
         export CLOUDIFY_APPLIED_SEED
@@ -203,14 +208,15 @@ function cloudify_remote_sync() {
                 install | --install) _ctx_action=install; _ctx_phase=install; break ;;
                 configure | --configure) _ctx_action=configure; _ctx_phase=install; break ;;
                 uninstall | --uninstall | u) _ctx_action=uninstall; _ctx_phase=install; break ;;
+                verify | --verify) _ctx_action=verify; _ctx_phase=verify; break ;;
             esac
         done
         _ctx_action="${_ctx_action:-${_ctx_args[0]:-verify}}"
-        if [[ "$_ctx_phase" == install ]]; then
+        if [[ "$_ctx_action" =~ ^(install|configure|uninstall|verify)$ ]]; then
             local _ctx_saw_action=false
             for _ctx_arg in ${_ctx_args[@]+"${_ctx_args[@]}"}; do
                 case "$_ctx_arg" in
-                    install | --install | configure | --configure | uninstall | --uninstall | u)
+                    install | --install | configure | --configure | uninstall | --uninstall | u | verify | --verify)
                         _ctx_saw_action=true
                         continue
                         ;;

@@ -48,6 +48,11 @@ NODES="$PROD_SERVER $PROD_AGENT $DEV_SERVER $DEV_AGENT"
 
 setup_file() {
     export PATH="$HOME/.local/bin:$PATH"
+    # Dev-push declaration: the branch code is tar-pushed into each node
+    # (no .git, no commit identity), so the executed-code check would
+    # degrade every dispatch as unattestable. Same override two-host
+    # declares; first-class for bare dispatches since 2026-09-28.
+    export CLOUDIFY_DEVELOPMENT_OVERRIDE=1
     # Generate tokens ONCE — write to file because bats runs @test in subshells
     # where setup_file() exports don't propagate.
     echo "TOKEN_PROD=k3s-token-prod-$(date +%s)" > "$WD/tokens.env"

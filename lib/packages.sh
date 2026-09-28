@@ -223,20 +223,21 @@ function cloudify_configure_package() {
             continue
         fi
         msg "${GREEN}Configuring ${pkg%%*( )} cloudify package${RESET}"
+        local _cfg_rc=0 _cfg_verif=not-run _cfg_version
+        _cfg_version=$(_cloudify_result_version_of "$pkg")
         if configure_path=$(cloudify_package_configure_path "$pkg"); then
             # Run-phase only: no install guard, no FORCE/CLEAR_DATA semantics.
             # shellcheck source=/dev/null
-            if ! ( _CLOUDIFY_PKG_DEPTH=1 source "$configure_path" ); then
-                failed_packages+=("$pkg")
-                continue
-            fi
+            ( _CLOUDIFY_PKG_DEPTH=1 source "$configure_path" ) || _cfg_rc=$?
         else
             die "Package $pkg has no configure.sh — it is not a split package (no install/run separation). Nothing to configure; use install."
         fi
         # Verification hook (ADR-004) runs after configure too.
-        if [[ "${CLOUDIFY_NO_VERIFY:-}" != "true" ]]; then
-            _cloudify_run_verify "$pkg" || { failed_packages+=("$pkg"); continue; }
+        if [[ "$_cfg_rc" -eq 0 && "${CLOUDIFY_NO_VERIFY:-}" != "true" ]]; then
+            if _cloudify_run_verify "$pkg"; then _cfg_verif=ok; else _cfg_verif=failed; _cfg_rc=1; fi
         fi
+        cloudify_result_emit - "$pkg" reconfigure configure "$_cfg_rc" "$_cfg_verif" "$_cfg_version"
+        (( _cfg_rc != 0 )) && failed_packages+=("$pkg")
     done
     if [[ ${#failed_packages[@]} -gt 0 ]]; then
         msg "${RED}Failed packages: ${failed_packages[*]}${RESET}"
@@ -327,6 +328,7 @@ function cloudify_uninstall_default_packages {
 function cloudify_uninstall_package {
     local pkg uninstall_path
     local -a failed_packages=()
+    cloudify_results_print_checkout
     for pkg in "$@"; do
         if [[ "$pkg" == @* || "$pkg" == \#* ]]; then
             msg "${RED}Error: Illegal tag. cloudify_uninstall_package does not accept tags. Ignoring \"$pkg\".${RESET}"
@@ -335,20 +337,21 @@ function cloudify_uninstall_package {
         if [[ ! -d "$CLOUDIFY_DIR/pkg/$pkg" ]]; then
             msg "${RED}Error: Not a cloudify package: $pkg${RESET}"
             failed_packages+=("$pkg")
+            cloudify_result_emit - "$pkg" teardown uninstall 1 not-run unknown
             continue
         fi
         msg "${GREEN}Uninstalling $pkg cloudify package${RESET}"
+        local _un_rc=0 _un_version
+        _un_version=$(_cloudify_result_version_of "$pkg")
         if uninstall_path=$(cloudify_package_uninstall_path "$pkg"); then
             # shellcheck source=/dev/null
-            if ! ( _CLOUDIFY_PKG_DEPTH=1 source "$uninstall_path" ); then
-                failed_packages+=("$pkg")
-                continue
-            fi
+            ( _CLOUDIFY_PKG_DEPTH=1 source "$uninstall_path" ) || _un_rc=$?
         else
             msg "${RED}Error: Package $pkg has no uninstall.sh — refusing to guess a teardown. Nothing was changed.${RESET}"
-            failed_packages+=("$pkg")
-            continue
+            _un_rc=1
         fi
+        cloudify_result_emit - "$pkg" teardown uninstall "$_un_rc" not-run "$_un_version"
+        (( _un_rc != 0 )) && failed_packages+=("$pkg")
     done
     if [[ ${#failed_packages[@]} -gt 0 ]]; then
         msg "${RED}Failed packages: ${failed_packages[*]}${RESET}"

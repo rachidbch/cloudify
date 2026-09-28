@@ -66,7 +66,7 @@ teardown() {
     printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\tcloudify\n' > "$bindings"
     cloudify_manifest_write myapp default prod applying 0123456789abcdef0123456789abcdef01234567 false "$bindings"
     run cloudify_deployment_list
-    echo "$output" | grep -q "myapp/default --name prod"
+    printf '%s\n' "$output" | grep -q "myapp/default/prod.*applying.*0 pkgs.*1 host"
 }
 
 @test "cloudify_deployment_list never prints a bare directory as a deployment" {

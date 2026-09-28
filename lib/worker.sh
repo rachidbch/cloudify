@@ -272,6 +272,52 @@ _cloudify_worker_value_names() {
 #                         [requested-words...]
 # The dispatch worker; see the module header. rc 0 success, rc 1 any failure
 # (the manifest still projects, degraded).
+# _cloudify_dispatch_worker <action> <node>\t<inst>\t<ssh> <ctx-file> <collection> [words...]
+# The router's per-dispatch hook (the last mile): resolve the deployment
+# identity from the active application reference, else synthesize the
+# reserved `_direct` deployment for a bare dispatch; render the bindings from
+# the manifest; run the worker. Called from the final wait loop AFTER the
+# dispatch child finishes and BEFORE its context is removed (the worker reads
+# the context - it never re-resolves a value). The worker's own exit contract
+# stands: records survive, rc says whether the dispatch met its purpose.
+function _cloudify_dispatch_worker() {
+    # A payload host (the remote child cloudify) has no ivps inventory and no
+    # state root of its own: its dispatch is recorded by the CONTROLLER's
+    # worker through the captured stream, never locally. Skip, do not fail.
+    if ! command -v ivps >/dev/null 2>&1; then
+        log_warn "worker: no ivps inventory in this environment (payload host?) - no records"
+        return 0
+    fi
+    local action="${1:?_cloudify_dispatch_worker: action}" triple="${2:?_cloudify_dispatch_worker: target}" \
+        ctx="${3:?_cloudify_dispatch_worker: context}" collection="${4:?_cloudify_dispatch_worker: collection}"
+    shift 4 || true
+    local -a words=("$@")
+    local app flavor name step node inst ssh bindings="" _rest
+    # Hand-parsed: a tab is IFS-whitespace, `read` collapses the empty
+    # instance field (same trap the router's target loop documents).
+    node="${triple%%$'\t'*}"
+    _rest="${triple#*$'\t'}"
+    inst="${_rest%%$'\t'*}"
+    ssh="${_rest#*$'\t'}"
+    step="${STEP_ID:-direct}"
+
+    if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" && -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]]; then
+        app="$CLOUDIFY_APPLICATION" flavor="$CLOUDIFY_FLAVOR" name="$CLOUDIFY_DEPLOYMENT_NAME"
+    else
+        app="$_DIRECT_APP" flavor="$_DIRECT_FLAVOR"
+        name=$(cloudify_state_direct_synthesize "${words[0]:-direct}" "$node" "$inst" "$ssh")
+    fi
+
+    bindings=$(mktemp "${CLOUDIFY_TMP:-/tmp}/worker-bindings-XXXXXX") || die "worker hook: cannot create a bindings file."
+    cloudify_state_bindings_render "$app" "$flavor" "$name" "$bindings"
+
+    cloudify_worker_process "$action" "$step" "$app" "$flavor" "$name" \
+        "$node" "$inst" "$ssh" "$collection" "$ctx" "$bindings" ${words[@]+"${words[@]}"}
+    local rc=$?
+    rm -f "$bindings"
+    return "$rc"
+}
+
 function cloudify_worker_process() {
     local action="${1:?}" step="${2:?}" app="${3:?}" flavor="${4:?}" name="${5:?}"
     local node="${6:-}" inst="${7:-}" ssh_host="${8:-}"

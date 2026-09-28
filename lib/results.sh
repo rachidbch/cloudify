@@ -268,6 +268,13 @@ function cloudify_results_print_checkout() {
         fi
     fi
     printf 'checkout v1: commit=%s dirty=%s\n' "$commit" "$dirty"
+    # Local dispatch children collect in-process (their stdout is not
+    # tapped): append there when the collection file is set, mirroring
+    # cloudify_result_emit. Remote children keep the stdout path the tap
+    # captures.
+    if [[ -n "${CLOUDIFY_RESULTS_FILE:-}" ]]; then
+        printf 'checkout v1: commit=%s dirty=%s\n' "$commit" "$dirty" >> "$CLOUDIFY_RESULTS_FILE" 2>/dev/null || true
+    fi
 }
 
 # _cloudify_results_fields <body> <assoc-name> - one `result v1:` line's

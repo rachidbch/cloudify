@@ -296,8 +296,11 @@ function cloudify_remote_sync() {
         # The result channel's collection file: fresh per dispatch, so stale
         # lines from earlier runs cannot enter it. The pass-through tap stage
         # below appends the keyed lines; the log keeps flowing whole.
+        # Deterministic per-pid path: this forked subshell's pid ($$) is the
+        # pid the router's wait loop waits ($!), which hands the collection to
+        # the dispatch worker.
         local results_file
-        results_file=$(mktemp "$CLOUDIFY_TMP/cloudify-results-XXXXXX")
+        results_file="$CLOUDIFY_TMP/results-$$"
         export CLOUDIFY_RESULTS_FILE="$results_file"
         ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" -o "ConnectTimeout=10" \
             "$CLOUDIFY_REMOTE_USER@$host" 'bash -s' < "$payload_file" 2>&1 \

@@ -796,6 +796,18 @@ function _cloudify_manifest_render_write() {
 # taken before the first manifest writer lands) and lands by atomic rename.
 # The optional 8th argument pins last_event_id (the dispatch worker's
 # projection); omitted, the previously recorded value is carried over.
+# cloudify_state_bindings_render <app> <flavor> <name> <out-file> - the
+# manifest's recorded bindings as the TSV the manifest writer and the worker
+# take: slot\taddress\tnode\tinstance\tssh_host, declaration order.
+function cloudify_state_bindings_render() {
+    local app="$1" flavor="$2" name="$3" out="$4" manifest
+    manifest=$(cloudify_state_manifest_file "$app" "$flavor" "$name")
+    [[ -f "$manifest" ]] || die "bindings render: manifest '$manifest' not found."
+    jq -r '.bindings | to_entries[] | [.key, .value.address, .value.node, .value.instance, .value.ssh_host] | @tsv' \
+        "$manifest" > "$out" || die "bindings render: cannot read '$manifest'."
+    [[ -s "$out" ]] || die "bindings render: '$manifest' carries no bindings."
+}
+
 function cloudify_manifest_write() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" status="${4:-}"
     local commit="${5:-}" dev="${6:-}" bindings="${7:-}" last_event="${8:-}"

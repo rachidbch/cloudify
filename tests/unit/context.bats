@@ -129,6 +129,21 @@ candidate_file() {
     [[ "$output" == *"CLOUDIFY_CONTEXT_FILE"* ]]
 }
 
+@test "context build covers declared dependencies with instance keys" {
+    rubric "the dispatch context's package set is the WALKED graph (requested + declared deps), not just the argument words - the worker's off-graph rule depends on it"
+    declare_pkg foo SPEC
+    declare_pkg bar OTHER
+    reset_stores
+    printf 'pkg_depends bar\n' > "$CLOUDIFY_DIR/pkg/foo/init.sh"
+    cand=$(candidate_file foo)
+    export CLOUDIFY_CONTEXT_FILE="$CLOUDIFY_TMP/ctx-$BATS_TEST_NUMBER"
+    : > "$CLOUDIFY_CONTEXT_FILE"
+    run cloudify_context_build install "" install "$cand" foo
+    [ "$status" -eq 0 ]
+    grep -q '^package\.foo\.instance: default$' "$CLOUDIFY_CONTEXT_FILE"
+    grep -q '^package\.bar\.instance: default$' "$CLOUDIFY_CONTEXT_FILE"
+}
+
 @test "context build prints nothing on stdout" {
     declare_pkg foo SPEC
     reset_stores

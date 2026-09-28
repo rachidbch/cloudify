@@ -447,7 +447,10 @@ function cloudify_worker_process() {
 
     # A failed attempt, an off-graph dependency, or any worker failure is the
     # dispatch failing its purpose - the commits and the degraded projection
-    # stand, the exit says so.
-    [[ -n "$failed" || "$_WORKER_DEGRADED_RUN" == "true" ]] && return 1
+    # stand, the exit says so. Named, never quiet: a silent red is undebuggable.
+    if [[ -n "$failed" || "$_WORKER_DEGRADED_RUN" == "true" ]]; then
+        log_warn "worker: dispatch failed its purpose (cause: ${failed:-degraded-run}); records stand, status degraded"
+        return 1
+    fi
     return 0
 }

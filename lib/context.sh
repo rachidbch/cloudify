@@ -485,7 +485,7 @@ function cloudify_context_build() {
                 _cloudify_identity_check_instance "package instance" "$_inst_val"
             fi
             printf 'package.%s.instance: %s\n' "$_pkg" "$_inst_val"
-        done < <(printf '%s\n' "$@" | sort -u)
+        done < <(sort -u "$order")
     } > "$out"
 
     chmod 600 "$out" 2>/dev/null || true

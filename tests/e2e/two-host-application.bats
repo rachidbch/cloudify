@@ -36,6 +36,12 @@ _ssh() { ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o C
 setup_file() {
     export PATH="$HOME/.local/bin:$PATH"
     mkdir -p "$WD" "$CFG_DIR"
+    # A stable suite token: the applied-seed digest check refuses a resupplied
+    # secret whose plaintext changed between the install run and the verify
+    # run, so a per-test `date +%s` token now fails verify by design.
+    # Written to a file because bats runs @test in subshells where
+    # setup_file exports do not propagate.
+    printf 'K3S_TOKEN=e2e-stable-%s\n' "$(date +%Y%m%d%H%M%S)" > "$WD/token.env"
 
     echo "── launching two disposable hosts on $REMOTE ──"
     for h in "$HOST_A" "$HOST_B"; do
@@ -124,6 +130,7 @@ RUNBOOK
 
 setup() {
     # bats runs @test in subshells, so re-derive what setup_file exported.
+    source "$WD/token.env"
     source "$BATS_TEST_DIRNAME/../helpers/report.bash"
     export PATH="$HOME/.local/bin:$PATH"
     export CLOUDIFY_DIR="$CFG_DIR"
@@ -137,7 +144,7 @@ setup() {
     export CLOUDIFY_DEVELOPMENT_OVERRIDE=1
     # The fixture package declares K3S_TOKEN as required, so preflight refuses
     # without it. Caller environment is the strongest source, which is fine here.
-    export K3S_TOKEN="e2e-$(date +%s)"
+    # (The stable value comes from token.env sourced in setup().)
     mkdir -p "$XDG_STATE_HOME" "$CLOUDIFY_TMP"
     # Packages resolve from CLOUDIFY_DIR/pkg, and the runbook from
     # CLOUDIFY_DIR/runbooks, so the real package tree has to be visible here.

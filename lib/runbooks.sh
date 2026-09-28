@@ -788,13 +788,15 @@ function _cloudify_runbook_tuple_for() {
 function _cloudify_runbook_source_commit() {
     local dir="${CLOUDIFY_DIR:-}" commit dev="false"
     commit=$(cloudify_commit_of "$dir")
-    if cloudify_tree_unreproducible "$dir"; then
-        if [[ "${CLOUDIFY_DEVELOPMENT_OVERRIDE:-}" == "1" ]]; then
-            dev="true"
-            log_warn "Cloudify tree '$dir' is dirty or unidentified (commit ${commit:-none}); recording an unreproducible deployment (development override)."
-        else
-            die "deployment: the Cloudify tree '$dir' is dirty or its commit is unknown (commit: ${commit:-unknown}). Commit the tree, or set CLOUDIFY_DEVELOPMENT_OVERRIDE=1 to record an unreproducible deployment."
-        fi
+    if [[ "${CLOUDIFY_DEVELOPMENT_OVERRIDE:-}" == "1" ]]; then
+        # Forced, not fallback: pushing the current tree to a host is the
+        # normal dev flow (Rachid's ruling, 2026-09-27), so an explicit
+        # override marks the run unreproducible even on a clean proved tree -
+        # the worker's executed-code check then accepts any host checkout.
+        dev="true"
+        log_warn "Cloudify development override set: the run is recorded unreproducible regardless of tree state (commit ${commit:-none})."
+    elif cloudify_tree_unreproducible "$dir"; then
+        die "deployment: the Cloudify tree '$dir' is dirty or its commit is unknown (commit: ${commit:-unknown}). Commit the tree, or set CLOUDIFY_DEVELOPMENT_OVERRIDE=1 to record an unreproducible deployment."
     fi
     [[ -n "$commit" || "$dev" == "true" ]] ||
         die "deployment: cannot identify the Cloudify commit at '$dir'."

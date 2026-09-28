@@ -1060,6 +1060,20 @@ EOF
 
 # --- Source commit ---
 
+@test "commit: an explicit override forces the dev flag even on a clean proved tree" {
+    rubric "dev pushes are the normal dev flow (Rachid, 2026-09-27): a proved tree + explicit override must record development_override=true so the executed-code check accepts the pushed host checkout"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook myapp default my-dep
+    _clean_tree
+
+    CLOUDIFY_DEVELOPMENT_OVERRIDE=1 run cloudify_app_run myapp --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field myapp default default development_override)" = "true" ]
+    [[ "$(cloudify_manifest_field myapp default default application_commit)" =~ ^[0-9a-f]{40}$ ]]
+    run cloudify_manifest_describe myapp default default
+    [[ "$output" == *"replayable: no"* ]]
+}
+
 @test "commit: a dirty tree needs the explicit development override and is never replayable" {
     rubric "CLOUDIFY_DEVELOPMENT_OVERRIDE, development_override, replayable: no"
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"

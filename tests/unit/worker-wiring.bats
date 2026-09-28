@@ -154,6 +154,15 @@ res() {
     grep -q 'phase=reconfigure action=configure outcome=failed exit=3' "$CLOUDIFY_RESULTS_FILE"
 }
 
+@test "structural: collection paths key on BASHPID, never subshell-invariant \$\$" {
+    rubric "pin the logged trap: \$\$ in a subshell reports the router pid - the wait loop would never find the collection"
+    grep -q 'results-${BASHPID}' lib/remote.sh
+    local n
+    n=$(grep -c 'results-\${BASHPID}' cloudify)
+    [ "$n" -eq 3 ]
+    ! grep -q 'results-\$\$' cloudify lib/remote.sh
+}
+
 @test "hook: an empty collection fails the dispatch and writes no inventory" {
     export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
     cloudify_manifest_write web default main applying \

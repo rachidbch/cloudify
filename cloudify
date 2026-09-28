@@ -302,7 +302,7 @@ function _cloudify_execute_package_action() {
         PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs[*]}${RESET}"
         # shellcheck disable=SC2030
         # shellcheck disable=SC2030 # subshell-local on purpose: per-pid collection
-        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; export CLOUDIFY_RESULTS_FILE="$CLOUDIFY_TMP/results-$$"; _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_install_package "${pkgs[@]}") &
+        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; export CLOUDIFY_RESULTS_FILE="$CLOUDIFY_TMP/results-${BASHPID}"; _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_install_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
@@ -310,7 +310,7 @@ function _cloudify_execute_package_action() {
     elif [[ "$action" == "configure" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_configure_package ${pkgs[*]}${RESET}"
         # shellcheck disable=SC2030,SC2031 # subshell-local on purpose: per-pid collection
-        ( export CLOUDIFY_RESULTS_FILE="$CLOUDIFY_TMP/results-$$"; _cloudify_dispatch_vars /dev/null configure "${CLOUDIFY_DEPLOYMENT:-}" reconfigure "${pkgs[@]}"; cloudify_configure_package "${pkgs[@]}" ) &
+        ( export CLOUDIFY_RESULTS_FILE="$CLOUDIFY_TMP/results-${BASHPID}"; _cloudify_dispatch_vars /dev/null configure "${CLOUDIFY_DEPLOYMENT:-}" reconfigure "${pkgs[@]}"; cloudify_configure_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
@@ -319,7 +319,7 @@ function _cloudify_execute_package_action() {
         PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs[*]}${RESET}"
         # The uninstall leg needs the same resolved vars as install/configure.
         # shellcheck disable=SC2031 # subshell-local on purpose: per-pid collection
-        ( export CLOUDIFY_RESULTS_FILE="$CLOUDIFY_TMP/results-$$"; _cloudify_dispatch_vars /dev/null uninstall "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_uninstall_package "${pkgs[@]}" ) &
+        ( export CLOUDIFY_RESULTS_FILE="$CLOUDIFY_TMP/results-${BASHPID}"; _cloudify_dispatch_vars /dev/null uninstall "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_uninstall_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"

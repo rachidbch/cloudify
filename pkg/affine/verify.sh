@@ -11,7 +11,6 @@ pkg_verify() {
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
         -X POST -H 'Content-Type: application/json' \
         -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-        "http://127.0.0.1:${port}/mcp") || echo "curl rc=$? on port $port" >&2
-    echo "probe port=$port code=$code" >&2
+        "http://127.0.0.1:${port}/mcp")
     [[ "$code" == "401" ]] || return 1
 }

@@ -163,6 +163,29 @@ res() {
     ! grep -q 'results-\$\$' cloudify lib/remote.sh
 }
 
+@test "worker: a dependency under an uncovered parent records observed, not degraded" {
+    rubric "framework-descended deps (the host defaults' own pulls, e.g. pandoc under basics) are outside the dispatch's covered graph by construction - fail-closed applies only when the PARENT is covered (a true off-graph dep of the requested packages)"
+    mkdir -p "$CLOUDIFY_DIR/pkg/pandoc" "$CLOUDIFY_DIR/pkg/basics"
+    printf '1.0.0\n' > "$CLOUDIFY_DIR/pkg/pandoc/.version"
+    printf '1.0.0\n' > "$CLOUDIFY_DIR/pkg/basics/.version"
+    export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
+    cloudify_manifest_write web default main applying \
+        0123456789abcdef0123456789abcdef01234567 false "$CLOUDIFY_TMP/bindings"
+    # pandoc is deliberately NOT covered by the context (only nginx is): it
+    # hangs under basics, which the dispatch never covered either.
+    {
+        printf 'checkout v1: commit=0123456789abcdef0123456789abcdef01234567 dirty=false\n'
+        printf 'result v1: parent=@defaults package=basics instance=default phase=install action=install outcome=succeeded exit=0 verification=not-run version=1.0.0\n'
+        printf 'result v1: parent=basics package=pandoc instance=default phase=install action=install outcome=succeeded exit=0 verification=not-run version=1.0.0\n'
+        printf '%s\n' "$(res - nginx install install succeeded 0 ok 1.24.0)"
+    } > "$CLOUDIFY_TMP/collected"
+
+    run _cloudify_dispatch_worker install $'web1\t\tlocalhost' "$CLOUDIFY_TMP/ctx" "$CLOUDIFY_TMP/collected" nginx
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field web default main status)" = "active" ]
+    [ -f "$(cloudify_state_record_dir web1 "" web default main pandoc default)/state.json" ]
+}
+
 @test "hook: an empty collection fails the dispatch and writes no inventory" {
     export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
     cloudify_manifest_write web default main applying \

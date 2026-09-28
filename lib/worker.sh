@@ -103,11 +103,18 @@ _cloudify_worker_commit_line() {
         inst_key="${_WORKER_LINE[instance]:-}"
         _cloudify_identity_valid_instance "$inst_key" \
             || { printf 'worker: no instance key for package %s; refusing to invent one\n' "$pkg" >&2; return 1; }
-        if [[ "$_WORKER_LINE_CLASS" == "dependency" ]]; then
+        if [[ "$_WORKER_LINE_CLASS" == "dependency" ]] \
+            && [[ -n "${_CLOUDIFY_CONTEXT[package.${_WORKER_LINE[parent]:-}.instance]+x}" ]]; then
+            # True off-graph: the parent IS covered by this dispatch's context,
+            # the child never was - fail closed (empty values, degraded run).
             values="{}"
             event_values="{}"
             _WORKER_DEGRADED_RUN=true
         fi
+        # A dependency under an UNCOVERED parent (framework-descended: the host
+        # defaults' own pulls) is outside the requested graph by construction -
+        # recorded as observed with the line's own instance key, like natives
+        # and unrequested packages. No degraded flag.
     fi
 
     local record ev_body next step_id phase

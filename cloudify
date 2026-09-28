@@ -84,6 +84,7 @@ mkdir -p "$CLOUDIFY_TMP_ROOT"
 # cleanup, older than a day, are swept at startup; fresh siblings stay.
 find "$CLOUDIFY_TMP_ROOT" -maxdepth 1 -name 'tmp-*' -type d -mmin +1440 -exec rm -rf {} + 2>/dev/null || true
 CLOUDIFY_TMP="$(mktemp -d "$CLOUDIFY_TMP_ROOT/tmp-XXXXXXXXXXXX")"
+export _CLOUDIFY_TMP_OWNER="$$"
 export CLOUDIFY_TMP
 export CLOUDIFY_CONTEXT_DIR="${CLOUDIFY_TMP}/context"
 

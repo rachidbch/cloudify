@@ -474,3 +474,41 @@ Concluded decisions live in ADR.md and the design docs; this section tracks only
 - [ ] Walking the ivps tree raw must be human-readable. Today paths are immutable-id-keyed (`nodes/<16-hex>/instances/<16-hex>/...`, rename-safe per ADR-026 point 7 / ADR-028) and only `ivps node path <name>` resolves them; instance records were approved under "human scanability first" and the paths fail that bar.
 - Direction (Rachid's suggestion): ivps gains a `rename` command, and renames play well with cloudify even though ivps neither knows nor needs to know about cloudify. Candidate shape: name symlinks over id directories (`instances/affine -> ba529b51adee257b`) - names stay walkable, state stays id-keyed and rename-safe. Any alternative must keep both properties.
 - This is ivps-repo work; the entry records cloudify's stake. Cloudify keys durable state on the immutable ids, never on ivps names.
+
+## Hermes pair out of test scope (2026-09-28, Rachid's ruling; history: 2026-08-10)
+
+`package-hermes-dashboard` and `package-hermes-openwebui` are excluded from the
+default integration run (`tests/run-integration.sh` OUT_OF_SCOPE list). They
+were the two failures of the 2026-08-10 battery (ruled out of scope that day)
+and failed identically in the 2026-09-28 full run. Root causes, proven live on
+the test container:
+
+- Vendor layout drift: the Nous installer now installs user-local
+  (`~/.local/bin/hermes`, uv-managed) and no longer writes
+  `/usr/local/bin/hermes` or `/usr/local/lib/hermes-agent`; the dashboard
+  systemd unit's `ExecStart=/usr/local/bin/hermes ...` died `203/EXEC`.
+  Partially fixed 2026-09-28: `pkg/hermes` now guarantees the system entrypoint
+  (symlink + postcondition, v1.1.0).
+- Vendor auth gate: the dashboard refuses non-loopback binds without an auth
+  provider ("Refusing to bind dashboard to 0.0.0.0"), killing the long-standing
+  `HERMES_DASHBOARD_PUBLIC=true` public mode. The value reaches test dispatches
+  from the operator's production `pkgs/hermes-dashboard.yaml` via the recipe
+  name-mention claim path (no `.remote-vars` exists anywhere; no caller env,
+  no global declaration - the mechanism itself deserves a pinning test when
+  this is revisited).
+- hermes-openwebui test 5 (open-webui health after wiring): wiring values land
+  (MagicDNS URL, API key, RAG engine greps pass); the service was healthy at
+  install-verify time and dead at probe time; presumed the same vendor-era
+  drift family (dashboard/API container interplay), unclassified - classified
+  when the pair re-enters scope.
+
+Re-entry conditions (the hermes adoption round, PKG-ADOPTIONS round two):
+- `pkg/hermes-dashboard` public mode redesigned for the vendor gate: basic
+  auth (username + password hash in `~/.hermes/config.yaml`, hashed via the
+  venv python) or a documented loopback+reverse-proxy-only contract; a new
+  var (e.g. `HERMES_DASHBOARD_PASSWORD`), declared in `.remote-vars`, docs.
+- The claim path that forwards the yaml value without a declaration gets a
+  pinning test or an explicit declaration, whichever the adoption round
+  decides.
+- hermes-openwebui test 5 root-caused (docker logs at failure time).
+- Both removed from OUT_OF_SCOPE, full suite green.

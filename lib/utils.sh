@@ -74,6 +74,21 @@ function log_debug() {
 function cleanup() {
     trap - SIGINT SIGTERM ERR EXIT
 
+    # Ownership guard: set -E fires the ERR/EXIT traps in subshells and
+    # background forks too; a child firing cleanup mid-run must never destroy
+    # the owning router scratch or its dispatch contexts (proven live: a
+    # failing install ssh child fired cleanup and deleted the live router
+    # per-process scratch, killing the dispatch worker mktemps). Only the
+    # process that created CLOUDIFY_TMP tears it down; an unset owner means
+    # a standalone caller (tests, direct lib use) keeps the full teardown.
+    local _cleanup_owner=true
+    if [[ -n "${_CLOUDIFY_TMP_OWNER:-}" && "$_CLOUDIFY_TMP_OWNER" != "$$" ]]; then
+        _cleanup_owner=false
+    fi
+    if [[ "$_cleanup_owner" != true ]]; then
+        return 0
+    fi
+
     # Remove any dispatch context still on disk BEFORE the DEBUG return below:
     # these files carry resolved values, so a DEBUG run must not be the one run
     # that leaves them behind. The wait loop removes each context it can; this is

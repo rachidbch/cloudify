@@ -238,6 +238,7 @@ teardown() {
     [ -e "$CLOUDIFY_TMP/somefile" ]
 }
 
+
 #-- Log level system --
 
 @test "_cloudify_log_level_num returns correct numeric values" {
@@ -395,4 +396,22 @@ teardown() {
     cloudify_init_log
     log_warn "should not appear"
     ! grep -q "should not appear" "$CLOUDIFY_LOG_FILE"
+}
+
+@test "child cleanup keeps owner scratch" {
+    local root proc_dir
+    root=$(mktemp -d /tmp/cloudify_test.ROOT.XXXXXX)
+    proc_dir=$(mktemp -d "$root/tmp-OWN.XXXXXX")
+    touch "$proc_dir/dispatch"
+    CLOUDIFY_LOG_LEVEL=INFO CLOUDIFY_TMP="$proc_dir" _CLOUDIFY_TMP_OWNER=999999 cleanup
+    [ -d "$proc_dir" ]
+    [ -e "$proc_dir/dispatch" ]
+}
+
+@test "cleanup with the owning pid removes the scratch" {
+    local root proc_dir
+    root=$(mktemp -d /tmp/cloudify_test.ROOT.XXXXXX)
+    proc_dir=$(mktemp -d "$root/tmp-OWN.XXXXXX")
+    CLOUDIFY_LOG_LEVEL=INFO CLOUDIFY_TMP="$proc_dir" _CLOUDIFY_TMP_OWNER=$BASHPID cleanup
+    [ ! -e "$proc_dir" ]
 }

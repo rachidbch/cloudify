@@ -296,6 +296,7 @@ _ctx() {
     # injection) appends -v to authenticated calls and rev-parse echoes it
     # back - a two-line value would ride the payload quoting broken. Mimic
     # the shadow and prove the derivation is immune.
+    git -C "$repo" checkout -q feature-golden   # earlier probes left it detached
     git() { command git "$@" -v; }
     unset CLOUDIFY_GIT_REF
     ( CLOUDIFY_SCRIPT_DIR="$repo" CAP_OUT="$CAP_DIR/refshadow"

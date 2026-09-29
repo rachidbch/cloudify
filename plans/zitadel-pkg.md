@@ -21,9 +21,7 @@ an ivps instance on the tailnet.
 
 ## Deployment (ivps)
 
-1. Node: cloudstation or cloudai (both adopted, both fit: Zitadel ~300MB +
-   Postgres ~200MB RAM). Decision point for Rachid - recommend the node NOT
-   running the GPU/LLM workload (cloudstation unless it is loaded).
+1. Node: cloudai (owner decision 2026-09-29).
 2. `ivps launch <node>:zitadel` (Ubuntu 24.04 container OS).
 3. TLS/issuer decision (the one open design point, settle at authoring):
    Zitadel issuer URL must be https. Options:

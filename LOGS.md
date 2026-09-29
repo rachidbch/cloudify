@@ -865,3 +865,7 @@
 - Two-host second red: `applied seed: resupplied value 'K3S_TOKEN' does not match the applied digest` - the check working as designed against the suite's own per-test rotating token. Two test bugs fixed in sequence: token now stable per run; and `source token.env` needed `export` in the file (sourced vars are not exported).
 - Two e2e suite launches died silently pre-TAP (stdout discarded per the transport rule; the second relaunch of each ran clean) - unexplained, one-off; if it recurs, run setup_file by hand before theorizing.
 - k3s green 7/7 with the dev-push declaration. Full ladder green; branch ready for the production earned configure.
+
+## 2026-09-29 - vocabulary convergence session
+
+- The earned-configure explanation exposed undefined foundations ("record" not in GLOSSARY). Rachid's three-part challenge (naming overlap; provenance as projection; adoption as operator action) converged over two rounds: cloudify-inventory-as-projection (guaranteed from events, best-effort to hosts), records typed by owner, applied values, and the abolition of "earned reconfigure" in favor of honest adoption events + read-only verify + event-kind statuses. The deployed seed-target fix and the twin's seeded-verify proof are the machinery behind "verified"; the verify-hook-is-the-contract doctrine bounds all guarantees. All decisions landed in GLOSSARY (the vocabulary source), the cleanup plan, and the affine worklist.

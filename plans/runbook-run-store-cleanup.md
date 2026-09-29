@@ -14,6 +14,9 @@ Trigger: the affine adoption exposed identity confusion (the runbook `deployment
 - [ ] Migrate the two runbooks (affine, xfce-guacamole): field removed.
 - [ ] Migrate the legacy flat store `~/.config/cloudify/deployments/<id>/runs/` (today: E2E snapshots only) into the state tree; delete the flat dirs.
 - [ ] Dissolve the dotted-id lookup workaround: `show`/`replay` resolve from identity (path + explicit `--name` or manifest listing), never by decoding ids.
+- [ ] Manifest status vocabulary (ruling 2026-09-29, GLOSSARY "manifest status"): worker + runbook engine write `adopted | installed | reconfigured | verified | degraded` - the kind of the last successful state-relevant event (an install whose verify stage fails stays `installed`). Migration for existing manifests (`applying`/`active` → the new words; affine's becomes `adopted`). Consumers (deployment show, guard) updated.
+- [ ] Adoption event producer (ruling 2026-09-29, GLOSSARY "deployment adoption"): `cloudify adoption record` (or the adoption subcommand shape chosen then) writes the operator-inference event (writer: operator, kind: adoption) feeding the same projection - manual content, mechanical capture. Backfills affine's adoption (currently a hand-shaped event + `active` manifest).
+- [ ] `app run --phase verify`: runbook runs select their verify steps only - the seeded, read-only drift check without the operator env bits (the tuple is still manual for bare commands).
 - [ ] Suites: runbooks, runbook-exec, runbook-replay, deployments, state; gate; full unit; schemas green.
 - [ ] Docs: GLOSSARY/REDESIGN already amended (2026-09-25); update README's runbook section if it names the field; HISTORY entry.
 

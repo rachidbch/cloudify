@@ -84,26 +84,41 @@ A recipe must explicitly support package instances before a caller may choose an
 
 ## inventory
 
-Two inventories, one plugged into the other: the ivps inventory is the hosts tree under `ivps node path`; a cloudify inventory is cloudify's per-node record of what it configured, one directory per deployment, per package, per package instance (ADR-027).
-The cloudify inventory is derivable from the event log and is never a claim about the machine's runtime truth.
+Two inventories, one plugged into the other: the ivps inventory is the hosts tree under `ivps node path`; the cloudify inventory is cloudify's record of what it configured, keyed per node, per instance, per deployment, per package, per package instance (ADR-027).
+
+The cloudify inventory is a guaranteed projection of cloudify events: recomputable from the event log, exactly. Its mapping to host states is best effort, with no guarantee - the live host remains authoritative about what actually exists.
+
+Cloudify guarantees nothing beyond what the packages and runbooks themselves declare: the recipe's verify hook is the contract, and cloudify is transport, recording, and honesty about provenance - never an independent source of verification truth.
+
+## node record
+
+The ivps-owned record of one node: identity, metadata, lifecycle - under the node directory `ivps node path <node>`.
+
+## instance record
+
+The ivps-owned record of one instance (engine, base image fingerprint, created-at; `instance.json`) under the instance directory.
+
+## deployment record
+
+The cloudify-owned record of one deployment: everything under `~/.config/cloudify/deployments/<app>/<flavor>/<name>/` - the deployment manifest and the run snapshots.
+
+## package record
+
+The cloudify-owned inventory entry for one package instance under one deployment, on one node and instance: the full key is (node, instance, deployment, package, package instance).
+
+It contains a revision, the applied values, the last attempt, and verification health.
 
 ## physical package state
 
-Cloudify's last confirmed observation of one package instance on one host.
+Renamed: see package record.
 
-Each deployment records what it did on the node under its own directory in the cloudify inventory (ADR-026, ADR-027); the same package instance used by several deployments appears once per deployment, and the guard compares those inventories.
-
-The record contains a revision, the last successful applied state, the last attempt, and verification health.
-
-The live host remains authoritative about what actually exists.
-
-## applied state
+## applied values
 
 The last package version and source-form values that Cloudify confirmed through a successful install or reconfigure.
 
-A failed attempt never overwrites applied state.
+A failed attempt never overwrites applied values.
 
-Verify and teardown use applied state by default so changed defaults cannot silently alter their behavior.
+Verify and teardown use applied values by default so changed defaults cannot silently alter their behavior.
 
 ## last attempt
 
@@ -113,13 +128,13 @@ A failed or partially observed attempt may mark package health `degraded` or `un
 
 ## health
 
-The last verification observation for one physical package instance.
+The last verification observation for one package instance.
 
 Health records the verification result and time without changing applied values.
 
 ## reliance
 
-A statement that one deployment and stable runbook step currently relies on one physical package instance.
+A statement that one deployment and stable runbook step currently relies on one package instance.
 
 Compatible deployments may share one package instance through separate reliances.
 
@@ -127,7 +142,7 @@ A conflicting reliance fails before mutation.
 
 Teardown releases every reliance owned by its deployment, including dependency reliances without uninstall actions.
 
-It may uninstall a physical package only after the last reliance is released and the pinned teardown phase names that uninstall.
+It may uninstall a package only after the last reliance is released and the pinned teardown phase names that uninstall.
 
 ## value
 
@@ -201,17 +216,35 @@ A deployment id is human-set through `--name`, or generated as `<application>-<f
 
 A deployment has desired inputs under Cloudify configuration and a current manifest under Cloudify state.
 
-Applied package facts remain in physical package state rather than being copied into the manifest.
+Applied package facts remain in the package records rather than being copied into the manifest.
 
 ## deployment manifest
 
-The small current-state record for one deployment.
+The small current-state rollup of one deployment, part of the deployment record: `~/.config/cloudify/deployments/<app>/<flavor>/<name>/manifest.json`.
 
 It contains deployment identity, application commit, target bindings, lifecycle status, creation time, and last run and event IDs.
 
 It does not contain package applied values.
 
 A successful teardown removes the manifest only after all reliances and application-owned external resources have been released.
+
+## manifest status
+
+The deployment manifest's lifecycle status names the kind of the last successful state-relevant event - never a truth claim about the machine:
+
+- `adopted` - written by deployment adoption: an operator inferred the state from the observed machine.
+- `installed` - an install completed. An install whose verify stage fails stays `installed`: written but unverified - a distinction worth keeping.
+- `reconfigured` - a reconfigure completed through cloudify.
+- `verified` - a passing verify observed the host against the applied values, as of that moment.
+- `degraded` - an attempt or the dispatch worker failed; records stand, status names the failure.
+
+## deployment adoption
+
+An operator action, not a mechanical cloudify action: the operator infers a deployment's state from the production machine that already runs it, and cloudify records the inference.
+
+Captured honestly as an adoption event (writer: operator, command kind: adoption) carrying the inferred values and how they were observed - never dressed as a dispatch.
+
+Adoption creates claims, not evidence; `verified` and `reconfigured` arrive only through real dispatches. Nothing about the machine is ever proved - the host stays authoritative.
 
 ## runbook
 
@@ -273,7 +306,7 @@ Events help detect interrupted state commits but are not executable commands.
 
 ## revision
 
-A monotonically increasing number on one physical package state record.
+A monotonically increasing number on one package record.
 
 A local host mutation lock serializes package revision changes for that host.
 
@@ -297,7 +330,7 @@ It must not silently change hosts, package ownership, or persistent-data retenti
 
 The explicit application phase that releases the deployment's resources and package reliances.
 
-Reliances identify the physical packages owned or shared by the deployment.
+Reliances identify the packages owned or shared by the deployment.
 
 The pinned runbook supplies teardown actions and order.
 

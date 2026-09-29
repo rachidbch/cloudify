@@ -309,9 +309,7 @@ If the caller environment or deployment desired inputs explicitly differ from ap
 
 Install is the converge: recipes are idempotent, so re-running install on the same installation is safe.
 
-Adoption is operator-asserted: `--adopt` on an install takes over an installation cloudify has no inventory for - it requires configure support, runs configure, and records the inventory only after success.
-
-A package without configure support must be removed or reconciled explicitly before adoption.
+Adoption is operator-asserted (ruled 2026-09-29, GLOSSARY `deployment adoption`): `cloudify adoption record <app>/<flavor>/<name> --on <target>` records the operator's inference in mechanical shape - one adoption event per package (writer: operator, no commit), the package records beside it, the manifest derived to `adopted` - then fires the seeded read-only verify whose pass ends `verified` and whose failure leaves the adoption standing. The earlier install-time `--adopt` shape (configure-gated takeover) is superseded by this command; adoption never runs a write.
 
 Changing an existing deployment is an explicit reconfigure or upgrade.
 

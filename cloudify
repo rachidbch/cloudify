@@ -133,6 +133,7 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/context.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/matching.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/worker.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/runbooks.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/adoption.sh"
 
 #== INITIALIZATION
 function cloudify_init_paths() {
@@ -387,6 +388,10 @@ function _cloudify_dispatch() {
                 # died "no target resolved for the applied seed".
                 export CLOUDIFY_CONTEXT_TARGET="${_target_of_host[$host]:-}"
                 cloudify_remote "$host" "verify $verify_pkgs" && is_setup_in_progress=true
+                # The verify dispatch records too: its worker writes health and
+                # projects the verified word (the seeded verify is how adoption
+                # and re-runs observe - a verify is an event like any other).
+                _cloudify_note_bg "$!" "verify" "$verify_pkgs" "${_target_of_host[$host]:-$'\t\t'$host}" "${CLOUDIFY_CONTEXT_FILE:-}"
             fi
         done
         return 0
@@ -733,6 +738,19 @@ function main() {
                     ;;
                 *)
                     die "Usage: cloudify app <run> [args] (reconfigure, verify and teardown arrive in Phase 4)"
+                    ;;
+            esac
+            break
+            ;;
+        adoption)
+            shift
+            case "${1:-}" in
+                record)
+                    shift
+                    cloudify_adoption_record "$@"
+                    ;;
+                *)
+                    die "Usage: cloudify adoption record <app>/<flavor>/<name> --on <target> [--notes <text>] <pkg>..."
                     ;;
             esac
             break

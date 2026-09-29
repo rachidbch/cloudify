@@ -842,12 +842,14 @@ function cloudify_manifest_write() {
 }
 
 # cloudify_manifest_update_status <app> <flavor> <name> <status> <commit> <dev>
+#                            [last-event-id]
 # Rewrite the recorded manifest with a new status and commit, keeping its
-# created_at, its bindings, and its last run and event IDs. Used at the end of
-# a run and by the regrade below; an empty status writes null (nothing proved).
+# created_at, its bindings, and its last run ID. An optional 7th argument pins
+# last_event_id (the adoption command's derived-field update); an empty status
+# writes null (nothing proved).
 function cloudify_manifest_update_status() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" status="${4:-}"
-    local commit="${5:-}" dev="${6:-}" file bindings_file rc=0
+    local commit="${5:-}" dev="${6:-}" last_event="${7:-}" file bindings_file rc=0
     file=$(cloudify_state_manifest_file "$app" "$flavor" "$name")
     [[ -f "$file" ]] || die "manifest: '$file' not found; refusing to update a manifest that was never created."
     bindings_file=$(mktemp) || die "manifest: cannot create a bindings file."
@@ -856,7 +858,7 @@ function cloudify_manifest_update_status() {
         rm -f "$bindings_file"
         die "manifest '$file': no bindings recorded."
     }
-    cloudify_manifest_write "$app" "$flavor" "$name" "$status" "$commit" "$dev" "$bindings_file" || rc=$?
+    cloudify_manifest_write "$app" "$flavor" "$name" "$status" "$commit" "$dev" "$bindings_file" "$last_event" || rc=$?
     rm -f "$bindings_file"
     return "$rc"
 }

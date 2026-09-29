@@ -239,6 +239,18 @@ cloudify app run my-cluster --name prod
 `cloudify --on <node> install <pkg>` then forwards the deployment vars to the host.
 Deployment values beat package and global values; the caller env still wins.
 
+**Adoption (`cloudify adoption record`).** Taking an existing installation into
+the deployment model is an operator action, never a dispatch: the operator
+investigates the machine (read-only), then records the inference -
+`cloudify adoption record <app>/<flavor>/<name> --on <target> [--notes <text>]
+<pkg>...` with the inferred facts on stdin (TSV: `version<TAB><pkg><TAB><v>` and
+`value<TAB><pkg><TAB><NAME><TAB><source_form><TAB><source>`). cloudify supplies
+the shape: adoption events (writer: operator, no commit), package records
+(applied values with provenance, no attempt, health unknown), the manifest
+derived to `adopted` - then a seeded read-only verify: pass ends `verified`, a
+failure leaves the adoption standing. Secrets are refused on stdin; they belong
+to stores.
+
 **Runbooks (`cloudify app run`).** A runbook is repo-tracked Markdown
 (`runbooks/<app>/<flavor>/runbook.md`, see `runbooks/README.md`): front-matter
 (`deployment`, `targets`) plus fenced `bash step=<type> [target=] [pkg=] [id=] [phase=]`

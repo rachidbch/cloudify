@@ -168,7 +168,7 @@ The minimal cross-host glue lives under Cloudify's own state root:
 ${XDG_STATE_HOME:-~/.local/state}/cloudify/
   deployments/<application>/<flavor>/<deployment>/
     manifest.json
-    runs/<utc-timestamp>.json
+    runs/<utc-timestamp>.yaml
   events/<year-month>/<event-id>.json
   external-hosts/<host-id>/...
   .event-seq
@@ -181,7 +181,9 @@ a record; safe to delete while idle.)
 
 (Amended 2026-09-25, Rachid's ruling: the runbook front matter carries no deployment or run id. A run needs no operator-chosen key: the deployment is assembled at run time - application and flavor from the runbook path, name from `--name`, hosts from `--target` - and a run identifies itself by its UTC timestamp under that deployment. Run history lives in the state tree, never in the flat configuration store; the exact runs placement is settled by the run-store cleanup slice, which also removes the legacy `deployments/<id>/runs` folders and the dotted-id lookup workaround.)
 
-(Runs placement settled 2026-09-27, Rachid's ruling: per-deployment. A run lives at `deployments/<application>/<flavor>/<deployment>/runs/<utc-timestamp>.json` - walking one deployment directory tells its whole story, the run key derives from identity (deployment path plus timestamp, no second id namespace), and `deployment delete` removes the story wholesale. Events stay at the root as the global audit; runs answer what the controller executed for a deployment, never what runs where - that is the ivps-tree inventory's question.)
+(Runs placement settled 2026-09-27, Rachid's ruling: per-deployment. A run lives at `deployments/<application>/<flavor>/<deployment>/runs/<utc-timestamp>.yaml` - walking one deployment directory tells its whole story, the run key derives from identity (deployment path plus timestamp, no second id namespace), and `deployment delete` removes the story wholesale. Events stay at the root as the global audit; runs answer what the controller executed for a deployment, never what runs where - that is the ivps-tree inventory's question.)
+
+(Run snapshot extension amended 2026-09-30, Rachid's ruling: `.yaml` - the snapshot is the replay-seed YAML and the extension tells the truth about the bytes. Any structured run record owns its own format decision when it lands.)
 
 The manifest contains the deployment identity, application commit, target bindings, lifecycle status, creation time, last run ID, and last event ID.
 

@@ -894,3 +894,9 @@
 - First hand-run found the runbook path double-prefix (`_cloudify_runbook_root` already ends in runbooks/) and `cloudify_is_package` printing to stdout inside the command (now >/dev/null).
 - The e2e exposed the REAL gap: the verify dispatch committed no event - the router's verify path never registered `_cloudify_note_bg`, a pre-existing wiring hole the adoption flow only made visible. Fixed in the router (verify now records health + the verified word through the same worker every dispatch uses), then re-run e2e green end to end: manifest `verified`, health ok, verify event in the log.
 - Container note: cloudai:cloudify had lost its setup (image reset); `task setup-container` restored it (the documented one-time path). E2E state (adopt-e2e deployment, its records, its three events, the fixture log) cleaned after the run; the controller keeps only affine + the `_direct` accumulation item 8 sweeps.
+
+## 2026-09-29 - item 5 evidence trail
+
+- The red test caught my own fixture bugs first (event-id suffixes must be 8 hex per the schema pattern; a null commit demands the dev override even in a test write) - the schema validating test fixtures is the gate working as designed.
+- The read-collapse trap cost two rounds: the scan parsed `@tsv` rows with tab-IFS (empty commit field swallowed, host landed in commit), then the scan's own tab-separated output collapsed again in the caller. Both fixed with the unit separator; the router's "hand-parsed: a tab is IFS-whitespace" comment was the warning, unread.
+- Sandbox-first debugging (the L1 rung) found the function-structure confusion before any container run; the remote suite then confirmed 23/23.

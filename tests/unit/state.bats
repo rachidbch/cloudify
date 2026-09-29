@@ -22,6 +22,7 @@ setup() {
     source lib/utils.sh
     source lib/vars.sh
     source lib/deployments.sh
+    source lib/runbooks.sh
     source lib/state.sh
 
     BINDINGS="$CLOUDIFY_TMP/bindings.tsv"
@@ -133,11 +134,11 @@ _reference_check() {
     }
     [ "$(cloudify_state_status_from_events a default n)" = "null" ]
 
-    ev 20260901T000000Z-a install 1
+    ev 20260901T000000Z-0a0b0c0d install 1
     [ "$(cloudify_state_status_from_events a default n)" = "degraded" ]
-    ev 20260902T000000Z-b install 0
+    ev 20260902T000000Z-1a1b1c1d install 0
     [ "$(cloudify_state_status_from_events a default n)" = "installed" ]
-    ev 20260903T000000Z-c verify 1
+    ev 20260903T000000Z-2a2b2c2d verify 1
     rubric "a failed verify is information, not a downgrade: the install word stands"
     [ "$(cloudify_state_status_from_events a default n)" = "installed" ]
     ev 20260904T000000Z-d verify 0
@@ -169,12 +170,63 @@ _reference_check() {
     local m
     m=$(cloudify_state_events_root)/2026-09
     mkdir -p "$m"
-    jq -n '{event_id:"20260901T000000Z-a", application:"legacy", flavor:"default", deployment:"main", command_kind:"install", outcome:{exit_status:0, summary:"s"}}' \
-        > "$m/20260901T000000Z-a.json"
+    jq -n '{event_id:"20260901T000000Z-0a0b0c0d", application:"legacy", flavor:"default", deployment:"main", command_kind:"install", outcome:{exit_status:0, summary:"s"}}' \
+        > "$m/20260901T000000Z-0a0b0c0d.json"
     run cloudify_state_deployment_regrade_status legacy default main
     [ "$status" -eq 0 ]
     [ "$(cloudify_manifest_field legacy default main status)" = "installed" ]
     [ "$(cloudify_manifest_field legacy default main application_commit)" = "$commit" ]
+}
+
+@test "manifest rebuild: determinism - the rebuilt manifest equals the maintained one" {
+    rubric "derived fields come from the event log; declared fields are preserved"
+    local commit="0123456789abcdef0123456789abcdef01234567"
+    cloudify_manifest_write app default prod "" "$commit" false "$BINDINGS"
+    local m
+    m=$(cloudify_state_manifest_file app default prod)
+
+    # Two events: an adoption (no commit) then an install proving one.
+    local evdir
+    evdir=$(cloudify_state_events_root)/2026-09
+    mkdir -p "$evdir"
+    jq -n --arg c "$commit" '{event_id:"20260901T000000Z-0a0b0c0d", application:"app", flavor:"default", deployment:"prod", command_kind:"adopt", application_commit:null, subject:{kind:"package", host:"cloudai:p", host_key:"ivps:cloudai:p", package:"pkg", package_instance:"default"}, outcome:{exit_status:0, summary:"s"}}' > "$evdir/20260901T000000Z-0a0b0c0d.json"
+    jq -n --arg c "$commit" '{event_id:"20260902T000000Z-1a1b1c1d", application:"app", flavor:"default", deployment:"prod", command_kind:"install", application_commit:$c, subject:{kind:"package", host:"cloudai:p", host_key:"ivps:cloudai:p", package:"pkg", package_instance:"default"}, outcome:{exit_status:0, summary:"s"}}' > "$evdir/20260902T000000Z-1a1b1c1d.json"
+
+    # The maintained write after those events, then a rebuild: byte-equal.
+    cloudify_manifest_update_status app default prod installed "$commit" false "20260902T000000Z-1a1b1c1d"
+    cp "$m" "$CLOUDIFY_TMP/maintained.json"
+    cloudify_state_manifest_rebuild app default prod
+    cmp -s "$m" "$CLOUDIFY_TMP/maintained.json"
+}
+
+@test "manifest rebuild: a lost manifest is recovered from events and the runbook" {
+    rubric "never fatal, never a source - and never invented bindings"
+    mkdir -p "$CLOUDIFY_DIR/runbooks/app/default"
+    printf -- '---\ntargets: guest\n---\n\n# rb\n' > "$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
+    cloudify_manifest_write app default prod "" "" true "$BINDINGS"
+    local evdir m
+    m=$(cloudify_state_manifest_file app default prod)
+    evdir=$(cloudify_state_events_root)/2026-09
+    mkdir -p "$evdir"
+    jq -n '{event_id:"20260903T000000Z-2a2b2c2d", application:"app", flavor:"default", deployment:"prod", command_kind:"install", application_commit:null, subject:{kind:"package", host:"cloudai:p", host_key:"ivps:cloudai:p", package:"pkg", package_instance:"default"}, outcome:{exit_status:0, summary:"s"}}' > "$evdir/20260903T000000Z-2a2b2c2d.json"
+
+    rm -f "$m"
+    run cloudify_state_manifest_rebuild app default prod
+    [ "$status" -eq 0 ] || { echo "REBUILD OUTPUT: $output"; false; }
+    [ -f "$m" ]
+    [ "$(cloudify_manifest_field app default prod status)" = "installed" ]
+    [ "$(cloudify_manifest_field app default prod last_event_id)" = "20260903T000000Z-2a2b2c2d" ]
+    # The binding: the runbook's one slot bound to the host the event proves
+    # (address = the resolver's convention: the instance, else the node).
+    run cloudify_manifest_bindings app default prod
+    [[ "$output" == $'guest\tp\tcloudai\tp\tp' ]]
+}
+
+@test "manifest rebuild: nothing to bind is a named refusal, never an invented record" {
+    rubric "fail closed when the events prove no host"
+    run cloudify_state_manifest_rebuild nosuch default prod
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"bind"* ]]
 }
 
 @test "manifest: write lands exactly the schema fields and passes the reference validator" {

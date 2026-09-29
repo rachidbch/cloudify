@@ -870,6 +870,87 @@ function cloudify_manifest_exists() {
     [[ -f "$file" ]]
 }
 
+# _cloudify_state_event_scan <app> <flavor> <name> - one newest-first pass over
+# the deployment's event log; prints "HEAD<TAB>COMMIT<TAB>HOST": the newest
+# event id (any kind), the newest proved application commit (the manifest
+# caches the latest such commit), and the newest package event's host key
+# (what a rebuild can still bind). Empty fields where the log proves nothing.
+function _cloudify_state_event_scan() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}"
+    local root f head="" commit="" host="" row
+    local id c kind hk
+    root=$(cloudify_state_events_root)
+    [[ -d "$root" ]] || { printf '\x1f\x1f\n'; return 0; }
+    while IFS= read -r f; do
+        row=$(jq -r --arg app "$app" --arg flavor "$flavor" --arg name "$name" '
+            select(.application == $app and .flavor == $flavor and .deployment == $name)
+            | [.event_id, (.application_commit // ""), (.subject.kind // ""), (.subject.host_key // "")]
+            | join("\u001f")' "$f" 2>/dev/null) || continue
+        [[ -n "$row" ]] || continue
+        local id c kind hk
+        IFS=$'\x1f' read -r id c kind hk <<< "$row"
+        [[ -n "$head" ]] || head="$id"
+        [[ -n "$commit" ]] || commit="$c"
+        if [[ -z "$host" && "$kind" == "package" ]]; then
+            host="$hk"
+        fi
+        [[ -n "$head" && -n "$commit" && -n "$host" ]] && break
+    done < <(find "$root" -type f -name '*.json' -printf '%p\n' 2>/dev/null | sort -r)
+    printf '%s\x1f%s\x1f%s\n' "$head" "$commit" "$host"
+}
+
+# cloudify_state_manifest_rebuild <app> <flavor> <name>
+# The manifest is a rebuildable cache outside the projection path (REDESIGN):
+# declared fields carried from the readable manifest when one exists, derived
+# fields (status, last event id, the cached commit) recomputed from the event
+# log. A lost manifest is recovered: bindings come from the runbook's one slot
+# bound to the host the newest package event proves - nothing is invented; a
+# log that proves no host is a named refusal (re-run the application to rebind).
+function cloudify_state_manifest_rebuild() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}"
+    cloudify_state_deployment_dir "$app" "$flavor" "$name" >/dev/null ||
+        die "rebuild: '$app/$flavor/$name' is not a valid deployment identity."
+    local scan head commit host
+    scan=$(_cloudify_state_event_scan "$app" "$flavor" "$name")
+    IFS=$'\x1f' read -r head commit host <<< "$scan"
+    [[ -n "$head" ]] || die "rebuild: the event log proves nothing for '$app/$flavor/$name' - a manifest without events cannot be rebuilt; re-run the application to rebind."
+
+    local bindings_file dev word
+    bindings_file=$(mktemp "$CLOUDIFY_TMP/rebuild-bindings-XXXXXX") ||
+        die "rebuild: cannot create a bindings file."
+    if cloudify_manifest_exists "$app" "$flavor" "$name" &&
+        cloudify_manifest_bindings "$app" "$flavor" "$name" > "$bindings_file" 2>/dev/null && [[ -s "$bindings_file" ]]; then
+        : # the readable manifest carries its bindings over
+    else
+        local rb slot node inst
+        rb="$(_cloudify_runbook_root)/$app/$flavor/runbook.md"
+        [[ -f "$rb" ]] || die "rebuild: no manifest to carry bindings and no runbook at runbooks/$app/$flavor/runbook.md - re-run the application to rebind."
+        slot=$(_cloudify_runbook_fm_value "$rb" targets)
+        [[ -n "$slot" && "$slot" != *,* ]] || die "rebuild: the runbook declares no single slot to bind - re-run the application to rebind."
+        [[ "$host" =~ ^ivps:([^:]+)(:(.+))?$ ]] || die "rebuild: the event log proves no bindable host for '$app/$flavor/$name' - re-run the application to rebind."
+        node="${BASH_REMATCH[1]}"
+        inst="${BASH_REMATCH[3]:-}"
+        printf '%s\t%s\t%s\t%s\t%s\n' "$slot" "${inst:-$node}" "$node" "$inst" "${inst:-$node}" > "$bindings_file"
+    fi
+
+    # development_override is true whenever no commit is proved - the schema's
+    # encoding for "not exactly replayable" - or when the proving dispatch
+    # itself ran under the override.
+    dev=false
+    if [[ -z "$commit" ]]; then
+        dev=true
+    else
+        dev=$(jq -r 'select(.application == $app and .flavor == $flavor and .deployment == $name and .application_commit != null) |
+              .development_override // false' \
+              "$(cloudify_state_events_root)/${head:0:4}-${head:4:2}/$head.json" 2>/dev/null || true)
+        [[ "$dev" == "true" ]] || dev=false
+    fi
+    word=$(cloudify_state_status_from_events "$app" "$flavor" "$name")
+    [[ "$word" == "null" ]] && word=""
+    cloudify_manifest_write "$app" "$flavor" "$name" "$word" "$commit" "$dev" "$bindings_file" "$head"
+    rm -f "$bindings_file"
+}
+
 # cloudify_state_status_from_events <app> <flavor> <name>
 # The derived status: the kind of the last successful state-relevant event
 # (GLOSSARY manifest status), read from the event log - never from the

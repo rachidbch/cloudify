@@ -44,7 +44,7 @@
       "const": "cloudify"
     },
     "writer": {
-      "description": "Identity of the process that wrote the event.",
+      "description": "Who wrote the event: a machine process identity or an operator.",
       "$ref": "#/$defs/writer"
     },
     "run_id": {
@@ -426,7 +426,18 @@
       "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
     },
     "writer": {
-      "description": "Writer identity: host, kernel boot ID, process ID, and the process start time in clock ticks read from /proc/<pid>/stat field 22.",
+      "description": "Who wrote the event: the machine process identity, or - for adoption - the operator who inferred the adopted state (GLOSSARY deployment adoption): the operator writer names who inferred, never which process ran.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/writer-machine"
+        },
+        {
+          "$ref": "#/$defs/writer-operator"
+        }
+      ]
+    },
+    "writer-machine": {
+      "description": "Writer identity: host, kernel boot ID, process ID, and the process start time in clock ticks read from /proc/<pid>/stat field 22. kind is optional (absent on events written before the operator writer existed); no kind means machine.",
       "type": "object",
       "required": [
         "host",
@@ -436,6 +447,9 @@
       ],
       "additionalProperties": false,
       "properties": {
+        "kind": {
+          "const": "machine"
+        },
         "host": {
           "$ref": "#/$defs/component"
         },
@@ -450,6 +464,26 @@
         "process_start_ticks": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "writer-operator": {
+      "description": "The operator writer: names who inferred the adopted state; carries no process identity because the inference is the operator's claim, not a dispatch.",
+      "type": "object",
+      "required": [
+        "kind",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "operator"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^\\S(.*\\S)?$"
         }
       }
     },

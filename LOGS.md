@@ -875,3 +875,9 @@
 - Handoff consumed; tree clean at a061493; plans/adoption-honesty.md is CURRENT.
 - Item 1 (glossary corrections): the two `~/.config` manifest anchors corrected to the state tree (verified against `cloudify_state_manifest_file`/`cloudify_state_root` in lib/state.sh), cache doctrine + declared/derived split added per the 2026-09-29 REDESIGN wording, package record anchored to its ivps inventory home. Package-record path proven from `cloudify_state_record_dir` + `cloudify_state_inventory_root`.
 - Next: item 2 (event schema: operator writer) - red test first, `task gate` after.
+
+## 2026-09-29 - item 2 evidence trail
+
+- Test-transport stumbles (both cheap): `ssh cloudify` as default user dies (tailscale cannot map rbc) - the transport is `tests/remote-bats.sh`, i.e. `root@<target>` per AGENTS; and `remote-bats.sh` expands bats args unquoted, so `-f 'operator writer'` split into file args - single-word filters only (`-f operator`).
+- First green run failed validate with rc 2: my test body lacked required `event_id` (the create-time writer renders it; I validate the raw body). Mirror of the red first seen: schema rejection had to be isolated from body-shape noise - bisected branch-by-branch (`writer-operator` PASS, `writer-machine` FAIL on the same object = exactly-one oneOf semantics correct) before spotting the missing event_id. jq note: `$defs` is not a bare identifier - `.["\$defs"]` bracket access.
+- OneOF ordering verified for back-compat: old machine-shaped events (no kind) match exactly one branch; operator + machine fields together match none (additionalProperties on both branches).

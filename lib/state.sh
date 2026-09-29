@@ -494,6 +494,17 @@ function cloudify_state_writer_identity() {
     printf '%s\n' "$_CLOUDIFY_STATE_WRITER"
 }
 
+# cloudify_state_operator_writer <name> - the adoption writer: names who
+# inferred the adopted state, not which process ran (GLOSSARY deployment
+# adoption). The name comes from the caller, or CLOUDIFY_OPERATOR when unset
+# (tests, scripted adoption); the schema pins the shape and the event writer
+# validates it at create time.
+function cloudify_state_operator_writer() {
+    local name="${1:-${CLOUDIFY_OPERATOR:-}}"
+    [[ -n "$name" ]] || die "operator writer: a name is required (argument or CLOUDIFY_OPERATOR)."
+    jq -cn --arg name "$name" '{kind: "operator", name: $name}'
+}
+
 # cloudify_state_events_root - the event root under the Cloudify state root:
 # audit records are per-run history, not node architecture (ADR-026).
 function cloudify_state_events_root() {

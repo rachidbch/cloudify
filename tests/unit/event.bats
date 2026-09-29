@@ -54,6 +54,22 @@ _event_body() {
         outcome:{exit_status:null, summary:"probe"}, state:{previous_revision:null, resulting_revision:null}}'
 }
 
+@test "operator writer: adoption shape validates beside the machine identity" {
+    rubric "writer names who inferred (operator), not which process ran"
+    local w body
+    w=$(cloudify_state_operator_writer rachid)
+    jq -e '.kind == "operator" and .name == "rachid"' <<<"$w"
+
+    rubric "an adoption event carrying it validates against the live schema"
+    jq -n --argjson w "$w" '{schema_version:1, event_id:"20260918T100000Z-0000000a", at:"2026-09-18T10:00:00Z", tool:"cloudify", tool_version:"t",
+        writer:$w, run_id:null, step_id:"adopt", application:"affine", flavor:"default", deployment:"main",
+        application_commit:"0123456789abcdef0123456789abcdef01234567",
+        subject:{kind:"package", host:"cloudai:affine", host_key:"ivps:cloudai:affine", package:"affine", package_instance:"default"},
+        phase:null, command_kind:"adopt", values:{},
+        outcome:{exit_status:null, summary:"adopted from observation"}, state:{previous_revision:0, resulting_revision:1}}' > "$CLOUDIFY_TMP/adopt-body.json"
+    cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/event.schema.json" "$CLOUDIFY_TMP/adopt-body.json"
+}
+
 @test "event create: renders, validates, hard-links at the canonical path" {
     local body="$CLOUDIFY_TMP/ev.json"
     _event_body > "$body"

@@ -1220,3 +1220,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - GLOSSARY `deployment manifest`: anchored to `~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/manifest.json`; worded as a rebuildable cache outside the projection path (event log is what it abbreviates; lost or corrupt -> rebuilt, never fatal, never a source); fields split declared (identity, bindings, creation time) vs derived (status, last run/event IDs, commit cached from the latest proving dispatch; adoption pins no commit).
 - GLOSSARY `package record`: anchored with its inventory home `$(ivps node path <node>[:<instance>])/deployments/<app>/<flavor>/<deployment>/packages/<package>/<package instance>/`.
 - Docs only; no code. No gate due (gate runs after items 2, 3, 5).
+
+## 2026-09-29 - adoption-honesty item 2: the operator writer in the event schema
+
+- `schemas/v1/event.schema.json`: `$defs.writer` is now a oneOf - `writer-machine` (the existing process identity; optional `kind: "machine"`, absent on pre-existing events) beside the new `writer-operator` (`{kind: "operator", name}`, no process identity - the inference is the operator's claim, not a dispatch). `command_kind: "adopt"` and the phase-less semantics were already in the schema; no kind additions.
+- `lib/state.sh`: `cloudify_state_operator_writer <name>` builds the operator writer (argument or `CLOUDIFY_OPERATOR`); the event writer validates the shape at create time.
+- Fixtures: `adopt-operator-writer.json` (valid; the adopt-observation shape with the operator writer), `operator-writer-missing-name.json` + `operator-writer-with-machine-fields.json` (invalid; adoption naming nobody / dressed as a dispatch). `validate.sh` green: 9 valid accepted, 13 invalid rejected, 0 failures.
+- Red-first: the acceptance test failed 127 (builder missing), then failed on schema rejection; green after the schema + builder. Gate 140/0 (goldens byte-identical); event.bats 10/10.

@@ -524,3 +524,7 @@ Cleanup-session scope (plans/runbook-run-store-cleanup.md):
 - Manifest honesty per the 2026-09-29 rulings: rebuildable cache outside the
   projection path, declared vs derived fields, adoption pins no commit,
   status vocabulary adopted/installed/reconfigured/verified/degraded.
+
+## Dispatch payload branch skew (found 2026-09-29, affine close-out)
+
+The bootstrap block pulls the remote's CURRENT branch (usually master). A controller running a feature branch dispatches payloads that execute master's code - the result-line contract (lib/results.sh) does not exist on master, so any dispatch reconciliation fails (`cause: reconcile`). The two-host e2e never sees this (it rsyncs the tree). Re-entry: the payload bootstrap should honor a branch/commit pin (fragile surface - needs the gate description), or the branch merges before production dispatches.

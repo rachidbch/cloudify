@@ -532,3 +532,7 @@ The bootstrap block pulls the remote's CURRENT branch (usually master). A contro
 Landed 2026-09-30: the payload carries `CLOUDIFY_GIT_REF` - the controller's own branch by default (detached: its commit; no git: empty), an explicit env override, set-empty to disable. Reserved against file stores (lib/vars.sh). Goldens regenerated (one export line per payload) under the gate. Tests pick how a target gets code via `CLOUDIFY_TEST_CODE_MODE` (push | github | branch:<name>, push default) - tests/helpers/code-mode.bash.
 
 REMAINING (Rachid, one paste): the bootstrap gist must honor the ref - the ready-to-paste version is `~/tmp/gist-with-git-ref.sh` (only the update block changes; the symlink logic is byte-identical). Until the gist is updated, remote checkouts keep their current-branch pull behavior and the mandate is inert.
+
+## Bare multi-host invocation synthesis (ADR-032, ruled 2026-09-30 - implementation pending)
+
+`cloudify --on h1 --on h2 install a b c` must leave ONE `_direct` deployment spanning both hosts (one manifest, one binding per host), not one bucket per host. The synthesis moves to invocation level in the router; manifest binding writes gain add-if-absent merge; `deployment delete` already sweeps every host tree (verified). Tests: two-host bare invocation unit + e2e pin.

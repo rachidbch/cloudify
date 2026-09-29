@@ -72,7 +72,10 @@ CLOUDIFY_SCRIPT_DIR=$(cd "$(dirname "$( [ -L "${BASH_SOURCE[0]}" ] && readlink -
 export CLOUDIFY_LOCAL_BIN="$HOME"/.local/bin
 : "${EDITOR:=vim}" && export EDITOR
 export CLOUDIFY_RECIPE_FILENAME="init.sh"
-export CLOUDIFY_BOOTSTRAP_URL="https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh"
+# Always-latest gist form (Rachid's ruling 2026-09-30): gist edits go live at
+# each host's next update window. The revision-pinned form stays available for
+# emergencies by restoring the /raw/<revision>/ segment.
+export CLOUDIFY_BOOTSTRAP_URL="https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/cloudify.sh"
 # Per-process scratch (Rachid-consented 2026-09-27; tmp/tmp-isolation-description.md):
 # a fixed shared dir let any exiting process sweep every other live process's
 # temps. The ROOT is env-overridable (tests sandbox it); the scratch dir itself

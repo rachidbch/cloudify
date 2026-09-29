@@ -286,6 +286,34 @@ It contains identities plus one resolved value namespace for every package the d
 
 It is the only value-resolution result for that dispatch and is removed after the parent process records the outcome.
 
+## payload
+
+The script one dispatch ships to its target host, built on the controller from a template in `lib/remote.sh`: an environment block (credentials, forwarded values, flags - each variable on an explicit envsubst allow-list), the update step, the live-log setup, then the cloudify command.
+
+It travels on ssh stdin, never as command arguments - no value ever enters a remote process list.
+
+Bytes are pinned byte-exact by the golden payload fixtures (`tests/fixtures/golden/`); the fragile-surface gate guards them.
+
+It carries `CLOUDIFY_GIT_REF`, the mandated checkout ref for the target host: the controller's own branch by default, an explicit value to pin any ref, set-but-empty to leave the target's checkout alone.
+
+## cloudify bootstrap gist url
+
+`CLOUDIFY_BOOTSTRAP_URL` (router): the raw script the payload's update step downloads and runs to obtain cloudify code on a target host.
+
+The script lives outside the repo, in Rachid's GitHub gist (`gist.github.com/rachidbch/2e10095b0042e784c557a15e2c804807`): it clones `~/cloudify` from GitHub when absent, pulls it when present, symlinks `/usr/local/bin/cloudify`, and touches the freshness marker `~/cloudify/.#last_update`.
+
+The URL may pin a gist revision or use the always-latest form; the router sets it.
+
+The update step runs when the marker is older than `CLOUDIFY_UPDATE_DELAY` minutes (default 30), or immediately under `CLOUDIFY_FORCE_UPDATE=true`.
+
+## remote live log
+
+The human-readable output stream of a dispatch, written on the target host under `/tmp/cloudify/logs/` with a `latest.log` symlink, and teed live back over the ssh channel to the controller's own log.
+
+Unbuffered and unfiltered; result lines (`result v1:`, `checkout v1:`) ride it as ordinary keyed lines.
+
+It is never parsed for machine truth: events and package records carry all structure. See FRAGILE.md for the streaming invariants.
+
 ## run
 
 One execution of selected application phases - one playing of the runbook.

@@ -476,3 +476,13 @@ Context: matching had to decide converge-or-fork by comparing a run's resolved v
 Decision: deploy the same application twice and at least one deployment must be named. An unnamed run with zero existing deployments of that application and flavor creates the first one (generated id, printed). An unnamed run facing existing deployments converges only on proven identity; a differing - or unprovable - configuration refuses with a named error listing the deployments. The matching-resupply machinery is not built; nothing forks silently.
 
 Consequences: matching's comparison survives unchanged for convergence detection; its create path only runs at zero deployments; the fork cases (differing values, differing bindings, differing covered set, interrupted candidate, unprovable secret) all end in the same named refusal directing the operator to --name. REDESIGN's matching sentence is amended in the same commit.
+
+## ADR-032: A bare multi-host invocation synthesizes one _direct deployment spanning its hosts
+
+Status: accepted (Rachid's ruling, 2026-09-30) - implementation pending.
+
+Context: ADR-027 made bare direct installs synthesize ordinary deployments under the reserved `_direct` application so no mutation happens out-of-band. The synthesis today happens per dispatch: `cloudify --on h1 --on h2 install a b c` leaves one deployment per host (each named `<first-package>-<utc>`, one `direct` slot), because the worker synthesizes after each host's child finishes. Deployments are natively multi-host (a runbook binds one slot per target), `deployment delete` already sweeps every inventory tree for the deployment's records, and Rachid ruled that the per-host split is the wrong granularity for one invocation.
+
+Decision: one invocation with no runbook and no explicit `--name` synthesizes ONE `_direct` deployment spanning every host the invocation targeted: one manifest, one binding per host (slot per host word; the single-host case keeps the `direct` slot), all package records of the invocation under that one identity. The name is generated once per invocation (first-package word + UTC timestamp, unchanged shape), not once per host.
+
+Consequences: `deployment delete`/teardown on a synthesized bucket spans hosts - the same semantics as any multi-slot deployment, which is the point. The synthesis moves from the per-dispatch worker hook to invocation level in the router (the name is computed once and carried by every dispatch of the invocation); manifest binding writes gain add-if-absent merge semantics so concurrent host workers accumulate bindings instead of clobbering. ADR-027's synthesis rule is amended; nothing else changes.

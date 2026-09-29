@@ -1,5 +1,7 @@
 # Adoption honesty and status vocabulary - session plan (CURRENT)
 
+Progress (2026-09-29, session one): items 1-9 LANDED (commits d74c824..a4ddfee); item 10 PARTIAL (youtube-mcp adopted + verified, census five dispositioned; hermes round two remains); item 11 NOT STARTED. Also open: three pre-existing shell-router reds (repair map in LOGS 2026-09-29, session close). Handoff: ~/.pi/handoffs/2026-09-29-cloudify-adoption-honesty-items-1-9-census-done.md
+
 Design first; implementation in this session per item, red test first. Normative basis: GLOSSARY entries as landed 2026-09-29 (`cloudify inventory`, `package record`, `applied values`, `deployment adoption`, `manifest status`), the REDESIGN amendments of 2026-09-29 (manifest as rebuildable cache, status vocabulary, adoption pins no commit), and the rulings of 2026-09-29 (adoption-command shape accepted incl. values-as-input; manifest ruled a helper outside the projection path). ROADMAP "State-tree hygiene" cross-references this plan.
 
 Absorbed by Rachid's ruling (2026-09-29):

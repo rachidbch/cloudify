@@ -73,7 +73,6 @@ setup_file() {
     mkdir -p "$CFG_DIR/runbooks/$APP/$FLAVOR"
     cat > "$CFG_DIR/runbooks/$APP/$FLAVOR/runbook.md" <<'RUNBOOK'
 ---
-deployment: two-host-e2e
 targets: alpha, beta
 ---
 

@@ -78,11 +78,10 @@ host=""
 for arg in "$@"; do [[ "$arg" == *@* ]] && host="${arg#*@}"; done
 cat > "$CAPTURE_DIR/payload-$host"
 STUB
-    cat > "$STUB_DIR/ivps" <<'STUB'
-#!/bin/bash
-exit 1
-STUB
-    chmod +x "$STUB_DIR/cloudify" "$STUB_DIR/ssh" "$STUB_DIR/ivps"
+    # No ivps stub: the resolver falls through to the plain-host path, and the
+    # nested dispatches' worker skips recording (no inventory in this sandbox)
+    # - the payloads land through the ssh capture stub.
+    chmod +x "$STUB_DIR/cloudify" "$STUB_DIR/ssh"
     export PATH="$STUB_DIR:$PATH"
 }
 
@@ -111,7 +110,7 @@ _make_runbook() {
 }
 
 _snapshot() {
-    ls "$CLOUDIFY_DEPLOYMENTS_DIR/$1/runs/"*.yaml
+    ls "$(cloudify_state_runs_dir "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME")"/*.yaml
 }
 
 _snapshot_value() {
@@ -139,7 +138,6 @@ _payload_value() {
     rb="$CLOUDIFY_TMP/red.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: red-dep
 targets: guest
 ---
 ```bash step=install target=guest pkg=redpkg id=one
@@ -177,7 +175,6 @@ EOF
     local rb="$CLOUDIFY_DIR/runbooks/redapp/default/runbook.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: red-dep
 targets: a, b
 inputs: APP_SHARED_INPUT
 map: PKG_A_TARGET=APP_SHARED_INPUT, PKG_B_TARGET=APP_SHARED_INPUT
@@ -192,7 +189,12 @@ EOF
     [ -f "$rb" ]
 
     subrubric "the real engine runs both steps; each dispatches in its own cloudify process"
-    run cloudify_runbook_execute "$rb" --target a=host-a --target b=host-b
+    # The engine (not the bare executor): it prepares the manifest the
+    # dispatches' bindings render reads.
+    # The sandbox tree has no git identity: the dev-push declaration is the
+    # honest encoding (mirrors/rsync trees record the override).
+    CLOUDIFY_DEVELOPMENT_OVERRIDE=1 run cloudify_deployment_run redapp --name red-dep --runbook "$rb" \
+        --target a=host-a --target b=host-b --yes
     if [[ "$status" -ne 0 ]]; then
         echo "engine status=$status" >&2
         echo "$output" >&2

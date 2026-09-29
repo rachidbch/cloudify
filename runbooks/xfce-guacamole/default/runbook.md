@@ -1,5 +1,4 @@
 ---
-deployment: xfce-gui
 targets: guest, gateway
 inputs: RDP_PASSWORD
 map: CLOUDIFY_XFCE_USER_PASSWORD=RDP_PASSWORD, CLOUDIFY_GUACAMOLE_RDP_PASSWORD=RDP_PASSWORD
@@ -14,10 +13,10 @@ Rules: variable NAMES only, never values; cross-host references are full MagicDN
 (`<guest>.<tailnet-domain>`), never a bare container name and never an IP; human-gate steps
 are mandatory; teardown removes the software, never the instances.
 
-Playable: `cloudify deployment run xfce-gui` executes the selected `step=` blocks, with the
+Playable: `cloudify app run xfce-guacamole` executes the selected `step=` blocks, with the
 deployment set and the targets bound. This is the canonical runbook at
 `runbooks/xfce-guacamole/default/runbook.md`: the application identity (`xfce-guacamole`,
-flavor `default`) comes from that path, and `deployment: xfce-gui` is only the store id.
+flavor `default`) comes from that path, and the deployment name from `--name`.
 A bare run selects the `install` then `verify` phases; teardown needs an explicit
 `--phase teardown` (or `--from teardown-xfce`). Target names take environment variables
 `$TARGET_GUEST` and `$TARGET_GATEWAY`. Bind them per run:
@@ -30,7 +29,7 @@ commands, not run by the engine.
 - Guest: a tailnet-reachable host, managed by cloudify.
 - Gateway: a docker-capable, tailnet-reachable host (runs guacd + Guacamole).
 - Tailnet domain: the operator's MagicDNS domain.
-- Deployment id: `xfce-gui` (the front-matter above).
+- Deployment name: the `--name` of the run (the id IS the name; ADR-026).
 
 ## Preconditions (must already hold)
 
@@ -53,16 +52,15 @@ commands, not run by the engine.
   grant `tag:incus` to `tag:incus` (any-to-any; the branch-6 defect).
 - Deployment values (operator, secrets from stdin; never written here):
   ```bash
-  cloudify deployment create xfce-gui
-  cloudify vars set CLOUDIFY_XFCE_USER gui --deployment xfce-gui
-  cloudify vars set CLOUDIFY_XFCE_USER_PASSWORD --stdin --deployment xfce-gui
-  cloudify vars set CLOUDIFY_GUACAMOLE_RDP_HOST "<guest>.<tailnet-domain>" --deployment xfce-gui
-  cloudify vars set CLOUDIFY_GUACAMOLE_RDP_USER gui --deployment xfce-gui
-  cloudify vars set CLOUDIFY_GUACAMOLE_RDP_PASSWORD --stdin --deployment xfce-gui
-  cloudify vars set CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD --stdin --deployment xfce-gui
-  cloudify vars set CLOUDIFY_GUACAMOLE_DB_PASSWORD --stdin --deployment xfce-gui
-  cloudify vars set CLOUDIFY_GUACAMOLE_BIND 127.0.0.1 --deployment xfce-gui
-  cloudify vars list --deployment xfce-gui
+  cloudify vars set CLOUDIFY_XFCE_USER gui --deployment <name>
+  cloudify vars set CLOUDIFY_XFCE_USER_PASSWORD --stdin --deployment <name>
+  cloudify vars set CLOUDIFY_GUACAMOLE_RDP_HOST "<guest>.<tailnet-domain>" --deployment <name>
+  cloudify vars set CLOUDIFY_GUACAMOLE_RDP_USER gui --deployment <name>
+  cloudify vars set CLOUDIFY_GUACAMOLE_RDP_PASSWORD --stdin --deployment <name>
+  cloudify vars set CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD --stdin --deployment <name>
+  cloudify vars set CLOUDIFY_GUACAMOLE_DB_PASSWORD --stdin --deployment <name>
+  cloudify vars set CLOUDIFY_GUACAMOLE_BIND 127.0.0.1 --deployment <name>
+  cloudify vars list --deployment <name>
   ```
   One secret, two names: `CLOUDIFY_XFCE_USER_PASSWORD` and
   `CLOUDIFY_GUACAMOLE_RDP_PASSWORD` must hold the same value. The front matter maps both
@@ -116,7 +114,7 @@ until a human confirms.
 Never in the forward run: `--yes` auto-confirms the gate, then this tears down. After the gate:
 
 ```bash
-cloudify deployment run xfce-gui --target guest=<guest> --target gateway=<gateway> --from teardown-xfce
+cloudify app run xfce-guacamole --target guest=<guest> --target gateway=<gateway> --from teardown-xfce
 ```
 
 Order: software legs (need ssh + the grant) -> `deployment delete` -> policy revoke -> tag reset ->
@@ -136,7 +134,7 @@ ivps unexpose "$TARGET_GATEWAY" --direct
 ```
 
 ```bash
-cloudify deployment delete xfce-gui
+cloudify deployment delete <name> (arrives with state-tree hygiene)
 ```
 
 Role tags/grant are kept by default; retire them only when the role is done:

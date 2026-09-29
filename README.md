@@ -253,7 +253,7 @@ to stores.
 
 **Runbooks (`cloudify app run`).** A runbook is repo-tracked Markdown
 (`runbooks/<app>/<flavor>/runbook.md`, see `runbooks/README.md`): front-matter
-(`deployment`, `targets`) plus fenced `bash step=<type> [target=] [pkg=] [id=] [phase=]`
+(`targets`, optional `inputs`/`map`) plus fenced `bash step=<type> [target=] [pkg=] [id=] [phase=]`
 blocks, `<type>` in `launch|install|configure|verify|uninstall|run|human-gate`.
 `cloudify app run <application>[/<flavor>] [--name <name>]` resolves the
 canonical runbook from the reference, exports the application identity, binds
@@ -263,7 +263,7 @@ then runs those steps, stopping at the first failure. A step sees
 `CLOUDIFY_DEPLOYMENT`, `TARGET_<NAME>`, `CLOUDIFY_OUTPUTS_FILE` (append
 `name=value`; later steps read `OUT_<name>`) and
 `STEP_ID/STEP_TYPE/STEP_TARGET/STEP_PKG/STEP_PHASE`. Every run writes
-`${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml` (0600): `status`, timestamps,
+the state tree (`~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/runs/<utc>.yaml`, 0600): `status`, timestamps,
 `runbook`, `target.<name>`, the raw `value.<NAME>` lines and `output.<name>`.
 `--dry-run` prints the plan (seeded value NAMES, never values) and runs nothing.
 The lower-level `cloudify_deployment_run` engine keeps `--runbook <path>` for a

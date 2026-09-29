@@ -1,5 +1,4 @@
 ---
-deployment: demo
 targets: guest, gateway
 ---
 

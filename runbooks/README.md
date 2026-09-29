@@ -8,7 +8,7 @@ Canonical: `runbooks/<application>/<flavor>/runbook.md`. It is the only discover
 The application identity (`<application>/<flavor>`) is derived from the path, not from the file body.
 The default flavor is `default`.
 A `run` or `human-gate` step must declare an explicit `phase=`.
-REMOVED by the run-store cleanup (2026-09-25 ruling): the `deployment:` front-matter field and its `CLOUDIFY_DEPLOYMENT` fallback carry no deployment or run identity - identity derives from the runbook path plus `--name`, and runs identify by timestamp. The two existing runbooks migrate with the cleanup.
+REMOVED (2026-09-29): the `deployment:` front-matter field and its `CLOUDIFY_DEPLOYMENT` fallback are gone - a runbook carrying the field is refused named. Identity derives from the runbook path plus the deployment name (`--name`), and runs identify by timestamp under the deployment's state-tree runs dir (`~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/runs/<utc>.yaml`).
 
 Rules:
 - No ad-hoc scripts, no host commands: only `ivps` and `cloudify`.
@@ -23,7 +23,6 @@ Front matter declares the application inputs and maps package variable names ont
 The syntax is flat `key: value`, parsed with a flat reader, no YAML library:
 
     ---
-    deployment: xfce-gui
     targets: guest, gateway
     inputs: RDP_PASSWORD
     map: CLOUDIFY_XFCE_USER_PASSWORD=RDP_PASSWORD, CLOUDIFY_GUACAMOLE_RDP_PASSWORD=RDP_PASSWORD
@@ -131,7 +130,7 @@ Validation: the amnesiac test. A fresh agent session, given only the cloudify sk
 
 `cloudify app run <application>[/<flavor>] [--name <name>]` executes the application's canonical runbook.
 The lower-level `cloudify_deployment_run` engine takes `--runbook <path>`, which `cloudify deployment replay` uses to re-run a recorded runbook outside the tree.
-Front-matter declares the deployment and its named targets; each step is a fence whose info string types it and names its phase for `run`/`human-gate`:
+Front-matter declares the named targets; each step is a fence whose info string types it and names its phase for `run`/`human-gate`:
 
     ```bash step=install target=guest pkg=xfce id=install-xfce
     cloudify --on "$TARGET_GUEST" install xfce

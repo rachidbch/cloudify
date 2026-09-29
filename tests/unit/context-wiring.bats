@@ -317,7 +317,6 @@ EOF
     local rb="$CAP_DIR/preflight.md"
     cat > "$rb" <<'EOF'
 ---
-deployment: wiring-dep
 targets: guest
 ---
 ```bash step=install target=guest pkg=preflight-pkg

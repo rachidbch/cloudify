@@ -98,7 +98,7 @@ _make_runbook() {
 
 # _snapshot <id> - the single run snapshot path for <id>.
 _snapshot() {
-    ls "$CLOUDIFY_DEPLOYMENTS_DIR/$1/runs/"*.yaml
+    ls "$(cloudify_state_runs_dir "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME")"/*.yaml
 }
 
 # _snapshot_value <snapshot> <name> - the value recorded on the value.<name> line.
@@ -134,7 +134,6 @@ _snapshot_value() {
     local rb="$CLOUDIFY_TMP/char.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: char-dep
 targets: guest
 ---
 ```bash step=install target=guest pkg=charpkg id=one

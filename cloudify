@@ -695,18 +695,23 @@ function main() {
                     ;;
                 show)
                     shift
-                    local _show_id="" _show_user=""
+                    local _show_id="" _show_user=0 _show_name="default"
                     while [[ -n "${1:-}" ]]; do
                         case "$1" in
                             --user-values) _show_user=1 ;;
+                            --name)
+                                shift
+                                _show_name="${1:-}"
+                                [[ -n "$_show_name" ]] || die "Usage: cloudify deployment show <application>[/<flavor>] [--name <name>] [--user-values]"
+                                ;;
                             *)
-                                if [[ -z "$_show_id" ]]; then _show_id="$1"; else die "Usage: cloudify deployment show <id> [--user-values]"; fi
+                                if [[ -z "$_show_id" ]]; then _show_id="$1"; else die "Usage: cloudify deployment show <application>[/<flavor>] [--name <name>] [--user-values]"; fi
                                 ;;
                         esac
                         shift
                     done
-                    [[ -n "$_show_id" ]] || die "Usage: cloudify deployment show <id> [--user-values]"
-                    cloudify_deployment_show "$_show_id" "$_show_user"
+                    [[ -n "$_show_id" ]] || die "Usage: cloudify deployment show <application>[/<flavor>] [--name <name>] [--user-values]"
+                    cloudify_deployment_show "$_show_id" "$_show_user" "$_show_name"
                     ;;
                 unset)
                     shift

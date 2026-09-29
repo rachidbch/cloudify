@@ -900,3 +900,10 @@
 - The red test caught my own fixture bugs first (event-id suffixes must be 8 hex per the schema pattern; a null commit demands the dev override even in a test write) - the schema validating test fixtures is the gate working as designed.
 - The read-collapse trap cost two rounds: the scan parsed `@tsv` rows with tab-IFS (empty commit field swallowed, host landed in commit), then the scan's own tab-separated output collapsed again in the caller. Both fixed with the unit separator; the router's "hand-parsed: a tab is IFS-whitespace" comment was the warning, unread.
 - Sandbox-first debugging (the L1 rung) found the function-structure confusion before any container run; the remote suite then confirmed 23/23.
+
+## 2026-09-29 - item 6 evidence trail
+
+- The engine bug of the day: a second `local tuple... name=""` mid-function RESET the parsed --name (bash reinitializes on redeclare) - the app-run chain printed "Deployment: default" with --name demo on the line. One-line fix with a comment.
+- read-IFS tab collapse bit once more in show (the dname var was renamed but two prints still passed the param). The grep-evidence loop (dump $output on failure) found it in one round each time.
+- The stale state-v2 red test: proven pre-existing at a061493 in a worktree before touching it (the constitution's grounding rule); the repair also removed its ivps-deny stub - the resolver tolerates a missing ivps (plain-host path) and the worker's own skip path (no ivps -> no records) is the honest behavior for that sandbox.
+- bats 1.10 lesson again: single-word --filter or -f only; multi-word splits into file args.

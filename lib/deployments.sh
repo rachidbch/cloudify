@@ -151,24 +151,19 @@ cloudify_deployment_list() {
 # from the runbook that declares <id> (the path is the identity), never from
 # splitting the deployment ID.
 function _cloudify_deployment_tuple_of() {
-    local id="${1:-}" runbook
+    local id="${1:-}" name="${2:-default}" runbook
     if _cloudify_deployment_tuple_active; then
         printf '%s\t%s\t%s\n' "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME"
         return 0
     fi
-    declare -F cloudify_runbook_find >/dev/null 2>&1 || return 1
+    declare -F cloudify_runbook_find_app >/dev/null 2>&1 || return 1
     declare -F _cloudify_runbook_tuple_for >/dev/null 2>&1 || return 1
-    runbook=$(cloudify_runbook_find "$id" 2>/dev/null) || return 1
-    # The deployment name: the caller's export wins, else the LAST segment of
-    # a dotted store id (app.name / app.flavor.name) names the deployment,
-    # else the plain default. `deployment show affine.main` must land on the
-    # deployment `app run affine --name main` created - name main.
-    local name="${CLOUDIFY_DEPLOYMENT_NAME:-}"
-    if [[ -z "$name" && "$id" == *.* ]]; then
-        name="${id##*.}"
-        _cloudify_identity_valid_component "$name" || name="default"
-    fi
-    [[ -n "$name" ]] || name="default"
+    local app="" flavor=""
+    case "$id" in
+        */*) app="${id%%/*}"; flavor="${id#*/}" ;;
+        *) app="$id"; flavor="default" ;;
+    esac
+    runbook=$(cloudify_runbook_find_app "$app" "$flavor" 2>/dev/null) || return 1
     _cloudify_runbook_tuple_for "$runbook" "$name"
 }
 
@@ -176,15 +171,15 @@ function _cloudify_deployment_tuple_of() {
 # the manifest (identity, status, bindings, commit, replayability) when one
 # exists, and always lists the run snapshots. Never a value.
 function cloudify_deployment_show() {
-    local id="${1:-}" user_only="${2:-}" tuple app flavor name runs_dir snapshots newest
-    [[ -n "$id" ]] || die "Usage: cloudify deployment show <id> [--user-values]"
+    local id="${1:-}" user_only="${2:-}" name="${3:-default}" tuple app flavor dname runs_dir snapshots newest
+    [[ -n "$id" ]] || die "Usage: cloudify deployment show <application>[/<flavor>] [--name <name>] [--user-values]"
     printf 'deployment: %s\n' "$id"
 
-    if tuple=$(_cloudify_deployment_tuple_of "$id"); then
-        IFS=$'\t' read -r app flavor name <<< "$tuple"
+    if tuple=$(_cloudify_deployment_tuple_of "$id" "$name"); then
+        IFS=$'\t' read -r app flavor dname <<< "$tuple"
         printf 'application: %s/%s\n' "$app" "$flavor"
-        printf 'deployment_name: %s\n' "$name"
-        if ! cloudify_manifest_describe "$app" "$flavor" "$name"; then
+        printf 'deployment_name: %s\n' "$dname"
+        if ! cloudify_manifest_describe "$app" "$flavor" "$dname"; then
             printf 'manifest: <none>\n'
             printf 'status: <no manifest>\n'
         fi
@@ -193,13 +188,13 @@ function cloudify_deployment_show() {
         else
             printf 'values in effect:\n'
         fi
-        cloudify_deployment_applied_screen "$app" "$flavor" "$name" "$user_only"
+        cloudify_deployment_applied_screen "$app" "$flavor" "$dname" "$user_only"
     else
         printf 'application: <unknown: no canonical runbook declares this deployment>\n'
     fi
 
-    runs_dir="$CLOUDIFY_DEPLOYMENTS_DIR/$id/runs"
-    if [[ -d "$runs_dir" ]]; then
+    runs_dir=$(cloudify_state_runs_dir "${app:-}" "${flavor:-}" "${dname:-$name}" 2>/dev/null) || runs_dir=""
+    if [[ -n "$runs_dir" && -d "$runs_dir" ]]; then
         snapshots=$(find "$runs_dir" -maxdepth 1 -type f -name '*.yaml' 2>/dev/null | grep -c . || true)
         newest=$(find "$runs_dir" -maxdepth 1 -type f -name '*.yaml' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
         printf 'snapshots: %s (newest: %s)\n' "$snapshots" "${newest:-<none>}"

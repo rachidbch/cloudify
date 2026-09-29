@@ -831,3 +831,27 @@ candidate_file() {
     run cloudify_context_build install "$DEP" install "$cand" foo
     [ "$status" -ne 0 ]
 }
+
+@test "context value json: the applied label (a released pin) is a legal source" {
+    rubric "ADR-030: unset moves a caller pin to applied; a seeded verify re-reads it"
+    local ctx="$CLOUDIFY_TMP/applied-ctx"
+    export CLOUDIFY_CONTEXT_FILE="$ctx"
+    {
+        printf 'context_version: 1\n'
+        printf 'action: verify\n'
+        printf 'deployment: \n'
+        printf 'phase: verify\n'
+        printf 'top_kind: package\n'
+        printf 'value.AFFINE_PORT.source: applied\n'
+        printf 'value.AFFINE_PORT.form: literal\n'
+        printf 'value.AFFINE_PORT.secret: false\n'
+        printf 'value.AFFINE_PORT.declaration: none\n'
+        printf 'value.AFFINE_PORT.reference: \n'
+        printf 'value.AFFINE_PORT.digest: \n'
+        printf 'value.AFFINE_PORT.raw: t:8787\n'
+    } > "$ctx"
+    cloudify_context_load "$ctx"
+    run cloudify_context_value_json AFFINE_PORT
+    [ "$status" -eq 0 ]
+    jq -e '.source == "applied" and .source_form == "8787" and .secret == false' <<<"$output"
+}

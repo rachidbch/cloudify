@@ -884,13 +884,17 @@ function _cloudify_state_event_scan() {
     while IFS= read -r f; do
         row=$(jq -r --arg app "$app" --arg flavor "$flavor" --arg name "$name" '
             select(.application == $app and .flavor == $flavor and .deployment == $name)
-            | [.event_id, (.application_commit // ""), (.subject.kind // ""), (.subject.host_key // "")]
+            | [.event_id, (.application_commit // ""), (.subject.kind // ""),
+               (.subject.host_key // ""), (.command_kind // "")]
             | join("\u001f")' "$f" 2>/dev/null) || continue
         [[ -n "$row" ]] || continue
-        local id c kind hk
-        IFS=$'\x1f' read -r id c kind hk <<< "$row"
+        local id c kind hk cmd
+        IFS=$'\x1f' read -r id c kind hk cmd <<< "$row"
         [[ -n "$head" ]] || head="$id"
-        [[ -n "$commit" ]] || commit="$c"
+        # The commit cache comes from dispatch events only: an adoption event
+        # never proves one (GLOSSARY deployment adoption), not even a legacy
+        # fog-era adopt event that carries a commit claim.
+        [[ -n "$commit" || "$cmd" == "adopt" ]] || commit="$c"
         if [[ -z "$host" && "$kind" == "package" ]]; then
             host="$hk"
         fi

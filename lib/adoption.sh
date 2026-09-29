@@ -173,11 +173,18 @@ function cloudify_adoption_record() {
     bindings=$(mktemp "$CLOUDIFY_TMP/adoption-bindings-XXXXXX")
     printf '%s\t%s\t%s\t%s\t%s\n' "$slot" "$ssh" "$node" "$inst" "$ssh" > "$bindings"
     if cloudify_manifest_exists "$app" "$flavor" "$name"; then
-        local recorded_addr=""
-        recorded_addr=$(cloudify_manifest_bindings "$app" "$flavor" "$name" 2>/dev/null |
-            awk -F'\t' -v s="$slot" '$1 == s { print $2 }')
-        [[ -z "$recorded_addr" || "$recorded_addr" == "$ssh" ]] ||
-            die "adoption: the manifest binds '$slot' to '$recorded_addr', not '$ssh' - rebinding is a migration (--migrate-targets), not an adoption."
+        # The recorded binding may spell the same host differently (node:instance
+        # vs the instance's own name): compare the resolved identity, not the
+        # address strings. A different host is a rebinding - a migration.
+        local recorded=""
+        recorded=$(cloudify_manifest_bindings "$app" "$flavor" "$name" 2>/dev/null |
+            awk -F'\t' -v s="$slot" '$1 == s { print $3 "\x1f" $4 }')
+        if [[ -n "$recorded" ]]; then
+            local r_node r_inst
+            IFS=$'\x1f' read -r r_node r_inst <<< "$recorded"
+            [[ "$r_node" == "$node" && "$r_inst" == "$inst" ]] ||
+                die "adoption: the manifest binds '$slot' to '$r_node${r_inst:+:$r_inst}', not '$node${inst:+:$inst}' - rebinding is a migration (--migrate-targets), not an adoption."
+        fi
     else
         cloudify_manifest_write "$app" "$flavor" "$name" "" "" true "$bindings" ||
             die "adoption: cannot create the manifest."
@@ -243,13 +250,21 @@ function cloudify_adoption_record() {
         msg "adoption: $p@default on $host - event $eid, record $rec"
     done
 
-    # The manifest status: derived from the events, never claimed.
-    local word dev commit
+    # The manifest's derived fields: recomputed from the events, never claimed
+    # and never carried over - a re-adoption re-derives the status AND the
+    # commit cache (an adoption pins no commit; a stale hand-era pin goes).
+    local word dev commit scan
     word=$(cloudify_state_status_from_events "$app" "$flavor" "$name")
     [[ "$word" == "null" ]] && word=""
-    dev=$(cloudify_manifest_field "$app" "$flavor" "$name" development_override) || dev=true
-    commit=$(cloudify_manifest_field "$app" "$flavor" "$name" application_commit) || commit=""
-    [[ "$commit" == "null" ]] && commit=""
+    scan=$(_cloudify_state_event_scan "$app" "$flavor" "$name")
+    IFS=$'\x1f' read -r _head commit _host <<< "$scan"
+    if [[ -z "$commit" ]]; then
+        dev=true
+    else
+        dev=$(jq -r '.development_override // false' \
+            "$(cloudify_state_events_root)/${_head:0:4}-${_head:4:2}/$_head.json" 2>/dev/null || true)
+        [[ "$dev" == "true" ]] || dev=false
+    fi
     cloudify_manifest_update_status "$app" "$flavor" "$name" "$word" "$commit" "$dev" "$last_eid" ||
         die "adoption: cannot update the manifest status."
     msg "adoption: manifest $(cloudify_state_manifest_file "$app" "$flavor" "$name") (status ${word:-none})"

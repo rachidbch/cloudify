@@ -624,7 +624,10 @@ function cloudify_context_value_json() {
     case "$declaration" in explicit | heuristic | none) ;; *) die "context: value '$name' has malformed declaration '$declaration'." ;; esac
     case "$source" in
         environment) source=caller ;;
-        deployment | application | package | global | recipe) ;;
+        # applied and migration are record-backed labels (ADR-030: a released
+        # pin stays applied; a migrated record carries migration) - a seeded
+        # verify/teardown re-reads them, so the projection must accept them.
+        deployment | application | package | global | recipe | applied | migration | caller) ;;
         *) die "context: value '$name' has unknown source label '$source'." ;;
     esac
     if [[ "$form" == reference ]]; then

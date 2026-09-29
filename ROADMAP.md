@@ -512,3 +512,15 @@ Re-entry conditions (the hermes adoption round, PKG-ADOPTIONS round two):
   decides.
 - hermes-openwebui test 5 root-caused (docker logs at failure time).
 - Both removed from OUT_OF_SCOPE, full suite green.
+
+## State-tree hygiene (2026-09-29, surfaced by the affine gap investigation)
+
+Cleanup-session scope (plans/runbook-run-store-cleanup.md):
+- `_direct` manifest accumulation: every bare dispatch leaves
+  `~/.local/state/cloudify/deployments/_direct/direct/<pkg>-<ts>/` forever.
+- Deleted-instance residue: package records survive under instance dirs of
+  instances that no longer exist (the torn-down twin still holds records).
+- `deployment delete` does not exist; teardown sweeps only what it knows.
+- Manifest honesty per the 2026-09-29 rulings: rebuildable cache outside the
+  projection path, declared vs derived fields, adoption pins no commit,
+  status vocabulary adopted/installed/reconfigured/verified/degraded.

@@ -328,6 +328,15 @@ function _cloudify_dispatch_worker() {
     ssh="${_rest#*$'\t'}"
     step="${STEP_ID:-direct}"
 
+    # A plain external host (GLOSSARY external host): no ivps inventory home
+    # exists for it yet (later phase - keyed by SSH host-key fingerprint). The
+    # dispatch ran; the worker names what it cannot do instead of dying on an
+    # empty inventory root.
+    if [[ -z "$node" ]]; then
+        log_warn "worker: plain external host '${ssh:-?}' has no state home yet - the dispatch is recorded nowhere"
+        return 0
+    fi
+
     if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" && -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]]; then
         app="$CLOUDIFY_APPLICATION" flavor="$CLOUDIFY_FLAVOR" name="$CLOUDIFY_DEPLOYMENT_NAME"
     else

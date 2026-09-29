@@ -16,24 +16,45 @@ teardown() {
     teardown_test_env
 }
 
-# Create an ssh stub that records how it was called
+# Create an ssh stub that records how it was called AND executes the payload
+# (stdin) with the streamed tree as the remote checkout - the worker needs the
+# payload's real result and checkout lines to reconcile, so a capture-only
+# stub cannot back these tests anymore.
 _create_ssh_stub() {
-    cat <<'STUB' > "$STUB_DIR/ssh"
+    cat <<STUB > "$STUB_DIR/ssh"
 #!/bin/bash
-echo "SSH_ARGS: $*" >> "$STUB_DIR/ssh_calls.log"
+echo "SSH_ARGS: \$*" >> "\$STUB_DIR/ssh_calls.log"
+# A real ssh lands in a FRESH remote shell: controller-side paths and
+# ownership must not leak (the inherited context path made the payload-side
+# router's cleanup sweep the controller's dispatch context).
+unset CLOUDIFY_CONTEXT_FILE _CLOUDIFY_TMP_OWNER CLOUDIFY_TMP CLOUDIFY_CONTEXT_DIR \
+      CLOUDIFY_LOG_FILE CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR \
+      CLOUDIFY_DEPLOYMENT_NAME CLOUDIFY_DEPLOYMENT CLOUDIFY_STATE_DIR \
+      CLOUDIFY_CREDENTIALS_DIR
+export PATH="$PWD:\$PATH"
+export CLOUDIFY_DIR="$PWD"
+bash -s
 STUB
     chmod +x "$STUB_DIR/ssh"
     : > "$STUB_DIR/ssh_calls.log"
 }
 
-# Create an ivps stub: node `cloudai` exists and hosts instance `cloudify`
+# Create an ivps stub: node `cloudai` exists and hosts instance `cloudify`;
+# node dirs are writable inside STUB_DIR so dispatch records land there.
 _create_ivps_target_stub() {
-    cat <<'STUB' > "$STUB_DIR/ivps"
+    mkdir -p "$STUB_DIR/nodes/cloudai/instances/cloudify" "$STUB_DIR/nodes/local"
+    cat <<STUB > "$STUB_DIR/ivps"
 #!/bin/bash
-case "${1:-}" in
+case "\${1:-}" in
     node)
-        [[ "${3:-}" == "local" || "${3:-}" == "cloudai" ]] || exit 1
-        echo "/ivps/nodes/${3:-}"
+        case "\${3:-}" in
+            local)  echo "$STUB_DIR/nodes/local" ;;
+            cloudai) echo "$STUB_DIR/nodes/cloudai" ;;
+            # The combined form resolves to the INSTANCE dir (the state
+            # inventory calls it for every record and lock on the target).
+            cloudai:cloudify) echo "$STUB_DIR/nodes/cloudai/instances/cloudify" ;;
+            *) exit 1 ;;
+        esac
         ;;
     list)
         echo "  REMOTE:NAME      STATUS"
@@ -296,9 +317,19 @@ EOF
 _router_env() {
     cat <<'ENV'
         export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true
-        export CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-target-test CLOUDIFY_TMP=/tmp/cf-target-test-tmp
+        export CLOUDIFY_IS_LOCAL=true CLOUDIFY_TMP=/tmp/cf-target-test-tmp
+        # The streamed tree IS the checkout for both legs: the controller's
+        # reconcile resolves parent packages against its pkg/ (CLOUDIFY_DIR
+        # would otherwise default to \$HOME/cloudify - the marker-only stub).
+        export CLOUDIFY_DIR="$PWD"
         export DEBUG=false CLOUDIFY_HOSTPWD=test CLOUDIFY_REMOTE_PWD=test CLOUDIFY_REMOTE_USER=root
-        mkdir -p /tmp/cf-target-test/pkg /tmp/cf-target-test/inventory /tmp/cf-target-test-tmp
+        export CLOUDIFY_NO_DEFAULTS=true
+        # Isolated home: the worker's manifests and events land inside STUB_DIR,
+        # and the fake checkout's pinned marker keeps the payload's update step
+        # from ever curling the bootstrap gist.
+        export HOME="$STUB_DIR/home"
+        mkdir -p "$HOME/cloudify" /tmp/cf-target-test-tmp
+        touch "$HOME/cloudify/.#last_update"
 ENV
 }
 
@@ -307,48 +338,41 @@ ENV
     _create_ivps_target_stub
 
     PATH="$STUB_DIR:$PATH" run bash -c "$(_router_env)
-        cd /root/cloudify && bash cloudify --on cloudai:cloudify install bats-test 2>&1
+        cd "$PWD" && bash cloudify --on cloudai:cloudify install bats-test 2>&1
     "
 
     [ "$status" -eq 0 ]
     grep -q "root@cloudify" "$STUB_DIR/ssh_calls.log"
 }
 
-@test "real router: a remote dispatch writes a registry record for the resolved target" {
+@test "real router: a bare remote dispatch synthesizes the _direct deployment and its records" {
     _create_ssh_stub
-    # ivps stub whose node dir lives inside the test temp dir (no real writes)
-    cat <<STUB > "$STUB_DIR/ivps"
-#!/bin/bash
-case "\${1:-}" in
-    node)
-        [[ "\${3:-}" == "local" || "\${3:-}" == "cloudai" ]] || exit 1
-        echo "$STUB_DIR/nodes/\${3:-}"
-        ;;
-    list)
-        echo "  REMOTE:NAME      STATUS"
-        echo "  cloudai:cloudify Running"
-        ;;
-    *) exit 1 ;;
-esac
-STUB
-    chmod +x "$STUB_DIR/ivps"
+    _create_ivps_target_stub
 
-    local dep="router-registry-test"
-    PATH="$STUB_DIR:$PATH" run bash -c "
-        export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true
-        export CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-registry-test CLOUDIFY_TMP=/tmp/cf-registry-test-tmp
-        export DEBUG=false CLOUDIFY_HOSTPWD=test CLOUDIFY_REMOTE_PWD=test CLOUDIFY_REMOTE_USER=root
-        export CLOUDIFY_DEPLOYMENT=$dep CLOUDIFY_CREDENTIALS_DIR=$STUB_DIR/creds
-        mkdir -p /tmp/cf-registry-test/pkg /tmp/cf-registry-test/inventory /tmp/cf-registry-test-tmp
-        cd /root/cloudify && bash cloudify --on cloudai:cloudify install bats-test 2>&1
+    PATH="$STUB_DIR:$PATH" run bash -c "$(_router_env)
+        cd "$PWD" && bash cloudify --on cloudai:cloudify install bats-test 2>&1
     "
 
     [ "$status" -eq 0 ]
-    local record="$STUB_DIR/nodes/cloudai/cloudify/deployments/$dep/pkgs/bats-test/config.yaml"
-    [ -f "$record" ]
-    grep -q "^node: cloudai$" "$record"
-    grep -q "^instance: cloudify$" "$record"
-    grep -q "^status: installed$" "$record"
+    # The worker's state record under the resolved instance dir (the registry
+    # this test pinned is retired; the inventory record replaced it). Both the
+    # controller-side and the payload-side worker write one _direct deployment
+    # each - at least one record with the honest shape is the pin.
+    local -a recs mfs m
+    recs=("$STUB_DIR"/nodes/cloudai/instances/cloudify/deployments/_direct/direct/*/packages/bats-test/default/state.json)
+    [ "${#recs[@]}" -ge 1 ]
+    [ "$(jq -r .package "${recs[0]}")" = "bats-test" ]
+    [ "$(jq -r .host "${recs[0]}")" = "cloudai:cloudify" ]
+    [ "$(jq -r .application "${recs[0]}")" = "_direct" ]
+    [ "$(jq -r .applied.version "${recs[0]}")" = "1.0.0" ]
+    # And each synthesized manifest derives its word from its events.
+    mfs=("$STUB_DIR"/home/.local/state/cloudify/deployments/_direct/direct/*/manifest.json)
+    [ "${#mfs[@]}" -ge 1 ]
+    local word
+    for m in "${mfs[@]}"; do
+        word=$(jq -r .status "$m" 2>/dev/null || true)
+        [[ "$word" == "installed" ]] || { echo "manifest $m says $word"; return 1; }
+    done
 }
 
 @test "real router: --on <bad>: dies with the node-not-found message" {
@@ -367,7 +391,7 @@ STUB
     _create_ivps_target_stub
 
     PATH="$STUB_DIR:$PATH" run bash -c "$(_router_env)
-        cd /root/cloudify && bash cloudify --on myserver install bats-test 2>&1
+        cd "$PWD" && bash cloudify --on myserver install bats-test 2>&1
     "
 
     [ "$status" -eq 0 ]

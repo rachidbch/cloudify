@@ -100,9 +100,8 @@ cloudify_deployment_list() {
             status=$(cloudify_manifest_field "$app" "$flavor" "$dep" status 2>/dev/null) || status="-"
             [[ "$status" == "null" || -z "$status" ]] && status="-"
             sdisp="$status"
-            [[ "$status" == active ]] && sdisp="${GREEN}active${RESET}"
+            [[ "$status" == verified ]] && sdisp="${GREEN}verified${RESET}"
             [[ "$status" == degraded ]] && sdisp="${RED}degraded${RESET}"
-            [[ "$status" == applying ]] && sdisp="${ORANGE}applying${RESET}"
             hosts=0 pkgs=0 uv=0
             seen_uv=()
             local bf

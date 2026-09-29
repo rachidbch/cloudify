@@ -57,7 +57,7 @@ setup() {
 
     # The deployment the worker projects onto: a proved manifest.
     printf 'primary\tlocalhost\tweb1\t\tlocalhost\n' > "$CLOUDIFY_TMP/bindings"
-    cloudify_manifest_write _direct direct "$DEP_NAME" applying \
+    cloudify_manifest_write _direct direct "$DEP_NAME" "" \
         0123456789abcdef0123456789abcdef01234567 false "$CLOUDIFY_TMP/bindings"
 
     # The dispatch context: one resolved name PORT, one covered package.
@@ -154,11 +154,56 @@ record() { # record <pkg> [inst]
     [ "$(jq -r '.last_attempt.requested.PORT.source' "$(record nginx)")" = "caller" ]
     [ "$(jq -r '.applied.values.PORT.source' "$(record nginx)")" = "caller" ]
 
-    # Manifest: success ends active with the last committed event id.
-    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "active" ]
+    # Manifest: success ends installed with the last committed event id.
+    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "installed" ]
     local last_ev
     last_ev=$(jq -r '.applied.event_id' "$(record wezterm)")
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" last_event_id)" = "$last_ev" ]
+}
+
+@test "worker: an install whose verify stage fails stays installed with failing health" {
+    rubric "written-but-unverified is information, not a downgrade"
+    collect "$(checkout 0123456789abcdef0123456789abcdef01234567)" \
+        "$(res - nginx failed 0 failed 1.24.0)"
+
+    run run_worker nginx
+    [ "$status" -eq 0 ]
+
+    # The attempt stood, the verify stage observed failure: health records it,
+    # the status stays installed.
+    [ "$(jq -r .health.status "$(record nginx)")" = "degraded" ]
+    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "installed" ]
+}
+
+@test "worker: a passing verify dispatch ends verified; a failing one keeps the recorded word" {
+    rubric "verified arrives only through a real verify observation"
+    # An installed deployment to observe.
+    collect "$(checkout 0123456789abcdef0123456789abcdef01234567)" \
+        "$(res - nginx succeeded 0 ok 1.24.0)"
+    run run_worker nginx
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "installed" ]
+
+    # The verify dispatch passes: verified, as of that moment.
+    collect "$(checkout 0123456789abcdef0123456789abcdef01234567)" \
+        'result v1: parent=- package=nginx instance=default phase=verify action=verify outcome=succeeded exit=0 verification=ok version=-'
+    run_worker_verify() {
+        cloudify_worker_process verify direct _direct direct "$DEP_NAME" \
+            web1 "" localhost \
+            "$CLOUDIFY_TMP/collected" "$CLOUDIFY_TMP/ctx" "$CLOUDIFY_TMP/bindings" "$@"
+    }
+    run run_worker_verify nginx
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "verified" ]
+
+    # The next verify fails (exit 0, verification failed): information, not a
+    # downgrade - health degrades, the word stays verified.
+    collect "$(checkout 0123456789abcdef0123456789abcdef01234567)" \
+        'result v1: parent=- package=nginx instance=default phase=verify action=verify outcome=failed exit=0 verification=failed version=-'
+    run run_worker_verify nginx
+    [ "$status" -eq 0 ]
+    [ "$(jq -r .health.status "$(record nginx)")" = "degraded" ]
+    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "verified" ]
 }
 
 @test "worker: a missing requested top-level result fails before any inventory write, manifest degraded" {
@@ -196,7 +241,7 @@ record() { # record <pkg> [inst]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" last_event_id)" = "$(basename "$events" .json)" ]
 
     subrubric "a development-override run never degrades on this check"
-    cloudify_manifest_write _direct direct "$DEP_NAME" applying \
+    cloudify_manifest_write _direct direct "$DEP_NAME" "" \
         "" true "$CLOUDIFY_TMP/bindings"
     collect "$(checkout fedcba98fedcba98fedcba98fedcba98fedcba98)" \
         "$(res - nginx succeeded 0 ok 1.24.0)"
@@ -238,7 +283,7 @@ record() { # record <pkg> [inst]
     run env CLOUDIFY_ASSERT_NO_HOST_LOCK=1 bash -c '
         source lib/utils.sh
         source lib/state.sh
-        cloudify_manifest_write _direct direct main active \
+        cloudify_manifest_write _direct direct main installed \
             0123456789abcdef0123456789abcdef01234567 false '"$CLOUDIFY_TMP/bindings"'
     '
     [ "$status" -ne 0 ]
@@ -287,6 +332,7 @@ record() { # record <pkg> [inst]
 
     run run_worker
     [ "$status" -eq 0 ]
-    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "active" ]
+    rubric "no event committed: no state-relevant word, the recorded null stands"
+    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "null" ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" last_event_id)" = "null" ]
 }

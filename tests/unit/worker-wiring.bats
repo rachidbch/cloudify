@@ -87,7 +87,7 @@ res() {
 
 @test "hook: a referenced dispatch projects onto its deployment from env identity" {
     export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
-    cloudify_manifest_write web default main applying \
+    cloudify_manifest_write web default main "" \
         0123456789abcdef0123456789abcdef01234567 false "$CLOUDIFY_TMP/bindings"
     {
         printf 'checkout v1: commit=0123456789abcdef0123456789abcdef01234567 dirty=false\n'
@@ -100,7 +100,7 @@ res() {
     local rec
     rec=$(cloudify_state_record_dir web1 "" web default main nginx default)/state.json
     [ -f "$rec" ]
-    [ "$(cloudify_manifest_field web default main status)" = "active" ]
+    [ "$(cloudify_manifest_field web default main status)" = "installed" ]
     [ -n "$(cloudify_manifest_field web default main last_event_id)" ]
     [ "$(cloudify_manifest_field web default main last_event_id)" != "null" ]
 }
@@ -169,7 +169,7 @@ res() {
     printf '1.0.0\n' > "$CLOUDIFY_DIR/pkg/pandoc/.version"
     printf '1.0.0\n' > "$CLOUDIFY_DIR/pkg/basics/.version"
     export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
-    cloudify_manifest_write web default main applying \
+    cloudify_manifest_write web default main "" \
         0123456789abcdef0123456789abcdef01234567 false "$CLOUDIFY_TMP/bindings"
     # pandoc is deliberately NOT covered by the context (only nginx is): it
     # hangs under basics, which the dispatch never covered either.
@@ -182,13 +182,13 @@ res() {
 
     run _cloudify_dispatch_worker install $'web1\t\tlocalhost' "$CLOUDIFY_TMP/ctx" "$CLOUDIFY_TMP/collected" nginx
     [ "$status" -eq 0 ]
-    [ "$(cloudify_manifest_field web default main status)" = "active" ]
+    [ "$(cloudify_manifest_field web default main status)" = "installed" ]
     [ -f "$(cloudify_state_record_dir web1 "" web default main pandoc default)/state.json" ]
 }
 
 @test "hook: an empty collection fails the dispatch and writes no inventory" {
     export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
-    cloudify_manifest_write web default main applying \
+    cloudify_manifest_write web default main "" \
         0123456789abcdef0123456789abcdef01234567 false "$CLOUDIFY_TMP/bindings"
     : > "$CLOUDIFY_TMP/collected"
 

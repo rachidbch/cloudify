@@ -23,9 +23,9 @@
 # validation.
 #
 # Run and event IDs stay null here: Phase 6 owns run and event records, and this
-# slice must not fabricate a run record. A run killed between steps leaves
-# `status: applying` in the manifest, which is the discoverable interrupted
-# state; classifying it as stale is Phase 6's job.
+# slice must not fabricate a run record. A run killed before its first event
+# leaves `status: null` in the manifest - recorded, nothing proved; classifying
+# a stale run as stale is Phase 6's job.
 #
 # Interface:
 #   cloudify_state_root                              print the state root
@@ -272,7 +272,7 @@ function _cloudify_manifest_render() {
             deployment: $name,
             application_commit: (if $commit == "" then null else $commit end),
             development_override: $dev,
-            status: $status,
+            status: (if $status == "" then null else $status end),
             created_at: $created,
             bindings: $b,
             last_run_id: (if $last_run == "" then null else $last_run end),
@@ -843,8 +843,8 @@ function cloudify_manifest_write() {
 
 # cloudify_manifest_update_status <app> <flavor> <name> <status> <commit> <dev>
 # Rewrite the recorded manifest with a new status and commit, keeping its
-# created_at, its bindings, and its last run and event IDs. Used at the end of a
-# run: `active` after install plus verify, `degraded` on an observed failure.
+# created_at, its bindings, and its last run and event IDs. Used at the end of
+# a run and by the regrade below; an empty status writes null (nothing proved).
 function cloudify_manifest_update_status() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" status="${4:-}"
     local commit="${5:-}" dev="${6:-}" file bindings_file rc=0
@@ -868,6 +868,56 @@ function cloudify_manifest_exists() {
     [[ -f "$file" ]]
 }
 
+# cloudify_state_status_from_events <app> <flavor> <name>
+# The derived status: the kind of the last successful state-relevant event
+# (GLOSSARY manifest status), read from the event log - never from the
+# manifest. Newest first (paths sort chronologically); the first event that
+# decides wins:
+#   - install/configure/verify/adopt with exit_status 0 -> the kind's word;
+#   - exit_status null (a worker-level degraded event) -> degraded;
+#   - exit_status != 0: a failed verify is skipped (information, not a
+#     downgrade); any other failed kind -> degraded.
+# Non-state-relevant kinds never decide. No deciding event prints null.
+function cloudify_state_status_from_events() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}"
+    local root f word
+    root=$(cloudify_state_events_root)
+    [[ -d "$root" ]] || { printf 'null\n'; return 0; }
+    while IFS= read -r f; do
+        word=$(jq -r --arg app "$app" --arg flavor "$flavor" --arg name "$name" '
+            select(.application == $app and .flavor == $flavor and .deployment == $name)
+            | .command_kind as $k | (.outcome.exit_status // "null") as $e |
+            select($k == "install" or $k == "configure" or $k == "verify" or $k == "adopt") |
+            if $e == 0 then
+                {install: "installed", configure: "reconfigured", verify: "verified", adopt: "adopted"}[$k]
+            elif $e == "null" then "degraded"
+            elif $k == "verify" then empty
+            else "degraded" end' "$f" 2>/dev/null) || continue
+        [[ -n "$word" ]] || continue
+        printf '%s\n' "$word"
+        return 0
+    done < <(find "$root" -type f -name '*.json' -printf '%p\n' 2>/dev/null | sort -r)
+    printf 'null\n'
+    return 0
+}
+
+# cloudify_state_deployment_regrade_status <app> <flavor> <name>
+# Migration (plan: adoption-honesty item 3): regrade a manifest written with
+# the retired words (applying/active) by event-log inspection. No deciding
+# event regrades to null - recorded, nothing proved; the rebuild surface
+# (manifest as cache) recomputes the same derivation.
+function cloudify_state_deployment_regrade_status() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}" word dev commit
+    cloudify_manifest_exists "$app" "$flavor" "$name" ||
+        die "regrade: no manifest for '$app/$flavor --name $name'."
+    dev=$(cloudify_manifest_field "$app" "$flavor" "$name" development_override) || dev=false
+    commit=$(cloudify_manifest_field "$app" "$flavor" "$name" application_commit) || commit=""
+    [[ "$commit" == "null" ]] && commit=""
+    word=$(cloudify_state_status_from_events "$app" "$flavor" "$name")
+    [[ "$word" == "null" ]] && word=""
+    cloudify_manifest_update_status "$app" "$flavor" "$name" "$word" "$commit" "$dev"
+}
+
 # cloudify_manifest_field <app> <flavor> <name> <key>
 function cloudify_manifest_field() {
     local file
@@ -886,7 +936,7 @@ function cloudify_manifest_bindings() {
 }
 
 # cloudify_manifest_describe <app> <flavor> <name> - the human read surface (no
-# values). Reveals an interrupted run: `applying` is printed with its meaning.
+# values). Reveals an unproved record: a null status is printed with its meaning.
 function cloudify_manifest_describe() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" file status dev created commit
     local line slot address node instance ssh_host rest recorded=""
@@ -922,8 +972,8 @@ function cloudify_manifest_describe() {
         printf 'binding %s: %s (node=%s instance=%s ssh=%s)\n' \
             "$slot" "$address" "${node:-<none>}" "${instance:-<none>}" "${ssh_host:-<none>}"
     done <<< "$recorded"
-    if [[ "$status" == "applying" ]]; then
-        printf '%s\n' 'state: applying - a run may be in flight, or it was interrupted before it could finish; classifying a stale run arrives with the run and event records (Phase 6)'
+    if [[ "$status" == "null" || -z "$status" ]]; then
+        printf '%s\n' 'state: no state-relevant event yet - the deployment is recorded but nothing has proved it; a run may be in flight, or it was interrupted before its first event (run and event records classify a stale run)'
     fi
     return 0
 }
@@ -975,14 +1025,14 @@ _cloudify_state_commit_rule() {
 }
 
 # cloudify_state_deployment_create <app> <flavor> <name> <bindings-file>
-# The created deployment: manifest status `applying` (the discoverable
-# interrupted state until the worker projects the outcome) under the uniform
-# commit rule, bindings exactly as given.
+# The created deployment: manifest status null (no state-relevant event yet -
+# recorded, nothing proved; the worker or the run projects the word) under the
+# uniform commit rule, bindings exactly as given.
 cloudify_state_deployment_create() {
     local app="${1:?}" flavor="${2:?}" name="${3:?}" bindings="${4:?}"
     local dev commit
     IFS=$'\t' read -r dev commit <<< "$(_cloudify_state_commit_rule)"
-    cloudify_manifest_write "$app" "$flavor" "$name" applying "$commit" "$dev" "$bindings"
+    cloudify_manifest_write "$app" "$flavor" "$name" "" "$commit" "$dev" "$bindings"
 }
 
 # cloudify_state_direct_generated_name <pkg>
@@ -1005,7 +1055,8 @@ function cloudify_state_direct_generated_name() {
 # Create the synthesized deployment: directory, one binding for the host the
 # direct command runs on (slot `direct` - a direct deployment is an ordinary
 # one: guard, reliance, teardown all read this binding), manifest (status
-# applying, uniform commit rule); prints the generated name. The virtual
+# manifest (status null: no state-relevant event yet, uniform commit rule);
+# prints the generated name. The virtual
 # `direct` step exists in the worker, not on disk.
 function cloudify_state_direct_synthesize() {
     local pkg="${1:?cloudify_state_direct_synthesize: package required}"
@@ -1020,7 +1071,7 @@ function cloudify_state_direct_synthesize() {
     fi
     bindings=$(mktemp "$CLOUDIFY_TMP/direct-bindings-XXXXXX")
     printf 'direct\t%s\t%s\t%s\t%s\n' "$address" "$node" "$instance" "$ssh_host" > "$bindings"
-    cloudify_manifest_write "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$name" applying "$commit" "$dev" "$bindings"
+    cloudify_manifest_write "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$name" "" "$commit" "$dev" "$bindings"
     rm -f "$bindings"
     printf '%s\n' "$name"
 }

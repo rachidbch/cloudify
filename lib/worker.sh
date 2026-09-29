@@ -18,9 +18,13 @@
 #      transition (event first); native subjects are report-only;
 #   5. release the host lock BEFORE the per-deployment manifest lock - the
 #      two are never held together (test-only assertion in lib/state.sh);
-#   6. manifest projection: success ends active (install) with the last
-#      committed event id; any failure ends degraded; no event leaves
-#      last_event_id unchanged.
+#   6. manifest projection: the status is the kind of the last successful
+#      state-relevant event (GLOSSARY manifest status): install success ends
+#      installed, reconfigure reconfigured, a passing verify verified; any
+#      attempt or worker failure ends degraded - except a failed verify stage
+#      (exit 0, verification failed), which is information, not a downgrade:
+#      health records it, the recorded word stands. A non-state-relevant
+#      action keeps the recorded word. No event leaves last_event_id unchanged.
 #
 # All value content comes from the ONE parsed dispatch context; the worker
 # never re-resolves a value and never invents one after execution.
@@ -34,6 +38,7 @@ _CLOUDIFY_WORKER_LOADED=1
 # (One process, one loop - module-level state, never caller-visible.)
 declare -gA _WORKER_LINE=()
 _WORKER_LINE_CLASS=""
+_WORKER_VERIFY_FAILED=false
 _WORKER_PROJECTION=""
 _WORKER_EVENT_PROJECTION=""
 _WORKER_APP="" _WORKER_FLAVOR="" _WORKER_NAME=""
@@ -335,6 +340,7 @@ function cloudify_worker_process() {
     local failed=""
     _WORKER_ACTION="$action" _WORKER_STEP="$step"
     _WORKER_DEGRADED_RUN=false
+    _WORKER_VERIFY_FAILED=false
     _WORKER_APP="$app" _WORKER_FLAVOR="$flavor" _WORKER_NAME="$name"
     _WORKER_NODE="$node" _WORKER_INST="$inst" _WORKER_SSH="$ssh_host"
     _WORKER_HOST_KEY=$(cloudify_state_host_key_of "$node" "$inst")
@@ -412,7 +418,17 @@ function cloudify_worker_process() {
                         _cloudify_worker_commit_line || { failed="commit"; break; }
                         ;;
                 esac
-                [[ -n "${_WORKER_LINE[outcome]:-}" && "${_WORKER_LINE[outcome]}" == "failed" ]] && failed="attempt"
+                [[ -n "${_WORKER_LINE[outcome]:-}" && "${_WORKER_LINE[outcome]}" == "failed" ]] && {
+                    # The failure split (GLOSSARY manifest status): a failed
+                    # line with exit 0 is a verify-stage observation (the
+                    # validator forces outcome=failed for it) - information,
+                    # not a downgrade. Anything else is an attempt failure.
+                    if [[ "${_WORKER_LINE[exit]:-1}" == "0" ]]; then
+                        _WORKER_VERIFY_FAILED=true
+                    else
+                        failed="attempt"
+                    fi
+                }
             done
         fi
     fi
@@ -425,15 +441,36 @@ function cloudify_worker_process() {
     # 5. Release the host lock BEFORE the manifest lock - never both.
     cloudify_state_host_unlock "$node" "$inst"
 
-    # 6. Manifest projection with the explicit last event id.
+    # 6. Manifest projection with the explicit last event id. Status = the kind
+    #    of the last successful state-relevant event; a verify-stage failure is
+    #    not a downgrade (health recorded it); the recorded word stands for
+    #    non-state-relevant actions and when nothing new proved itself.
     local status recorded
     if [[ -n "$failed" || "$_WORKER_DEGRADED_RUN" == "true" ]]; then
         status="degraded"
-    elif [[ "$action" == "install" ]]; then
-        status="active"
+    elif [[ -z "$_WORKER_LAST_EVENT" ]]; then
+        status=""    # no event committed: nothing state-relevant happened
+    elif [[ "$_WORKER_VERIFY_FAILED" == "true" ]]; then
+        # The stage ran and observed failure: health recorded it. The mutating
+        # work completed (exit 0), so its word stands - written-but-unverified
+        # is information, not a downgrade. A verify-only dispatch proves
+        # nothing new; the recorded word stays.
+        case "$action" in
+            install) status="installed" ;;
+            configure) status="reconfigured" ;;
+            *) status="" ;;
+        esac
     else
+        case "$action" in
+            install) status="installed" ;;
+            configure) status="reconfigured" ;;
+            verify) status="verified" ;;
+            *) status="" ;;
+        esac
+    fi
+    if [[ -z "$status" ]]; then
         recorded=$(cloudify_manifest_field "$app" "$flavor" "$name" status 2>/dev/null) || recorded=""
-        [[ -n "$recorded" && "$recorded" != "null" ]] && status="$recorded" || status="applying"
+        [[ -n "$recorded" && "$recorded" != "null" ]] && status="$recorded" || status=""
     fi
     if ! cloudify_manifest_exists "$app" "$flavor" "$name"; then
         cloudify_state_deployment_create "$app" "$flavor" "$name" "$bindings"

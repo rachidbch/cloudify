@@ -62,7 +62,7 @@ teardown() {
     [ "$(cloudify_manifest_field _direct direct "$name" application)" = "_direct" ]
     [ "$(cloudify_manifest_field _direct direct "$name" flavor)" = "direct" ]
     [ "$(cloudify_manifest_field _direct direct "$name" deployment)" = "$name" ]
-    [ "$(cloudify_manifest_field _direct direct "$name" status)" = "applying" ]
+    [ "$(cloudify_manifest_field _direct direct "$name" status)" = "null" ]
     # One binding for the host the direct command runs on (slot `direct`).
     cloudify_manifest_bindings _direct direct "$name" > "$CLOUDIFY_TMP/bindings"
     grep -q $'^direct\tlocalhost\t\t\tlocalhost$' "$CLOUDIFY_TMP/bindings"

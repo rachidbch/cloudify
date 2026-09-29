@@ -26,7 +26,7 @@ The field is required, not optional, so a reader never has to guess an unversion
 
 ## Field lists per artifact
 
-`deployment-manifest.schema.json`: `schema_version`, `application`, `flavor`, `deployment`, `application_commit` (40-hex or null), `development_override` (true whenever the commit is null), `status` (`applying`, `active`, `degraded`), `created_at`, `bindings` (per slot: `address`, `node`, `instance`, `ssh_host`), `last_run_id`, `last_event_id`.
+`deployment-manifest.schema.json`: `schema_version`, `application`, `flavor`, `deployment`, `application_commit` (40-hex or null), `development_override` (true whenever the commit is null), `status` (null, or `adopted`, `installed`, `reconfigured`, `verified`, `degraded` - the kind of the last successful state-relevant event), `created_at`, `bindings` (per slot: `address`, `node`, `instance`, `ssh_host`), `last_run_id`, `last_event_id`.
 Applied package values are deliberately absent, and `additionalProperties: false` makes an accidental `applied_values` field a validation failure.
 
 `package-state.schema.json`: `schema_version`, `host`, `host_key` (`ivps:<node-id>` or `ivps:<node-id>:<instance-id>`; `ssh-sha256:` arrives in Phase 5), `package`, `package_instance` (space-free result-line charset), `application`, `flavor`, `deployment`, `step_id` (null only for a migrated record), `revision` (minimum 1; conceptual revision 0 is absence), `applied`, `last_attempt`, `health`.
@@ -43,6 +43,7 @@ No resolved value and no automatic step output exists in a run record.
 
 `event.schema.json`: `schema_version`, `event_id`, `at`, `tool`, `tool_version`, `writer`, `run_id`, `step_id`, `application`, `flavor`, `deployment`, `application_commit`, `subject`, `phase`, `command_kind`, `values`, `outcome`, `state`, an optional `development_override`, an optional `origin` (migrate-registry events only), and an optional `log_reference`.
 `application_commit` null with an application tuple present requires `development_override: true`; `phase` is null only for `migrate-registry`, whose `origin` is `old-registry`.
+`writer` is `host`, `boot_id`, `pid`, `process_start_ticks` (machine, optional `kind: "machine"`; absence of kind means machine) or `kind: "operator"` + `name` (adoption: names who inferred, never which process ran).
 `subject` holds `kind` (`package` or `deployment`), `host`, `host_key`, `package`, and `package_instance`.
 `values` maps a value name to `source`, `secret`, `declaration`, `reference`, and `digest` and carries no plaintext form at all.
 `outcome` holds `exit_status` and a `summary` bounded to 512 characters without a newline.
@@ -135,9 +136,9 @@ Points where `REDESIGN.md` implies a field but does not specify it, with the lea
 2. Reliance is not stored at all: the guard derives it by scanning the node's inventory tree, so there is no claim object to shape; duplicate-record and revision-monotonicity checks are state-check concerns, not JSON Schema constraints.
 3. The durable host key spelling is `ivps:<node-id>`, `ivps:<node-id>:<instance-id>`, or (Phase 5) `ssh-sha256:<fingerprint>`; `REDESIGN.md` requires fingerprint-keyed external state but names no string form. Phase 4 admits only `ivps:` keys.
 4. Source labels are fixed to `caller`, `deployment`, `applied`, `application`, `package`, `global`, and `recipe`; `REDESIGN.md` calls the strongest source "step or caller environment", so `caller` covers both.
-5. The manifest status enum is `applying`, `active`, `degraded`; `REDESIGN.md` says an interrupted run is classified from process identity on the next read without naming a manifest status, so the classification lives in the run record.
+5. The manifest status enum is null (no state-relevant event yet) or `adopted`, `installed`, `reconfigured`, `verified`, `degraded`; `REDESIGN.md` says an interrupted run is classified from process identity on the next read without naming a manifest status, so the classification lives in the run record.
 6. The run `interrupted` object with `at` and `reason` is chosen because `REDESIGN.md` requires an interrupted classification and a distinction between a live writer, a gone process, and a reboot, while naming no record.
-7. Writer identity is `host`, `boot_id`, `pid`, and `process_start_ticks`; `REDESIGN.md` asks for "enough local process and boot information" without naming fields, and the boot ID plus the process start tick are what actually distinguish a reused PID from a live writer.
+7. Writer identity is `host`, `boot_id`, `pid`, and `process_start_ticks` (the machine shape; the operator shape - `kind: "operator"` + `name` - exists for adoption events, which record an inference, not a dispatch); `REDESIGN.md` asks for "enough local process and boot information" without naming fields, and the boot ID plus the process start tick are what actually distinguish a reused PID from a live writer.
 8. `phases` is capped at one entry when `teardown` is selected; this encodes the success criterion that a normal run cannot execute teardown steps, while `REDESIGN.md` does not say whether other phases may accompany teardown.
 9. Event `tool` is const `cloudify`; `REDESIGN.md` permits a shared envelope version with ivps but defines neither the shared field set nor the ivps payload, so this schema fixes the Cloudify side only.
 10. Event subject kinds are `package` and `deployment`; a runbook action event that touches no package uses the deployment subject and names its step in the top-level `step_id`.

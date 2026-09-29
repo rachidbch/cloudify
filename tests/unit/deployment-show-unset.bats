@@ -113,7 +113,7 @@ _seed_record() {
 _manifest() { # _manifest <binding-line...>
     local bf="$CLOUDIFY_TMP/bf"
     printf '%s\n' "$@" > "$bf"
-    cloudify_manifest_write web default main active \
+    cloudify_manifest_write web default main installed \
         0123456789abcdef0123456789abcdef01234567 false "$bf"
 }
 
@@ -153,7 +153,7 @@ _manifest() { # _manifest <binding-line...>
 
     run cloudify_deployment_list
     [ "$status" -eq 0 ]
-    printf '%s\n' "$output" | grep -q "web/default/main.*active.*2 pkgs.*1 host.*1 user value"
+    printf '%s\n' "$output" | grep -q "web/default/main.*installed.*2 pkgs.*1 host.*1 user value"
 }
 
 @test "show: multiple bindings render slot -> host; per-host values stay nested" {

@@ -934,30 +934,30 @@ EOF
 
 # --- Manifest lifecycle ---
 
-@test "manifest: exists as applying before the first mutating step, active after install+verify" {
-    rubric "creation before mutation, applying -> active"
+@test "manifest: exists unproved before the first mutating step, stays null after a run with no state-relevant dispatch" {
+    rubric "creation before mutation, no event -> no word"
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
     _make_app_runbook myapp default my-dep \
-        "test -f \"\$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/manifest.json\" && grep -q '\"status\": \"applying\"' \"\$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/manifest.json\""
+        "test -f \"\$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/manifest.json\" && grep -q '\"status\": null' \"\$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/manifest.json\""
     _clean_tree
     run cloudify_app_run myapp --target guest=cloudai:xfce-test
     [ "$status" -eq 0 ]
-    [ "$(cloudify_manifest_field myapp default default status)" = "active" ]
+    [ "$(cloudify_manifest_field myapp default default status)" = "null" ]
     [ "$(cloudify_manifest_field myapp default default last_run_id)" = "null" ]
     # the compatibility snapshot is still written where it always was
     [ -n "$(ls "$CLOUDIFY_DEPLOYMENTS_DIR/my-dep/runs/"*.yaml 2>/dev/null)" ]
 }
 
-@test "manifest: an install-only run never becomes active" {
-    rubric "active requires install and verify, not install alone"
+@test "manifest: a run whose dispatches carry no state-relevant event keeps the recorded word" {
+    rubric "the word comes from dispatch events, not from phase selection"
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
     _make_app_runbook myapp default my-dep
     _clean_tree
     run cloudify_deployment_run my-dep --target guest=cloudai:xfce-test --phase install
     [ "$status" -eq 0 ]
-    # The manifest was created applying and keeps that recorded status: only a
-    # run that selected both install and verify may end active.
-    [ "$(cloudify_manifest_field myapp default default status)" = "applying" ]
+    # No package dispatch ran, so no state-relevant event landed: the null
+    # written at creation stands.
+    [ "$(cloudify_manifest_field myapp default default status)" = "null" ]
 }
 
 @test "manifest: an observed failure marks the deployment degraded" {
@@ -972,8 +972,8 @@ EOF
     [[ "$output" == *"status: degraded"* ]]
 }
 
-@test "manifest: a run killed between steps stays applying and show reveals it" {
-    rubric "interrupted: no status update, manifest still applying"
+@test "manifest: a run killed between steps stays unproved and show reveals it" {
+    rubric "interrupted: no status update, manifest still null"
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
     local marker="$CLOUDIFY_TMP/killed"
     _make_app_runbook myapp default my-dep \
@@ -987,13 +987,13 @@ EOF
     while [[ ! -f "$marker" ]] && ((i < 100)); do sleep 0.1; i=$((i + 1)); done
     [ -f "$marker" ]
     # Kill the engine while it is inside the first step: it never reaches the
-    # status update, so the manifest stays applying.
+    # status update, so the manifest keeps its creation null.
     kill -9 "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
 
-    [ "$(cloudify_manifest_field myapp default default status)" = "applying" ]
+    [ "$(cloudify_manifest_field myapp default default status)" = "null" ]
     run cloudify_deployment_show my-dep
-    [[ "$output" == *"status: applying"* ]]
+    [[ "$output" == *"status: null"* ]]
     [[ "$output" == *"interrupted"* ]]
     # No run or event record is fabricated in Phase 3.
     [ ! -d "$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/runs" ]

@@ -112,7 +112,7 @@ _seed_manifest() {
     shift 3
     local bf="$CLOUDIFY_TMP/seeded-bindings-$name"
     printf '%s\n' "$@" > "$bf"
-    cloudify_manifest_write "$app" "$flavor" "$name" active \
+    cloudify_manifest_write "$app" "$flavor" "$name" installed \
         0123456789abcdef0123456789abcdef01234567 false "$bf"
 }
 

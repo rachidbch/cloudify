@@ -122,12 +122,65 @@ _reference_check() {
 
 # --- Manifest ---
 
+@test "status derivation: the last successful state-relevant event names the word" {
+    rubric "GLOSSARY manifest status, read from the event log, never the manifest"
+    ev() { # ev <id> <kind> <exit> - one event for app/default/n
+        local m="2026-09"
+        mkdir -p "$(cloudify_state_events_root)/$m"
+        jq -n --arg id "$1" --arg k "$2" --argjson e "$3" \
+            '{event_id:$id, application:"a", flavor:"default", deployment:"n", command_kind:$k, outcome:{exit_status:$e, summary:"s"}}' \
+            > "$(cloudify_state_events_root)/$m/$1.json"
+    }
+    [ "$(cloudify_state_status_from_events a default n)" = "null" ]
+
+    ev 20260901T000000Z-a install 1
+    [ "$(cloudify_state_status_from_events a default n)" = "degraded" ]
+    ev 20260902T000000Z-b install 0
+    [ "$(cloudify_state_status_from_events a default n)" = "installed" ]
+    ev 20260903T000000Z-c verify 1
+    rubric "a failed verify is information, not a downgrade: the install word stands"
+    [ "$(cloudify_state_status_from_events a default n)" = "installed" ]
+    ev 20260904T000000Z-d verify 0
+    [ "$(cloudify_state_status_from_events a default n)" = "verified" ]
+    ev 20260905T000000Z-e unset 0
+    rubric "non-state-relevant kinds never decide"
+    [ "$(cloudify_state_status_from_events a default n)" = "verified" ]
+    ev 20260906T000000Z-f configure 0
+    [ "$(cloudify_state_status_from_events a default n)" = "reconfigured" ]
+    ev 20260907T000000Z-g adopt 0
+    [ "$(cloudify_state_status_from_events a default n)" = "adopted" ]
+}
+
+@test "status regrade: a retired-word manifest regrades by event inspection" {
+    rubric "migration: applying/active on disk -> the event-derived word"
+    local commit="0123456789abcdef0123456789abcdef01234567"
+    cloudify_manifest_write legacy default main "" "$commit" false "$BINDINGS"
+    local file
+    file=$(cloudify_state_manifest_file legacy default main)
+    sed -i 's/^  "status": null,$/  "status": "active",/' "$file"
+    [[ "$(cloudify_manifest_field legacy default main status)" = "active" ]]
+
+    # No deciding event: the regrade lands null (recorded, nothing proved).
+    run cloudify_state_deployment_regrade_status legacy default main
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field legacy default main status)" = "null" ]
+
+    # With an install success in the log, the same manifest regrades installed.
+    local m
+    m=$(cloudify_state_events_root)/2026-09
+    mkdir -p "$m"
+    jq -n '{event_id:"20260901T000000Z-a", application:"legacy", flavor:"default", deployment:"main", command_kind:"install", outcome:{exit_status:0, summary:"s"}}' \
+        > "$m/20260901T000000Z-a.json"
+    run cloudify_state_deployment_regrade_status legacy default main
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field legacy default main status)" = "installed" ]
+    [ "$(cloudify_manifest_field legacy default main application_commit)" = "$commit" ]
+}
+
 @test "manifest: write lands exactly the schema fields and passes the reference validator" {
     rubric "one flock, atomic rename, schemas/v1/deployment-manifest.schema.json"
     local commit="0123456789abcdef0123456789abcdef01234567"
-    cloudify_manifest_write app default prod applying "$commit" false "$BINDINGS"
-
-    local file
+    cloudify_manifest_write app default prod "" "$commit" false "$BINDINGS"
     file=$(cloudify_state_manifest_file app default prod)
     [ -f "$file" ]
     [ "$(stat -c '%a' "$file")" = "600" ]
@@ -143,7 +196,7 @@ _reference_check() {
     run cloudify_manifest_field app default prod development_override
     [ "$output" = "false" ]
     run cloudify_manifest_field app default prod status
-    [ "$output" = "applying" ]
+    [ "$output" = "null" ]
     run cloudify_manifest_field app default prod last_run_id
     [ "$output" = "null" ]
     run cloudify_manifest_field app default prod last_event_id
@@ -167,13 +220,13 @@ _reference_check() {
 @test "manifest: created_at survives a status update, bindings and last IDs are kept" {
     rubric "update_status keeps created_at and bindings"
     local commit="0123456789abcdef0123456789abcdef01234567"
-    cloudify_manifest_write app default prod applying "$commit" false "$BINDINGS"
+    cloudify_manifest_write app default prod "" "$commit" false "$BINDINGS"
     local created
     created=$(cloudify_manifest_field app default prod created_at)
     sleep 1
-    cloudify_manifest_update_status app default prod active "$commit" false
+    cloudify_manifest_update_status app default prod verified "$commit" false
     [ "$(cloudify_manifest_field app default prod created_at)" = "$created" ]
-    [ "$(cloudify_manifest_field app default prod status)" = "active" ]
+    [ "$(cloudify_manifest_field app default prod status)" = "verified" ]
     [ "$(cloudify_manifest_field app default prod last_run_id)" = "null" ]
     run cloudify_manifest_bindings app default prod
     [ "$output" = "$(printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\tcloudify')" ]
@@ -205,16 +258,16 @@ _reference_check() {
 @test "manifest: validate rejects a tampered file and an unknown top-level field" {
     rubric "fail closed: the schema is the one validator"
     local commit="0123456789abcdef0123456789abcdef01234567"
-    cloudify_manifest_write app default prod applying "$commit" false "$BINDINGS"
+    cloudify_manifest_write app default prod "" "$commit" false "$BINDINGS"
     local file
     file=$(cloudify_state_manifest_file app default prod)
 
-    sed -i 's/^  "status": "applying",$/  "status": "bogus",/' "$file"
+    sed -i 's/^  "status": null,$/  "status": "bogus",/' "$file"
     run cloudify_manifest_validate_file "$file"
     [ "$status" -ne 0 ]
     [[ "$output" == *"rejected by the schema"* ]]
 
-    sed -i 's/^  "status": "bogus",$/  "status": "applying",/' "$file"
+    sed -i 's/^  "status": "bogus",$/  "status": null,/' "$file"
     run cloudify_manifest_validate_file "$file"
     [ "$status" -eq 0 ]
 
@@ -227,7 +280,7 @@ _reference_check() {
 @test "manifest: a missing schema tree fails before creating the deployment directory" {
     rubric "the prerequisite is checked before any filesystem write"
     CLOUDIFY_SCHEMA_DIR="$CLOUDIFY_TMP/no-schema" run cloudify_manifest_write app default prod \
-        applying 0123456789abcdef0123456789abcdef01234567 false "$BINDINGS"
+        "" 0123456789abcdef0123456789abcdef01234567 false "$BINDINGS"
     [ "$status" -ne 0 ]
     [[ "$output" == *"schema checker is missing"* ]]
     [ ! -d "$CLOUDIFY_STATE_DIR/deployments" ]
@@ -237,7 +290,7 @@ _reference_check() {
     rubric "arity is checked in the renderer, so a malformed row cannot become fields"
     local b="$CLOUDIFY_TMP/short.tsv"
     printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\n' > "$b"
-    run cloudify_manifest_write app default prod applying 0123456789abcdef0123456789abcdef01234567 false "$b"
+    run cloudify_manifest_write app default prod "" 0123456789abcdef0123456789abcdef01234567 false "$b"
     [ "$status" -ne 0 ]
     [ ! -f "$(cloudify_state_manifest_file app default prod)" ]
 }
@@ -246,7 +299,7 @@ _reference_check() {
     rubric "two rows for one slot would lose a binding"
     local b="$CLOUDIFY_TMP/dup.tsv"
     printf 'guest\tcloudai:a\tcloudai\ta\ta\nguest\tcloudai:b\tcloudai\tb\tb\n' > "$b"
-    run cloudify_manifest_write app default prod applying 0123456789abcdef0123456789abcdef01234567 false "$b"
+    run cloudify_manifest_write app default prod "" 0123456789abcdef0123456789abcdef01234567 false "$b"
     [ "$status" -ne 0 ]
     [ ! -f "$(cloudify_state_manifest_file app default prod)" ]
 }
@@ -254,7 +307,7 @@ _reference_check() {
 @test "manifest: describe fails loudly when the bindings are unreadable" {
     rubric "a reader failure is never swallowed into an empty binding list"
     local commit="0123456789abcdef0123456789abcdef01234567"
-    cloudify_manifest_write app default prod applying "$commit" false "$BINDINGS"
+    cloudify_manifest_write app default prod "" "$commit" false "$BINDINGS"
     local file
     file=$(cloudify_state_manifest_file app default prod)
     jq '.bindings = "not-an-object"' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
@@ -270,7 +323,7 @@ _reference_check() {
     local commit="0123456789abcdef0123456789abcdef01234567"
     local b="$CLOUDIFY_TMP/mixed.tsv"
     printf 'ext\tssh.example.com\t\t\tssh.example.com\nback\ta\\b\tcloudai\tinst\tinst\n' > "$b"
-    cloudify_manifest_write app default prod applying "$commit" false "$b"
+    cloudify_manifest_write app default prod "" "$commit" false "$b"
 
     run cloudify_manifest_bindings app default prod
     [ "$status" -eq 0 ]
@@ -282,7 +335,7 @@ _reference_check() {
     [[ "$output" == *"binding back: a\\b (node=cloudai instance=inst ssh=inst)"* ]]
 
     # A status update re-reads the bindings and must not shift or re-escape them.
-    cloudify_manifest_update_status app default prod active "$commit" false
+    cloudify_manifest_update_status app default prod installed "$commit" false
     run cloudify_manifest_bindings app default prod
     [ "$output" = "$(printf 'ext\tssh.example.com\t\t\tssh.example.com\nback\ta\\b\tcloudai\tinst\tinst')" ]
 }
@@ -290,7 +343,7 @@ _reference_check() {
 @test "manifest: list and describe expose identity, bindings and replayability, never a value" {
     rubric "cloudify_state_list_manifests + cloudify_manifest_describe"
     local commit="0123456789abcdef0123456789abcdef01234567"
-    cloudify_manifest_write app default prod applying "$commit" true "$BINDINGS"
+    cloudify_manifest_write app default prod "" "$commit" true "$BINDINGS"
 
     run cloudify_state_list_manifests
     [ "$status" -eq 0 ]
@@ -298,16 +351,16 @@ _reference_check() {
 
     run cloudify_manifest_describe app default prod
     [ "$status" -eq 0 ]
-    [[ "$output" == *"status: applying"* ]]
+    [[ "$output" == *"status: null"* ]]
     [[ "$output" == *"development_override: true"* ]]
     [[ "$output" == *"replayable: no"* ]]
     [[ "$output" == *"binding guest: cloudai:cloudify"* ]]
-    [[ "$output" == *"state: applying"* ]]
+    [[ "$output" == *"state: no state-relevant event yet"* ]]
 }
 
 @test "manifest: write rejects an invalid component and creates nothing" {
     rubric "validation before the first writer lands"
-    run cloudify_manifest_write "../app" default prod applying 0123456789abcdef0123456789abcdef01234567 false "$BINDINGS"
+    run cloudify_manifest_write "../app" default prod "" 0123456789abcdef0123456789abcdef01234567 false "$BINDINGS"
     [ "$status" -ne 0 ]
     [ ! -d "$CLOUDIFY_STATE_DIR/deployments" ]
 }
@@ -316,7 +369,7 @@ _reference_check() {
     rubric "no second copy of the schema rules; a jq-less host fails loudly"
     command -v jq >/dev/null 2>&1 || skip "jq unavailable"
     local commit="0123456789abcdef0123456789abcdef01234567"
-    cloudify_manifest_write app default prod applying "$commit" false "$BINDINGS"
+    cloudify_manifest_write app default prod "" "$commit" false "$BINDINGS"
     local file
     file=$(cloudify_state_manifest_file app default prod)
 
@@ -324,7 +377,7 @@ _reference_check() {
     run _cloudify_manifest_reference_check "$file"
     [ "$status" -eq 0 ]
 
-    sed -i 's/^  "status": "applying",$/  "status": "bogus",/' "$file"
+    sed -i 's/^  "status": null,$/  "status": "bogus",/' "$file"
     run _cloudify_manifest_reference_check "$file"
     [ "$status" -eq 2 ]
     [[ "$output" == *"rejected by the schema"* ]]
@@ -343,7 +396,7 @@ _reference_check() {
 
 @test "manifest: an unproved commit is real null, only with the development override" {
     rubric "the zero sentinel is gone; the schema's cross-field rule is the gate"
-    cloudify_manifest_write app default prod applying "" true "$BINDINGS"
+    cloudify_manifest_write app default prod "" "" true "$BINDINGS"
     local file
     file=$(cloudify_state_manifest_file app default prod)
     [ "$(cloudify_manifest_field app default prod application_commit)" = "null" ]
@@ -352,7 +405,7 @@ _reference_check() {
     [ "$status" -eq 0 ]
 
     # null without development_override is refused, and nothing lands.
-    run cloudify_manifest_write app default stage applying "" false "$BINDINGS"
+    run cloudify_manifest_write app default stage "" "" false "$BINDINGS"
     [ "$status" -ne 0 ]
     [[ "$output" == *"rejected by the schema"* ]]
     [ ! -f "$(cloudify_state_manifest_file app default stage)" ]
@@ -379,7 +432,7 @@ _reference_check() {
 
     rubric "the manifest reference check delegates to it"
     local commit="0123456789abcdef0123456789abcdef01234567"
-    cloudify_manifest_write app default prod applying "$commit" false "$BINDINGS"
+    cloudify_manifest_write app default prod "" "$commit" false "$BINDINGS"
     local file
     file=$(cloudify_state_manifest_file app default prod)
     run _cloudify_manifest_reference_check "$file"

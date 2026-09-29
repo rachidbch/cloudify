@@ -825,7 +825,8 @@ function _cloudify_runbook_bindings_file() {
 
 # _cloudify_deployment_manifest_prepare <app> <flavor> <name> <bound-lines>
 #                                    <migrate-targets> [<cli-target>...]
-# Create the manifest as `applying` before the first mutating step, or refresh
+# Create the manifest with no status word (no state-relevant event yet) before
+# the first mutating step, or refresh
 # it for a rerun. Reuses the recorded bindings: a recorded binding is never
 # silently replaced. A caller-supplied binding that differs is a rebinding and
 # needs --migrate-targets, because rebinding is a migration, not a rerun.
@@ -874,10 +875,10 @@ function _cloudify_deployment_manifest_prepare() {
         return "$rc"
     fi
     IFS=$'\t' read -r dev commit <<< "$commit_line"
-    cloudify_manifest_write "$app" "$flavor" "$name" applying "$commit" "$dev" "$bindings_file" || rc=$?
+    cloudify_manifest_write "$app" "$flavor" "$name" "" "$commit" "$dev" "$bindings_file" || rc=$?
     rm -f "$bindings_file"
     [[ "$rc" -eq 0 ]] || return "$rc"
-    msg "Manifest: $(cloudify_state_manifest_file "$app" "$flavor" "$name") (status applying)"
+    msg "Manifest: $(cloudify_state_manifest_file "$app" "$flavor" "$name") (no state-relevant event yet)"
     return 0
 }
 
@@ -1124,7 +1125,8 @@ function cloudify_runbook_preflight() {
 #                           [--from <id>] [--phase <phase>]... [--dry-run] [--yes]
 #                           [--migrate-targets]
 # find + parse + bind + preflight + print the plan; without --dry-run it creates
-# the deployment manifest as `applying` (before the first mutating step) and
+# the deployment manifest (no status word - no state-relevant event yet, before
+# the first mutating step) and
 # then dispatches cloudify_runbook_execute. Phase selection is opt-in; a bare
 # run selects install then verify.
 function cloudify_deployment_run() {
@@ -1554,6 +1556,12 @@ function cloudify_runbook_execute() {
 
     finished_at=$(_cloudify_runbook_now)
 
+    # Which step failed, if any: a failed verify step is information, not a
+    # downgrade (GLOSSARY manifest status) - the run-end projection needs the
+    # failing step's type before the unset below.
+    local failed_step_type=""
+    [[ "$status" == "failed" ]] && failed_step_type="${STEP_TYPE:-}"
+
     # 6. Write the run snapshot (always, success or failure).
     local runs_dir="$CLOUDIFY_DEPLOYMENTS_DIR/$deployment/runs"
     (umask 077; mkdir -p "$runs_dir")
@@ -1577,12 +1585,13 @@ function cloudify_runbook_execute() {
     rm -f "$outputs_file"
     unset CLOUDIFY_OUTPUTS_FILE STEP_ID STEP_TYPE STEP_TARGET STEP_PKG STEP_PHASE
 
-    # 7. Manifest lifecycle (Phase 3). The manifest was created as `applying`
-    # before the first step. A successful install plus verify from the start of
-    # the run ends `active`; an observed failure ends `degraded`; anything else
-    # keeps its recorded status. A killed process never reaches this code, so the
-    # manifest stays `applying`, which is the discoverable interrupted state (run
-    # and event records, and their stale-run classification, are Phase 6).
+    # 7. Manifest lifecycle (Phase 3). The manifest starts with no status word;
+    #    the per-dispatch workers project the word after their events (install
+    #    -> installed, reconfigure -> reconfigured, verify -> verified). A failed
+    #    run ends degraded - unless the failing step was a verify step: a failed
+    #    verify is information, not a downgrade (health recorded it), so the
+    #    recorded word stands. A completed run keeps the workers' words. A killed
+    #    process never reaches this code.
     if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" && -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]] \
         && cloudify_manifest_exists "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME"; then
         local _commit_line _mcommit _mdev _mstatus _mapp _mflavor _mname
@@ -1591,24 +1600,19 @@ function cloudify_runbook_execute() {
         _mname="$CLOUDIFY_DEPLOYMENT_NAME"
         _commit_line=$(_cloudify_runbook_source_commit)
         IFS=$'\t' read -r _mdev _mcommit <<< "$_commit_line"
-        if [[ "$status" == "failed" ]]; then
+        if [[ "$status" == "failed" && "$failed_step_type" != "verify" ]]; then
             _mstatus="degraded"
         else
             _mstatus=$(cloudify_manifest_field "$_mapp" "$_mflavor" "$_mname" status)
-            # `active` means the deployment was installed AND verified. A run that
-            # selected only one of the two keeps its recorded status.
-            local _mphases=""
-            _mphases=$(cloudify_runbook_phases_for "$path" ${cli_phases[@]+"${cli_phases[@]}"})
-            if [[ -z "$from" ]] &&
-                grep -qx install <<< "$_mphases" &&
-                grep -qx verify <<< "$_mphases"; then
-                _mstatus="active"
-            fi
-            [[ -n "$_mstatus" ]] || _mstatus="applying"
+            [[ -z "$_mstatus" || "$_mstatus" == "null" ]] && _mstatus=""
         fi
         cloudify_manifest_update_status "$_mapp" "$_mflavor" "$_mname" "$_mstatus" "$_mcommit" "$_mdev" ||
             return $?
-        msg "Manifest: $(cloudify_state_manifest_file "$_mapp" "$_mflavor" "$_mname") (status $_mstatus)"
+        if [[ -z "$_mstatus" ]]; then
+            msg "Manifest: $(cloudify_state_manifest_file "$_mapp" "$_mflavor" "$_mname") (no state-relevant event yet)"
+        else
+            msg "Manifest: $(cloudify_state_manifest_file "$_mapp" "$_mflavor" "$_mname") (status $_mstatus)"
+        fi
     fi
 
     if [[ "$status" == "failed" ]]; then

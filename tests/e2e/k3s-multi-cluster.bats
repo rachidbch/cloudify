@@ -24,7 +24,7 @@ TAG_PROD="k3s-prod"; TAG_DEV="k3s-dev"
 TOKEN_FILE="$WD/tokens.env"
 TEST_SSH="ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/helpers/code-mode.bash"
+source "$PWD/tests/helpers/code-mode.bash"
 WD="$HOME/tmp/k3s-e2e"
 CLOUDIFY_CMD="cloudify --no-defaults --no-verify"
 # k3s node-ready poll (max 900s = 15min per node, 30s interval)

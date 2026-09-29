@@ -34,7 +34,7 @@ CFG_DIR="$WD/cloudify"
 
 _ssh() { ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ConnectTimeout=10 "root@$1" "$2"; }
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/helpers/code-mode.bash"
+source "$PWD/tests/helpers/code-mode.bash"
 
 setup_file() {
     export PATH="$HOME/.local/bin:$PATH"
@@ -169,7 +169,7 @@ teardown_file() {
 
     subrubric "the manifest records the run across both targets"
     run _manifest_status
-    [[ "$output" == "active" ]] || { echo "manifest status: $output"; return 1; }
+    [[ "$output" == "verified" ]] || { echo "manifest status: $output"; return 1; }
 }
 
 @test "verify (Phase 2 repair): verification passes on both hosts" {

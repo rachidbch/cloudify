@@ -22,6 +22,7 @@
     export CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID='';
     export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='';
     export RESTIC_PASSWORD='';
+    export CLOUDIFY_GIT_REF='golden-branch';
     : 
     export FIX_PKG_ONLY='package-value';
     export CLOUDIFY_CLEAR_DATA='';

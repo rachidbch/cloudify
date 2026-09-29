@@ -525,6 +525,10 @@ Cleanup-session scope (plans/runbook-run-store-cleanup.md):
   projection path, declared vs derived fields, adoption pins no commit,
   status vocabulary adopted/installed/reconfigured/verified/degraded.
 
-## Dispatch payload branch skew (found 2026-09-29, affine close-out)
+## Dispatch payload branch skew (found 2026-09-29, affine close-out; repo side landed 2026-09-30)
 
-The bootstrap block pulls the remote's CURRENT branch (usually master). A controller running a feature branch dispatches payloads that execute master's code - the result-line contract (lib/results.sh) does not exist on master, so any dispatch reconciliation fails (`cause: reconcile`). The two-host e2e never sees this (it rsyncs the tree). Re-entry: the payload bootstrap should honor a branch/commit pin (fragile surface - needs the gate description), or the branch merges before production dispatches.
+The bootstrap block pulls the remote's CURRENT branch (usually master). A controller running a feature branch dispatches payloads that execute master's code - the result-line contract (lib/results.sh) does not exist on master, so any dispatch reconciliation fails (`cause: reconcile`). The two-host e2e never sees this (it rsyncs the tree).
+
+Landed 2026-09-30: the payload carries `CLOUDIFY_GIT_REF` - the controller's own branch by default (detached: its commit; no git: empty), an explicit env override, set-empty to disable. Reserved against file stores (lib/vars.sh). Goldens regenerated (one export line per payload) under the gate. Tests pick how a target gets code via `CLOUDIFY_TEST_CODE_MODE` (push | github | branch:<name>, push default) - tests/helpers/code-mode.bash.
+
+REMAINING (Rachid, one paste): the bootstrap gist must honor the ref - the ready-to-paste version is `~/tmp/gist-with-git-ref.sh` (only the update block changes; the symlink logic is byte-identical). Until the gist is updated, remote checkouts keep their current-branch pull behavior and the mandate is inert.

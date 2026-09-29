@@ -104,7 +104,9 @@ cloudify --on server1 server2 install git
 cloudify --on @web install nginx
 ```
 
-Remote execution flow: cloudify SSHes into the target host, runs the bootstrap gist which clones/pulls `~/cloudify` from GitHub, then executes the package recipe. Credentials are injected into the payload via `envsubst` with an explicit allow-list. All remote SSH output is captured to a timestamped log file. If any host fails, the final status message reports the log path for debugging.
+Remote execution flow: cloudify SSHes into the target host, runs the bootstrap gist which clones/pulls `~/cloudify` from GitHub, then executes the package recipe. The payload mandates the controller's ref (`CLOUDIFY_GIT_REF`): the controller's own branch by default, an explicit value to pin, set-empty to leave the remote's checkout alone - a gist that honors it holds the remote checkout on that ref. Credentials are injected into the payload via `envsubst` with an explicit allow-list. All remote SSH output is captured to a timestamped log file. If any host fails, the final status message reports the log path for debugging.
+
+For tests, `CLOUDIFY_TEST_CODE_MODE` picks how a target host obtains the code: `push` (default - the local working tree over ssh, no GitHub round trip), `github` (the origin's default branch), or `branch:<name>`. See `tests/helpers/code-mode.bash`.
 
 ### Targets (`--on`)
 

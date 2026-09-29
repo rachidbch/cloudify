@@ -46,6 +46,10 @@ setup() {
 
     export CLOUDIFY_REMOTE_USER=testuser
     export CLOUDIFY_REMOTE_PWD=dummy
+    # A fixed mandated ref keeps the payload deterministic (the derivation
+    # would otherwise read the controller's checkout, which is not a repository
+    # in the streamed run dir).
+    export CLOUDIFY_GIT_REF=golden-branch
     export CLOUDIFY_CONTEXT_TARGET=$'local\t\tlocalhost'
     cloudify_init_log
     # A fixed log filename keeps the payload deterministic: cloudify_remote_sync
@@ -255,4 +259,39 @@ _ctx() {
     golden_payload dependency install alpha
     grep -qF "export FIX_ALPHA_ONLY='alpha-value'" "$CAP_DIR/dependency.payload"
     grep -qF "export FIX_DEP_VALUE='dep-value'" "$CAP_DIR/dependency.payload"
+}
+
+@test "golden payload: the mandated ref derives from the controller's checkout when unset" {
+    rubric "unset -> the controller's own branch; detached -> its commit; no git -> empty"
+    declare_pkg foo FIX_ENV_ONLY
+    reset_stores
+    export FIX_ENV_ONLY=env-value
+    # A throwaway repository with one commit on a named branch.
+    local repo="$CLOUDIFY_TMP/refrepo"
+    mkdir -p "$repo"
+    git -C "$repo" init -q -b feature-golden
+    git -C "$repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m x
+
+    unset CLOUDIFY_GIT_REF
+    ( CLOUDIFY_SCRIPT_DIR="$repo" CAP_OUT="$CAP_DIR/refderive"
+      cloudify_remote_sync somehost install foo ) > /dev/null 2>&1
+    grep -q "export CLOUDIFY_GIT_REF='feature-golden'" "$CAP_DIR/refderive.payload"
+
+    # Detached: the branch probe answers HEAD, the commit lands instead.
+    local sha
+    sha=$(git -C "$repo" rev-parse HEAD)
+    git -C "$repo" checkout -q --detach
+    unset CLOUDIFY_GIT_REF
+    ( CLOUDIFY_SCRIPT_DIR="$repo" CAP_OUT="$CAP_DIR/refdetach"
+      cloudify_remote_sync somehost install foo ) > /dev/null 2>&1
+    grep -q "export CLOUDIFY_GIT_REF='$sha'" "$CAP_DIR/refdetach.payload"
+
+    # No repository at all: empty mandate (the remote keeps its own checkout).
+    unset CLOUDIFY_GIT_REF
+    ( CLOUDIFY_SCRIPT_DIR="$CLOUDIFY_TMP" CAP_OUT="$CAP_DIR/refnone"
+      cloudify_remote_sync somehost install foo ) > /dev/null 2>&1
+    grep -q "export CLOUDIFY_GIT_REF=''" "$CAP_DIR/refnone.payload"
+
+    # Explicit mandate survives untouched.
+    unset FIX_ENV_ONLY
 }

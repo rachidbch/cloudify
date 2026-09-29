@@ -13,7 +13,8 @@
 # them in teardown_file. Nothing else on the tailnet is touched.
 #
 # Requirements: `cloudify` on PATH (the local branch), ivps, and SSH reach to the
-# remote. The branch must be PUSHED: each host bootstraps cloudify from GitHub.
+# remote. Code lands on the hosts per CLOUDIFY_TEST_CODE_MODE (push by default;
+# github or branch:<name> exercise the GitHub pull path - push the branch first).
 #
 #   PATH="$PWD:$PATH" bats tests/e2e/two-host-application.bats
 
@@ -32,6 +33,8 @@ WD="${E2E_WD:-$HOME/tmp/two-host-e2e}"
 CFG_DIR="$WD/cloudify"
 
 _ssh() { ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ConnectTimeout=10 "root@$1" "$2"; }
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/helpers/code-mode.bash"
 
 setup_file() {
     export PATH="$HOME/.local/bin:$PATH"
@@ -97,31 +100,12 @@ cloudify --on "$TARGET_BETA" verify fixture-split
 ```
 RUNBOOK
 
-    # The bootstrap gist clones the repo's DEFAULT branch, so a live run would
-    # exercise master and could pass without testing this checkout. Bootstrap the
-    # repo once, pin the freshness marker so the payload skips its git pull, then
-    # push the working tree over it - the same idea as `task sync` for the unit
-    # container, and the reason the branch must be pushed is now only the gist.
-    echo "── bootstrapping and pinning the working tree on both hosts ──"
+    # The code each host runs comes from the test code mode (push by default:
+    # the working tree over ssh; github/branch:<name> exercise the pull path).
+    echo "── preparing cloudify code on both hosts (mode: $(tests_code_mode)) ──"
     for h in "$HOST_A" "$HOST_B"; do
-        # The first dispatch is what bootstraps the repo on a host, and it does so
-        # through the normal payload with the operator's git credentials. It may
-        # fail (nothing is installed yet); the repo is what this step wants.
-        cloudify --on "$h" verify fixture-split >/dev/null 2>&1 || true
-        _ssh "$h" 'test -d /root/cloudify' 2>/dev/null \
-            || { echo "FAIL: $h did not bootstrap"; return 1; }
-        # Pin the freshness marker so the payload skips its own git pull, then put
-        # this checkout over the default branch's clone.
-        _ssh "$h" 'touch /root/cloudify/.#last_update' || return 1
-        for d in lib pkg schemas runbooks; do
-            ivps push "$REMOTE:$h" "$PWD/$d" /root/cloudify/ -- --delete >/dev/null 2>&1 \
-                || { echo "FAIL: cannot push $d to $h"; return 1; }
-        done
-        ivps push "$REMOTE:$h" "$PWD/cloudify" /root/cloudify/ >/dev/null 2>&1 \
-            || { echo "FAIL: cannot push the CLI to $h"; return 1; }
-        _ssh "$h" 'grep -q _cloudify_vars_raw_encode /root/cloudify/lib/vars.sh' \
-            || { echo "FAIL: $h is not running this checkout"; return 1; }
-        echo "  $h has this checkout"
+        tests_code_prepare "$h" || { echo "FAIL: cannot prepare $h"; return 1; }
+        echo "  $h is ready (mode $(tests_code_mode))"
     done
 
     export E2E_TARGETS=(--target "alpha=$HOST_A" --target "beta=$HOST_B")

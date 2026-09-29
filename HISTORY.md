@@ -1296,3 +1296,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ## 2026-09-30 - run snapshot extension ruled .yaml (REDESIGN amended)
 
 - Rachid's ruling: run snapshots keep the `.yaml` extension - the snapshot is the replay-seed YAML and the extension tells the truth about the bytes. REDESIGN Data homes amended (both mentions); the writer already wrote `.yaml`, so this is docs-only. Any structured run record owns its own format decision when it lands. Closes the deviation surfaced during the run-store normalization.
+
+## 2026-09-30 - the mandated remote ref (CLOUDIFY_GIT_REF) + the test code-mode switch
+
+- The dispatch payload now carries `CLOUDIFY_GIT_REF`: the controller's own branch by default (a detached checkout forwards its commit; no git at all forwards empty), an explicit env value pins any branch/commit, set-but-empty disables the mandate. Reserved against file stores (lib/vars.sh). The bootstrap gist must honor it for the mandate to bite - the ready-to-paste gist is `~/tmp/gist-with-git-ref.sh` (only the update block changed, byte-spliced; ROADMAP carries the pending-paste note). Until pasted, remote checkouts keep their current-branch behavior.
+- Tests pick how a dispatch target obtains code through `CLOUDIFY_TEST_CODE_MODE` (`push` default | `github` | `branch:<name>`), one helper (`tests/helpers/code-mode.bash`) replacing the copy-pasted bootstrap-pin-push ritual in both e2e suites. Push mode is tar-over-ssh (no ivps dependency) with the freshness marker pinned first so the payload never git-pulls over the pushed tree.
+- Goldens regenerated deliberately under the fragile-surface procedure (one export line per payload; Rachid's go on record from this exchange); a derivation pin test covers branch/detached/no-git/explicit cases.

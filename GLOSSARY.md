@@ -100,11 +100,13 @@ The ivps-owned record of one instance (engine, base image fingerprint, created-a
 
 ## deployment record
 
-The cloudify-owned record of one deployment: everything under `~/.config/cloudify/deployments/<app>/<flavor>/<name>/` - the deployment manifest and the run snapshots.
+The cloudify-owned record of one deployment. It spans two trees: desired inputs under `~/.config/cloudify/deployments/<app>/<flavor>/<name>/` (the operator's declared values), and the state half - the deployment manifest and the run snapshots - under `~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/`.
 
 ## package record
 
 The cloudify-owned inventory entry for one package instance under one deployment, on one node and instance: the full key is (node, instance, deployment, package, package instance).
+
+Its home is the node's inventory tree: `$(ivps node path <node>[:<instance>])/deployments/<app>/<flavor>/<deployment>/packages/<package>/<package instance>/`.
 
 It contains a revision, the applied values, the last attempt, and verification health.
 
@@ -220,9 +222,11 @@ Applied package facts remain in the package records rather than being copied int
 
 ## deployment manifest
 
-The small current-state rollup of one deployment, part of the deployment record: `~/.config/cloudify/deployments/<app>/<flavor>/<name>/manifest.json`.
+The small current-state rollup of one deployment, in the state half of the deployment record: `~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/manifest.json`.
 
-It contains deployment identity, application commit, target bindings, lifecycle status, creation time, and last run and event IDs.
+A rebuildable cache outside the projection path: the event log is what it abbreviates, and a lost or corrupt manifest is rebuilt from events - never fatal, never a source.
+
+Its fields split by honesty. Declared, from deployment inputs: identity, target bindings, creation time. Derived, from the event log: lifecycle status, last run and event IDs, and the application commit cached from the latest dispatch that proved one (adoption pins no commit).
 
 It does not contain package applied values.
 

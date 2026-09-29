@@ -1213,3 +1213,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - REDESIGN: "Deployment manifests and bindings" rewritten (rebuildable cache outside the projection path, declared vs derived fields, the 2026-09-29 status vocabulary with install-stays-installed, adoption pins no commit); the teardown/code-drift commit wording aligned (dispatch events carry commits, the manifest caches).
 - plans/adoption-honesty.md is CURRENT (PLAN.md flipped, Rachid's ruling): it now owns the run-store normalization (runs home, front-matter removal, flat-store migration, dotted-id dissolution - prerequisites of its verify and show items), the continuation of the other adoptions (hermes round two incl. the pair's re-entry conditions, census five), and the recovery plan's independent-review exit gate as its final phase. plans/runbook-run-store-cleanup.md archived (all items absorbed); plans/state-model-v2-recovery.md annotated (implementation complete, closure rebased; stays as the reviewers' input until the reviews pass, then archives).
+
+## 2026-09-29 - adoption-honesty item 1: glossary corrections (manifest paths + cache doctrine)
+
+- GLOSSARY `deployment record`: the record spans two trees - desired inputs under `~/.config/cloudify/deployments/<app>/<flavor>/<name>/`, the state half (manifest, run snapshots) under `~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/`. The old single-tree `~/.config` anchor was wrong.
+- GLOSSARY `deployment manifest`: anchored to `~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/manifest.json`; worded as a rebuildable cache outside the projection path (event log is what it abbreviates; lost or corrupt -> rebuilt, never fatal, never a source); fields split declared (identity, bindings, creation time) vs derived (status, last run/event IDs, commit cached from the latest proving dispatch; adoption pins no commit).
+- GLOSSARY `package record`: anchored with its inventory home `$(ivps node path <node>[:<instance>])/deployments/<app>/<flavor>/<deployment>/packages/<package>/<package instance>/`.
+- Docs only; no code. No gate due (gate runs after items 2, 3, 5).

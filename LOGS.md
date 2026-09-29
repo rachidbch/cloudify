@@ -869,3 +869,9 @@
 ## 2026-09-29 - vocabulary convergence session
 
 - The earned-configure explanation exposed undefined foundations ("record" not in GLOSSARY). Rachid's three-part challenge (naming overlap; provenance as projection; adoption as operator action) converged over two rounds: cloudify-inventory-as-projection (guaranteed from events, best-effort to hosts), records typed by owner, applied values, and the abolition of "earned reconfigure" in favor of honest adoption events + read-only verify + event-kind statuses. The deployed seed-target fix and the twin's seeded-verify proof are the machinery behind "verified"; the verify-hook-is-the-contract doctrine bounds all guarantees. All decisions landed in GLOSSARY (the vocabulary source), the cleanup plan, and the affine worklist.
+
+## 2026-09-29 - adoption-honesty session opened; item 1 landed
+
+- Handoff consumed; tree clean at a061493; plans/adoption-honesty.md is CURRENT.
+- Item 1 (glossary corrections): the two `~/.config` manifest anchors corrected to the state tree (verified against `cloudify_state_manifest_file`/`cloudify_state_root` in lib/state.sh), cache doctrine + declared/derived split added per the 2026-09-29 REDESIGN wording, package record anchored to its ivps inventory home. Package-record path proven from `cloudify_state_record_dir` + `cloudify_state_inventory_root`.
+- Next: item 2 (event schema: operator writer) - red test first, `task gate` after.

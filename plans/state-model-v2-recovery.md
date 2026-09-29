@@ -1,3 +1,5 @@
+<!-- 2026-09-29: implementation phases COMPLETE (full E2E green 2026-09-29: unit 765+, integration 34/34, both e2e suites). The independent-review exit gate and final closure were REBASED into plans/adoption-honesty.md (item 11) by Rachid's ruling; this plan stays in place as the reviewers' input document and archives when those reviews pass. -->
+
 # State model v2 recovery and completion plan
 
 Goal: repair the committed Phase 2 and Phase 3 foundations, then implement `REDESIGN.md` through completion without carrying rejected code or compatibility layers.

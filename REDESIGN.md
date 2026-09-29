@@ -459,15 +459,13 @@ Every phase must be safe to rerun after interruption.
 
 ## Deployment manifests and bindings
 
+The manifest is a rebuildable cache outside the projection path: the cloudify inventory is the self-sufficient projection of cloudify events, and the manifest only saves navigating it to reconcile. Its fields split by honesty - declared (identity, bindings, creation) from deployment inputs, derived (lifecycle status, last event id) from the event log. A lost or corrupt manifest is rebuilt from events, never fatal, never a source. It pins no application commit at adoption; a commit is recorded only by dispatch events.
+
 The manifest is created before the first mutating step.
 
-Its initial lifecycle status is `applying`.
+Its lifecycle status names the kind of the last successful state-relevant event (ruling 2026-09-29, GLOSSARY `manifest status`): `adopted` (an operator inferred the state from the observed machine - GLOSSARY `deployment adoption`), `installed`, `reconfigured`, `verified` (a passing verify observed the host against the applied values, as of that moment), or `degraded` (an attempt or the worker failed; records stand). An install whose verify stage fails stays `installed` - written but unverified is information, not a downgrade.
 
 It records the exact target bindings used by the run.
-
-A successful install and verify sequence changes the status to `active`.
-
-A failed or interrupted run changes it to `degraded` or leaves enough process identity to classify it as interrupted on the next read.
 
 Reconfigure and verify use the recorded bindings unless the caller supplies an explicit migration.
 
@@ -563,7 +561,7 @@ Atomic rename alone is not concurrency control.
 
 ## Teardown and code drift
 
-The deployment manifest pins the application commit that created the active deployment shape.
+A dispatch event records the application commit that produced the deployment shape it wrote; the manifest caches the latest such commit. Deployment adoption pins no commit - no dispatch proved one.
 
 Stable runbook step IDs tie reliances to application steps.
 

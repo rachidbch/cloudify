@@ -1,3 +1,7 @@
+# Runbook structure and run-store cleanup - ARCHIVED 2026-09-29
+
+All remaining items absorbed into plans/adoption-honesty.md (item 6) by Rachid's ruling 2026-09-29; the adoption/status/verify items moved there earlier the same day. The pre-session decisions (runs home shape, REDESIGN amendments) remain on record in REDESIGN.md.
+
 # Runbook structure and run-store cleanup (agreed 2026-09-25)
 
 Trigger: the affine adoption exposed identity confusion (the runbook `deployment:` field, the flat run store, the dotted-id lookup workaround). Decision recorded in REDESIGN (Cross-host deployment glue, 2026-09-25 amendment): no deployment or run id in the runbook; runs identify by timestamp under their deployment.

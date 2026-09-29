@@ -1,23 +1,15 @@
-# Adoption honesty and status vocabulary - session plan (queued, not started)
+# Adoption honesty and status vocabulary - session plan (CURRENT)
 
-Design only. No implementation in this plan's commit; every item names its
-files, its acceptance, and its tests. Normative basis: GLOSSARY entries as
-landed 2026-09-29 (`cloudify inventory`, `package record`, `applied values`,
-`deployment adoption`, `manifest status`) and the rulings of 2026-09-29
-(adoption-command shape accepted incl. values-as-input; manifest ruled a
-rebuildable cache outside the projection path). ROADMAP "State-tree hygiene"
-cross-references this plan.
+Design first; implementation in this session per item, red test first. Normative basis: GLOSSARY entries as landed 2026-09-29 (`cloudify inventory`, `package record`, `applied values`, `deployment adoption`, `manifest status`), the REDESIGN amendments of 2026-09-29 (manifest as rebuildable cache, status vocabulary, adoption pins no commit), and the rulings of 2026-09-29 (adoption-command shape accepted incl. values-as-input; manifest ruled a helper outside the projection path). ROADMAP "State-tree hygiene" cross-references this plan.
 
-This plan takes over the adoption/status/verify items previously parked in
-`plans/runbook-run-store-cleanup.md` (handed back there via a pointer; that
-plan keeps its original run-store scope only).
+Absorbed by Rachid's ruling (2026-09-29):
+- All remaining items of `plans/runbook-run-store-cleanup.md` (archived with a pointer) - the runs home, front-matter removal, flat-store migration, and dotted-id dissolution are prerequisites of this plan's own items.
+- The closure of `plans/state-model-v2-recovery.md` (implementation complete; its independent-review exit gate is this plan's final phase).
+- The continuation of the other adoptions (PKG-ADOPTIONS is the worklist; this plan owns the umbrella).
 
 ## Sequence rationale
 
-Events and vocabulary first (nothing else can be honest without them), the
-status machine second (the adoption command records its outcome in it), the
-adoption command third, the manifest cache fourth (consumes the status
-machine), then runbook verify, hygiene, and the affine backfill last.
+Events and vocabulary first (nothing else can be honest without them), the status machine second (the adoption command records its outcome in it), the adoption command third, the manifest cache and run-store normalization fourth (they consume the status machine and feed the verify re-run), then runbook verify, hygiene, the adoptions, and the reviews last - they judge everything this plan ships.
 
 ## 1. Glossary corrections (docs, small)
 
@@ -114,7 +106,17 @@ or equivalent).
   equals the maintained manifest; consumers never read the manifest as a
   source of applied values.
 
-## 6. `app run --phase verify` (medium)
+## 6. Run-store normalization (absorbed from the archived cleanup plan; medium)
+
+Files: `lib/runbooks.sh` (engine, parse), runbook fixtures, `lib/deployments.sh`.
+
+- Runs home: derive the run key from identity (path + name + timestamp); every writer moves to the per-deployment state-tree home (`deployments/<a>/<f>/<n>/runs/<utc>.json`, ruled 2026-09-27, REDESIGN Data homes). No `CLOUDIFY_DEPLOYMENT` id threading. Prerequisite of item 7: the verify re-run writes run snapshots.
+- Runbook parse: drop `deployment:` from the front-matter contract; validation rejects it with a named error pointing at the removal. Migrate the two runbooks (affine, xfce-guacamole).
+- Migrate the legacy flat store `~/.config/cloudify/deployments/<id>/runs/` into the state tree; delete the flat dirs.
+- Dissolve the dotted-id lookup workaround: `show`/`replay` resolve from identity (path + explicit `--name` or manifest listing), never by decoding ids. Prerequisite of item 8: the adoption close-out confirms through `deployment show`.
+- Acceptance: runbooks/runbook-exec/runbook-replay/deployments/state suites green; gate; schemas; README's runbook section updated if it names the removed field.
+
+## 7. `app run --phase verify` (medium)
 
 Files: `lib/runbooks.sh` (phase selection), the runbook executor.
 
@@ -126,7 +128,7 @@ Files: `lib/runbooks.sh` (phase selection), the runbook executor.
 - Acceptance: runbook-exec suites pin verify-only selection; the two-host
   e2e remains green.
 
-## 7. State-tree hygiene (medium)
+## 8. State-tree hygiene (medium)
 
 Files: router/lib surface for `deployment delete`; sweeps in state
 maintenance paths.
@@ -141,7 +143,7 @@ maintenance paths.
 - Acceptance: unit tests per sweep; the twin residue on this controller is
   removed by the implementation, not by hand.
 
-## 8. Affine close-out (small, last)
+## 9. Affine close-out (small)
 
 - Backfill the production affine deployment (cloudai:affine, deployment
   affine/default/main) through the adoption command: inferred values from
@@ -150,6 +152,26 @@ maintenance paths.
   a pass grades the manifest `verified`.
 - PKG-ADOPTIONS tick, HISTORY entry. The external baseline backup stays with
   Rachid's agent per the README contract.
+
+## 10. The other adoptions (umbrella; PKG-ADOPTIONS is the worklist)
+
+- Hermes round two per PKG-ADOPTIONS: value investigation on `cloudai:hermes`, `hermes-svc`, `openwebui-hermes`; the hermes pair's re-entry conditions (ROADMAP "Hermes pair out of test scope") are in scope here - public-mode auth design, the claim-path pinning test, the openwebui health classification - so the pair can return to the integration suite.
+- Census retry for the flapped five when cloudai settles (`cloudai:piface`, `cloudai:pir`, `cloudai:seed`, `cloudai:xf-test`, `cloudai:youtube-mcp`) - each becomes either an adoption through the item-4 command or an explicit exclusion.
+- Every adoption in this phase runs through the adoption command - no hand-carved records after affine.
+
+## 11. Exit gate: independent fresh-context reviews (absorbed from the recovery plan)
+
+- Spawn a fresh-context SPEC reviewer on a different backend/model to evaluate every shipped behavior against `REDESIGN.md`, the ADRs, schemas, GLOSSARY and this plan; if no different backend is available, stop for an explicit human waiver.
+- Require exactly `PASS` with no actionable feedback.
+- Spawn a separate fresh-context Technical reviewer on another backend/model (correctness, modularity, security, Bash safety, error propagation, DRY, KISS, maintainability, locking, atomic writes, test quality); same waiver rule, same exact-PASS rule.
+- Actionable feedback: fix, rerun the affected ladder, rerun both reviews from fresh contexts. Budgets per AGENTS SDLC (SPEC: one review/fix/verify pass; Technical: at most three), then escalate to Rachid - never another loop.
+
+### Final closure (replaces the recovery plan's)
+
+- Full ladder green on final HEAD: lint, gate, full unit, full integration (hermes pair re-entry included if item 10 landed it), two-host e2e, k3s e2e.
+- `git status --short` clean; `PLAN.md` resolves to this plan; no stale checked box.
+- Archive `plans/state-model-v2-recovery.md` and this plan; repoint `PLAN.md` per Rachid's next call.
+- VERSION bump (MINOR: behavior changes), HISTORY/LOGS current.
 
 ## Non-goals
 

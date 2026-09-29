@@ -458,11 +458,32 @@ function cloudify_state_host_unlock() {
     fi
 }
 
-# cloudify_state_event_id - UTC second plus 8 random hex from /dev/urandom.
-# Collision handling belongs to the event writer's create-if-absent link,
-# which regenerates; the generator itself is pure and never overwrites.
+# cloudify_state_event_id - UTC second plus an 8-hex suffix that is strictly
+# increasing within the writer's second: 4 hex of per-second randomness, then
+# a 4-hex counter. The counter is file-backed under one flock because ids are
+# minted inside command substitution (a subshell) - process globals cannot
+# carry them across calls. The log's path order then recovers write order (a
+# same-second batch - line events, then their worker-level degraded event -
+# sorts as it happened); a new second redraws the random half. Collision
+# handling stays with the event writer's create-if-absent link, which
+# regenerates; this generator never overwrites a landed event.
 function cloudify_state_event_id() {
-    printf '%s-%s\n' "$(date -u '+%Y%m%dT%H%M%SZ')" "$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+    local sec root
+    sec=$(date -u '+%Y%m%dT%H%M%SZ')
+    root=$(cloudify_state_root)
+    ( umask 077; mkdir -p "$root" )
+    # shellcheck disable=SC2016
+    flock "$root/.event-seq" sh -c '
+        s=""; r=""; n=0
+        read -r s r n < "$1" 2>/dev/null || true
+        if [ "$s" != "$2" ] || [ -z "$r" ] || [ -z "$n" ] || [ "$n" -le 0 ]; then
+            r=$(od -An -N2 -tx1 /dev/urandom | tr -d " \n")
+            n=0
+        fi
+        n=$(( n + 1 ))
+        printf "%s %s %s\n" "$2" "$r" "$n" > "$1"
+        printf "%s-%s%04x\n" "$2" "$r" "$n"
+    ' event-seq "$root/.event-seq" "$sec"
 }
 
 # cloudify_state_writer_identity - who is writing, read once per worker:

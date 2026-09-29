@@ -235,13 +235,13 @@ _cloudify_worker_degraded_event() {
         degraded-unknown) summary="executed-code unknown: the host could not determine its own checkout"; override=true ;;
         degraded-missing) summary="executed-code missing: no checkout line reached the worker"; override=true ;;
         degraded-divergent) summary="executed-code divergent: the children disagreed on the checkout"; override=true ;;
-        validate) summary="collection validation failed: the result stream broke the line contract" ;;
-        reconcile) summary="reconciliation failed: the dispatch graph did not resolve against the collection" ;;
-        context) summary="the dispatch context could not be parsed" ;;
-        classify) summary="the result lines could not be classified" ;;
-        fields) summary="a result line could not be parsed into fields" ;;
-        commit) summary="an inventory commit failed mid-write" ;;
-        degraded-run) summary="degraded run: a dependency outside the dispatch graph recorded empty values" ;;
+        validate) summary="collection validation failed: the result stream broke the line contract"; override=true ;;
+        reconcile) summary="reconciliation failed: the dispatch graph did not resolve against the collection"; override=true ;;
+        context) summary="the dispatch context could not be parsed"; override=true ;;
+        classify) summary="the result lines could not be classified"; override=true ;;
+        fields) summary="a result line could not be parsed into fields"; override=true ;;
+        commit) summary="an inventory commit failed mid-write"; override=true ;;
+        degraded-run) summary="degraded run: a dependency outside the dispatch graph recorded empty values"; override=true ;;
         *) return 1 ;;
     esac
     # Early failures parse no context: the event still carries a values

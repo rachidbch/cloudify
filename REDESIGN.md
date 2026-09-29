@@ -171,7 +171,13 @@ ${XDG_STATE_HOME:-~/.local/state}/cloudify/
     runs/<utc-timestamp>.json
   events/<year-month>/<event-id>.json
   external-hosts/<host-id>/...
+  .event-seq
 ```
+
+(`.event-seq` is the event-id counter's private scratch - one flock-guarded
+line `<second> <random-half> <count>`; it makes ids strictly increasing
+within a writer's second so the log's path order recovers write order. Never
+a record; safe to delete while idle.)
 
 (Amended 2026-09-25, Rachid's ruling: the runbook front matter carries no deployment or run id. A run needs no operator-chosen key: the deployment is assembled at run time - application and flavor from the runbook path, name from `--name`, hosts from `--target` - and a run identifies itself by its UTC timestamp under that deployment. Run history lives in the state tree, never in the flat configuration store; the exact runs placement is settled by the run-store cleanup slice, which also removes the legacy `deployments/<id>/runs` folders and the dotted-id lookup workaround.)
 

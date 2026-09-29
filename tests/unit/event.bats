@@ -226,3 +226,23 @@ _capture() {
     run cloudify_state_inventory_check "$CLOUDIFY_TMP/nope.json"
     [ "$status" -eq 1 ]
 }
+
+@test "event ids: strictly increasing within the writer's second (path order recovers write order)" {
+    rubric "a same-second batch - line events then their degraded event - must sort as written"
+    local -a ids=()
+    local i id
+    for i in 1 2 3 4 5; do
+        id=$(cloudify_state_event_id)
+        [[ "$id" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]]
+        ids+=("$id")
+    done
+    # Non-decreasing always; strictly increasing whenever the second repeats
+    # (a second boundary mid-loop only ever resets, never reuses, the suffix).
+    local prev="" cur
+    for cur in "${ids[@]}"; do
+        if [[ -n "$prev" && "${cur%-*}" == "${prev%-*}" ]]; then
+            [[ "$cur" > "$prev" ]]
+        fi
+        prev="$cur"
+    done
+}

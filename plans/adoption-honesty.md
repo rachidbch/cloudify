@@ -115,7 +115,7 @@ or equivalent).
 
 Files: `lib/runbooks.sh` (engine, parse), runbook fixtures, `lib/deployments.sh`.
 
-- Runs home: derive the run key from identity (path + name + timestamp); every writer moves to the per-deployment state-tree home (`deployments/<a>/<f>/<n>/runs/<utc>.json`, ruled 2026-09-27, REDESIGN Data homes). No `CLOUDIFY_DEPLOYMENT` id threading. Prerequisite of item 7: the verify re-run writes run snapshots.
+- Runs home: derive the run key from identity (path + name + timestamp); every writer moves to the per-deployment state-tree home (`deployments/<a>/<f>/<n>/runs/<utc>.yaml`, ruled 2026-09-27, extension .yaml ruled 2026-09-30 - REDESIGN Data homes). No `CLOUDIFY_DEPLOYMENT` id threading. Prerequisite of item 7: the verify re-run writes run snapshots.
 - Runbook parse: drop `deployment:` from the front-matter contract; validation rejects it with a named error pointing at the removal. Migrate the two runbooks (affine, xfce-guacamole).
 - Migrate the legacy flat store `~/.config/cloudify/deployments/<id>/runs/` into the state tree; delete the flat dirs.
 - Dissolve the dotted-id lookup workaround: `show`/`replay` resolve from identity (path + explicit `--name` or manifest listing), never by decoding ids. Prerequisite of item 8: the adoption close-out confirms through `deployment show`.

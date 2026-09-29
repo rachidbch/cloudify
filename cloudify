@@ -772,7 +772,7 @@ function main() {
                     cloudify_adoption_record "$@"
                     ;;
                 *)
-                    die "Usage: cloudify adoption record <app>/<flavor>/<name> --on <target> [--notes <text>] <pkg>..."
+                    die "Usage: cloudify adoption record <app>/<flavor>/<name> --on <target> [--notes <text>] [--operator <name>] [--facts <file>] <pkg>..."
                     ;;
             esac
             break

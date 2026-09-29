@@ -247,16 +247,20 @@ cloudify app run my-cluster --name prod
 Deployment values beat package and global values; the caller env still wins.
 
 **Adoption (`cloudify adoption record`).** Taking an existing installation into
-the deployment model is an operator action, never a dispatch: the operator
-investigates the machine (read-only), then records the inference -
-`cloudify adoption record <app>/<flavor>/<name> --on <target> [--notes <text>]
-<pkg>...` with the inferred facts on stdin (TSV: `version<TAB><pkg><TAB><v>` and
-`value<TAB><pkg><TAB><NAME><TAB><source_form><TAB><source>`). cloudify supplies
+the deployment model is an operator action, never a dispatch, in two phases:
+the operator (human or agent) investigates the machine read-only, then records
+the inference - `cloudify adoption record <app>/<flavor>/<name> --on <target>
+[--notes <text>] [--operator <name>] [--facts <file>] <pkg>...` with the
+inferred facts on stdin or in the --facts file (TSV, blank lines and `#`
+comments skipped: `version<TAB><pkg><TAB><v>` and
+`value<TAB><pkg><TAB><NAME><TAB><source_form><TAB><source>`). The --facts file
+is the reviewable artifact: write it, review it, feed it. cloudify supplies
 the shape: adoption events (writer: operator, no commit), package records
 (applied values with provenance, no attempt, health unknown), the manifest
 derived to `adopted` - then a seeded read-only verify: pass ends `verified`, a
-failure leaves the adoption standing. Secrets are refused on stdin; they belong
-to stores.
+failure degrades the word (drift observed) without unwriting the records.
+The command is fully non-interactive: it never prompts, it fails named.
+Secrets are refused on stdin; they belong to stores.
 
 **Runbooks (`cloudify app run`).** A runbook is repo-tracked Markdown
 (`runbooks/<app>/<flavor>/runbook.md`, see `runbooks/README.md`): front-matter
@@ -716,6 +720,13 @@ result v1: parent=- package=nginx instance=default phase=install action=install 
 - `parent` is `-` for a top-level package, the declaring package for a dependency pulled via `pkg_depends`, `@defaults`/`@init` for framework work.
 - `outcome` is `succeeded` or `failed` - the framework's verdict. A non-zero recipe exit, a failed verification, or an unknown version force `failed`; `exit` stays the recipe's real status either way.
 - `version` is the package's declared `.version` (see "Recipe conventions"); `unknown` means the declaration was missing or malformed; native fallback subjects (installed straight through apt, no cloudify package) report `none`.
+
+From these lines the deployment status derives (GLOSSARY `manifest status`):
+`installed` means completed but **not verified** (a verified deployment says
+`verified`); a failed verify stage after a successful install keeps
+`installed` with failing health (written-but-unverified), while a failed
+verify dispatch degrades - drift observed. The dispatch exit code stays the
+honest signal for scripts either way.
 
 These lines are the future inventory feed (state-model-v2): ordinary keyed lines in the log, safe to grep, carrying no values or secrets.
 

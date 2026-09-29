@@ -18,13 +18,15 @@
 #      transition (event first); native subjects are report-only;
 #   5. release the host lock BEFORE the per-deployment manifest lock - the
 #      two are never held together (test-only assertion in lib/state.sh);
-#   6. manifest projection: the status is the kind of the last successful
-#      state-relevant event (GLOSSARY manifest status): install success ends
-#      installed, reconfigure reconfigured, a passing verify verified; any
-#      attempt or worker failure ends degraded - except a failed verify stage
+#   6. manifest projection: the status word comes from the SAME event-log
+#      derivation a rebuild runs (GLOSSARY manifest status) - the worker
+#      never decides it a second way. Install success ends installed,
+#      reconfigure reconfigured, a passing verify verified; a failed attempt
+#      (its line event carries the non-zero exit) or a worker failure (its
+#      own degraded event) ends degraded - except a failed verify stage
 #      (exit 0, verification failed), which is information, not a downgrade:
-#      health records it, the recorded word stands. A non-state-relevant
-#      action keeps the recorded word. No event leaves last_event_id unchanged.
+#      health records it, the completed work's word stands. A non-state-
+#      relevant action keeps the recorded word.
 #
 # All value content comes from the ONE parsed dispatch context; the worker
 # never re-resolves a value and never invents one after execution.
@@ -38,7 +40,6 @@ _CLOUDIFY_WORKER_LOADED=1
 # (One process, one loop - module-level state, never caller-visible.)
 declare -gA _WORKER_LINE=()
 _WORKER_LINE_CLASS=""
-_WORKER_VERIFY_FAILED=false
 _WORKER_PROJECTION=""
 _WORKER_EVENT_PROJECTION=""
 _WORKER_APP="" _WORKER_FLAVOR="" _WORKER_NAME=""
@@ -219,20 +220,34 @@ _cloudify_worker_commit_line() {
     return 0
 }
 
-# _cloudify_worker_degraded_event <verdict> - the executed-code failure event:
-# the executed commit is recorded, nothing else is written. An undeterminable
-# or divergent checkout records a null commit under the development override.
+# _cloudify_worker_degraded_event <cause> - the worker-level failure event:
+# the executed commit is recorded when provable, nothing else is written. An
+# undeterminable or divergent checkout records a null commit under the
+# development override. Every cause names itself in the summary: a failure
+# the line events cannot prove still lands in the stream, so the manifest's
+# status stays derivable from events alone.
 _cloudify_worker_degraded_event() {
-    local verdict="$1" summary commit="" override=false
-    case "$verdict" in
+    local cause="$1" summary commit="" override=false
+    case "$cause" in
         degraded-mismatch)
             summary="executed-code mismatch: the manifest pins a commit the host did not run"
             commit=$(sed -n 's/^checkout v1: commit=\([0-9a-f]\{40\}\).*/\1/p' "$_WORKER_COLLECTION" | head -n 1) ;;
         degraded-unknown) summary="executed-code unknown: the host could not determine its own checkout"; override=true ;;
         degraded-missing) summary="executed-code missing: no checkout line reached the worker"; override=true ;;
         degraded-divergent) summary="executed-code divergent: the children disagreed on the checkout"; override=true ;;
+        validate) summary="collection validation failed: the result stream broke the line contract" ;;
+        reconcile) summary="reconciliation failed: the dispatch graph did not resolve against the collection" ;;
+        context) summary="the dispatch context could not be parsed" ;;
+        classify) summary="the result lines could not be classified" ;;
+        fields) summary="a result line could not be parsed into fields" ;;
+        commit) summary="an inventory commit failed mid-write" ;;
+        degraded-run) summary="degraded run: a dependency outside the dispatch graph recorded empty values" ;;
         *) return 1 ;;
     esac
+    # Early failures parse no context: the event still carries a values
+    # object (empty), never a malformed one.
+    local values="${_WORKER_EVENT_PROJECTION:-}"
+    [[ -n "$values" ]] || values='{}'
     local body id
     body=$(jq -cn \
         --arg tool_version "$(cloudify_state_writer_identity | jq -r .tool_version)" \
@@ -242,7 +257,7 @@ _cloudify_worker_degraded_event() {
         --arg commit "$commit" --argjson override "$override" \
         --arg phase "$(_cloudify_worker_phase_of "$_WORKER_ACTION")" \
         --arg command "$_WORKER_ACTION" \
-        --argjson values "$_WORKER_EVENT_PROJECTION" \
+        --argjson values "$values" \
         --arg summary "$summary" \
         '{schema_version: 1, tool: "cloudify", tool_version: $tool_version, writer: $writer,
           run_id: null, step_id: $step,
@@ -340,7 +355,6 @@ function cloudify_worker_process() {
     local failed=""
     _WORKER_ACTION="$action" _WORKER_STEP="$step"
     _WORKER_DEGRADED_RUN=false
-    _WORKER_VERIFY_FAILED=false
     _WORKER_APP="$app" _WORKER_FLAVOR="$flavor" _WORKER_NAME="$name"
     _WORKER_NODE="$node" _WORKER_INST="$inst" _WORKER_SSH="$ssh_host"
     _WORKER_HOST_KEY=$(cloudify_state_host_key_of "$node" "$inst")
@@ -422,55 +436,43 @@ function cloudify_worker_process() {
                     # The failure split (GLOSSARY manifest status): a failed
                     # line with exit 0 is a verify-stage observation (the
                     # validator forces outcome=failed for it) - information,
-                    # not a downgrade. Anything else is an attempt failure.
-                    if [[ "${_WORKER_LINE[exit]:-1}" == "0" ]]; then
-                        _WORKER_VERIFY_FAILED=true
-                    else
-                        failed="attempt"
-                    fi
+                    # not a downgrade; health records it and the event's own
+                    # exit 0 keeps the completed work's word. Anything else
+                    # is an attempt failure - the non-zero exit on the line
+                    # event is the proof, no extra event needed.
+                    [[ "${_WORKER_LINE[exit]:-1}" == "0" ]] || failed="attempt"
                 }
             done
         fi
     fi
 
-    # The executed-code degraded event: after the verdict, before the unlock.
-    if [[ "$failed" == "executed" ]]; then
-        _cloudify_worker_degraded_event "$verdict" || true
+    # The worker-level degraded event: after the verdict, before the unlock.
+    # Every failure the line events cannot prove (validation, reconciliation,
+    # context, classification, an executed-code verdict, a degraded run)
+    # writes its own event - the manifest's word must stay derivable from
+    # the event stream alone, or the manifest-as-cache doctrine breaks. A
+    # failed attempt needs none: its line event carries the non-zero exit.
+    if [[ ( -n "$failed" && "$failed" != "attempt" ) || "$_WORKER_DEGRADED_RUN" == "true" ]]; then
+        local _dcause="$failed"
+        [[ -n "$_dcause" ]] || _dcause="degraded-run"
+        [[ "$_dcause" == "executed" ]] && _dcause="$verdict"
+        _cloudify_worker_degraded_event "$_dcause" || true
     fi
 
     # 5. Release the host lock BEFORE the manifest lock - never both.
     cloudify_state_host_unlock "$node" "$inst"
 
-    # 6. Manifest projection with the explicit last event id. Status = the kind
-    #    of the last successful state-relevant event; a verify-stage failure is
-    #    not a downgrade (health recorded it); the recorded word stands for
-    #    non-state-relevant actions and when nothing new proved itself.
-    local status recorded
-    if [[ -n "$failed" || "$_WORKER_DEGRADED_RUN" == "true" ]]; then
-        status="degraded"
-    elif [[ -z "$_WORKER_LAST_EVENT" ]]; then
-        status=""    # no event committed: nothing state-relevant happened
-    elif [[ "$_WORKER_VERIFY_FAILED" == "true" ]]; then
-        # The stage ran and observed failure: health recorded it. The mutating
-        # work completed (exit 0), so its word stands - written-but-unverified
-        # is information, not a downgrade. A verify-only dispatch proves
-        # nothing new; the recorded word stays.
-        case "$action" in
-            install) status="installed" ;;
-            configure) status="reconfigured" ;;
-            *) status="" ;;
-        esac
-    else
-        case "$action" in
-            install) status="installed" ;;
-            configure) status="reconfigured" ;;
-            verify) status="verified" ;;
-            *) status="" ;;
-        esac
-    fi
+    # 6. Manifest projection with the explicit last event id. The word comes
+    #    from the SAME derivation a rebuild runs - the worker never decides it
+    #    a second way (two hand-written copies of one rule drift apart; a
+    #    failed verify dispatch degraded in one and was skipped in the other).
+    #    A null (nothing new proved itself) keeps the recorded word.
+    local status
+    status=$(cloudify_state_status_from_events "$app" "$flavor" "$name")
+    [[ "$status" == "null" ]] && status=""
     if [[ -z "$status" ]]; then
-        recorded=$(cloudify_manifest_field "$app" "$flavor" "$name" status 2>/dev/null) || recorded=""
-        [[ -n "$recorded" && "$recorded" != "null" ]] && status="$recorded" || status=""
+        status=$(cloudify_manifest_field "$app" "$flavor" "$name" status 2>/dev/null) || status=""
+        [[ "$status" == "null" ]] && status=""
     fi
     if ! cloudify_manifest_exists "$app" "$flavor" "$name"; then
         cloudify_state_deployment_create "$app" "$flavor" "$name" "$bindings"

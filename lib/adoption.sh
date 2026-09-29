@@ -15,10 +15,13 @@
 #   4. the seeded verify per package - a read-only dispatch under the
 #      deployment tuple, the machine's first cloudify touch. Its outcome only
 #      moves health and the derived word: pass -> verified, fail -> health
-#      degraded and the word stays adopted. A failed verify never unwrites
-#      the adoption, and the command still succeeds: the recording happened.
+#      degraded and the word degraded (a failed verify is a failed attempt -
+#      drift observed). A failed verify never unwrites the adoption records,
+#      and the command still succeeds: the recording happened.
 #
-# Values arrive on stdin as TSV facts (one per line):
+# Values arrive as TSV facts, one per line (blank lines and # comments are
+# skipped) - on stdin (the pipe surface) or through --facts <file> (the
+# reviewable artifact; the same grammar):
 #   version<TAB><pkg><TAB><version|unknown>
 #   value<TAB><pkg><TAB><NAME><TAB><source_form><TAB><source-label>
 # Secrets are refused: adoption records claims, not plaintext - a value whose
@@ -31,9 +34,11 @@ _CLOUDIFY_ADOPTION_LOADED=1
 # _cloudify_adoption_usage - the fact grammar, named.
 _cloudify_adoption_usage() {
     cat <<'EOF'
-Usage: cloudify adoption record <app>/<flavor>/<name> --on <target> [--notes <text>] <pkg>...
+Usage: cloudify adoption record <app>/<flavor>/<name> --on <target> [--notes <text>]
+                              [--operator <name>] [--facts <file>] <pkg>...
 
-The operator's inferred facts arrive on stdin, one TSV fact per line:
+The operator's inferred facts arrive one TSV fact per line, on stdin or in
+the --facts file (blank lines and # comments are skipped):
   version<TAB><pkg><TAB><version|unknown>
   value<TAB><pkg><TAB><NAME><TAB><source_form><TAB><source-label>
 
@@ -41,6 +46,9 @@ source-label is one of: caller, deployment, application, package, global, recipe
 Every named package needs a version fact. Secrets are refused: a source_form
 starting with '@' (a reference or an escaped literal) is not an inference -
 record it through a store instead.
+
+The operator is named by --operator or CLOUDIFY_OPERATOR; the command is
+fully non-interactive - it never prompts, it fails named.
 EOF
 }
 
@@ -58,6 +66,7 @@ _cloudify_adoption_facts() {
     local -A value_files=()
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -n "$line" ]] || continue
+        [[ "$line" != \#* ]] || continue
         kind="${line%%$'\t'*}"; rest="${line#*$'\t'}"
         pkg="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
         local known=false p
@@ -112,12 +121,14 @@ _cloudify_adoption_facts() {
 # cloudify_adoption_record <app>/<flavor>/<name> --on <target> [--notes <text>]
 #                         <pkg>... - see the module header.
 function cloudify_adoption_record() {
-    local id="" target="" notes=""
+    local id="" target="" notes="" operator="" facts=""
     local -a pkgs=()
     while [[ -n "${1:-}" ]]; do
         case "$1" in
             --on) target="${2:-}"; shift 2 ;;
             --notes) notes="${2:-}"; shift 2 ;;
+            --operator) operator="${2:-}"; shift 2 ;;
+            --facts) facts="${2:-}"; shift 2 ;;
             -h|--help) _cloudify_adoption_usage; return 0 ;;
             *)
                 if [[ -z "$id" ]]; then id="$1"; else pkgs+=("$1"); fi
@@ -154,6 +165,13 @@ function cloudify_adoption_record() {
     [[ "$slots" != *,* ]] || die "adoption: the runbook declares several targets ($slots) - adoption binds one host; adopt per slot is not supported yet."
     slot="$slots"
 
+    # The operator writer: resolved BEFORE anything is written (a missing
+    # name is a usage error, not a mid-write surprise).
+    local writer_json
+    [[ -n "${operator:-${CLOUDIFY_OPERATOR:-}}" ]] ||
+        die "adoption: the operator writer needs a name (--operator <name> or CLOUDIFY_OPERATOR)."
+    writer_json=$(cloudify_state_operator_writer "${operator:-${CLOUDIFY_OPERATOR:-}}")
+
     # The target: node, instance, ssh address (lib/targets.sh; ivps is the
     # inventory provider).
     local row node inst ssh
@@ -163,7 +181,12 @@ function cloudify_adoption_record() {
     local host_key
     host_key=$(cloudify_state_host_key_of "$node" "$inst")
 
-    _cloudify_adoption_facts ${pkgs[@]+"${pkgs[@]}"}
+    if [[ -n "$facts" ]]; then
+        [[ -f "$facts" ]] || die "adoption: --facts file '$facts' not found."
+        _cloudify_adoption_facts ${pkgs[@]+"${pkgs[@]}"} < "$facts"
+    else
+        _cloudify_adoption_facts ${pkgs[@]+"${pkgs[@]}"}
+    fi
 
     # The manifest: created unproved when absent - null commit beside the
     # development override (the schema's encoding for "no commit was proved").
@@ -193,10 +216,8 @@ function cloudify_adoption_record() {
 
     # Per package: the adoption event and the record, through the one
     # inventory transition (revision stamping, validation, atomic landing).
-    local now writer_json rec rec_dir next_file ev_file eid last_eid=""
+    local now rec rec_dir next_file ev_file eid last_eid=""
     now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-    writer_json=$(cloudify_state_operator_writer "${CLOUDIFY_OPERATOR:-}") ||
-        die "adoption: the operator writer needs a name (set CLOUDIFY_OPERATOR)."
     for p in ${pkgs[@]+"${pkgs[@]}"}; do
         local vfile_rec="" vfile_ev=""
         local triple
@@ -282,7 +303,7 @@ function cloudify_adoption_record() {
             msg "adoption: verify passed - '$p' observed against the applied values."
         else
             failed=1
-            log_warn "adoption: verify failed for '$p' (rc $rc) - health records it; the adoption stands (status $(cloudify_manifest_field "$app" "$flavor" "$name" status))."
+            log_warn "adoption: verify failed for '$p' (rc $rc) - drift observed: health and the status word carry it (degraded); the adoption records stand (status $(cloudify_manifest_field "$app" "$flavor" "$name" status))."
         fi
     done
     rm -rf "$_ADOPT_VALUES_DIR"

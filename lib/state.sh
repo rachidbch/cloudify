@@ -961,9 +961,11 @@ function cloudify_state_manifest_rebuild() {
 # manifest. Newest first (paths sort chronologically); the first event that
 # decides wins:
 #   - install/configure/verify/adopt with exit_status 0 -> the kind's word;
-#   - exit_status null (a worker-level degraded event) -> degraded;
-#   - exit_status != 0: a failed verify is skipped (information, not a
-#     downgrade); any other failed kind -> degraded.
+#   - anything else -> degraded: a failed attempt (its line event carries the
+#     non-zero exit), a failed verify dispatch (drift observed - the check
+#     exists to catch it), or a worker-level event (exit_status null).
+#     Only the install-line verify-stage observation keeps its word, and it
+#     does so by carrying exit 0 on the line (written-but-unverified).
 # Non-state-relevant kinds never decide. No deciding event prints null.
 function cloudify_state_status_from_events() {
     local app="${1:?}" flavor="${2:?}" name="${3:?}"
@@ -977,9 +979,9 @@ function cloudify_state_status_from_events() {
             select($k == "install" or $k == "configure" or $k == "verify" or $k == "adopt") |
             if $e == 0 then
                 {install: "installed", configure: "reconfigured", verify: "verified", adopt: "adopted"}[$k]
-            elif $e == "null" then "degraded"
-            elif $k == "verify" then empty
-            else "degraded" end' "$f" 2>/dev/null) || continue
+            else
+                "degraded"
+            end' "$f" 2>/dev/null) || continue
         [[ -n "$word" ]] || continue
         printf '%s\n' "$word"
         return 0

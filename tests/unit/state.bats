@@ -139,7 +139,10 @@ _reference_check() {
     ev 20260902T000000Z-1a1b1c1d install 0
     [ "$(cloudify_state_status_from_events a default n)" = "installed" ]
     ev 20260903T000000Z-2a2b2c2d verify 1
-    rubric "a failed verify is information, not a downgrade: the install word stands"
+    rubric "a failed verify dispatch is drift observed - a failed attempt: degraded"
+    [ "$(cloudify_state_status_from_events a default n)" = "degraded" ]
+    ev 20260903T000100Z-2a2b2c2e install 0
+    rubric "written-but-unverified: an install line keeps exit 0 - its word stands"
     [ "$(cloudify_state_status_from_events a default n)" = "installed" ]
     ev 20260904T000000Z-d verify 0
     [ "$(cloudify_state_status_from_events a default n)" = "verified" ]

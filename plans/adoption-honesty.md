@@ -2,6 +2,8 @@
 
 Progress (2026-09-29, session one): items 1-9 LANDED (commits d74c824..a4ddfee); item 10 PARTIAL (youtube-mcp adopted + verified, census five dispositioned; hermes round two remains); item 11 NOT STARTED. Also open: three pre-existing shell-router reds (repair map in LOGS 2026-09-29, session close). Handoff: ~/.pi/handoffs/2026-09-29-cloudify-adoption-honesty-items-1-9-census-done.md
 
+Review correction (2026-09-30, post-session review): item 3's failure split was transcribed with a crack - the event-log derivation skipped failed verify events while the worker degraded them, so a failing verify dispatch made the maintained manifest and a rebuild disagree, and worker.bats pinned a line shape (exit 0 + verification failed for a verify dispatch) the router never emits. Fixed: the derivation treats a failed verify dispatch as a failed attempt (degraded); the worker's status word now comes from that same derivation (one source, not two); every worker failure the line events cannot prove writes its own degraded event; the install-with-failed-verify-stage path is unchanged (exit 0 on the line keeps `installed`). The claimed "verify-stage-failure dispatch exits 0" was never wired at CLI level and is corrected in the records: the CLI exit stays the honest script signal. Adoption UX hardened for agent/human drivers: `--facts <file>` (reviewable artifact, comments allowed), `--operator` beside the env, operator resolution fail-fast before any write.
+
 Design first; implementation in this session per item, red test first. Normative basis: GLOSSARY entries as landed 2026-09-29 (`cloudify inventory`, `package record`, `applied values`, `deployment adoption`, `manifest status`), the REDESIGN amendments of 2026-09-29 (manifest as rebuildable cache, status vocabulary, adoption pins no commit), and the rulings of 2026-09-29 (adoption-command shape accepted incl. values-as-input; manifest ruled a helper outside the projection path). ROADMAP "State-tree hygiene" cross-references this plan.
 
 Absorbed by Rachid's ruling (2026-09-29):
@@ -79,8 +81,9 @@ Flow (one command, in order):
    honest summary string supplied by the operator.
 3. Fire the seeded verify dispatch (read-only; the machine's first cloudify
    touch is a read) and record the outcome: pass -> health ok, status
-   `verified`; fail -> health records the failure, status stays `adopted`.
-   A failed verify never unwrites the adoption.
+   `verified`; fail -> health records the failure, status `degraded` (a
+   failed verify is a failed attempt - drift observed). A failed verify
+   never unwrites the adoption records.
 4. Pin no commit: the manifest's derived fields come from events only.
 
 Affine backfill runs through this command (see item 8).

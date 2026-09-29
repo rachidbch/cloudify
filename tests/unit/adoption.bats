@@ -1,7 +1,8 @@
 # Tests for the adoption command (plan: adoption-honesty item 4).
 # Adoption is an operator action: the operator infers, cloudify supplies the
 # shape - records (mechanical), events (writer: operator), a derived manifest
-# status, and a read-only seeded verify whose failure never unwrites it.
+# status, and a read-only seeded verify whose failure never unwrites the
+# records (the real dispatch degrades the word; pinned by worker.bats).
 
 source tests/helpers/common.bash
 
@@ -145,13 +146,42 @@ affine_facts() {
     run cloudify_adoption_record affine/default/main --on cloudai:affine --notes "n" affine < "$CLOUDIFY_TMP/facts"
     [ "$status" -eq 0 ]
 
-    # Records and the event stand; the word stays adopted. (The health write
-    # belongs to the verify dispatch's own worker - pinned by worker.bats.)
+    # Records and the event stand; no verify event landed (the stub writes
+    # nothing), so the word stays adopted. The REAL failing dispatch degrades
+    # the word - that path is pinned by worker.bats on the real line shape.
     local rec
     rec=$(cloudify_state_record_dir cloudai affine affine default main affine default)/state.json
     [ -f "$rec" ]
     [ "$(jq -r .applied.version "$rec")" = "1.1.0" ]
     [ "$(cloudify_manifest_field affine default main status)" = "adopted" ]
+}
+
+@test "adoption record: --facts file with comments, and --operator beside the env" {
+    rubric "the reviewable artifact path; no interactive prompts anywhere"
+    {
+        printf '# investigated 2026-09-30: dpkg shows 1.1.0, port from systemd unit\n'
+        printf '\n'
+        printf 'version\taffine\t1.1.0\n'
+        printf 'value\taffine\tAFFINE_PORT\t8787\trecipe\n'
+    } > "$CLOUDIFY_TMP/facts-file"
+    # No CLOUDIFY_OPERATOR in the env: the flag names the operator.
+    unset CLOUDIFY_OPERATOR
+    run cloudify_adoption_record affine/default/main --on cloudai:affine --notes "n" \
+        --operator rachid --facts "$CLOUDIFY_TMP/facts-file" affine
+    [ "$status" -eq 0 ] || { echo "OUTPUT: $output"; false; }
+    local eid ev
+    eid=$(cloudify_manifest_field affine default main last_event_id)
+    ev="$HOME/.local/state/cloudify/events/${eid:0:4}-${eid:4:2}/$eid.json"
+    [ "$(jq -r .writer.name "$ev")" = "rachid" ]
+    [ "$(cloudify_manifest_field affine default main status)" = "adopted" ]
+
+    # Neither flag nor env: a named refusal BEFORE anything is written - the
+    # fail-fast ordering (the manifest and its events are untouched).
+    affine_facts 'version\taffine\t1.1.0'
+    run cloudify_adoption_record affine/default/main --on cloudai:affine --notes "n" affine < "$CLOUDIFY_TMP/facts"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--operator"* ]]
+    [ "$(cloudify_manifest_field affine default main last_event_id)" = "$eid" ]
 }
 
 @test "adoption record: refuses secret forms, unknown sources, missing notes" {

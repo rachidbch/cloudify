@@ -175,7 +175,7 @@ record() { # record <pkg> [inst]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "installed" ]
 }
 
-@test "worker: a passing verify dispatch ends verified; a failing one keeps the recorded word" {
+@test "worker: a passing verify dispatch ends verified; a failing one degrades on its failed attempt" {
     rubric "verified arrives only through a real verify observation"
     # An installed deployment to observe.
     collect "$(checkout 0123456789abcdef0123456789abcdef01234567)" \
@@ -196,14 +196,24 @@ record() { # record <pkg> [inst]
     [ "$status" -eq 0 ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "verified" ]
 
-    # The next verify fails (exit 0, verification failed): information, not a
-    # downgrade - health degrades, the word stays verified.
+    # The next verify fails - the REAL line shape the router emits for a
+    # failing verify dispatch (exit 1, verification failed): drift observed,
+    # a failed attempt. The dispatch fails its purpose (rc 1), health records
+    # it, and the word degrades - the check exists to catch drift.
     collect "$(checkout 0123456789abcdef0123456789abcdef01234567)" \
-        'result v1: parent=- package=nginx instance=default phase=verify action=verify outcome=failed exit=0 verification=failed version=-'
+        'result v1: parent=- package=nginx instance=default phase=verify action=verify outcome=failed exit=1 verification=failed version=-'
     run run_worker_verify nginx
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 1 ]
     [ "$(jq -r .health.status "$(record nginx)")" = "degraded" ]
-    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "verified" ]
+    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "degraded" ]
+
+    subrubric "rebuild agrees with the maintained manifest on the failure path"
+    local m
+    m=$(cloudify_state_manifest_file _direct direct "$DEP_NAME")
+    cp "$m" "$CLOUDIFY_TMP/maintained.json"
+    cloudify_state_manifest_rebuild _direct direct "$DEP_NAME"
+    cmp -s "$m" "$CLOUDIFY_TMP/maintained.json"
+    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "degraded" ]
 }
 
 @test "worker: a missing requested top-level result fails before any inventory write, manifest degraded" {
@@ -217,10 +227,15 @@ record() { # record <pkg> [inst]
     [ ! -e "$(record nginx)" ]
     [ ! -e "$(record curl)" ]
     local events
-    events=$(find "$(events_root)" -name '*.json' 2>/dev/null | wc -l || true)
-    [ "$events" -eq 0 ]
+    events=$(find "$(events_root)" -name '*.json' 2>/dev/null || true)
+    # No inventory, but the failure is IN THE STREAM: one worker-level
+    # degraded event (reconcile cause, exit_status null) - the manifest's
+    # degraded word stays derivable from events alone.
+    [ "$(printf '%s\n' "$events" | grep -c .)" -eq 1 ]
+    [ "$(jq -r .outcome.exit_status "$events")" = "null" ]
+    [ "$(jq -r .command_kind "$events")" = "install" ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "degraded" ]
-    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" last_event_id)" = "null" ]
+    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" last_event_id)" = "$(basename "$events" .json)" ]
 }
 
 @test "worker: executed-code mismatch on a proved dispatch degrades, records the executed commit, writes no inventory" {
@@ -322,8 +337,12 @@ record() { # record <pkg> [inst]
     [ "$(jq -r '.last_attempt.requested | length' "$(record wezterm)")" -eq 0 ]
     [ "$(jq -r '.applied.values | length' "$(record wezterm)")" -eq 0 ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "degraded" ]
-    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" last_event_id)" = \
-      "$(jq -r .applied.event_id "$(record wezterm)")" ]
+    # The degraded-run event lands after the line commits: it is the newest,
+    # and the word degrades on it (derivable, not asserted from the worker).
+    local last_ev
+    last_ev=$(cloudify_manifest_field _direct direct "$DEP_NAME" last_event_id)
+    [ "$(jq -r ".outcome.exit_status" "$(events_root)/${last_ev:0:4}-${last_ev:4:2}/$last_ev.json")" = "null" ]
+    [ "$(jq -r ".outcome.summary" "$(events_root)/${last_ev:0:4}-${last_ev:4:2}/$last_ev.json")" = "degraded run: a dependency outside the dispatch graph recorded empty values" ]
 }
 
 @test "worker: a successful run with no inventory commits leaves last_event_id unchanged" {

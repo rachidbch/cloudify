@@ -643,3 +643,134 @@ _cloudify_deployment_unset_record() {
     rm -f "$ev_file" "$next_file"
     return 0
 }
+
+#== State-tree hygiene (plan: adoption-honesty item 8) ==
+
+# _cloudify_hygiene_nodes_root - the local ivps inventory tree.
+_cloudify_hygiene_nodes_root() {
+    printf '%s\n' "${IVPS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/ivps}/nodes"
+}
+
+# cloudify_deployment_delete <app> <flavor> <name>
+# Remove one deployment's records: the state-tree manifest dir (manifest +
+# runs) and its package records across every ivps inventory tree. The event
+# log stays (the global audit); desired inputs stay (operator data). A
+# physical installation another deployment still records is a reliance: the
+# delete refuses, naming it.
+function cloudify_deployment_delete() {
+    local app="${1:-}" flavor="${2:-}" name="${3:-}"
+    [[ -n "$app" && -n "$flavor" && -n "$name" ]] ||
+        die "Usage: cloudify deployment delete <app>/<flavor>/<name>"
+    cloudify_state_deployment_dir "$app" "$flavor" "$name" >/dev/null ||
+        die "delete: '$app/$flavor/$name' is not a valid deployment identity."
+    cloudify_manifest_exists "$app" "$flavor" "$name" ||
+        die "delete: no manifest for '$app/$flavor/$name'."
+
+    # Every record tree of this deployment, across all ivps inventories.
+    local -a mine=()
+    while IFS= read -r d; do
+        [[ -d "$d" ]] && mine+=("$d")
+    done < <(find "$(_cloudify_hygiene_nodes_root)" -type d -path "*/deployments/$app/$flavor/$name" 2>/dev/null)
+
+    # The reliance check: another deployment recording the same physical
+    # installation (same inventory host dir, same package, same instance).
+    local d pkg inst parent relied=""
+    for d in ${mine[@]+"${mine[@]}"}; do
+        parent="$(dirname "$(dirname "$(dirname "$d")")")"   # the deployments root
+        while IFS= read -r sib; do
+            [[ -f "$sib" ]] || continue
+            pkg="$(basename "$(dirname "$(dirname "$sib")")")"
+            inst="$(basename "$(dirname "$sib")")"
+            relied+="${relied:+ }$pkg@$inst"
+        done < <(find "$parent" -path "*/packages/*/*/state.json" \
+                    -not -path "$d/*" 2>/dev/null)
+    done
+    if [[ -n "$relied" ]]; then
+        die "delete: '$app/$flavor/$name' would leave a reliance: another deployment records the same physical installation(s) ($relied) - release or delete that deployment first."
+    fi
+
+    for d in ${mine[@]+"${mine[@]}"}; do
+        rm -rf "$d"
+        msg "delete: records removed ($d)"
+        # Prune the emptied identity parents, never climbing past deployments/.
+        local p
+        p="$(dirname "$d")"
+        while [[ "$(basename "$p")" != deployments && "$p" != "/" ]]; do
+            rmdir "$p" 2>/dev/null || break
+            p="$(dirname "$p")"
+        done
+    done
+    rm -rf "$(cloudify_state_deployment_dir "$app" "$flavor" "$name")"
+    msg "delete: manifest removed ($(cloudify_state_manifest_file "$app" "$flavor" "$name"))"
+    msg "delete: the event log and the desired inputs stay."
+    return 0
+}
+
+# cloudify_deployment_sweep [--dry-run] [--retention-days N]
+# Two maintenance sweeps: (a) cloudify records under instance directories of
+# instances the live ivps inventory no longer lists - liveness is ivps's
+# word, so an incomplete list (timed-out nodes) refuses outright; (b) `_direct`
+# deployments (bare-dispatch accumulations) past the retention age, manifests
+# and records together. Events are never swept.
+function cloudify_deployment_sweep() {
+    local retention="${CLOUDIFY_DIRECT_RETENTION_DAYS:-30}" dry=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run) dry=1 ;;
+            --retention-days) shift; retention="${1:-}" ;;
+            *) die "deployment sweep: unknown argument '$1'." ;;
+        esac
+        shift
+    done
+    [[ "$retention" =~ ^[0-9]+$ ]] || die "deployment sweep: --retention-days needs a number."
+
+    # (a) The live list, or nothing: an incomplete inventory never sweeps.
+    local listed
+    listed=$(ivps list 2>/dev/null) ||
+        die "deployment sweep: 'ivps list' failed - never sweep a blind inventory."
+    local timedout
+    timedout=$(awk '$1 !~ /:/ && $2 == "TIMEOUT" { print $1 }' <<<"$listed")
+    if [[ -n "$timedout" ]]; then
+        die "deployment sweep: the ivps list shows timed-out node(s) $(tr '\n' ' ' <<<"$timedout")- the inventory is incomplete; retry when it settles."
+    fi
+
+    local root d idir iname nname row
+    root=$(_cloudify_hygiene_nodes_root)
+    while IFS= read -r d; do
+        [[ -d "$d" ]] || continue
+        idir="${d%/deployments}"
+        iname=$(jq -r .name "$idir/instance.json" 2>/dev/null) || iname=""
+        # idir is nodes/<node-id>/instances/<inst-id>: the node metadata sits
+        # two levels up from the instance dir.
+        nname=$(jq -r .name "$(dirname "$(dirname "$idir")")/node.json" 2>/dev/null) \
+            || nname="$(basename "$(dirname "$(dirname "$idir")")")"
+        row="$nname:$iname"
+        grep -qF "$row" <<<"$listed" && continue
+        if ((dry)); then
+            msg "sweep (dry run): instance '$row' is not in the live inventory - would remove $d"
+            continue
+        fi
+        rm -rf "$d"
+        msg "sweep: instance '$row' is not in the live inventory - removed $d"
+    done < <(find "$root" -mindepth 4 -maxdepth 4 -type d -path '*/instances/*/deployments' 2>/dev/null)
+
+    # (b) _direct accumulations past the retention age.
+    local sroot mf depname
+    sroot=$(cloudify_state_root)
+    while IFS= read -r mf; do
+        depname="$(basename "$(dirname "$mf")")"
+        if ((dry)); then
+            msg "sweep (dry run): _direct '$depname' is past ${retention}d - would remove its manifest and records"
+            continue
+        fi
+        # The record trees, by name, across all ivps inventories.
+        while IFS= read -r d; do
+            [[ -d "$d" ]] || continue
+            rm -rf "$d"
+            msg "sweep: _direct '$depname' records removed ($d)"
+        done < <(find "$root" -type d -path "*/deployments/_direct/direct/$depname" 2>/dev/null)
+        rm -rf "$(dirname "$mf")"
+        msg "sweep: _direct '$depname' past ${retention}d - manifest removed"
+    done < <(find "$sroot/deployments/_direct" -name manifest.json -mmin +$((retention * 1440)) 2>/dev/null)
+    return 0
+}

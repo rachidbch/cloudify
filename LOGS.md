@@ -911,3 +911,8 @@
 ## 2026-09-29 - item 7 evidence trail
 
 - Small by design: the plan's own wording ("re-runs can select the verify steps only") mapped to one gap - replay had no --phase passthrough. The applied-seed machinery (verify mode seeds every applied value below the store) was already the honest seeding.
+
+## 2026-09-29 - item 8 evidence trail
+
+- Sandbox-first again paid for itself: the first sweep run named every instance "instances:<name>" - the node-metadata lookup was one dirname short (node.json sits two levels above the instance dir, not beside it). The live list guard also caught the wrong -mmin sign in review (plus vs minus selects younger, not older).
+- The real-controller dry run named exactly the seven dead instances before anything moved; the implementation then removed them (acceptance: the twin residue gone, production affine intact).

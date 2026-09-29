@@ -66,6 +66,11 @@ Commands:
   deployment replay <app> [--name <n>] [--at <run>] [--phase <p>]
                                                  Re-run a recorded run from its snapshot (a
                                                  --phase verify re-run is the drift check)
+  deployment delete <app>/<flavor>/<name>       Remove a deployment's manifest and records
+                                                 (reliance-checked; events and inputs stay)
+  deployment sweep [--dry-run] [--retention-days N]
+                                                 Sweep orphaned instance records (keyed to
+                                                 ivps liveness) and aged _direct accumulations
   node use <node>             Set the active node (prints the export command)
   packages | pkgs             List installable packages
   packages | pkgs default     List default packages

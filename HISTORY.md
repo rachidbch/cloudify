@@ -1266,3 +1266,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Phase selection already selects verify-only through the engine and `app run`; the missing surface was the RE-RUN: `cloudify deployment replay <app>[/flavor>] --name <n> --phase verify` now forwards phase selection (the seeded, read-only drift check over the whole application deployment - values seeded from the snapshot and the applied records, never fresh operator env). Configure/teardown selection stays out of scope per the plan.
 - Pinned: runbook-exec "phase selection: --phase verify re-runs only the verify steps, read-only" (a runbook with install+configure+verify steps runs exactly its verify step); runbook-exec 11/11, runbook-replay 11/11.
+
+## 2026-09-29 - adoption-honesty item 8: state-tree hygiene
+
+- `cloudify deployment delete <app>/<flavor>/<name>`: reliance-checked sweep - refuses when another deployment records the same physical installation (same inventory host, same package+instance), else removes the state-tree manifest dir and every record tree across the ivps inventories (empty identity parents pruned); the event log and desired inputs stay. Router verb + README.
+- `cloudify deployment sweep [--dry-run] [--retention-days N]`: (a) cloudify records under instance directories whose (node:instance) is absent from the live `ivps list` - liveness is ivps's word, so a timed-out or failing list refuses the sweep outright (an offline instance is never swept); (b) `_direct` accumulations (manifest + record trees) past the retention age (30 days default, `CLOUDIFY_DIRECT_RETENTION_DAYS`).
+- Run on this controller (dry-run first, then real): seven dead instances swept - the twin residue (`cloudai:affine-twin`, the acceptance case), both two-host e2e hosts, and the four k3s e2e nodes - by the implementation, not by hand. Production affine and the container's records untouched; the young _direct manifests stay (they age out at 30d).
+- tests/unit/hygiene.bats 5/5 (delete happy path + reliance refusal, orphan sweep + live kept, timed-out refusal, _direct retention). deployments/show-unset suites green.

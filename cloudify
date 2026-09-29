@@ -721,6 +721,16 @@ function main() {
                     shift
                     cloudify_deployment_migrate "$@"
                     ;;
+                delete)
+                    shift
+                    [[ -n "${1:-}" && "$1" =~ ^[^/]+/[^/]+/[^/]+$ ]] || die "Usage: cloudify deployment delete <app>/<flavor>/<name>"
+                    IFS='/' read -r _del_app _del_flavor _del_name <<< "$1"
+                    cloudify_deployment_delete "$_del_app" "$_del_flavor" "$_del_name"
+                    ;;
+                sweep)
+                    shift
+                    cloudify_deployment_sweep "$@"
+                    ;;
                 rebuild-manifest)
                     shift
                     [[ -n "${1:-}" && "$1" =~ ^[^/]+/[^/]+/[^/]+$ ]] || die "Usage: cloudify deployment rebuild-manifest <app>/<flavor>/<name>"
@@ -733,7 +743,7 @@ function main() {
                     cloudify_deployment_replay "$@"
                     ;;
                 *)
-                    die "Usage: cloudify deployment <list|show|unset|migrate|replay|rebuild-manifest> [args]"
+                    die "Usage: cloudify deployment <list|show|unset|migrate|replay|rebuild-manifest|delete|sweep> [args]"
                     ;;
             esac
             break

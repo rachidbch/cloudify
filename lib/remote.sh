@@ -202,11 +202,13 @@ function cloudify_remote_sync() {
         # environment): unset -> the controller's own branch (a detached
         # checkout forwards its commit; no git at all -> empty, the remote keeps
         # its own checkout); set non-empty -> the explicit mandate; set empty
-        # -> the mandate explicitly off.
+        # -> the mandate explicitly off. `command git` bypasses the git shadow
+        # (it appends -v to authenticated calls, and rev-parse echoes it back -
+        # a two-line value would ride the payload quoting broken).
         if [[ ! -v CLOUDIFY_GIT_REF ]]; then
-            CLOUDIFY_GIT_REF=$(git -C "${CLOUDIFY_SCRIPT_DIR:-$PWD}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+            CLOUDIFY_GIT_REF=$(command git -C "${CLOUDIFY_SCRIPT_DIR:-$PWD}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
             if [[ -z "${CLOUDIFY_GIT_REF:-}" || "$CLOUDIFY_GIT_REF" == "HEAD" ]]; then
-                CLOUDIFY_GIT_REF=$(git -C "${CLOUDIFY_SCRIPT_DIR:-$PWD}" rev-parse HEAD 2>/dev/null || true)
+                CLOUDIFY_GIT_REF=$(command git -C "${CLOUDIFY_SCRIPT_DIR:-$PWD}" rev-parse HEAD 2>/dev/null || true)
             fi
             export CLOUDIFY_GIT_REF
         fi

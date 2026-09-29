@@ -292,6 +292,17 @@ _ctx() {
       cloudify_remote_sync somehost install foo ) > /dev/null 2>&1
     grep -q "export CLOUDIFY_GIT_REF=''" "$CAP_DIR/refnone.payload"
 
+    # The controller probes with `command git`: the git shadow (auth
+    # injection) appends -v to authenticated calls and rev-parse echoes it
+    # back - a two-line value would ride the payload quoting broken. Mimic
+    # the shadow and prove the derivation is immune.
+    git() { command git "$@" -v; }
+    unset CLOUDIFY_GIT_REF
+    ( CLOUDIFY_SCRIPT_DIR="$repo" CAP_OUT="$CAP_DIR/refshadow"
+      cloudify_remote_sync somehost install foo ) > /dev/null 2>&1
+    unset -f git
+    grep -q "export CLOUDIFY_GIT_REF='feature-golden'" "$CAP_DIR/refshadow.payload"
+
     # Explicit mandate survives untouched.
     unset FIX_ENV_ONLY
 }

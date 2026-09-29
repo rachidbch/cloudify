@@ -335,6 +335,30 @@ EOF
     [ "$(grep -c teardown "$CLOUDIFY_TMP/canon-order")" -eq 1 ]
 }
 
+@test "phase selection: --phase verify re-runs only the verify steps, read-only" {
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-phase
+    rubric "the drift check: verify steps only, no mutating step runs"
+    local rb="$CLOUDIFY_DIR/runbooks/execapp/default/runbook.md"
+    _make_runbook "$rb" <<'EOF'
+---
+targets: guest
+---
+```bash step=install target=guest pkg=demo id=install-one
+echo install >> "$CLOUDIFY_TMP/phase-order"
+```
+```bash step=configure target=guest pkg=demo id=configure-one
+echo configure >> "$CLOUDIFY_TMP/phase-order"
+```
+```bash step=verify target=guest pkg=demo id=verify-one
+echo verify >> "$CLOUDIFY_TMP/phase-order"
+```
+EOF
+    run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test --phase verify
+    [ "$status" -eq 0 ]
+    [ "$(cat "$CLOUDIFY_TMP/phase-order")" = "verify" ]
+    rm -f "$CLOUDIFY_TMP/phase-order"
+}
+
 @test "preflight: only selected phases are inspected" {
     export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-preflight
     rubric "a teardown-only required var cannot block the install run"

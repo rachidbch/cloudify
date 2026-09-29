@@ -63,7 +63,9 @@ Commands:
   app run <application>[/<flavor>] [--name <name>]  Run the application's runbook (bare run: install then verify)
   deployment list|show <id>                      List deployments; show one manifest and its run snapshots
   deployment migrate <id> --application <app>    One-shot bridge: copy single-ID inputs to the nested path
-  deployment replay <id> [--at <run>]            Re-run a recorded run from its snapshot
+  deployment replay <app> [--name <n>] [--at <run>] [--phase <p>]
+                                                 Re-run a recorded run from its snapshot (a
+                                                 --phase verify re-run is the drift check)
   node use <node>             Set the active node (prints the export command)
   packages | pkgs             List installable packages
   packages | pkgs default     List default packages
@@ -270,7 +272,7 @@ The lower-level `cloudify_deployment_run` engine keeps `--runbook <path>` for a
 runbook outside the tree and for replay. A path that is not canonical carries no
 application identity, so the run records no deployment manifest.
 
-`cloudify deployment replay <id> [--at <run>]` re-runs a recorded run: it seeds
+`cloudify deployment replay <application>[/<flavor>] [--name <name>] [--at <run>] [--phase <phase>]` re-runs a recorded run: it seeds
 the environment from the snapshot (target bindings, and each `value.<NAME>`
 resolved - a stored `@base64:`/`@backend:` reference is decoded here, so a step
 receives the value, never the literal) and then uses the same engine. `--at`

@@ -907,3 +907,7 @@
 - read-IFS tab collapse bit once more in show (the dname var was renamed but two prints still passed the param). The grep-evidence loop (dump $output on failure) found it in one round each time.
 - The stale state-v2 red test: proven pre-existing at a061493 in a worktree before touching it (the constitution's grounding rule); the repair also removed its ivps-deny stub - the resolver tolerates a missing ivps (plain-host path) and the worker's own skip path (no ivps -> no records) is the honest behavior for that sandbox.
 - bats 1.10 lesson again: single-word --filter or -f only; multi-word splits into file args.
+
+## 2026-09-29 - item 7 evidence trail
+
+- Small by design: the plan's own wording ("re-runs can select the verify steps only") mapped to one gap - replay had no --phase passthrough. The applied-seed machinery (verify mode seeds every applied value below the store) was already the honest seeding.

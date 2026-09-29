@@ -25,7 +25,7 @@
 #   cloudify_deployment_run <application>[/<flavor>] [--name <name>] [--runbook <path>] [--target name=addr]...
 #                               [--from <id>] [--phase <phase>]... [--dry-run] [--yes]
 #                               [--migrate-targets]
-#   cloudify_deployment_replay <id> [--at <run>] [--runbook <path>]
+#   cloudify_deployment_replay <application>[/<flavor>] [--name <name>] [--at <run>] [--runbook <path>] [--phase <phase>]...
 #                               [--target name=addr]... [--from <id>] [--dry-run] [--yes]
 #   cloudify_runbook_tuple_for <path> [<name>]  application \t flavor \t deployment name
 #   cloudify_app_run <application>[/<flavor>] [--name <name>] [run args...]
@@ -1593,7 +1593,7 @@ function cloudify_runbook_execute() {
     return 0
 }
 
-# cloudify_deployment_replay <id> [--at <run>] [--runbook <path>] [--target name=addr]...
+# cloudify_deployment_replay <application>[/<flavor>] [--name <name>] [--at <run>] [--runbook <path>] [--phase <phase>]... [--target name=addr]...
 #                             [--from <id>] [--dry-run] [--yes]
 # Re-run a recorded run. The environment is seeded from a run snapshot before
 # anything executes: every `target.<name>` becomes a binding (a --target on the
@@ -1605,6 +1605,7 @@ function cloudify_runbook_execute() {
 # are referred to by name only: never printed, never part of argv.
 function cloudify_deployment_replay() {
     local ref="" name="${CLOUDIFY_DEPLOYMENT_NAME:-default}" at="" runbook="" from="" dry=0 yes=0 migrate_targets=0
+    local -a cli_phases=()
     local -a cli_bindings=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1612,6 +1613,12 @@ function cloudify_deployment_replay() {
                 shift
                 name="${1:-}"
                 [[ -n "$name" ]] || die "deployment replay: --name needs a value."
+                ;;
+            --phase)
+                shift
+                _cloudify_runbook_phase_known "${1:-}" ||
+                    die "deployment replay: unknown phase '${1:-}' (expected: ${_CLOUDIFY_RUNBOOK_PHASES[*]})."
+                cli_phases+=("$1")
                 ;;
             --at)
                 shift
@@ -1645,7 +1652,7 @@ function cloudify_deployment_replay() {
         shift
     done
     [[ -n "$ref" ]] ||
-        die "Usage: cloudify deployment replay <application>[/<flavor>] [--name <name>] [--at <run>] [--runbook <path>] [--target name=addr]... [--from <id>] [--dry-run] [--yes] [--migrate-targets]"
+        die "Usage: cloudify deployment replay <application>[/<flavor>] [--name <name>] [--at <run>] [--runbook <path>] [--target name=addr]... [--from <id>] [--phase <phase>]... [--dry-run] [--yes] [--migrate-targets]"
 
     local app="" flavor=""
     case "$ref" in
@@ -1722,6 +1729,10 @@ function cloudify_deployment_replay() {
     done
     for b in ${target_args[@]+"${target_args[@]}"}; do
         run_args+=("$b")
+    done
+    local _p
+    for _p in ${cli_phases[@]+"${cli_phases[@]}"}; do
+        run_args+=(--phase "$_p")
     done
     [[ -n "$from" ]] && run_args+=(--from "$from")
     [[ "$dry" == "1" ]] && run_args+=(--dry-run)

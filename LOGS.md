@@ -916,3 +916,9 @@
 
 - Sandbox-first again paid for itself: the first sweep run named every instance "instances:<name>" - the node-metadata lookup was one dirname short (node.json sits two levels above the instance dir, not beside it). The live list guard also caught the wrong -mmin sign in review (plus vs minus selects younger, not older).
 - The real-controller dry run named exactly the seven dead instances before anything moved; the implementation then removed them (acceptance: the twin residue gone, production affine intact).
+
+## 2026-09-29 - item 9 evidence trail
+
+- The verify failure triage followed the ladder: the log first (0 result lines - the line never printed), the scratch under DEBUG, then a local sandbox repro against a COPY of production state (never the live tree). The repro needed two iterations to match production class (the pkg fixture must exist, else the line classifies native and the bug hides).
+- The root cause sat one label wide: the applied source label shipped with ADR-030's unset but the context reader's source case was never widened. Found by printing value_json's die message - the worker swallowed it into an empty projection ($() capture), which is why the manifest only said `cause: commit`.
+- The remote-vs-controller code skew: the affine payload pulled origin/MASTER (the bootstrap's default branch), which predates lib/results.sh. The two-host e2e never saw it (it rsyncs the tree). Standing gap: a dispatch's payload runs whatever branch the remote checkout is on; recorded for the ROADMAP.

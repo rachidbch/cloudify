@@ -19,7 +19,11 @@ DEFAULT_PATTERN="tests/integration/package-*.bats"
 # Out of test scope (Rachid, 2026-08-10 and 2026-09-28): the hermes pair.
 # Vendor drift (installer layout + auth gate) - details and re-entry
 # conditions in ROADMAP.md "Hermes pair out of test scope".
-OUT_OF_SCOPE="package-hermes-dashboard.bats package-hermes-openwebui.bats"
+# Out of the DEFAULT sweep (Rachid, 2026-09-30): zitadel - the securevault
+# agent owns its testing; it re-enters the sweep when that work is called done
+# (explicit file args below bypass this list, so its own acceptance runs are
+# unaffected).
+OUT_OF_SCOPE="package-hermes-dashboard.bats package-hermes-openwebui.bats package-zitadel.bats"
 
 # Allow running a single test: ./tests/run-integration.sh tests/integration/package-bat.bats
 TEST_FILES=()

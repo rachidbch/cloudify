@@ -140,9 +140,11 @@ setup() {
     # Read the manifest directly: it is the recorded lifecycle status, and the
     # read surface is a later phase.
     _manifest_status() {
+        # THE deployment's manifest - never a find|head lottery over a state
+        # tree that also carries _direct debris from bare-dispatch tests.
         local m
-        m=$(find "$XDG_STATE_HOME/cloudify/deployments" -name manifest.json 2>/dev/null | head -1)
-        [[ -n "$m" ]] || { printf 'missing'; return 0; }
+        m="${XDG_STATE_HOME:-$HOME/.local/state}/cloudify/deployments/$APP/$FLAVOR/$NAME/manifest.json"
+        [[ -f "$m" ]] || { printf 'missing'; return 0; }
         sed -n 's/^  "status": "\(.*\)",$/\1/p' "$m"
     }
 }
@@ -230,4 +232,35 @@ teardown_file() {
 
 @test "first teardown releases the claim, last teardown removes the package (Phase 7)" {
     skip "unlocks with the pinned-provenance and teardown phase (Phase 7)"
+}
+
+@test "a bare multi-host invocation synthesizes ONE _direct deployment (ADR-032)" {
+    rubric "one invocation, one deployment, one binding per host - same shape as a runbook deployment"
+    run bash -c "PATH=\$PATH cloudify --on $HOST_A $HOST_B install fixture-split"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+    # THIS invocation's manifest is the newest _direct fixture-split one (a
+    # dev controller accumulates e2e debris from prior runs; the sweep owns it).
+    local m
+    m=$(ls -1 "${XDG_STATE_HOME:-$HOME/.local/state}"/cloudify/deployments/_direct/direct/fixture-split-*/manifest.json 2>/dev/null | sort | tail -1)
+    [ -n "$m" ] || { echo "no _direct manifest"; return 1; }
+    [ "$(jq -r '.bindings | length' "$m")" -eq 2 ]
+    jq -e --arg a "cloudai:$HOST_A" --arg b "cloudai:$HOST_B" \
+        '.bindings[$a] and .bindings[$b]' "$m" >/dev/null
+
+    # Both hosts' records under the SAME deployment name, one per instance tree.
+    local n ra rb
+    n=$(basename "$(dirname "$m")")
+    ra="$(_ivps_path cloudai "$HOST_A")/deployments/_direct/direct/$n/packages/fixture-split/default/state.json"
+    rb="$(_ivps_path cloudai "$HOST_B")/deployments/_direct/direct/$n/packages/fixture-split/default/state.json"
+    [ -f "$ra" ] || { echo "missing: $ra"; return 1; }
+    [ -f "$rb" ] || { echo "missing: $rb"; return 1; }
+    [ "$(jq -r .deployment "$ra")" = "$n" ]
+    [ "$(jq -r .deployment "$rb")" = "$n" ]
+    # The word derives from the events: one install across both hosts.
+    [ "$(jq -r .status "$m")" = "installed" ]
+}
+
+_ivps_path() { # <node> <instance> - the controller's inventory dir
+    ivps node path "$1:$2"
 }

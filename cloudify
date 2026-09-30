@@ -362,6 +362,24 @@ function _cloudify_dispatch() {
     [[ "$packages" == *--install || "$packages" == *--configure || "$packages" == *--uninstall ]] && die "Cloudify usage error: Empty package section."
     [[ "$hosts" != "localhost" ]] && _cloudify_require_remote_creds
 
+    # ADR-032: a bare MUTATING invocation (no runbook tuple active, package
+    # words present) synthesizes ONE _direct deployment for ALL its hosts. The
+    # name is minted once HERE and carried by every dispatch of this
+    # invocation; the per-host workers accumulate their bindings into it.
+    # Verify stays out: a bare check is an ad-hoc observation (no records to
+    # seed against, ADR-030 requires records under a tuple), and it records
+    # nothing by the standing bare-verify decision.
+    if [[ -z "${CLOUDIFY_APPLICATION:-}" && "$action" != "verify" && "${CLOUDIFY_VERIFY_ONLY:-}" != "true" \
+          && -n "${packages#--$action}" ]]; then
+        local _dp="${packages#--$action}"
+        _dp="${_dp# }"; _dp="${_dp%% *}"
+        [[ -n "$_dp" ]] || _dp="$action"
+        local _dname
+        _dname=$(cloudify_state_direct_generated_name "$_dp")
+        export CLOUDIFY_APPLICATION="$_DIRECT_APP" CLOUDIFY_FLAVOR="$_DIRECT_FLAVOR"
+        export CLOUDIFY_DEPLOYMENT_NAME="$_dname"
+    fi
+
     # Map each ssh host back to the target triple the resolver produced for it
     # (T1 stored them in _CLOUDIFY_TARGETS, same order as the hosts list). No
     # ivps call here; a target with no triple (should not happen) records nothing.
@@ -370,6 +388,27 @@ function _cloudify_dispatch() {
     for _t in ${_CLOUDIFY_TARGETS[@]+"${_CLOUDIFY_TARGETS[@]}"}; do
         _target_of_host["${_t##*$'\t'}"]="$_t"
     done
+
+    # The binding slot each host lands in (ADR-032): `direct` for a single
+    # host (unchanged), the host's own identity word when the invocation
+    # spans several. Carried as a 4th tab field on the target triple.
+    local _slot _n _i _s _TAB=$'\t'
+    if (( $(wc -w <<< "$hosts") > 1 )); then
+        for _s in $hosts; do
+            _t="${_target_of_host[$_s]:-$'\t\t'$_s}"
+            _n="${_t%%$'\t'*}"
+            local _tr="${_t#*$'\t'}"; _i="${_tr%%$'\t'*}"
+            if [[ -n "$_i" ]]; then _slot="${_n}:${_i}"
+            elif [[ -n "$_n" ]]; then _slot="$_n"
+            else _slot="$_s"; fi
+            _target_of_host["$_s"]="$_t${_TAB}$_slot"
+        done
+    else
+        for _s in $hosts; do
+            _t="${_target_of_host[$_s]:-}"
+            [[ -n "$_t" ]] && _target_of_host["$_s"]="$_t${_TAB}direct"
+        done
+    fi
 
     # Verify path: the `verify` action, or the `--verify install` alias.
     if [[ "$action" == "verify" || "${CLOUDIFY_VERIFY_ONLY:-}" == "true" ]]; then
@@ -382,6 +421,10 @@ function _cloudify_dispatch() {
             if [[ "$hosts" == "localhost" ]]; then
                 local -a _vp=()
                 read -ra _vp <<< "$verify_pkgs"
+                # The same target export the remote arm makes: the active
+                # deployment tuple (bare dispatches included, ADR-032) means
+                # the applied-seed block needs THIS dispatch's resolved triple.
+                export CLOUDIFY_CONTEXT_TARGET="${_target_of_host[localhost]:-}"
                 _cloudify_execute_package_action verify "${_vp[@]}"
             else
                 PKG_DEBUG_LN "${GREEN}cloudify_remote $host verify $verify_pkgs${RESET}"

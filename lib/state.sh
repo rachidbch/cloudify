@@ -175,6 +175,58 @@ function cloudify_state_lock_file() {
     printf '%s\n' "$(cloudify_state_deployment_dir "${1:-}" "${2:-}" "${3:-}")/.manifest.lock"
 }
 
+# cloudify_state_binding_add <app> <flavor> <name> <slot> <ssh-host> [node] [instance]
+# ADR-032: a bare multi-host invocation accumulates one binding per host
+# under its ONE synthesized deployment - add-if-absent under the manifest
+# lock, so per-host workers merge instead of clobbering. The manifest is
+# created unproved when absent (status null under the uniform commit rule);
+# an existing manifest keeps its status, commit and word. An already-bound
+# slot is left untouched (its host's own worker wrote it).
+_cloudify_state_binding_add_locked() {
+    local app="$1" flavor="$2" name="$3" slot="$4" ssh_host="$5"
+    local node="${6:-}" inst="${7:-}"
+    local dir manifest status="" commit="" dev=true bindings_file
+    dir=$(cloudify_state_deployment_dir "$app" "$flavor" "$name")
+    manifest="$dir/manifest.json"
+    cloudify_state_ensure_dir "$dir"
+    if [[ -f "$manifest" ]]; then
+        if cloudify_manifest_bindings "$app" "$flavor" "$name" 2>/dev/null \
+            | awk -F'\t' -v s="$slot" '$1 == s { found=1 } END { exit !found }'; then
+            return 0
+        fi
+        status=$(_cloudify_manifest_field_file "$manifest" status) || status=""
+        [[ "$status" == "null" ]] && status=""
+        commit=$(_cloudify_manifest_field_file "$manifest" application_commit) || commit=""
+        [[ "$commit" == "null" ]] && commit=""
+        dev=$(_cloudify_manifest_field_file "$manifest" development_override) || dev=true
+        [[ "$dev" == "true" ]] || dev=false
+    else
+        IFS=$'\t' read -r dev commit <<< "$(_cloudify_state_commit_rule)"
+    fi
+    bindings_file=$(mktemp "${CLOUDIFY_TMP:-/tmp}/binding-add-XXXXXX") \
+        || die "binding add: cannot create a bindings file."
+    {
+        [[ -f "$manifest" ]] && cloudify_manifest_bindings "$app" "$flavor" "$name" 2>/dev/null
+        printf '%s\t%s\t%s\t%s\t%s\n' "$slot" "$ssh_host" "$node" "$inst" "$ssh_host"
+    } > "$bindings_file"
+    # No nested lock: the caller holds the manifest lock, so the inner writer
+    # is the unlocked render (the same one cloudify_manifest_write uses).
+    _cloudify_manifest_render_write "$dir" "$manifest" "$app" "$flavor" "$name" \
+        "$status" "$commit" "$dev" "$bindings_file" ""
+    rm -f "$bindings_file"
+}
+
+function cloudify_state_binding_add() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}" slot="${4:?}" ssh_host="${5:?}"
+    local node="${6:-}" inst="${7:-}"
+    _cloudify_manifest_require_tools
+    local dir lock
+    dir=$(cloudify_state_deployment_dir "$app" "$flavor" "$name")
+    lock="$dir/.manifest.lock"
+    _cloudify_state_run_locked "$lock" _cloudify_state_binding_add_locked \
+        "$app" "$flavor" "$name" "$slot" "$ssh_host" "$node" "$inst"
+}
+
 # cloudify_state_runs_dir <app> <flavor> <name> - Phase 6 run records.
 function cloudify_state_runs_dir() {
     printf '%s\n' "$(cloudify_state_deployment_dir "${1:-}" "${2:-}" "${3:-}")/runs"

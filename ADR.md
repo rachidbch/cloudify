@@ -479,7 +479,7 @@ Consequences: matching's comparison survives unchanged for convergence detection
 
 ## ADR-032: A bare multi-host invocation synthesizes one _direct deployment spanning its hosts
 
-Status: accepted (Rachid's ruling, 2026-09-30) - implementation pending.
+Status: accepted (Rachid's ruling, 2026-09-30) - implemented 2026-09-30 (unit 790/0; two-host e2e 9/9).
 
 Context: ADR-027 made bare direct installs synthesize ordinary deployments under the reserved `_direct` application so no mutation happens out-of-band. The synthesis today happens per dispatch: `cloudify --on h1 --on h2 install a b c` leaves one deployment per host (each named `<first-package>-<utc>`, one `direct` slot), because the worker synthesizes after each host's child finishes. Deployments are natively multi-host (a runbook binds one slot per target), `deployment delete` already sweeps every inventory tree for the deployment's records, and Rachid ruled that the per-host split is the wrong granularity for one invocation.
 

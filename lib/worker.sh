@@ -319,13 +319,16 @@ function _cloudify_dispatch_worker() {
         ctx="${3:?_cloudify_dispatch_worker: context}" collection="${4:?_cloudify_dispatch_worker: collection}"
     shift 4 || true
     local -a words=("$@")
-    local app flavor name step node inst ssh bindings="" _rest
+    local app flavor name step node inst ssh bindings="" _rest _rest2 slot
     # Hand-parsed: a tab is IFS-whitespace, `read` collapses the empty
     # instance field (same trap the router's target loop documents).
     node="${triple%%$'\t'*}"
     _rest="${triple#*$'\t'}"
     inst="${_rest%%$'\t'*}"
-    ssh="${_rest#*$'\t'}"
+    _rest2="${_rest#*$'\t'}"
+    ssh="${_rest2%%$'\t'*}"
+    slot="${_rest2#*$'\t'}"
+    [[ "$slot" == "$_rest2" || -z "$slot" ]] && slot=direct   # 3-field triple: single host
     step="${STEP_ID:-direct}"
 
     # A plain external host (GLOSSARY external host): no ivps inventory home
@@ -339,6 +342,11 @@ function _cloudify_dispatch_worker() {
 
     if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" && -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]]; then
         app="$CLOUDIFY_APPLICATION" flavor="$CLOUDIFY_FLAVOR" name="$CLOUDIFY_DEPLOYMENT_NAME"
+        # ADR-032: the invocation's ONE synthesized deployment accumulates
+        # this host's binding (add-if-absent) before the render.
+        if [[ "$app" == "$_DIRECT_APP" ]]; then
+            cloudify_state_binding_add "$app" "$flavor" "$name" "$slot" "$ssh" "$node" "$inst"
+        fi
     else
         app="$_DIRECT_APP" flavor="$_DIRECT_FLAVOR"
         name=$(cloudify_state_direct_synthesize "${words[0]:-direct}" "$node" "$inst" "$ssh")

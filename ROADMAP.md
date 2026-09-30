@@ -533,6 +533,8 @@ Landed 2026-09-30: the payload carries `CLOUDIFY_GIT_REF` - the controller's own
 
 REMAINING (Rachid, one paste): the bootstrap gist must honor the ref - the ready-to-paste version is `~/tmp/gist-with-git-ref.sh` (only the update block changes; the symlink logic is byte-identical). Until the gist is updated, remote checkouts keep their current-branch pull behavior and the mandate is inert.
 
-## Bare multi-host invocation synthesis (ADR-032, ruled 2026-09-30 - implementation pending)
+## Bare multi-host invocation synthesis (ADR-032, ruled 2026-09-30 - LANDED same day)
+
+Implemented: the router mints the invocation's one _direct name at dispatch entry (mutating actions only - a bare verify stays an ad-hoc observation: no records to seed against and it records nothing by the standing decision), carries it as the active deployment tuple for every dispatch of the invocation, and decorates each target triple with its binding slot (`direct` for a single host, the host's identity word when several). The workers merge their binding add-if-absent under the manifest lock (cloudify_state_binding_add) instead of each synthesizing a per-host deployment.
 
 `cloudify --on h1 --on h2 install a b c` must leave ONE `_direct` deployment spanning both hosts (one manifest, one binding per host), not one bucket per host. The synthesis moves to invocation level in the router; manifest binding writes gain add-if-absent merge; `deployment delete` already sweeps every host tree (verified). Tests: two-host bare invocation unit + e2e pin.

@@ -24,6 +24,11 @@ _create_ssh_stub() {
     cat <<STUB > "$STUB_DIR/ssh"
 #!/bin/bash
 echo "SSH_ARGS: \$*" >> "\$STUB_DIR/ssh_calls.log"
+# Real hosts are separate machines: their scratch never collides. The stub
+# runs every payload on ONE filesystem, so serialize them (a recipe that
+# builds in /tmp would otherwise race itself across "hosts").
+exec 9>>"\$STUB_DIR/payload.lock"
+flock 9
 # A real ssh lands in a FRESH remote shell: controller-side paths and
 # ownership must not leak (the inherited context path made the payload-side
 # router's cleanup sweep the controller's dispatch context).
@@ -31,7 +36,10 @@ unset CLOUDIFY_CONTEXT_FILE _CLOUDIFY_TMP_OWNER CLOUDIFY_TMP CLOUDIFY_CONTEXT_DI
       CLOUDIFY_LOG_FILE CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR \
       CLOUDIFY_DEPLOYMENT_NAME CLOUDIFY_DEPLOYMENT CLOUDIFY_STATE_DIR \
       CLOUDIFY_CREDENTIALS_DIR
-export PATH="$PWD:\$PATH"
+# A real remote host has no ivps (it is the controller's inventory CLI) - the
+# payload-side worker must take its named skip, never record beside the
+# controller's. A clean remote PATH, not the controller's stubbed one.
+export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin"
 export CLOUDIFY_DIR="$PWD"
 bash -s
 STUB
@@ -42,7 +50,8 @@ STUB
 # Create an ivps stub: node `cloudai` exists and hosts instance `cloudify`;
 # node dirs are writable inside STUB_DIR so dispatch records land there.
 _create_ivps_target_stub() {
-    mkdir -p "$STUB_DIR/nodes/cloudai/instances/cloudify" "$STUB_DIR/nodes/local"
+    mkdir -p "$STUB_DIR/nodes/cloudai/instances/cloudify" \
+             "$STUB_DIR/nodes/cloudai/instances/cloudify2" "$STUB_DIR/nodes/local"
     cat <<STUB > "$STUB_DIR/ivps"
 #!/bin/bash
 case "\${1:-}" in
@@ -52,13 +61,15 @@ case "\${1:-}" in
             cloudai) echo "$STUB_DIR/nodes/cloudai" ;;
             # The combined form resolves to the INSTANCE dir (the state
             # inventory calls it for every record and lock on the target).
-            cloudai:cloudify) echo "$STUB_DIR/nodes/cloudai/instances/cloudify" ;;
+            cloudai:cloudify)  echo "$STUB_DIR/nodes/cloudai/instances/cloudify" ;;
+            cloudai:cloudify2) echo "$STUB_DIR/nodes/cloudai/instances/cloudify2" ;;
             *) exit 1 ;;
         esac
         ;;
     list)
         echo "  REMOTE:NAME      STATUS"
         echo "  cloudai:cloudify Running"
+        echo "  cloudai:cloudify2 Running"
         ;;
     *) exit 1 ;;
 esac
@@ -373,6 +384,33 @@ ENV
         word=$(jq -r .status "$m" 2>/dev/null || true)
         [[ "$word" == "installed" ]] || { echo "manifest $m says $word"; return 1; }
     done
+}
+
+@test "real router: one bare invocation on two hosts synthesizes ONE _direct deployment" {
+    _create_ssh_stub
+    _create_ivps_target_stub
+
+    PATH="$STUB_DIR:$PATH" run bash -c "$(_router_env)
+        cd "$PWD" && bash cloudify --on cloudai:cloudify cloudai:cloudify2 install bats-test 2>&1
+    "
+
+    [ "$status" -eq 0 ]
+    grep -q "root@cloudify" "$STUB_DIR/ssh_calls.log"
+    grep -q "root@cloudify2" "$STUB_DIR/ssh_calls.log"
+    # ONE deployment (one manifest), TWO bindings - one per host word.
+    local -a mfs
+    mfs=("$STUB_DIR"/home/.local/state/cloudify/deployments/_direct/direct/*/manifest.json)
+    [ "${#mfs[@]}" -eq 1 ]
+    local -a blines
+    mapfile -t blines < <(jq -r '.bindings | to_entries[] | [.key, .value.instance] | @tsv' "${mfs[0]}")
+    [ "${#blines[@]}" -eq 2 ]
+    [[ "${blines[0]}" == $'cloudai:cloudify\tcloudify' ]]
+    [[ "${blines[1]}" == $'cloudai:cloudify2\tcloudify2' ]]
+    # And each host's records live under its own instance dir, same identity.
+    local n
+    n="$(basename "$(dirname "${mfs[0]}")")"
+    [ -f "$STUB_DIR/nodes/cloudai/instances/cloudify/deployments/_direct/direct/$n/packages/bats-test/default/state.json" ]
+    [ -f "$STUB_DIR/nodes/cloudai/instances/cloudify2/deployments/_direct/direct/$n/packages/bats-test/default/state.json" ]
 }
 
 @test "real router: --on <bad>: dies with the node-not-found message" {

@@ -330,6 +330,15 @@ function _cloudify_execute_package_action() {
         _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
         is_setup_in_progress=true
     elif [[ "$action" == "verify" ]]; then
+        # A NAMED verify on localhost cannot keep its promise: the named verify
+        # runs under the deployment (seeded, event recorded) through the dispatch
+        # worker - and the localhost arm does not build the dispatch context the
+        # worker reads, so nothing would be recorded (silently). Refuse named,
+        # keep bare local verify (ad-hoc observation, records nothing by design).
+        # Wiring localhost into the worker is queued with external-host state.
+        if _cloudify_deployment_tuple_active; then
+            die "verify: a NAMED verify records through the dispatch worker; the localhost arm is not wired to it yet - dispatch with --on <target>."
+        fi
         PKG_DEBUG "${YELLOW}cloudify verify ${pkgs[*]}${RESET}"
         # shellcheck disable=SC2030,SC2031 # subshell-local on purpose
         (
@@ -371,21 +380,32 @@ function _cloudify_dispatch() {
     # no records to seed against per ADR-030, records nothing by the standing
     # decision) - a NAMED verify is deliberate addressing and runs under the
     # deployment (seeded against its applied values, event recorded).
+    # Framework-owned: only THIS block may set the marker (a caller-exported
+    # value would silently unseed a named deployment's reconfigure).
+    unset CLOUDIFY_DEPLOYMENT_SYNTHESIZED
     if [[ -z "${CLOUDIFY_APPLICATION:-}" && -n "${packages#--"$action"}" ]]; then
         local _dp="${packages#--"$action"}"
         _dp="${_dp# }"; _dp="${_dp%% *}"
         [[ -n "$_dp" ]] || _dp="$action"
-        local _dname=""
+        local _dname="" _minted=false
         if [[ -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]]; then
             _dname="$CLOUDIFY_DEPLOYMENT_NAME"   # --name: explicit addressing
             cloudify_state_deployment_dir "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$_dname" >/dev/null ||
                 die "--name '$_dname' is not a valid deployment name."
         elif [[ "$action" != "verify" && "${CLOUDIFY_VERIFY_ONLY:-}" != "true" ]]; then
             _dname=$(cloudify_state_direct_generated_name "$_dp")
+            _minted=true
         fi
         if [[ -n "$_dname" ]]; then
             export CLOUDIFY_APPLICATION="$_DIRECT_APP" CLOUDIFY_FLAVOR="$_DIRECT_FLAVOR"
             export CLOUDIFY_DEPLOYMENT_NAME="$_dname"
+            # Minted HERE (not --name, not a runbook): the synthesized name is
+            # an invocation-scoped observation bucket, not an operator address.
+            # Applied-value seeding (ADR-030) is for addressed deployments - a
+            # synthesized deployment resolves fresh every dispatch, never seeds
+            # (else a bare configure after a bare install would demand records
+            # under a name minted seconds ago and die).
+            [[ "$_minted" == true ]] && export CLOUDIFY_DEPLOYMENT_SYNTHESIZED=true
         fi
     fi
 
@@ -1018,7 +1038,7 @@ function main() {
         # what ran). Runbook deployments are excluded - the operator named them.
         if [[ "${CLOUDIFY_APPLICATION:-}" == "$_DIRECT_APP" && -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]]; then
             local _dep_word
-            _dep_word=$(cloudify_manifest_field "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME" status 2>/dev/null) || _dep_word=""
+            _dep_word=$(cloudify_state_status_read "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME" 2>/dev/null) || _dep_word=""
             [[ "$_dep_word" == "null" || -z "$_dep_word" ]] && _dep_word=none
             msg "Deployment: ${CLOUDIFY_APPLICATION}/${CLOUDIFY_FLAVOR}/${CLOUDIFY_DEPLOYMENT_NAME} (status ${_dep_word})"
         fi

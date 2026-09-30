@@ -54,9 +54,10 @@
 # replayable after the store changes. Otherwise the snapshot keeps every
 # deployment-store key and corrects/adds the declared names of the run's step
 # packages with the source form the payload would use (one resolution built once
-# per run). Snapshots are
-# ${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml (0600, atomic); a name already
-# taken (a run and its immediate replay share a second) gets a -2, -3, ... suffix.
+# per run). Run snapshots live at the per-deployment state-tree home
+# (deployments/<a>/<f>/<n>/runs/<utc>.yaml, 0600, atomic create-if-absent); a
+# name already taken (a run and its immediate replay share a second) gets a
+# -2, -3, ... suffix.
 #
 # body-b64 is base64 so a multi-line shell body survives one line.  Empty fields
 # print as empty (never omitted): a human-gate step has no target and no pkg.
@@ -1520,12 +1521,6 @@ function cloudify_runbook_execute() {
 
     finished_at=$(_cloudify_runbook_now)
 
-    # Which step failed, if any: a failed verify step is information, not a
-    # downgrade (GLOSSARY manifest status) - the run-end projection needs the
-    # failing step's type before the unset below.
-    local failed_step_type=""
-    [[ "$status" == "failed" ]] && failed_step_type="${STEP_TYPE:-}"
-
     # 6. Write the run snapshot (always, success or failure).
     # The run-store home: per-deployment, under the state tree (ruled
     # 2026-09-27) - the run key derives from identity (path + name + timestamp).
@@ -1540,27 +1535,35 @@ function cloudify_runbook_execute() {
     snapshot="$runs_dir/$(_cloudify_runbook_utc).yaml"
     # A run and its immediate replay land in the same second: never overwrite an
     # existing snapshot, suffix -2, -3, ... instead (the source run must survive
-    # a replay). `--at` still selects by timestamp prefix.
+    # a replay). `--at` still selects by timestamp prefix. Create-if-absent is
+    # ATOMIC (hardlink): two concurrent runs of the same deployment in the same
+    # second both compute the same base name - check-then-mv would let the
+    # second silently clobber the first's snapshot; ln fails, the loser suffixes.
     local n=1 base="${snapshot%.yaml}"
-    while [[ -e "$snapshot" ]]; do
-        n=$((n + 1))
-        snapshot="$base-$n.yaml"
-    done
     tmp=$(mktemp "$runs_dir/.run.XXXXXX") || die "runbook execute: cannot create the run snapshot."
     _cloudify_runbook_snapshot "$status" "$started_at" "$finished_at" "$path" \
         target_lines value_lines run_outputs run_output_order > "$tmp"
     chmod 600 "$tmp" 2>/dev/null || true
-    mv "$tmp" "$snapshot"
+    while ! ln "$tmp" "$snapshot" 2>/dev/null; do
+        n=$((n + 1))
+        snapshot="$base-$n.yaml"
+    done
+    rm -f "$tmp"
 
     rm -f "$outputs_file"
     unset CLOUDIFY_OUTPUTS_FILE STEP_ID STEP_TYPE STEP_TARGET STEP_PKG STEP_PHASE
 
     # 7. Manifest lifecycle (Phase 3). The manifest starts with no status word;
     #    the per-dispatch workers project the word after their events (install
-    #    -> installed, reconfigure -> reconfigured, verify -> verified). A failed
-    #    run ends degraded - unless the failing step was a verify step: a failed
-    #    verify is information, not a downgrade (health recorded it), so the
-    #    recorded word stands. A completed run keeps the workers' words. A killed
+    #    -> installed, reconfigure -> reconfigured, verify -> verified). The
+    #    word is ALWAYS the event-log derivation (one source, REDESIGN
+    #    "manifest as cache"): the run never forces a word the events cannot
+    #    prove - a failed package step already wrote its own degraded event
+    #    (the worker writes what the line events cannot prove), and a failed
+    #    non-package step (run, human-gate) is not a package attempt: the
+    #    failure lives in the run snapshot, the status stays what the events
+    #    prove (a rebuild then always equals the maintained manifest). A
+    #    failed verify step is information, not a downgrade. A killed
     #    process never reaches this code.
     if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" && -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]] \
         && cloudify_manifest_exists "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME"; then
@@ -1570,12 +1573,11 @@ function cloudify_runbook_execute() {
         _mname="$CLOUDIFY_DEPLOYMENT_NAME"
         _commit_line=$(_cloudify_runbook_source_commit)
         IFS=$'\t' read -r _mdev _mcommit <<< "$_commit_line"
-        if [[ "$status" == "failed" && "$failed_step_type" != "verify" ]]; then
-            _mstatus="degraded"
-        else
-            _mstatus=$(cloudify_manifest_field "$_mapp" "$_mflavor" "$_mname" status)
-            [[ -z "$_mstatus" || "$_mstatus" == "null" ]] && _mstatus=""
-        fi
+        # Derivation-only (see the comment above): no forced degraded - a
+        # failed package step's degraded event already moved the word; a
+        # failed non-package step is not a package attempt.
+        _mstatus=$(cloudify_manifest_field "$_mapp" "$_mflavor" "$_mname" status)
+        [[ -z "$_mstatus" || "$_mstatus" == "null" ]] && _mstatus=""
         cloudify_manifest_update_status "$_mapp" "$_mflavor" "$_mname" "$_mstatus" "$_mcommit" "$_mdev" ||
             return $?
         if [[ -z "$_mstatus" ]]; then

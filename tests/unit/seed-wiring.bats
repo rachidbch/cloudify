@@ -107,6 +107,33 @@ _seed_record() {
     [ -z "${PORT:-}" ]
 }
 
+@test "configure dispatch: a synthesized _direct name never seeds - no records demanded" {
+    rubric "ADR-032's invocation-minted name is an observation bucket: a bare configure after a bare install must not die on records minted seconds ago"
+    export CLOUDIFY_APPLICATION=_direct CLOUDIFY_FLAVOR=direct CLOUDIFY_DEPLOYMENT_NAME=nginx-20260930T000000Z
+    export CLOUDIFY_DEPLOYMENT_SYNTHESIZED=true
+    unset PORT
+    unset CLOUDIFY_APPLIED_SEED
+
+    _cloudify_dispatch_vars /dev/null configure deployment reconfigure nginx > /dev/null
+
+    [ -z "${CLOUDIFY_APPLIED_SEED:-}" ]
+    [ -z "${PORT:-}" ]
+
+    unset CLOUDIFY_DEPLOYMENT_SYNTHESIZED
+}
+
+@test "verify seed env: a synthesized name skips the local verify seed too" {
+    _seed_record "{}"
+    export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
+    export CLOUDIFY_DEPLOYMENT_SYNTHESIZED=true
+    unset CLOUDIFY_APPLIED_SEED
+
+    _cloudify_verify_seed_env nginx
+
+    [ -z "${CLOUDIFY_APPLIED_SEED:-}" ]
+    unset CLOUDIFY_DEPLOYMENT_SYNTHESIZED
+}
+
 @test "configure dispatch: an application reference with no applied record dies named" {
     export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
 

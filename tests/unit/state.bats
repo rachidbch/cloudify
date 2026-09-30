@@ -181,6 +181,28 @@ _reference_check() {
     [ "$(cloudify_manifest_field legacy default main application_commit)" = "$commit" ]
 }
 
+@test "status read self-heals a retired word on disk (show/list paths)" {
+    rubric "the words die everywhere: a pre-vocabulary manifest regrades from events on read, without a manual pass"
+    local commit="0123456789abcdef0123456789abcdef01234567"
+    cloudify_manifest_write legacy default main "" "$commit" false "$BINDINGS"
+    local file
+    file=$(cloudify_state_manifest_file legacy default main)
+    sed -i 's/^  "status": null,$/  "status": "applying",/' "$file"
+    local m
+    m=$(cloudify_state_events_root)/2026-09
+    mkdir -p "$m"
+    jq -n '{event_id:"20260901T000000Z-0a0b0c0d", application:"legacy", flavor:"default", deployment:"main", command_kind:"install", outcome:{exit_status:0, summary:"s"}}' \
+        > "$m/20260901T000000Z-0a0b0c0d.json"
+
+    # The read surface recomputes the cached word from the event log...
+    [ "$(cloudify_state_status_read legacy default main)" = "installed" ]
+    # ...and the manifest on disk no longer carries the retired word.
+    [ "$(cloudify_manifest_field legacy default main status)" = "installed" ]
+
+    # A healthy word is read as-is, no rewrite side trip needed.
+    [ "$(cloudify_state_status_read legacy default main)" = "installed" ]
+}
+
 @test "manifest rebuild: determinism - the rebuilt manifest equals the maintained one" {
     rubric "derived fields come from the event log; declared fields are preserved"
     local commit="0123456789abcdef0123456789abcdef01234567"

@@ -889,16 +889,19 @@ EOF
     [ "$(cloudify_manifest_field myapp default default status)" = "null" ]
 }
 
-@test "manifest: an observed failure marks the deployment degraded" {
-    rubric "degraded on failure, and it stays discoverable"
+@test "manifest: a failed bash-only step proves nothing - the word stays what events prove" {
+    rubric "no unprovable words: the run never forces degraded; the failure lives in the run snapshot; a rebuild always equals the maintained manifest"
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
     _make_app_runbook myapp default my-dep "exit 3"
     _clean_tree
     run cloudify_app_run myapp --target guest=cloudai:xfce-test
     [ "$status" -ne 0 ]
-    [ "$(cloudify_manifest_field myapp default default status)" = "degraded" ]
+    # No dispatch worker ran (bash-only step), no state-relevant event exists:
+    # the manifest claims nothing. A failed PACKAGE dispatch writes its own
+    # degraded event and the word moves through that derivation instead.
+    [ "$(cloudify_manifest_field myapp default default status)" = "null" ]
     run cloudify_deployment_show myapp 0 default
-    [[ "$output" == *"status: degraded"* ]]
+    [[ "$output" == *"status: null"* ]]
 }
 
 @test "manifest: a run killed between steps stays unproved and show reveals it" {

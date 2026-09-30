@@ -1080,6 +1080,21 @@ function cloudify_state_deployment_regrade_status() {
     cloudify_manifest_update_status "$app" "$flavor" "$name" "$word" "$commit" "$dev"
 }
 
+# cloudify_state_status_read <app> <flavor> <name> - the manifest status word,
+# self-healing against the retired vocabulary (plan item 3: the words die): a
+# manifest still carrying `applying`/`active` (pre-vocabulary writes that no
+# dispatch has touched since) is regraded from the event log on read - the
+# manifest is a rebuildable cache, this recomputes the cached word. Read paths
+# (`deployment show`/`list`) use this, never a raw manifest_field status read.
+function cloudify_state_status_read() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}" word
+    word=$(cloudify_manifest_field "$app" "$flavor" "$name" status 2>/dev/null) || word=""
+    if [[ "$word" == "applying" || "$word" == "active" ]]; then
+        cloudify_state_deployment_regrade_status "$app" "$flavor" "$name" >/dev/null 2>&1 || true
+    fi
+    cloudify_manifest_field "$app" "$flavor" "$name" status 2>/dev/null || printf 'null\n'
+}
+
 # cloudify_manifest_field <app> <flavor> <name> <key>
 function cloudify_manifest_field() {
     local file
@@ -1104,7 +1119,7 @@ function cloudify_manifest_describe() {
     local line slot address node instance ssh_host rest recorded=""
     file=$(cloudify_state_manifest_file "$app" "$flavor" "$name")
     [[ -f "$file" ]] || return 1
-    status=$(_cloudify_manifest_field_file "$file" status)
+    status=$(cloudify_state_status_read "$app" "$flavor" "$name")
     dev=$(_cloudify_manifest_field_file "$file" development_override)
     created=$(_cloudify_manifest_field_file "$file" created_at)
     commit=$(_cloudify_manifest_field_file "$file" application_commit)

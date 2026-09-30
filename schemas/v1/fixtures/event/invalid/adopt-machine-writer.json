@@ -5,8 +5,10 @@
   "tool": "cloudify",
   "tool_version": "t",
   "writer": {
-    "kind": "operator",
-    "name": "rachid"
+    "host": "c",
+    "boot_id": "3f2a1b0c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "pid": 1,
+    "process_start_ticks": 1
   },
   "run_id": null,
   "step_id": "adopt",

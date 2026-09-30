@@ -98,9 +98,9 @@ run_stream() {
     step "login healthy code: [$output]"
     [ "$output" = "200" ]
 
-    run $TEST_SSH "root@$TEST_HOST" 'stat -c "%a" /root/zitadel/.env /root/zitadel/bootstrap.pat'
+    run $TEST_SSH "root@$TEST_HOST" 'stat -c "%a" /root/zitadel/.env /root/zitadel/bootstrap.pat | sort -u | tr "\n" " "'
     step "modes: [$output]"
-    [ "$output" = "600 600" ]
+    [ "${output// /}" = "600" ]
 }
 
 @test "bootstrap PAT authenticates against the Mgmt API" {

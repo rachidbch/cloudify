@@ -832,6 +832,33 @@ candidate_file() {
     [ "$status" -ne 0 ]
 }
 
+@test "package instance: a secret-declared marker variable is refused as the instance key" {
+    rubric "the instance key lands in paths and result lines - a secret value can never be it"
+    declare_pkg foo "SECRET_SEL=eu-1"
+    printf 'secret SECRET_SEL\n' >> "$CLOUDIFY_DIR/pkg/foo/.remote-vars"
+    echo "SECRET_SEL" > "$CLOUDIFY_DIR/pkg/foo/.package-instance"
+    reset_stores
+    export SECRET_SEL=eu-west-3
+    local cand
+    cand=$(candidate_file foo)
+    run cloudify_context_build install "$DEP" install "$cand" foo
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"secret-classified"* ]]
+}
+
+@test "package instance: a heuristic secret name is refused as the instance key" {
+    rubric "whatever the walker would mask anywhere else must not become a path component"
+    declare_pkg foo "API_TOKEN=eu-1"
+    echo "API_TOKEN" > "$CLOUDIFY_DIR/pkg/foo/.package-instance"
+    reset_stores
+    export API_TOKEN=eu-west-3
+    local cand
+    cand=$(candidate_file foo)
+    run cloudify_context_build install "$DEP" install "$cand" foo
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"secret-classified"* ]]
+}
+
 @test "context value json: the applied label (a released pin) is a legal source" {
     rubric "ADR-030: unset moves a caller pin to applied; a seeded verify re-reads it"
     local ctx="$CLOUDIFY_TMP/applied-ctx"

@@ -128,11 +128,15 @@ function _cloudify_dispatch_vars() {
     # Applied seeding (4.4, ADR-030): a configure dispatch under an active
     # application reference resolves as a reconfigure of that deployment - the
     # applied SET values seed between the caller env and the stores. A bare
-    # configure (no reference) stays an unseeded raw dispatch. The seed is
-    # produced parent-side, so local, remote-payload and runbook configure
-    # dispatches all flow through this one point.
+    # configure (no reference) stays an unseeded raw dispatch; a SYNTHESIZED
+    # _direct name (ADR-032, invocation-minted) is an observation bucket, not
+    # an operator address - it resolves fresh every dispatch and never seeds
+    # (its records are written BY the dispatch, not consumed before it). The
+    # seed is produced parent-side, so local, remote-payload and runbook
+    # configure dispatches all flow through this one point.
     if [[ "$action" =~ ^(configure|verify)$ && -z "${CLOUDIFY_APPLIED_SEED:-}" ]] \
-        && _cloudify_deployment_tuple_active; then
+        && _cloudify_deployment_tuple_active \
+        && [[ "${CLOUDIFY_DEPLOYMENT_SYNTHESIZED:-}" != "true" ]]; then
         local _st="${CLOUDIFY_CONTEXT_TARGET:-${_CLOUDIFY_CUR_TARGET:-}}" _snode _srest _sinst
         [[ -n "$_st" ]] || die "$action: no target resolved for the applied seed."
         _snode="${_st%%$'\t'*}"

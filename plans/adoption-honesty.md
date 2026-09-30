@@ -1,6 +1,6 @@
 # Adoption honesty and status vocabulary - session plan (CURRENT)
 
-Progress (2026-09-29, session one): items 1-9 LANDED (commits d74c824..a4ddfee); item 10 PARTIAL (youtube-mcp adopted + verified, census five dispositioned; hermes round two remains); item 11 NOT STARTED. Also open: three pre-existing shell-router reds (repair map in LOGS 2026-09-29, session close). Handoff: ~/.pi/handoffs/2026-09-29-cloudify-adoption-honesty-items-1-9-census-done.md
+Progress (2026-09-30): items 1-9 landed plus the review corrections; item 10 SKIPPED by Rachid's ruling 2026-09-30 - hermes needs its own rethinking (a future plan owns it; the umbrella's youtube-mcp adoption and the census five stand as landed); item 11 (reviews + closure) is THE remaining item, with the hermes pair's integration re-entry REMOVED from the final ladder. Earlier: items 1-9 landed (commits d74c824..a4ddfee); item 10 PARTIAL (youtube-mcp adopted + verified, census five dispositioned; hermes round two remains); item 11 NOT STARTED. Also open: three pre-existing shell-router reds (repair map in LOGS 2026-09-29, session close). Handoff: ~/.pi/handoffs/2026-09-29-cloudify-adoption-honesty-items-1-9-census-done.md
 
 Review correction (2026-09-30, post-session review): item 3's failure split was transcribed with a crack - the event-log derivation skipped failed verify events while the worker degraded them, so a failing verify dispatch made the maintained manifest and a rebuild disagree, and worker.bats pinned a line shape (exit 0 + verification failed for a verify dispatch) the router never emits. Fixed: the derivation treats a failed verify dispatch as a failed attempt (degraded); the worker's status word now comes from that same derivation (one source, not two); every worker failure the line events cannot prove writes its own degraded event; the install-with-failed-verify-stage path is unchanged (exit 0 on the line keeps `installed`). The claimed "verify-stage-failure dispatch exits 0" was never wired at CLI level and is corrected in the records: the CLI exit stays the honest script signal. Adoption UX hardened for agent/human drivers: `--facts <file>` (reviewable artifact, comments allowed), `--operator` beside the env, operator resolution fail-fast before any write.
 
@@ -173,7 +173,8 @@ maintenance paths.
 
 ### Final closure (replaces the recovery plan's)
 
-- Full ladder green on final HEAD: lint, gate, full unit, full integration (hermes pair re-entry included if item 10 landed it), two-host e2e, k3s e2e.
+- Full ladder green on final HEAD: lint, gate, full unit, full integration (hermes pair stays out of scope per the 2026-09-30 skip), two-host e2e, k3s e2e (the one still-unproven consumer of tests/helpers/code-mode.bash).
+- Then merge to master per the accepted sequence (2026-09-30): the rework lands as one reviewed trunk, state-model-v2-phase1 is deleted after the merge, and the production checkouts (affine, youtube-mcp) follow automatically via the live ref mandate.
 - `git status --short` clean; `PLAN.md` resolves to this plan; no stale checked box.
 - Archive `plans/state-model-v2-recovery.md` and this plan; repoint `PLAN.md` per Rachid's next call.
 - VERSION bump (MINOR: behavior changes), HISTORY/LOGS current.

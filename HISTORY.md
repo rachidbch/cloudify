@@ -1330,3 +1330,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - The feedback gap Rachid flagged is closed: every dispatch acting under a synthesized deployment prints its identity in the summary - `Deployment: _direct/direct/<name> (status <word>)` - so the default flow's work is addressable by copy, never by timestamp archaeology. Runbook deployments print nothing (the operator named them).
 - One router parse bug caught by the e2e after the unit passed (the loop's bottom shift already consumes the option word; the --name case must shift only its value - the local parse probe reproduced it in one step).
 - Ladder: full unit 790 ok / 0 not ok; two-host e2e 10/10 on fresh disposable hosts (named multi-host install -> one `web` deployment; separate named verify -> seeded, recorded, status verified; identity lines asserted).
+
+## 2026-09-30 - item 10 skipped by ruling; item 11 (reviews + closure) is the remaining work
+
+- Rachid's ruling: hermes is skipped from this plan - it needs its own rethinking before adoption or test re-entry, as a future plan. The umbrella's landed parts stand (youtube-mcp adopted + verified; census five dispositioned). Item 11's final ladder runs WITHOUT the hermes pair; the merge-to-master sequence is accepted (finish -> exit-gate reviews -> merge as one reviewed trunk; production follows via the live ref mandate).

@@ -612,6 +612,7 @@ cloudify --on <target host> show overlay-name
 
 Direct package commands remain available with stable signatures and stop being out-of-band: a bare install with no `--name` synthesizes a deployment under the reserved `_direct` application namespace, with a generated name, a virtual one-step runbook (stable step ID `direct`), and a manifest under the uniform commit rule (ADR-027).
 Direct deployments are ordinary deployments: full inventory and events, guard, reliance, teardown.
+An invocation-minted `_direct` name is an observation bucket, not an operator address (ruled 2026-09-30, ADR-032's recording mechanism): its dispatches resolve values fresh every time and never seed applied values (ADR-030 seeding serves addressed deployments - a runbook, an adoption, or an explicit `--name`); an unnamed verify is an ad-hoc observation and records nothing.
 
 A direct package command without deployment context has no deployment reliance.
 

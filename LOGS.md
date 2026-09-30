@@ -965,3 +965,8 @@
 - Two bash traps caught by the suite, both fixed at the cause: `$'\\t'` inside double quotes is literal text (the binding slot rode the payload as `$'\\t'cloudai:cloudify` - fixed with a real tab variable), and the ssh stub needed to serialize payloads (one filesystem playing N hosts raced recipe scratch in /tmp) plus a remote-clean PATH (a real remote has no ivps - the payload-side worker was synthesizing beside the controller's).
 - The verify exclusion emerged from a red, not deliberation: exporting the tuple for bare verify made the applied-seed block demand records (correct per ADR-030) - a bare check has none, so the honest rule is: mutations get the invocation bucket, observations stay ad-hoc.
 - The e2e infra flakes (launch-after-delete races, MagicDNS settling late on fresh containers) were worked around by pre-launching and settling hosts before the suite - the k3s suite's wait pattern; worth folding into the two-host setup_file if it recurs.
+
+## 2026-09-30 - --name evidence trail
+
+- The shift-convention bug (case shifts its value, the loop's bottom shift consumes the option word) slipped past the unit suite and died in the e2e parse - a reminder that the container unit run exercises the router only through the stubbed paths the tests write; the e2e's real grammar remains the parse gate.
+- The named-verify flow rides existing machinery end to end: the hook exports the tuple, the seeded verify reads the deployment's package records (applied values), the worker records the verify event, and the derivation moves the word - zero new state paths, one addressing rule.

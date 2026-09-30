@@ -362,22 +362,31 @@ function _cloudify_dispatch() {
     [[ "$packages" == *--install || "$packages" == *--configure || "$packages" == *--uninstall ]] && die "Cloudify usage error: Empty package section."
     [[ "$hosts" != "localhost" ]] && _cloudify_require_remote_creds
 
-    # ADR-032: a bare MUTATING invocation (no runbook tuple active, package
-    # words present) synthesizes ONE _direct deployment for ALL its hosts. The
-    # name is minted once HERE and carried by every dispatch of this
-    # invocation; the per-host workers accumulate their bindings into it.
-    # Verify stays out: a bare check is an ad-hoc observation (no records to
-    # seed against, ADR-030 requires records under a tuple), and it records
-    # nothing by the standing bare-verify decision.
-    if [[ -z "${CLOUDIFY_APPLICATION:-}" && "$action" != "verify" && "${CLOUDIFY_VERIFY_ONLY:-}" != "true" \
-          && -n "${packages#--$action}" ]]; then
+    # ADR-032 + the --name addressing rule: a bare MUTATING invocation (no
+    # runbook tuple active, package words present) synthesizes ONE _direct
+    # deployment for ALL its hosts - the name minted once HERE (or the
+    # operator's --name, reused, never regenerated) and carried by every
+    # dispatch of this invocation; the per-host workers accumulate their
+    # bindings into it. An UNNAMED verify stays out (an ad-hoc observation:
+    # no records to seed against per ADR-030, records nothing by the standing
+    # decision) - a NAMED verify is deliberate addressing and runs under the
+    # deployment (seeded against its applied values, event recorded).
+    if [[ -z "${CLOUDIFY_APPLICATION:-}" && -n "${packages#--$action}" ]]; then
         local _dp="${packages#--$action}"
         _dp="${_dp# }"; _dp="${_dp%% *}"
         [[ -n "$_dp" ]] || _dp="$action"
-        local _dname
-        _dname=$(cloudify_state_direct_generated_name "$_dp")
-        export CLOUDIFY_APPLICATION="$_DIRECT_APP" CLOUDIFY_FLAVOR="$_DIRECT_FLAVOR"
-        export CLOUDIFY_DEPLOYMENT_NAME="$_dname"
+        local _dname=""
+        if [[ -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]]; then
+            _dname="$CLOUDIFY_DEPLOYMENT_NAME"   # --name: explicit addressing
+            cloudify_state_deployment_dir "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$_dname" >/dev/null ||
+                die "--name '$_dname' is not a valid deployment name."
+        elif [[ "$action" != "verify" && "${CLOUDIFY_VERIFY_ONLY:-}" != "true" ]]; then
+            _dname=$(cloudify_state_direct_generated_name "$_dp")
+        fi
+        if [[ -n "$_dname" ]]; then
+            export CLOUDIFY_APPLICATION="$_DIRECT_APP" CLOUDIFY_FLAVOR="$_DIRECT_FLAVOR"
+            export CLOUDIFY_DEPLOYMENT_NAME="$_dname"
+        fi
     fi
 
     # Map each ssh host back to the target triple the resolver produced for it
@@ -848,6 +857,16 @@ function main() {
             shift && cloudify_hostnames "$@"
             break
             ;;
+        --name)
+            # Direct-deployment addressing (ADR-027's "explicit --name reuses
+            # the deployment", now wired): bare dispatches run under the named
+            # deployment instead of synthesizing one. The runbook engine parses
+            # its own --name inside its subcommand line. Shift only the VALUE:
+            # the loop's bottom shift consumes the option word itself.
+            [[ -z "${2:-}" ]] && die "Cloudify usage error: --name needs a deployment name."
+            export CLOUDIFY_DEPLOYMENT_NAME="${2:-}"
+            shift
+            ;;
         --on)
             # Build hosts list
             [[ $is_parsing_packages == "started" ]] && die "Cloudify usage error: unexpected on block."
@@ -993,6 +1012,16 @@ function main() {
                 rm -f "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}"
             fi
         done
+
+        # The acted-upon deployment identity, fed back: a synthesized name is
+        # otherwise unaddressable (ADR-027 wired the --name reuse; this prints
+        # what ran). Runbook deployments are excluded - the operator named them.
+        if [[ "${CLOUDIFY_APPLICATION:-}" == "$_DIRECT_APP" && -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]]; then
+            local _dep_word
+            _dep_word=$(cloudify_manifest_field "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME" status 2>/dev/null) || _dep_word=""
+            [[ "$_dep_word" == "null" || -z "$_dep_word" ]] && _dep_word=none
+            msg "Deployment: ${CLOUDIFY_APPLICATION}/${CLOUDIFY_FLAVOR}/${CLOUDIFY_DEPLOYMENT_NAME} (status ${_dep_word})"
+        fi
 
         if $had_failures; then
             msg "${RED}${failed_count}/${total_count} hosts failed. Log: ${CLOUDIFY_LOG_FILE:-}${RESET}"

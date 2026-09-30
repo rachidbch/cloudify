@@ -108,6 +108,8 @@ Remote execution flow: cloudify SSHes into the target host, runs the bootstrap g
 
 For tests, `CLOUDIFY_TEST_CODE_MODE` picks how a target host obtains the code: `push` (default - the local working tree over ssh, no GitHub round trip), `github` (the origin's default branch), or `branch:<name>`. See `tests/helpers/code-mode.bash`.
 
+**Direct-deployment addressing (`--name`).** A bare mutating invocation (`cloudify --on host install pkg`) synthesizes one `_direct` deployment spanning its hosts and prints the identity it acted under - `Deployment: _direct/direct/<name> (status <word>)` - so the work is never anonymous. Pass `--name <name>` to create or reuse a deployment of your own naming: `cloudify --on host --name web install nginx`, then later `cloudify --on host --name web verify nginx` attaches to `web`, seeds its check from `web`'s applied values, records its event, and moves `web`'s status (`verified`/`degraded`). An unnamed bare verify stays the ad-hoc check: no deployment identity, nothing recorded.
+
 ### Targets (`--on`)
 
 `--on` takes a target host, not just an ssh name. The resolver is operator-side and

@@ -264,3 +264,22 @@ teardown_file() {
 _ivps_path() { # <node> <instance> - the controller's inventory dir
     ivps node path "$1:$2"
 }
+
+@test "--name addresses a direct deployment across invocations (ADR-027 wired)" {
+    rubric "named install, separate named verify - seeded against applied values, the word derives"
+    run bash -c "PATH=\$PATH cloudify --on $HOST_A $HOST_B --name web install fixture-split"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Deployment: _direct/direct/web (status installed)"* ]]
+
+    run bash -c "PATH=\$PATH cloudify --on $HOST_A $HOST_B --name web verify fixture-split"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Deployment: _direct/direct/web (status verified)"* ]]
+
+    local m="${XDG_STATE_HOME:-$HOME/.local/state}/cloudify/deployments/_direct/direct/web/manifest.json"
+    [ "$(jq -r '.bindings | length' "$m")" -eq 2 ]
+    [ "$(jq -r .status "$m")" = "verified" ]
+    local h
+    for h in "$HOST_A" "$HOST_B"; do
+        [ -f "$(_ivps_path cloudai "$h")/deployments/_direct/direct/web/packages/fixture-split/default/state.json" ]
+    done
+}

@@ -75,25 +75,12 @@ sudo docker compose -f ~/zitadel/docker-compose.yml ps
 sudo docker compose -f ~/zitadel/docker-compose.yml logs zitadel-api
 ```
 
-## Field notes (empirically proven, 2026-09-30)
+## Provenance
 
-- Zitadel image is distroless: no shell, no `cat` - read the PAT from the
-  volume's host mountpoint, never `compose exec`.
-- `CLOUDIFY_ZITADEL_DOMAIN` must equal the serve hostname byte-for-byte,
-  else Zitadel answers "Instance not found". Tailscale Serve preserves
-  Host and its X-Forwarded-Proto is trusted via `ZITADEL_TRUSTED_IPS`.
-- Device codes expire in 5 minutes; a first login (TOTP enrollment +
-  password change) can outlast them - expect one retry, not a bug.
-- Console (admin UI) is at `/ui/console`; `/` is the Login app's session
-  home by v4 design.
-- Apps default to opaque access tokens; consumers verifying offline via
-  JWKS must set `accessTokenType: OIDC_TOKEN_TYPE_JWT` (see SecureVault's
-  scripts/zitadel-provision.py).
-- Instance-level roles (IAM_OWNER) are granted via `POST /admin/v1/members`,
-  not project grants.
-- Machine-only FirstInstance creates no default admin human (good).
-
-## Design provenance
+Field knowledge and the full SOP live in the `zitadel` agent skill;
+the executable deploy pipeline is runbook `zitadel` (runbooks/zitadel/default).
+Upstream: https://zitadel.com/docs/self-hosting/deploy/compose ,
+https://zitadel.com/docs/self-hosting/manage/tls_modes .
 
 Official upstream compose (external-TLS mode) + docs, revalidated 2026-10:
 https://zitadel.com/docs/self-hosting/deploy/compose ,

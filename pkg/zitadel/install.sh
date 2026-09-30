@@ -259,7 +259,9 @@ networks:
     name: zitadel
 volumes:
   zitadel-postgres:
+    name: zitadel-postgres
   zitadel-bootstrap:
+    name: zitadel-bootstrap
 COMPOSEEOF
 fi
 
@@ -277,14 +279,18 @@ until curl -fsS -o /dev/null -H "Host: ${CLOUDIFY_ZITADEL_DOMAIN}" "http://127.0
     sleep 3
 done
 
-# --- Copy the bootstrap PAT out of the volume into 0600 state (no stdout) ---
+# --- Copy the bootstrap PAT out of the volume into 0600 state (no stdout).
+# The zitadel image is distroless (no shell, no cat), so the file is read
+# from the volume's host-side mountpoint, never via `compose exec`. ---
 _pat_file="$DIR/bootstrap.pat"
-if sudo docker compose -f "$COMPOSE_FILE" exec -T zitadel-api cat /zitadel/bootstrap/securevault-bootstrap.pat 2>/dev/null | tr -d '\r\n' > "$_pat_file"; then
+_bs_mount="$(sudo docker volume inspect zitadel-bootstrap --format '{{.Mountpoint}}' 2>/dev/null)" || true
+if [[ -n "$_bs_mount" && -f "$_bs_mount/securevault-bootstrap.pat" ]]; then
+    sudo cat "$_bs_mount/securevault-bootstrap.pat" | tr -d '\r\n' > "$_pat_file"
     chmod 600 "$_pat_file"
-    [[ -s "$_pat_file" ]] || die "zitadel: bootstrap PAT file is empty - instance init did not write it"
 else
-    die "zitadel: could not read the bootstrap PAT from the volume - did instance init run? (--clear-data reinstalls fresh)"
+    die "zitadel: bootstrap PAT not found in the volume - did instance init run? (--clear-data reinstalls fresh)"
 fi
+[[ -s "$_pat_file" ]] || die "zitadel: bootstrap PAT file is empty - instance init did not write it"
 
 msg ""
 msg "${GREEN}Zitadel ${CLOUDIFY_ZITADEL_VERSION} installed and healthy on 127.0.0.1:${CLOUDIFY_ZITADEL_PORT}.${RESET}"

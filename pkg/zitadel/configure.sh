@@ -214,7 +214,9 @@ networks:
     name: zitadel
 volumes:
   zitadel-postgres:
+    name: zitadel-postgres
   zitadel-bootstrap:
+    name: zitadel-bootstrap
 COMPOSEEOF
 
 log_info "zitadel: converging the stack..."
@@ -232,14 +234,13 @@ done
 # --- Refresh the PAT state copy (best effort; the volume copy is truth).
 # The PAT only exists from instance init; an existing instance keeps its PAT. ---
 _pat_file="$DIR/bootstrap.pat"
-if sudo docker compose -f "$COMPOSE_FILE" exec -T zitadel-api cat /zitadel/bootstrap/securevault-bootstrap.pat 2>/dev/null | tr -d '\r\n' > "${_pat_file}.tmp"; then
-    if [[ -s "${_pat_file}.tmp" ]]; then
-        mv "${_pat_file}.tmp" "$_pat_file"
-        chmod 600 "$_pat_file"
-    else
-        rm -f "${_pat_file}.tmp"
-        [[ -s "$_pat_file" ]] || die "zitadel: no bootstrap PAT in state or volume - reinstall with --clear-data"
-    fi
+# Distroless image: read via the volume's host-side mountpoint (see install.sh).
+_bs_mount="$(sudo docker volume inspect zitadel-bootstrap --format '{{.Mountpoint}}' 2>/dev/null)" || true
+if [[ -n "$_bs_mount" && -f "$_bs_mount/securevault-bootstrap.pat" ]] \
+   && sudo cat "$_bs_mount/securevault-bootstrap.pat" | tr -d '\r\n' > "${_pat_file}.tmp" \
+   && [[ -s "${_pat_file}.tmp" ]]; then
+    mv "${_pat_file}.tmp" "$_pat_file"
+    chmod 600 "$_pat_file"
 else
     rm -f "${_pat_file}.tmp"
     [[ -s "$_pat_file" ]] || die "zitadel: no bootstrap PAT in state or volume - reinstall with --clear-data"

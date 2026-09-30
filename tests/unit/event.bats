@@ -63,10 +63,10 @@ _event_body() {
     rubric "an adoption event carrying it validates against the live schema"
     jq -n --argjson w "$w" '{schema_version:1, event_id:"20260918T100000Z-0000000a", at:"2026-09-18T10:00:00Z", tool:"cloudify", tool_version:"t",
         writer:$w, run_id:null, step_id:"adopt", application:"affine", flavor:"default", deployment:"main",
-        application_commit:"0123456789abcdef0123456789abcdef01234567",
+        application_commit:null, development_override:true,
         subject:{kind:"package", host:"cloudai:affine", host_key:"ivps:cloudai:affine", package:"affine", package_instance:"default"},
         phase:null, command_kind:"adopt", values:{},
-        outcome:{exit_status:null, summary:"adopted from observation"}, state:{previous_revision:0, resulting_revision:1}}' > "$CLOUDIFY_TMP/adopt-body.json"
+        outcome:{exit_status:0, summary:"adopted from observation"}, state:{previous_revision:0, resulting_revision:1}}' > "$CLOUDIFY_TMP/adopt-body.json"
     cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/event.schema.json" "$CLOUDIFY_TMP/adopt-body.json"
 }
 

@@ -1,0 +1,11 @@
+# pkg/zitadel - remote var NAMES (ADR-007): value lives in the caller env or
+# ~/.config/cloudify/pkgs/zitadel.yaml, never in the repo.
+# Secrets must not contain single quotes or control chars (payload landmine L1).
+CLOUDIFY_ZITADEL_DOMAIN
+CLOUDIFY_ZITADEL_VERSION=v4.19.3
+CLOUDIFY_ZITADEL_MASTERKEY
+CLOUDIFY_ZITADEL_SESSION_COOKIE_SECRET
+CLOUDIFY_ZITADEL_POSTGRES_PASSWORD
+CLOUDIFY_ZITADEL_BOOTSTRAP_MACHINE=securevault-bootstrap
+CLOUDIFY_ZITADEL_BIND=127.0.0.1
+CLOUDIFY_ZITADEL_PORT=8080

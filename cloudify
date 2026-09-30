@@ -371,8 +371,8 @@ function _cloudify_dispatch() {
     # no records to seed against per ADR-030, records nothing by the standing
     # decision) - a NAMED verify is deliberate addressing and runs under the
     # deployment (seeded against its applied values, event recorded).
-    if [[ -z "${CLOUDIFY_APPLICATION:-}" && -n "${packages#--$action}" ]]; then
-        local _dp="${packages#--$action}"
+    if [[ -z "${CLOUDIFY_APPLICATION:-}" && -n "${packages#--"$action"}" ]]; then
+        local _dp="${packages#--"$action"}"
         _dp="${_dp# }"; _dp="${_dp%% *}"
         [[ -n "$_dp" ]] || _dp="$action"
         local _dname=""

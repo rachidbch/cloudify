@@ -173,7 +173,7 @@ maintenance paths.
 
 ### Final closure (replaces the recovery plan's)
 
-- Full ladder green on final HEAD: lint, gate, full unit, full integration (hermes pair stays out of scope per the 2026-09-30 skip), two-host e2e, k3s e2e (the one still-unproven consumer of tests/helpers/code-mode.bash).
+- Full ladder green on final HEAD: lint, gate, full unit, two-host e2e, k3s e2e (the one still-unproven consumer of tests/helpers/code-mode.bash). Integration per the 2026-10-01 testing-scope ruling (AMENDED, Rachid): blast-radius suites (install-run-split 8/0, guacamole 7/0 - the canary) replaced the full sweep, which was cancelled at 17/33 green / 0 red with every found defect already fixed and proven; full sweeps are milestone-only from now on. Zitdel pkg commits ride the merge accepted-as-is (writer-tested, owner ruling 2026-10-01).
 - Then merge to master per the accepted sequence (2026-09-30): the rework lands as one reviewed trunk, state-model-v2-phase1 is deleted after the merge, and the production checkouts (affine, youtube-mcp) follow automatically via the live ref mandate.
 - `git status --short` clean; `PLAN.md` resolves to this plan; no stale checked box.
 - Archive `plans/state-model-v2-recovery.md` and this plan; repoint `PLAN.md` per Rachid's next call.

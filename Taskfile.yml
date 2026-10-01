@@ -39,9 +39,12 @@ tasks:
       - bash {{.LOCAL_DIR}}/cloudify --on {{.HOST}} install bats-test
 
   test-unit:
-    desc: Run unit suites on the test target (one ssh, file-parallel)
+    desc: Run unit suites on the test target (one ssh)
     cmds:
-      - bash tests/remote-bats.sh unit --jobs 4 tests/unit
+      # Serial on purpose: several suites pin fixed paths (/tmp/cloudify,
+      # /tmp/unit-split-log, /etc/systemd units) - cross-file parallelism
+      # races them (measured 2026-10-01; --jobs 4 experiment reverted).
+      - bash tests/remote-bats.sh unit tests/unit
   test-unit:container:
     desc: Run unit suites in the container (clean room)
     cmds:

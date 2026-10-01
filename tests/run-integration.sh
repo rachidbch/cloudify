@@ -97,7 +97,7 @@ for test_file in "${TEST_FILES[@]}"; do
     # 3. Prewarm ssh: the restore just rebooted the container; answering here
     # keeps the boot wait out of the first test's dispatch ssh-wait.
     for _ in $(seq 1 10); do
-        ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "root@$TEST_HOST" true 2>/dev/null && break
+        ssh "root@$TEST_HOST" true 2>/dev/null && break
         sleep 2
     done
 

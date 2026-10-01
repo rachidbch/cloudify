@@ -983,3 +983,9 @@
 
 - Applied per the test-time audit + Rachid's rulings: `task sync` hoisted out of the per-package loop (was 33x7 pushes/sweep); ssh prewarm after each snapshot restore; two-host settle 150s->40s/host; k3s ready poll 900s->200s budget, MagicDNS 90s->24s; `task test-unit` now `--jobs 4` (file-parallel, gate stays serial for goldens); `task test-canary` (guacamole) added; AGENTS.md constitution gained fail-fast-no-env-healing (rule 1) and the two-products test scopes (tool change -> unit+gate+canary; pkg change -> that pkg only).
 - VALIDATION BLOCKED (fail-fast rule applied): ssh to the test target fails host-key verification - the container was recreated again by the parallel securevault session mid-application. No healing performed; the unit --jobs run and the canary run (which also exercises the sync hoist + prewarm) wait for a green window or Rachid's go.
+
+## 2026-10-01 - harness validation closes (and the --jobs verdict)
+
+- The host-key failure was NOT a live parallel agent (Rachid's challenge, checked: no foreign processes, zitdel log stale 25h, last securevault commit 20:00 the prior day): the known_hosts entry was simply ABSENT - the foreign orchestrator's per-package `ssh-keygen -R` removes it and its own test sshs never re-add (UserKnownHostsFile=/dev/null). One accept-new, stable since.
+- `bats --jobs 4` on unit: DISPROVEN and reverted. tmp-isolation.bats pins the fixed /tmp/cloudify home (its sweep test races cross-file), then install-run-split (/tmp/unit-split-log) and deepseek-harness (/etc/systemd unit) showed the same class. A 2-4 min win with a growing serial-exclusion list is not a win; unit stays serial (comment in Taskfile records it).
+- Validated green: unit serial 797/0; canary (guacamole) 7/0 in 10m52 - the run proves the sync hoist (tree pushed once), the plain-ssh prewarm, and the canary target end to end.

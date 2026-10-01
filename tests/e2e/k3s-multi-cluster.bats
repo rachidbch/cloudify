@@ -30,11 +30,11 @@ CLOUDIFY_CMD="cloudify --no-defaults --no-verify"
 # k3s node-ready poll (max 900s = 15min per node, 30s interval)
 _k3s_poll_ready() {
     local host="$1" expected="${2:-1}"
-    local n=0 max=30
+    local n=0 max=20
     while [ $n -lt $max ]; do
         local out
         out=$(ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ConnectTimeout=5 "root@$host" \
-            '/usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null') || { n=$((n+1)); sleep 30; continue; }
+            '/usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null') || { n=$((n+1)); sleep 10; continue; }
         local ready_count
         ready_count=$(echo "$out" | grep -c " Ready ")
         [ "$ready_count" -ge "$expected" ] && return 0
@@ -135,9 +135,9 @@ teardown_file() {
     for n in $NODES; do
         echo "── waiting for MagicDNS: $n"
         local ok=false
-        for _ in $(seq 1 18); do
+        for _ in $(seq 1 12); do
             if getent hosts "$n" >/dev/null 2>&1; then ok=true; break; fi
-            sleep 5
+            sleep 2
         done
         $ok || { echo "  $n never resolved via MagicDNS"; return 1; }
         echo "── preparing code on $n ($(getent hosts "$n" | awk '{print $1}'), mode $(tests_code_mode))"

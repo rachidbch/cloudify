@@ -14,6 +14,7 @@ Before editing any of them:
 Everything else: plain TDD, no gate.
 
 ## Constitution (project-specific; global rules in ~/AGENTS.md)
+- **Fail fast on test-env trouble; never heal the environment mid-tests.** A red environment (host-key churn, container recreated, probe timeouts, wiped results) is a STOP and a ping to Rachid with the evidence - not `ssh-keygen -R`, re-accepts, re-syncs, or silent relaunches. Healing mid-ladder hides the fault and burns hours on reruns of runs that were never going to hold.
 - **Timeouts.** Estimate task time, set 3×. Never fail a command by being too conservative.
 - **Tool priority.** cloudify > ivps > incus; incus only with explicit consent.
 - **Verify stuck before killing.** A slow mutating op isn't a hang - confirm no progress (D-state, zero I/O) first. Mid-op kills leave dirty state that breaks the next run.
@@ -56,6 +57,10 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 Review passes are bounded: a SPEC review gets one review pass, one fixing pass, and one verification pass; a Technical review gets at most three review/fix/verify passes. A verification pass that still finds must-fix findings escalates to Rachid - never another loop. Budgets are per reviewed artifact; when a budget is exhausted, stop and escalate. Reason: each extra loop iteration adds micro-drift that becomes truth in the next iteration, so drift multiplies.
 
 TDD cycle. All tests run inside an Incus container (`cloudai:cloudify`), never on localhost.
+
+**Two products, two test scopes** (ruled 2026-10-01): cloudify is the tool AND a pkg registry; never pay both costs for one change.
+- cloudify code change (`cloudify`, `lib/`, `schemas/`, tool tests): full unit + gate + `task test-canary` (guacamole, the complex pkg). Full pkg sweep only at milestones.
+- pkg change: `task test-integration:<pkg>` only, plus that pkg's unit tests if it has any.
 
 **Skills:** before editing cloudify or a package, read the `cloudify-dev` skill (framework) or the `cloudify-pkg-dev` skill (recipes); the bats harness is the completion gate, never the debugger.
 

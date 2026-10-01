@@ -69,6 +69,11 @@ ensure_snapshot
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 
+# The tree is read-only during a sweep: push it ONCE, not per package
+# (7 subtree pushes x 33 packages was 5-8 min of pure repetition).
+echo "Pushing local codebase to container (once for the sweep)..."
+(cd "$PROJECT_DIR" && task sync) > /dev/null 2>&1
+
 # Run each test hermetically
 passed=0
 failed=0
@@ -89,9 +94,12 @@ for test_file in "${TEST_FILES[@]}"; do
     echo "  Clearing stale SSH host key..."
     ssh-keygen -R "$TEST_HOST" > /dev/null 2>&1 || true
 
-    # 3. Push local codebase into the restored container
-    echo "  Pushing local codebase to container..."
-    (cd "$PROJECT_DIR" && task sync) > /dev/null 2>&1
+    # 3. Prewarm ssh: the restore just rebooted the container; answering here
+    # keeps the boot wait out of the first test's dispatch ssh-wait.
+    for _ in $(seq 1 10); do
+        ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "root@$TEST_HOST" true 2>/dev/null && break
+        sleep 2
+    done
 
     # 4. Ensure cloudify is on PATH (project dir contains the CLI router)
     export PATH="$PROJECT_DIR:$PATH"

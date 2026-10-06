@@ -1343,3 +1343,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ## 2026-10-01 - two test scopes + harness wins landed (test-time audit follow-up)
 
 - Rachid's rulings: (1) two-products test scopes - cloudify code change => unit + gate + `task test-canary` (guacamole); pkg change => that pkg only; full sweep milestone-only; (2) fail-fast constitution rule (no env healing mid-tests). Harness: tree pushed once per sweep, plain-ssh prewarm after restore, e2e budgets tightened to measured reality (two-host 40s/host settle, k3s 200s ready, 24s MagicDNS), `test-canary` target added, `--jobs 4` tried and reverted on evidence (fixed-path suites race). Validations: unit 797/0, canary 7/0.
+
+## 2026-10-01 - item 11 closed: reviews done, v0.3.0, merged to master
+
+- Exit-gate reviews: SPEC PASS; Technical FAIL->FIX twice (9 defects total, all verified-fixed; the last round was 2 test-harness one-liners, MEDIUM/LOW per Rachid's gravity rule -> rerun; two transport wedges -> pre-agreed evidence-acceptance fallback). VERSION 0.2.0 -> 0.3.0 (MINOR: status vocabulary, adoption command, ADR-032 direct deployments, seeding split, schema adoption-shape enforcement, run-store normalization, hygiene sweeps, ref mandate).
+- Plans archived: adoption-honesty.md, state-model-v2-recovery.md (+ phase4 design/implementation siblings). Test scopes per the two-products ruling; zitdel merged accepted-as-is (writer-tested, owner ruling).

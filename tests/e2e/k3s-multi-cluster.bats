@@ -41,7 +41,7 @@ _k3s_poll_ready() {
         n=$((n+1))
         sleep 30
     done
-    echo "TIMEOUT: $host expected $expected Ready nodes after ${max}x30s, got:" >&2
+    echo "TIMEOUT: $host expected $expected Ready nodes after ${max} polls, got:" >&2
     ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "root@$host" \
         '/usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null || echo kubectl-failed' >&2
     return 1

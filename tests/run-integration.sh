@@ -96,8 +96,12 @@ for test_file in "${TEST_FILES[@]}"; do
 
     # 3. Prewarm ssh: the restore just rebooted the container; answering here
     # keeps the boot wait out of the first test's dispatch ssh-wait.
+    # accept-new, not plain ssh: keygen -R just removed the entry, and plain
+    # ssh under no-TTY (ask) never connects - the loop degenerates to a fixed
+    # 20s sleep (verify-2 finding: the tailnet plain-ssh rule governs the test
+    # transport, not this harness loop).
     for _ in $(seq 1 10); do
-        ssh "root@$TEST_HOST" true 2>/dev/null && break
+        ssh -o "StrictHostKeyChecking=accept-new" "root@$TEST_HOST" true 2>/dev/null && break
         sleep 2
     done
 

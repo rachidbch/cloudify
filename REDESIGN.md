@@ -18,7 +18,7 @@ Deployment inputs record what the operator wants, package state records what Clo
 
 Cloudify resolves a dispatch's values once and uses that same dispatch context for preflight, remote forwarding, state, and event metadata.
 
-A physical package instance has one state record per host, with deployment claims inside it, so two deployments cannot both claim contradictory truths about one installation.
+Deployments that rely on the same installation are guarded: one deployment cannot silently break or remove another's installation.
 
 Current deployment bindings and status live in a small manifest.
 
@@ -83,7 +83,9 @@ The application command exports `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR`, and `
 
 It cannot be translated into the tuple without an explicit application and flavor supplied to migration.
 
-The default deployment name is `default`.
+There is no default deployment name.
+
+A deployment id is human-set through `--name`, or generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed; the same name is the same deployment (ADR-026).
 
 Example:
 
@@ -104,9 +106,9 @@ A binding maps one target slot to one resolved host.
 
 Bindings are current deployment state because reconfigure, verify, and teardown need them.
 
-Changing a binding with active claims is a migration, not a normal rerun.
+Changing a binding while the deployment relies on installations is a migration, not a normal rerun.
 
-Until ivps has stable node and instance IDs, renaming a host with active Cloudify state is unsupported and must fail loudly where Cloudify can detect it.
+A node or instance carries an immutable ivps id beside its mutable name; durable state follows the immutable id, so renaming a host does not orphan its state.
 
 Durable state for an external host requires a pinned SSH host-key fingerprint.
 
@@ -136,37 +138,58 @@ A deployment input is not applied state and does not claim that a command succee
 
 The deployment file replaces the ambiguous single-component deployment directory without removing the proven cross-host value scope.
 
-### Cloudify current state
+### Per-node deployment inventory
+
+For an ivps node or instance, the deployment inventory lives under the directory returned by `ivps node path <node>`, in a deployment-first, human-readable tree:
+
+```text
+<host-state-root>/deployments/<application>/<flavor>/<deployment-name>/packages/<package>/<package-instance>/state.json
+```
+
+This is the cloudify inventory: the ivps inventory lists the hosts; cloudify inventories plugged into it record what cloudify configured on each (ADR-027). The `packages/` segment reserves the deployment directory for future non-package facts.
+
+Walking a node's tree answers what runs on it.
+
+Host origin and continuity (ADR-028): ivps and the engine can restore, recreate, or move hosts, so the inventory never claims "the machine is in this state" - it binds the machine's origin (base image fingerprint, created-at, from ivps instance records; `discovered`, `asserted`, or `unknown`) to a continuity anchor (immutable ivps host id plus last-seen boot id), and every dispatch compares the observed pair before any mutation: a replaced or rewound machine fails before mutation until verify or re-adoption.
+
+The deployment id is the deployment name: human-set through `--name`, else generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed.
+The same name is the same deployment; it is chosen at first run, recorded in the manifest, and reused unchanged on every host the deployment touches.
+
+A run with no name matches an existing deployment of the same runbook by resolved value source forms and bindings; a match converges that deployment. A run that matches nothing while deployments already exist refuses, naming them: deploying the same application twice requires naming at least one (ADR-031). A run with no name and no existing deployment creates the first one with a generated id, printed clearly.
+
+Package instances follow the same principles: the key is `default`, or the value of a recipe-declared instance variable; the same configuration is the same installation, and a different configuration is a different installation.
+
+### Cross-host deployment glue
+
+A deployment spans hosts, so no single node owns it.
+The minimal cross-host glue lives under Cloudify's own state root:
 
 ```text
 ${XDG_STATE_HOME:-~/.local/state}/cloudify/
-  deployments/<application>/<flavor>/<deployment>/manifest.json
-  runs/<run-id>.json
+  deployments/<application>/<flavor>/<deployment>/
+    manifest.json
+    runs/<utc-timestamp>.yaml
   events/<year-month>/<event-id>.json
   external-hosts/<host-id>/...
+  .event-seq
 ```
+
+(`.event-seq` is the event-id counter's private scratch - one flock-guarded
+line `<second> <random-half> <count>`; it makes ids strictly increasing
+within a writer's second so the log's path order recovers write order. Never
+a record; safe to delete while idle.)
+
+(Amended 2026-09-25, Rachid's ruling: the runbook front matter carries no deployment or run id. A run needs no operator-chosen key: the deployment is assembled at run time - application and flavor from the runbook path, name from `--name`, hosts from `--target` - and a run identifies itself by its UTC timestamp under that deployment. Run history lives in the state tree, never in the flat configuration store; the exact runs placement is settled by the run-store cleanup slice, which also removes the legacy `deployments/<id>/runs` folders and the dotted-id lookup workaround.)
+
+(Runs placement settled 2026-09-27, Rachid's ruling: per-deployment. A run lives at `deployments/<application>/<flavor>/<deployment>/runs/<utc-timestamp>.yaml` - walking one deployment directory tells its whole story, the run key derives from identity (deployment path plus timestamp, no second id namespace), and `deployment delete` removes the story wholesale. Events stay at the root as the global audit; runs answer what the controller executed for a deployment, never what runs where - that is the ivps-tree inventory's question.)
+
+(Run snapshot extension amended 2026-09-30, Rachid's ruling: `.yaml` - the snapshot is the replay-seed YAML and the extension tells the truth about the bytes. Any structured run record owns its own format decision when it lands.)
 
 The manifest contains the deployment identity, application commit, target bindings, lifecycle status, creation time, last run ID, and last event ID.
 
 The manifest does not duplicate package applied values.
 
 Runs and events use schema-versioned JSON.
-
-### Host package state
-
-For an ivps node or instance, Cloudify state lives under the directory returned by `ivps node path <node>`.
-
-The logical shape is:
-
-```text
-<host-state-root>/cloudify/packages/<package>/<package-instance>/state.json
-```
-
-A package instance defaults to `default`.
-
-A recipe that genuinely supports several independent installations on one host must declare and consume an explicit package-instance key.
-
-External-host state uses the same shape under Cloudify state, keyed by the accepted SSH host-key identity rather than the mutable SSH alias.
 
 ## Desired inputs, applied state, and history
 
@@ -175,7 +198,7 @@ These are separate facts.
 - Desired inputs say what the operator supplied for future work.
 - Applied state says what the last successful dispatch applied to one physical package instance.
 - Last attempt says what Cloudify most recently tried and how it ended.
-- A claim says which deployment and runbook step currently relies on that physical package instance.
+- A reliance record says which deployment and runbook step currently uses an installation.
 - Events say what commands Cloudify observed and in which order per subject.
 
 None replaces another.
@@ -244,7 +267,7 @@ No registry writer, snapshot writer, or event writer walks value sources again.
 
 ### Phase-specific value sources
 
-Install creates a missing package claim and, when needed, a missing physical package instance.
+Install starts a reliance and, when needed, creates the missing package instance.
 
 Install resolves values in this order, strongest first:
 
@@ -255,17 +278,24 @@ Install resolves values in this order, strongest first:
 5. Global defaults.
 6. Recipe defaults.
 
-Reconfigure requires an active claim and an existing successful applied record.
+The recipe default is the recipe's own shell fallback on the host (`${NAME:-default}` in the recipe code): cloudify never exports the `.remote-vars` mirror text, so a declared-but-unsupplied name is absent from the dispatch context and the recipe's fallback applies on the host (ADR-029).
+
+Reconfigure requires an existing reliance and a successful applied record.
 
 Reconfigure resolves values in this order, strongest first:
 
 1. Step or caller environment.
-2. Deployment desired inputs.
-3. Previously applied source values.
+2. Previously applied values that were set (caller-sourced at apply time; ADR-030).
+3. Deployment desired inputs.
 4. Application defaults.
 5. Package defaults.
 6. Global defaults.
 7. Recipe defaults.
+
+A set value outranks the store until it is explicitly unset (`cloudify deployment unset`): a value the operator supplied directly never moves because a default under it shifted.
+Applied values that were store-supplied never seed: the store re-supplies them when present, and a deleted store entry lets the recipe default return - the deletion is honored, not buffered.
+
+The applied record carries each value's resolution source, and `cloudify deployment show` renders the applied inputs with their set/store provenance, secrets masked to reference or digest.
 
 Verify uses the previously applied source values by default.
 
@@ -279,19 +309,15 @@ When teardown needs a literal secret represented only by a digest, the caller or
 
 Current defaults never silently change verification or teardown behavior.
 
-An install phase encountering an existing claim is an idempotent no-op followed by verification.
+Re-running install converges: an existing reliance means the recipe no-ops when the installation already exists, and verification runs.
 
 It does not resolve changed defaults again.
 
 If the caller environment or deployment desired inputs explicitly differ from applied state, install fails and directs the operator to reconfigure or upgrade.
 
-An unclaimed physical package with compatible applied state may receive a new claim without mutation.
+Install is the converge: recipes are idempotent, so re-running install on the same installation is safe.
 
-An unclaimed physical package with differing explicit inputs requires `--adopt`.
-
-Adoption runs package configure when supported and adds the claim only after success.
-
-A package without configure support must be removed or reconciled explicitly before adoption.
+Adoption is operator-asserted (ruled 2026-09-29, GLOSSARY `deployment adoption`): `cloudify adoption record <app>/<flavor>/<name> --on <target>` records the operator's inference in mechanical shape - one adoption event per package (writer: operator, no commit), the package records beside it, the manifest derived to `adopted` - then fires the seeded read-only verify whose pass ends `verified` and whose failure leaves the adoption standing. The earlier install-time `--adopt` shape (configure-gated takeover) is superseded by this command; adoption never runs a write.
 
 Changing an existing deployment is an explicit reconfigure or upgrade.
 
@@ -335,53 +361,56 @@ A value needed by a later run must be written deliberately as a deployment input
 
 A generated secret that must survive the run is deliberately stored in a deployment input or secret backend and is never persisted as an automatic step output.
 
-## Physical package state and claims
+## Deployment inventory and the shared-installation guard
 
-One physical package instance has one state record on one host.
+Each deployment records what it did on a node in its own directory under that node's tree, human-readable, one directory per deployment per node.
 
-The record does not multiply because several deployments use the same installation.
+The deployment inventory contains, per package the deployment covers:
 
-The state record contains:
+- the package and package-instance identity;
+- `applied`, the last successful result: package version (required - every package reports its installed version), source-form values, and time;
+- the last attempt: phase, requested value metadata, outcome, and time;
+- health: the last verification result;
+- the runbook step that owns the work;
+- a monotonically increasing revision, changed only together with an event.
 
-- `schema_version`
-- subject identity
-- monotonically increasing `revision`
-- `applied`, containing the last successful package version, application commit, source-form values, time, and event ID
-- `last_attempt`, containing phase, requested value metadata, outcome, time, and event ID
-- `health`, containing the last verification result and time
-- active deployment claims, keyed by deployment identity and stable runbook step ID
-
-A failed attempt updates `last_attempt` and health but never overwrites `applied`.
+A failed attempt updates the last attempt and health but never overwrites `applied`.
 
 A successful install or reconfigure updates `applied`.
 
 A verify updates health but not applied values.
 
-A claim may be added only when its requested configuration is compatible with the current physical package instance and every active claim.
+The node's deployment inventories show which deployments rely on an installation: the guard scans them, so two deployments relying on one installation cannot silently break or remove each other's.
 
-Compatible means the package and package-instance identity, applied recipe commit or declared package version, and every configuration-affecting declared value match.
+A deployment may start relying on an installation only when its requested configuration is compatible with what the installation holds and with every deployment already relying on it.
+
+Compatible means the package and package-instance identity and every configuration-affecting declared value match; the recorded version is informational and is not compared (ADR-026).
+
+A package's configuration-affecting declared values are the values it declares itself; a value declared only by another package in the dispatch is recorded by that package's own inventory (ADR-025).
 
 Non-secret values compare by source value, secret references compare by reference, and literal secrets compare by digest.
 
-A conflicting claim fails before mutation and names the deployments in conflict.
+A conflict fails before mutation and names the deployments in conflict.
 
-Teardown releases every claim owned by the deployment, including dependency claims without authored uninstall steps.
+Teardown releases every reliance owned by the deployment, including dependency work without authored uninstall steps.
 
-The pinned teardown phase decides which unclaimed physical packages are actually uninstalled.
+The pinned teardown phase decides which installations are actually uninstalled.
 
-An unclaimed dependency remains installed unless the pinned teardown phase explicitly names it.
+An installation nobody relies on remains installed unless the pinned teardown phase explicitly names it.
 
-The package is uninstalled only when the last active claim is released and the application teardown asks for uninstall.
+The package is uninstalled only when nothing relies on it anymore and the application teardown asks for uninstall.
 
-A force flag may override claim protection only with a destructive confirmation and an event naming every displaced claim.
+A force flag may override the guard only with a destructive confirmation and an event naming every displaced reliance.
 
-Dependencies actually touched by `pkg_depends` must report their physical state and claims.
+Dependencies actually touched by `pkg_depends` must report their state and their reliances.
 
 The remote result channel reports package identity, parent, instance, and outcome without carrying values.
 
 The parent looks up that package's values in the precomputed dispatch context and never walks sources again.
 
 A runtime dependency absent from the precomputed graph fails its state commit and marks the run degraded rather than inventing values after execution.
+
+A result naming a package the graph does not know is a graph error: the dispatch fails in full before any inventory write (ADR-026).
 
 The router's original command-line package list is not an adequate inventory of dependency work.
 
@@ -436,23 +465,21 @@ Every phase must be safe to rerun after interruption.
 
 ## Deployment manifests and bindings
 
+The manifest is a rebuildable cache outside the projection path: the cloudify inventory is the self-sufficient projection of cloudify events, and the manifest only saves navigating it to reconcile. Its fields split by honesty - declared (identity, bindings, creation) from deployment inputs, derived (lifecycle status, last event id) from the event log. A lost or corrupt manifest is rebuilt from events, never fatal, never a source. It pins no application commit at adoption; a commit is recorded only by dispatch events.
+
 The manifest is created before the first mutating step.
 
-Its initial lifecycle status is `applying`.
+Its lifecycle status names the kind of the last successful state-relevant event (ruling 2026-09-29, GLOSSARY `manifest status`): `adopted` (an operator inferred the state from the observed machine - GLOSSARY `deployment adoption`), `installed`, `reconfigured`, `verified` (a passing verify observed the host against the applied values, as of that moment), or `degraded` (an attempt or the worker failed; records stand). An install whose verify stage fails stays `installed` - written but unverified is information, not a downgrade.
 
 It records the exact target bindings used by the run.
-
-A successful install and verify sequence changes the status to `active`.
-
-A failed or interrupted run changes it to `degraded` or leaves enough process identity to classify it as interrupted on the next read.
 
 Reconfigure and verify use the recorded bindings unless the caller supplies an explicit migration.
 
 Teardown uses the recorded bindings.
 
-A deployment with active claims cannot be silently rebound to another host.
+A deployment that relies on installations cannot be silently rebound to other hosts.
 
-A successful teardown removes the current manifest and desired-input directory only after every claim and application-owned external resource has been released.
+A successful teardown removes the current manifest and desired-input directory only after every reliance and application-owned external resource has been released.
 
 Its runs and events remain history.
 
@@ -491,10 +518,13 @@ Events contain:
 - subject identity
 - phase and command kind
 - value names, source labels, references or digests, and secret flags
+- the source form of every non-secret value; secrets never carry a source form (ADR-027)
+- the writing cloudify tool version
 - exit status and bounded non-secret summary
 - previous and resulting subject revision when state changes
 
 Events never contain raw stdout, stderr, rendered payloads, or literal secrets.
+With non-secret source forms recorded, the inventory is derivable from the event log; reproduction of historical values rests on these forms, never on the availability of a git commit - the commit pins provenance only (ADR-027).
 
 Detailed command output remains in the existing protected Cloudify log and is referenced by path and digest where useful.
 
@@ -537,13 +567,13 @@ Atomic rename alone is not concurrency control.
 
 ## Teardown and code drift
 
-The deployment manifest pins the application commit that created the active deployment shape.
+A dispatch event records the application commit that produced the deployment shape it wrote; the manifest caches the latest such commit. Deployment adoption pins no commit - no dispatch proved one.
 
-Stable runbook step IDs tie claims to application steps.
+Stable runbook step IDs tie reliances to application steps.
 
-Package claims decide which physical packages belong to the deployment.
+Package reliances decide which installations belong to the deployment.
 
-The pinned runbook teardown phase decides how to release package claims and non-package resources, and in which order.
+The pinned runbook teardown phase decides how to release reliances and non-package resources, and in which order.
 
 Teardown must not rely only on the current runbook because a newer runbook may have removed a step.
 
@@ -580,15 +610,16 @@ cloudify state check
 cloudify --on <target host> show overlay-name
 ```
 
-Direct package commands remain available with stable signatures except for claim protection.
+Direct package commands remain available with stable signatures and stop being out-of-band: a bare install with no `--name` synthesizes a deployment under the reserved `_direct` application namespace, with a generated name, a virtual one-step runbook (stable step ID `direct`), and a manifest under the uniform commit rule (ADR-027).
+Direct deployments are ordinary deployments: full inventory and events, guard, reliance, teardown.
 
-A direct package command without deployment context has no deployment claim.
+A direct package command without deployment context has no deployment reliance.
 
-Direct uninstall blocks when any deployment claim exists.
+Direct uninstall blocks while any deployment relies on the installation.
 
-The destructive override requires confirmation and records every displaced claim.
+The destructive override requires confirmation and records every displaced reliance.
 
-`cloudify deployment delete` does not exist in v2; application teardown owns claim release and removal.
+`cloudify deployment delete` does not exist in v2; application teardown owns reliance release and removal.
 
 ## Migration and removal
 
@@ -622,7 +653,6 @@ The following work is not part of the state-model fix:
 - log folding as a reconstruction or drift engine
 - multi-operator writes
 - event replication or a broker
-- immutable ivps node and instance IDs
 - ivps provider and origin field normalization
 - six-list address normalization
 - ivps role and gateway redesign
@@ -639,8 +669,8 @@ The redesign is complete only when all of these are true:
 - The exact resolved context drives forwarding and all records.
 - A first install has a durable deployment input source.
 - Reconfigure uses the last successful applied state without overwriting it on failure.
-- Two deployments cannot hold contradictory claims on one physical package instance.
-- Teardown cannot remove a package still claimed by another deployment.
+- Two deployments cannot silently break or remove each other's installations.
+- Teardown cannot remove an installation another deployment still relies on.
 - A normal run cannot execute teardown steps.
 - Current target bindings survive across runs.
 - Application and deployment identities cannot collide.

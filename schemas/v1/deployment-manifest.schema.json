@@ -46,8 +46,9 @@
       "type": "boolean"
     },
     "status": {
-      "description": "Lifecycle status. The manifest is created as applying, becomes active after a successful install plus verify sequence, and is marked degraded on an observed failure. An abandoned run is classified as interrupted in its run record, not here.",
-      "enum": ["applying", "active", "degraded"]
+      "description": "The kind of the last successful state-relevant event (GLOSSARY manifest status) - never a truth claim about the machine: adopted (an operator inferred the state from the observed machine), installed (an install completed; a failed verify stage stays installed - written but unverified is information), reconfigured (a reconfigure completed through cloudify), verified (a passing verify observed the host against the applied values, as of that moment), degraded (an attempt or the dispatch worker failed; records stand, status names the failure). Null before the first state-relevant event lands: recorded, nothing proved.",
+      "type": ["string", "null"],
+      "enum": [null, "adopted", "installed", "reconfigured", "verified", "degraded"]
     },
     "created_at": {
       "description": "UTC creation time, second precision.",

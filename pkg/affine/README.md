@@ -21,6 +21,40 @@ Stack:
   interfaces — gate access at the network boundary (Tailscale Service /
   `tailscale serve`), same posture as piface.
 
+## Knobs (declared in `.remote-vars`; the server reads exactly these env names)
+
+- `AFFINE_PORT` (default 8787) — listen port, baked into the systemd user unit.
+- `AFFINE_RATE_LIMIT` (default 100) / `AFFINE_RATE_WINDOW_MS` (default 60000) — rate limiting.
+- `AFFINE_DIR` (default `~/PROJECTS/affine`) / `AFFINE_DB` (default `<dir>/data/state.db`) — locations.
+- `AFFINE_LINEAR_API_KEY` (optional, secret) — when set, `configure` writes it to `<dir>/.linear-api-key` (0600). Compatibility door: clients bearing the real Linear API key get an anonymous, non-admin context. Unset leaves any existing file untouched (removing a credential is explicit).
+
+`configure.sh` converges files only (unit + key file, restart, expect 401). The sqlite database is domain data and is never touched by cloudify.
+
+## Uninstall
+
+```bash
+cloudify --on <host> uninstall affine              # stop + disable the unit, remove it
+cloudify --on <host> uninstall affine --clear-data # additionally wipe <AFFINE_DIR> (source + data + master token)
+```
+
+Plain teardown stops the service but keeps `data/` (the external backup
+process owns it) and the clone (install rebuilds it). Idempotent: an already-
+absent install succeeds with nothing to do. Dependencies (git, mise, node) are
+never removed.
+
+## Backup contract (owned by an EXTERNAL process; cloudify never backs up or restores)
+
+**What to back up:** `<AFFINE_DIR>/data/` in its entirety — `state.db` with its `-shm`/`-wal` siblings. That one directory is the complete soul of the deployment: users, teams, projects, credentials.
+
+**Watch for — backup:** the database is live sqlite; a plain `cp` of a writing database can tear. Use an online snapshot (`sqlite3 data/state.db ".backup <dest>"`) or a stop → copy → start window.
+
+**Credentials are not bucket material (the rule: back up irreplaceable state, rebuild what is recorded):**
+
+- `data/admin-token.json` (if ever present) is the master credential. Its backup is the operator's offline copy — that is the point of the first-boot ritual. The bucket must never hold a second live copy: encrypt or exclude.
+- `.linear-api-key` is configuration, not state: its home is cloudify's secret store (`AFFINE_LINEAR_API_KEY`), from which `configure` regenerates the file. If a hand-placed key file exists on any machine, the fix is to declare it (`vars set` + reconfigure) — never to back up the stray file.
+
+**Watch for — restore:** fresh instance → `cloudify --on <host> install affine` → stop the service → replace `data/` with the snapshot → start → an unauthenticated POST must answer 401. Do not restore the git clone, `node_modules`, or the unit file — the recipe and the recorded values rebuild those.
+
 ## First boot — the MASTER token (read this)
 
 On a fresh `data/`, the server mints the **master** identity (`role: master`)

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "event_id": "20260929T120000Z-0000000d",
+  "at": "2026-09-29T12:00:00Z",
+  "tool": "cloudify",
+  "tool_version": "t",
+  "writer": {
+    "kind": "operator"
+  },
+  "run_id": null,
+  "step_id": "adopt",
+  "application": "affine",
+  "flavor": "default",
+  "deployment": "main",
+  "application_commit": "0123456789abcdef0123456789abcdef01234567",
+  "subject": {
+    "kind": "package",
+    "host": "cloudai:affine",
+    "host_key": "ivps:cloudai:affine",
+    "package": "affine",
+    "package_instance": "default"
+  },
+  "phase": null,
+  "command_kind": "adopt",
+  "values": {},
+  "outcome": {
+    "exit_status": null,
+    "summary": "operator writer without a name: the adoption names nobody"
+  },
+  "state": {
+    "previous_revision": 0,
+    "resulting_revision": 1
+  }
+}

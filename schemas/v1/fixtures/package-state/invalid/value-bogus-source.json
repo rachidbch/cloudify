@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "host": "cloudai:cloudify",
+  "host_key": "ivps:cloudai:cloudify",
+  "package": "guacamole",
+  "package_instance": "default",
+  "application": "xfce-guacamole",
+  "flavor": "disposable",
+  "deployment": "main",
+  "step_id": "install-guacamole",
+  "revision": 1,
+  "applied": {
+    "at": "2026-01-01T10:11:12Z",
+    "event_id": "20260101T101112Z-a1b2c3d4",
+    "values": {
+      "CLOUDIFY_GUACAMOLE_RDP_HOST": {
+        "secret": false,
+        "declaration": "none",
+        "source_form": "cloudai:cloudify",
+        "reference": null,
+        "digest": null,
+        "redacted": false,
+        "source": "environment"
+      },
+      "CLOUDIFY_GUACAMOLE_RDP_PASSWORD": {
+        "secret": true,
+        "declaration": "explicit",
+        "source_form": "@vault:kv/cloudify/guacamole/rdp-password",
+        "reference": "@vault:kv/cloudify/guacamole/rdp-password",
+        "digest": null,
+        "redacted": false,
+        "source": "caller"
+      }
+    },
+    "version": "1.5.5"
+  },
+  "last_attempt": {
+    "phase": "install",
+    "outcome": "succeeded",
+    "at": "2026-01-01T10:11:12Z",
+    "event_id": "20260101T101112Z-a1b2c3d4",
+    "requested": {
+      "CLOUDIFY_GUACAMOLE_RDP_HOST": {
+        "secret": false,
+        "declaration": "none",
+        "source_form": "cloudai:cloudify",
+        "reference": null,
+        "digest": null,
+        "redacted": false,
+        "source": "caller"
+      },
+      "CLOUDIFY_GUACAMOLE_RDP_PASSWORD": {
+        "secret": true,
+        "declaration": "explicit",
+        "source_form": "@vault:kv/cloudify/guacamole/rdp-password",
+        "reference": "@vault:kv/cloudify/guacamole/rdp-password",
+        "digest": null,
+        "redacted": false,
+        "source": "caller"
+      }
+    }
+  },
+  "health": {
+    "status": "ok",
+    "checked_at": "2026-01-01T10:11:20Z",
+    "event_id": "20260101T101115Z-b2c3d4e5"
+  }
+}

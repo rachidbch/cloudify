@@ -11,7 +11,7 @@ Cloudify installs development tools and system packages on Ubuntu/Debian machine
 - **A growing number of package recipes** — apt packages, GitHub releases, custom scripts
 - **Remote execution** — install on any host reachable via SSH
 - **Tag-based filtering** — group hosts and packages with `@tag` files
-- **Host inventory** — define your fleet in `inventory/<host>/`
+- **Host inventory** — define your hosts in `inventory/<host>/`
 - **Plugin API** — stable `pkg_*` functions for writing new recipes
 - **Install/configure split** — `install.sh` + `configure.sh` (ADR-008), `cloudify configure` re-runs the run phase without re-downloading
 - **Deployments** — applications across nodes with per-deployment vars (ADR-011), `CLOUDIFY_DEPLOYMENT` context
@@ -63,7 +63,14 @@ Commands:
   app run <application>[/<flavor>] [--name <name>]  Run the application's runbook (bare run: install then verify)
   deployment list|show <id>                      List deployments; show one manifest and its run snapshots
   deployment migrate <id> --application <app>    One-shot bridge: copy single-ID inputs to the nested path
-  deployment replay <id> [--at <run>]            Re-run a recorded run from its snapshot
+  deployment replay <app> [--name <n>] [--at <run>] [--phase <p>]
+                                                 Re-run a recorded run from its snapshot (a
+                                                 --phase verify re-run is the drift check)
+  deployment delete <app>/<flavor>/<name>       Remove a deployment's manifest and records
+                                                 (reliance-checked; events and inputs stay)
+  deployment sweep [--dry-run] [--retention-days N]
+                                                 Sweep orphaned instance records (keyed to
+                                                 ivps liveness) and aged _direct accumulations
   node use <node>             Set the active node (prints the export command)
   packages | pkgs             List installable packages
   packages | pkgs default     List default packages
@@ -97,7 +104,11 @@ cloudify --on server1 server2 install git
 cloudify --on @web install nginx
 ```
 
-Remote execution flow: cloudify SSHes into the target host, runs the bootstrap gist which clones/pulls `~/cloudify` from GitHub, then executes the package recipe. Credentials are injected into the payload via `envsubst` with an explicit allow-list. All remote SSH output is captured to a timestamped log file. If any host fails, the final status message reports the log path for debugging.
+Remote execution flow: cloudify SSHes into the target host, runs the bootstrap gist which clones/pulls `~/cloudify` from GitHub, then executes the package recipe. The payload mandates the controller's ref (`CLOUDIFY_GIT_REF`): the controller's own branch by default, an explicit value to pin, set-empty to leave the remote's checkout alone - a gist that honors it holds the remote checkout on that ref. Credentials are injected into the payload via `envsubst` with an explicit allow-list. All remote SSH output is captured to a timestamped log file. If any host fails, the final status message reports the log path for debugging.
+
+For tests, `CLOUDIFY_TEST_CODE_MODE` picks how a target host obtains the code: `push` (default - the local working tree over ssh, no GitHub round trip), `github` (the origin's default branch), or `branch:<name>`. See `tests/helpers/code-mode.bash`.
+
+**Direct-deployment addressing (`--name`).** A bare mutating invocation (`cloudify --on host install pkg`) synthesizes one `_direct` deployment spanning its hosts and prints the identity it acted under - `Deployment: _direct/direct/<name> (status <word>)` - so the work is never anonymous. Pass `--name <name>` to create or reuse a deployment of your own naming: `cloudify --on host --name web install nginx`, then later `cloudify --on host --name web verify nginx` attaches to `web`, seeds its check from `web`'s applied values, records its event, and moves `web`'s status (`verified`/`degraded`). An unnamed bare verify stays the ad-hoc check: no deployment identity, nothing recorded.
 
 ### Targets (`--on`)
 
@@ -196,7 +207,7 @@ Missing files are silently ignored (vars stay empty).
 
 **Var sources and precedence.** Six sources feed a var, weakest to strongest:
 
-1. recipe default (`${VAR:-default}` in the recipe — runtime truth)
+1. recipe default (`${VAR:-default}` in the recipe — applied by the recipe itself on the host; the `.remote-vars` mirror text is never exported by cloudify, so a declared-but-unsupplied name is simply not forwarded, ADR-029)
 2. `~/.config/cloudify/remote-vars.yaml` (global always-forward, `chmod 600`)
 3. `~/.config/cloudify/pkgs/<pkg>.yaml` (package values)
 4. `~/.config/cloudify/apps/<application>/<flavor>/defaults.yaml` (application defaults)
@@ -239,9 +250,25 @@ cloudify app run my-cluster --name prod
 `cloudify --on <node> install <pkg>` then forwards the deployment vars to the host.
 Deployment values beat package and global values; the caller env still wins.
 
+**Adoption (`cloudify adoption record`).** Taking an existing installation into
+the deployment model is an operator action, never a dispatch, in two phases:
+the operator (human or agent) investigates the machine read-only, then records
+the inference - `cloudify adoption record <app>/<flavor>/<name> --on <target>
+[--notes <text>] [--operator <name>] [--facts <file>] <pkg>...` with the
+inferred facts on stdin or in the --facts file (TSV, blank lines and `#`
+comments skipped: `version<TAB><pkg><TAB><v>` and
+`value<TAB><pkg><TAB><NAME><TAB><source_form><TAB><source>`). The --facts file
+is the reviewable artifact: write it, review it, feed it. cloudify supplies
+the shape: adoption events (writer: operator, no commit), package records
+(applied values with provenance, no attempt, health unknown), the manifest
+derived to `adopted` - then a seeded read-only verify: pass ends `verified`, a
+failure degrades the word (drift observed) without unwriting the records.
+The command is fully non-interactive: it never prompts, it fails named.
+Secrets are refused on stdin; they belong to stores.
+
 **Runbooks (`cloudify app run`).** A runbook is repo-tracked Markdown
 (`runbooks/<app>/<flavor>/runbook.md`, see `runbooks/README.md`): front-matter
-(`deployment`, `targets`) plus fenced `bash step=<type> [target=] [pkg=] [id=] [phase=]`
+(`targets`, optional `inputs`/`map`) plus fenced `bash step=<type> [target=] [pkg=] [id=] [phase=]`
 blocks, `<type>` in `launch|install|configure|verify|uninstall|run|human-gate`.
 `cloudify app run <application>[/<flavor>] [--name <name>]` resolves the
 canonical runbook from the reference, exports the application identity, binds
@@ -251,14 +278,14 @@ then runs those steps, stopping at the first failure. A step sees
 `CLOUDIFY_DEPLOYMENT`, `TARGET_<NAME>`, `CLOUDIFY_OUTPUTS_FILE` (append
 `name=value`; later steps read `OUT_<name>`) and
 `STEP_ID/STEP_TYPE/STEP_TARGET/STEP_PKG/STEP_PHASE`. Every run writes
-`${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml` (0600): `status`, timestamps,
+the state tree (`~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/runs/<utc>.yaml`, 0600): `status`, timestamps,
 `runbook`, `target.<name>`, the raw `value.<NAME>` lines and `output.<name>`.
 `--dry-run` prints the plan (seeded value NAMES, never values) and runs nothing.
 The lower-level `cloudify_deployment_run` engine keeps `--runbook <path>` for a
 runbook outside the tree and for replay. A path that is not canonical carries no
 application identity, so the run records no deployment manifest.
 
-`cloudify deployment replay <id> [--at <run>]` re-runs a recorded run: it seeds
+`cloudify deployment replay <application>[/<flavor>] [--name <name>] [--at <run>] [--phase <phase>]` re-runs a recorded run: it seeds
 the environment from the snapshot (target bindings, and each `value.<NAME>`
 resolved - a stored `@base64:`/`@backend:` reference is decoded here, so a step
 receives the value, never the literal) and then uses the same engine. `--at`
@@ -281,6 +308,8 @@ command line, and the replay's own snapshot records the values it replayed.
 | `CLOUDIFY_LOG_LEVEL` | `INFO` | Log verbosity: `SILENT`, `CRITICAL`, `ERROR`, `WARN`, `INFO`, `DEBUG`. |
 
 ### Host Inventory
+
+**Phase 4 note (state model):** durable inventory is written only for hosts the local ivps inventory resolves (`ivps node path`); an external SSH host is refused before any remote execution - its durable state waits for the SSH host-key acceptance phase. Dispatches additionally expect a proved checkout commit on application runs and a synchronized clock on the host (event ids are UTC-second based).
 
 Define hosts in `inventory/`:
 
@@ -343,7 +372,9 @@ lib/
   containers.sh       Container operations via ivps (launch, delete, IP lookup)
   credentials.sh      System credential management: save, load, section-based prompting
   deployments.sh      Deployment-wide store: deployment CRUD (ADR-011)
-  registry.sh         Observation registry: per-(deployment, target, package) records
+  registry.sh         Legacy registry storage, read-only: records are no longer
+                      written at runtime (state-model-v2 replaces them); migration
+                      (4.7) consumes them, `deployment delete` sweeps them
   runbooks.sh         Runbook engine: parse, target binding, preflight, run, replay
   pkg-config.sh       Sources lib/vars.sh for package-config consumers (reader lives there)
   vars.sh             Six-source var helpers + precedence walker core + resolver
@@ -404,11 +435,13 @@ value ever reaches a command line, so neither can appear in a process list.
 
 ### The dispatch context
 
-Resolving once is the point. The payload, the registry record and the run snapshot must
-agree, so they all consume one artifact instead of each walking the sources.
+Resolving once is the point. The payload and the run snapshot must agree, so they
+both consume one artifact instead of each walking the sources. (The registry record
+that used to be a third consumer is retired: dispatches are recorded by the
+deployment inventory built from result lines - state-model-v2.)
 
 - The **parent** is the `cloudify` process you ran. It creates the context path, forks one
-dispatch job per target, waits for them, then writes each registry record.
+dispatch job per target, waits for them, then removes each dispatch context.
 - The **child** is the backgrounded job for one target. It resolves the values into its
 own shell, fills the context, renders the payload and ships it.
 - The context is a **file** because it crosses from the child (writer) to the parent
@@ -478,6 +511,7 @@ pkg/hermes/
 ├── README.md         # Optional — user-facing docs (what it is, config vars, exposure, gotchas)
 ├── docs/             # Optional — extended docs for packages needing more than a single README
 ├── .remote-vars      # Optional — var NAMES forwarded from caller env (see below)
+├── .version          # Required — package version, one line (result lines + inventory)
 └── @default          # Optional — tag file (empty file)
 ```
 
@@ -497,6 +531,8 @@ Packages with non-obvious config, exposure, or gotchas ship a `README.md` (and, 
 #### Recipe conventions
 
 Recipes are plain bash scripts. They run with `set -Eeuo pipefail` inherited from the main router. The `pkg_*` API functions are available automatically (no sourcing needed). The script runs inside the target environment (local or remote via SSH), so commands like `curl`, `apt-get`, and `bash` are available directly.
+
+**`.version` (required):** every recipe package declares its version in a one-line `.version` file. It is the package's declared version — dev-owned, trusted, never probed from the machine (packages are opaque). Initialize new packages to `1.0.0` and bump when the package meaningfully changes. The framework puts it on the package's `result v1:` line and stores it in the inventory; a missing, empty or off-charset declaration records the attempt as failed (`version=unknown`).
 
 #### Minimal examples
 
@@ -676,6 +712,29 @@ cloudify verify <pkg>                 verify a package
 ```
 
 `PKG_VERIFY_TIMEOUT` (seconds) is read from `pkgs/<pkg>.yaml` or the environment. Slow-starting services (e.g. first web-UI builds) should raise it. For remote installs it is forwarded automatically.
+
+#### Result lines
+
+Every package attempt prints one machine-readable line to the log, when the attempt ends - on the host and in the streamed controller log alike:
+
+```
+result v1: parent=- package=nginx instance=default phase=install action=install outcome=succeeded exit=0 verification=ok version=1.24.0
+```
+
+- `parent` is `-` for a top-level package, the declaring package for a dependency pulled via `pkg_depends`, `@defaults`/`@init` for framework work.
+- `outcome` is `succeeded` or `failed` - the framework's verdict. A non-zero recipe exit, a failed verification, or an unknown version force `failed`; `exit` stays the recipe's real status either way.
+- `version` is the package's declared `.version` (see "Recipe conventions"); `unknown` means the declaration was missing or malformed; native fallback subjects (installed straight through apt, no cloudify package) report `none`.
+
+From these lines the deployment status derives (GLOSSARY `manifest status`):
+`installed` means completed but **not verified** (a verified deployment says
+`verified`); a failed verify stage after a successful install keeps
+`installed` with failing health (written-but-unverified), while a failed
+verify dispatch degrades - drift observed. The dispatch exit code stays the
+honest signal for scripts either way.
+
+These lines are the future inventory feed (state-model-v2): ordinary keyed lines in the log, safe to grep, carrying no values or secrets.
+
+The child also prints one checkout line before its package work — `checkout v1: commit=<40-hex|unknown> dirty=true|false` — stating which commit of cloudify the host runs. On dispatches tied to a deployment, the worker compares it against the commit the manifest declares: a mismatch (or an undeterminable commit) degrades the run and no inventory is written — you cannot take credit from uncommitted code. A collection stage rides the log pipeline: it passes every line through untouched and copies the keyed lines aside for the worker. Malformed keyed lines (bad fields, bad enums, broken consistency, over the 64-line/512-byte caps) fail the dispatch.
 
 ### Shadow Command System
 

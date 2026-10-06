@@ -25,6 +25,11 @@ setup_test_env() {
     # Disable colors for test output
     export CLOUDIFY_DISABLE_COLORS=true
 
+    # Sandbox isolation: the state root prefers XDG_STATE_HOME over HOME, so an
+    # operator shell that exports XDG would route test events into the real
+    # events tree. Tests that exercise the override set their own value.
+    unset XDG_STATE_HOME
+
     # Skip credential prompts
     export CLOUDIFY_SKIPCREDENTIALS=true
 
@@ -47,8 +52,13 @@ setup_test_env() {
     export DEBUG=false
     export CLOUDIFY_LOG_LEVEL=INFO
 
-    # Set script dir to the real cloudify repo
-    export CLOUDIFY_SCRIPT_DIR="/root/cloudify"
+    # The repo tree UNDER TEST - the tree bats is running from, never a
+    # mirror: under the shim the tests run in a fresh extraction
+    # (/root/cloudify-run), while /root/cloudify is the clean-room mirror
+    # (task sync) and may be stale. Tests that source/walk repo paths must
+    # see the same bytes the run is testing. BATS_TEST_DIRNAME is tests/unit;
+    # the repo root is two levels up.
+    export CLOUDIFY_SCRIPT_DIR="$(cd "${BATS_TEST_DIRNAME:-$PWD}/../.." && pwd)"
 }
 
 # Teardown the test environment

@@ -13,7 +13,8 @@ Chain: caller env -> ladder walk (`lib/vars.sh`) -> one dispatch context
   context, never a value store again.
   Lives at `lib/context.sh` `cloudify_context_build`, `lib/registry.sh`
   `cloudify_registry_record_build`.
-  Pinned by `tests/unit/context-raw-form.bats` ("no second walk", x2).
+  Pinned by `tests/unit/context-raw-form.bats` ("no second walk", x2 - reads
+  come from the context file alone, even with every source deleted or changed).
 - Ladder order is weakest -> strongest (recipe default < global < package <
   application < deployment < caller env), first-write-wins via the claim ledger.
   A `KEY:` line (present-but-empty) is a claim, not an absence.
@@ -37,6 +38,27 @@ Chain: caller env -> ladder walk (`lib/vars.sh`) -> one dispatch context
   removed on every exit path.
   Lives at `lib/context.sh`, `lib/utils.sh` `cleanup`.
   Pinned by `tests/unit/context-wiring.bats` and the E2E leak scenario.
+
+## 3. Live log streaming
+
+Chain: remote payload `exec > >(tee -a "$CLOUDIFY_LOG_FILE") 2>&1` -> SSH channel
+-> local `stdbuf sed` host-prefix stages -> local `tee -a` protected log.
+This is what makes a remote install feel like a local one: output is written on
+the host AND streams live to the controller, unbuffered and unfiltered.
+
+- Never buffer, filter, or early-close the stream: an early-exiting stage
+  (`grep -m1`, `head`) SIGPIPEs the chain and kills live output.
+- Any result tap keeps the stream pass-through: print every line onward, copy
+  matches aside, never stop reading.
+- The Phase 4 result channel is ordinary keyed lines in this stream: one
+  `result v1:` line per package attempt (framework work attributed), one
+  `checkout v1:` line per child; they stay in the stream and in both logs, and
+  the payload bytes do not change.
+
+  Lives at `lib/remote.sh` (`cloudify_remote_sync` stream pipeline and the
+  payload template's `exec`/`tee` pairing).
+  Pinned by `tests/unit/golden-fixtures.bats` (payload bytes) and the Phase 4
+  result-tap tests (4.3).
 
 ## 2. Shadows
 

@@ -183,7 +183,7 @@ teardown() {
 #-- cloudify_init_log tests --
 
 @test "cloudify_init_log creates log directory" {
-    cloudify_init_log
+    CLOUDIFY_TMP_ROOT="$CLOUDIFY_TMP" cloudify_init_log
     [ -d "$CLOUDIFY_TMP/logs" ]
 }
 
@@ -193,7 +193,7 @@ teardown() {
 }
 
 @test "cloudify_init_log exports CLOUDIFY_LOG_FILE with timestamp" {
-    cloudify_init_log
+    CLOUDIFY_TMP_ROOT="$CLOUDIFY_TMP" cloudify_init_log
     [[ "$CLOUDIFY_LOG_FILE" == *".log" ]]
     [[ "$CLOUDIFY_LOG_FILE" == "$CLOUDIFY_TMP/logs/"* ]]
 }
@@ -211,18 +211,19 @@ teardown() {
 
 #-- cleanup preserving logs tests --
 
-@test "cleanup preserves logs directory when DEBUG=false" {
-    cloudify_init_log
-    # Create a non-log file that should be removed
-    touch "$CLOUDIFY_TMP/somefile"
-    mkdir -p "$CLOUDIFY_TMP/somedir"
-    touch "$CLOUDIFY_TMP/somedir/nested"
-
-    CLOUDIFY_LOG_LEVEL=INFO cleanup
-
-    [ -d "$CLOUDIFY_TMP/logs" ]
-    [ ! -e "$CLOUDIFY_TMP/somefile" ]
-    [ ! -e "$CLOUDIFY_TMP/somedir" ]
+@test "cleanup preserves the fixed log home while removing the process scratch dir" {
+    # New contract (per-process scratch): the process dir is removed wholly on
+    # exit; logs live under CLOUDIFY_TMP_ROOT and survive every process exit.
+    local root proc_dir
+    root=$(mktemp -d /tmp/cloudify_test.ROOT.XXXXXX)
+    mkdir -p "$root/logs"
+    proc_dir=$(mktemp -d "$root/tmp-PROC.XXXXXX")
+    CLOUDIFY_TMP_ROOT="$root" CLOUDIFY_TMP="$proc_dir" cloudify_init_log
+    touch "$proc_dir/somefile"
+    CLOUDIFY_LOG_LEVEL=INFO CLOUDIFY_TMP="$proc_dir" cleanup
+    [ ! -e "$proc_dir" ]
+    [ -d "$root/logs" ]
+    [ -f "$CLOUDIFY_LOG_FILE" ]
 }
 
 @test "cleanup removes everything when no logs directory exists" {
@@ -236,6 +237,7 @@ teardown() {
     CLOUDIFY_LOG_LEVEL=DEBUG cleanup
     [ -e "$CLOUDIFY_TMP/somefile" ]
 }
+
 
 #-- Log level system --
 
@@ -348,12 +350,15 @@ teardown() {
     [ -e "$CLOUDIFY_TMP/somefile" ]
 }
 
-@test "cleanup preserves logs when CLOUDIFY_LOG_LEVEL=INFO" {
-    cloudify_init_log
-    touch "$CLOUDIFY_TMP/somefile"
-    CLOUDIFY_LOG_LEVEL=INFO cleanup
-    [ -d "$CLOUDIFY_TMP/logs" ]
-    [ ! -e "$CLOUDIFY_TMP/somefile" ]
+@test "cleanup preserves the fixed log home when CLOUDIFY_LOG_LEVEL=INFO" {
+    local root proc_dir
+    root=$(mktemp -d /tmp/cloudify_test.ROOT.XXXXXX)
+    proc_dir=$(mktemp -d "$root/tmp-PROC.XXXXXX")
+    CLOUDIFY_TMP_ROOT="$root" CLOUDIFY_TMP="$proc_dir" cloudify_init_log
+    touch "$proc_dir/somefile"
+    CLOUDIFY_LOG_LEVEL=INFO CLOUDIFY_TMP="$proc_dir" cleanup
+    [ ! -e "$proc_dir/somefile" ]
+    [ -d "$root/logs" ]
 }
 
 #-- log file writing tests --
@@ -391,4 +396,22 @@ teardown() {
     cloudify_init_log
     log_warn "should not appear"
     ! grep -q "should not appear" "$CLOUDIFY_LOG_FILE"
+}
+
+@test "child cleanup keeps owner scratch" {
+    local root proc_dir
+    root=$(mktemp -d /tmp/cloudify_test.ROOT.XXXXXX)
+    proc_dir=$(mktemp -d "$root/tmp-OWN.XXXXXX")
+    touch "$proc_dir/dispatch"
+    CLOUDIFY_LOG_LEVEL=INFO CLOUDIFY_TMP="$proc_dir" _CLOUDIFY_TMP_OWNER=999999 cleanup
+    [ -d "$proc_dir" ]
+    [ -e "$proc_dir/dispatch" ]
+}
+
+@test "cleanup with the owning pid removes the scratch" {
+    local root proc_dir
+    root=$(mktemp -d /tmp/cloudify_test.ROOT.XXXXXX)
+    proc_dir=$(mktemp -d "$root/tmp-OWN.XXXXXX")
+    CLOUDIFY_LOG_LEVEL=INFO CLOUDIFY_TMP="$proc_dir" _CLOUDIFY_TMP_OWNER=$BASHPID cleanup
+    [ ! -e "$proc_dir" ]
 }

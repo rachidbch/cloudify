@@ -23,6 +23,8 @@ DEV_SERVER="k3s-dev-1";  DEV_AGENT="k3s-dev-2"
 TAG_PROD="k3s-prod"; TAG_DEV="k3s-dev"
 TOKEN_FILE="$WD/tokens.env"
 TEST_SSH="ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+
+source "$PWD/tests/helpers/code-mode.bash"
 WD="$HOME/tmp/k3s-e2e"
 CLOUDIFY_CMD="cloudify --no-defaults --no-verify"
 # k3s node-ready poll (max 900s = 15min per node, 30s interval)
@@ -48,6 +50,11 @@ NODES="$PROD_SERVER $PROD_AGENT $DEV_SERVER $DEV_AGENT"
 
 setup_file() {
     export PATH="$HOME/.local/bin:$PATH"
+    # Dev-push declaration: the branch code is tar-pushed into each node
+    # (no .git, no commit identity), so the executed-code check would
+    # degrade every dispatch as unattestable. Same override two-host
+    # declares; first-class for bare dispatches since 2026-09-28.
+    export CLOUDIFY_DEVELOPMENT_OVERRIDE=1
     # Generate tokens ONCE — write to file because bats runs @test in subshells
     # where setup_file() exports don't propagate.
     echo "TOKEN_PROD=k3s-token-prod-$(date +%s)" > "$WD/tokens.env"
@@ -133,15 +140,10 @@ teardown_file() {
             sleep 5
         done
         $ok || { echo "  $n never resolved via MagicDNS"; return 1; }
-        echo "── pushing branch code to $n ($(getent hosts "$n" | awk '{print $1}'))"
-        $TEST_SSH "root@$n" "mkdir -p /root/cloudify" || return 1
-        tar czf - lib pkg cloudify Taskfile.yml \
-            | $TEST_SSH "root@$n" "tar xzf - -C /root/cloudify" || return 1
-        # Symlink cloudify into PATH (normally done by the bootstrap gist)
-        $TEST_SSH "root@$n" "ln -sf /root/cloudify/cloudify /usr/local/bin/cloudify" || return 1
+        echo "── preparing code on $n ($(getent hosts "$n" | awk '{print $1}'), mode $(tests_code_mode))"
+        tests_code_prepare "$n" || return 1
         # Install jq (needed by k3s-agent test for tailscale status parsing)
         $TEST_SSH "root@$n" "apt-get update -qq && apt-get install -y -qq jq" || return 1
-        $TEST_SSH "root@$n" "touch /root/cloudify/.#last_update" || return 1
     done
 }
 

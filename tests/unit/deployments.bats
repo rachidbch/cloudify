@@ -8,6 +8,7 @@ setup() {
     source lib/utils.sh
     source lib/packages.sh
     source lib/deployments.sh
+    source lib/state.sh
     # Override deployments dir to use test temp
     export CLOUDIFY_DEPLOYMENTS_DIR="$CLOUDIFY_TMP/test-deployments"
 }
@@ -64,9 +65,9 @@ teardown() {
 
     local bindings="$CLOUDIFY_TMP/bindings.tsv"
     printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\tcloudify\n' > "$bindings"
-    cloudify_manifest_write myapp default prod applying 0123456789abcdef0123456789abcdef01234567 false "$bindings"
+    cloudify_manifest_write myapp default prod "" 0123456789abcdef0123456789abcdef01234567 false "$bindings"
     run cloudify_deployment_list
-    echo "$output" | grep -q "myapp/default --name prod"
+    printf '%s\n' "$output" | grep -q "myapp/default/prod.*-.*0 pkgs.*1 host"
 }
 
 @test "cloudify_deployment_list never prints a bare directory as a deployment" {
@@ -387,17 +388,20 @@ _write_single_id_store() {
     export CLOUDIFY_DEPLOYMENT=myapp.default.default
     local bindings="$CLOUDIFY_TMP/bindings.tsv"
     printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\tcloudify\n' > "$bindings"
-    cloudify_manifest_write myapp default default applying 0123456789abcdef0123456789abcdef01234567 false "$bindings"
-    mkdir -p "$CLOUDIFY_DEPLOYMENTS_DIR/myapp.default.default/runs"
-    printf 'status: succeeded\n' > "$CLOUDIFY_DEPLOYMENTS_DIR/myapp.default.default/runs/20260101T000000Z.yaml"
+    cloudify_manifest_write myapp default default "" 0123456789abcdef0123456789abcdef01234567 false "$bindings"
+    # The read surface resolves the tuple from the canonical runbook path.
+    mkdir -p "$CLOUDIFY_DIR/runbooks/myapp/default"
+    printf -- '---\ntargets: guest\n---\n\n# rb\n' > "$CLOUDIFY_DIR/runbooks/myapp/default/runbook.md"
+    local rundir
+    rundir=$(cloudify_state_runs_dir myapp default default)
+    mkdir -p "$rundir"
+    printf 'status: succeeded\n' > "$rundir/20260101T000000Z.yaml"
 
-    # The read surface takes the tuple from an explicit application reference, or
-    # from the runbook that declares the deployment (none in this fixture).
-    run cloudify_deployment_show myapp.default.default
+    run cloudify_deployment_show myapp 0 default
     [ "$status" -eq 0 ]
     [[ "$output" == *"application: myapp/default"* ]]
     [[ "$output" == *"deployment_name: default"* ]]
-    [[ "$output" == *"status: applying"* ]]
+    [[ "$output" == *"status: null"* ]]
     [[ "$output" == *"replayable: yes"* ]]
     [[ "$output" == *"snapshots: 1"* ]]
     [[ "$output" == *"binding guest: cloudai:cloudify"* ]]

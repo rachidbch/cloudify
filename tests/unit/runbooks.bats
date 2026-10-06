@@ -4,7 +4,7 @@
 #
 # The machine contract under test:
 #   cloudify_runbook_parse  -> type \t id \t target \t pkg \t body-b64
-#   cloudify_runbook_meta   -> deployment \t targets-csv
+#   cloudify_runbook_meta   -> targets-csv
 #   cloudify_runbook_find   -> the single matching runbook path
 #   cloudify_runbook_bind_targets -> name \t node \t instance \t ssh_host
 #   cloudify_runbook_preflight    -> rc 0 or die listing missing pkg: NAME
@@ -115,11 +115,22 @@ _declare() {
 # Parse: front-matter + steps
 # ---------------------------------------------------------------
 
-@test "meta: front-matter yields deployment and declared targets" {
-    rubric "cloudify_runbook_meta -> deployment<TAB>targets-csv"
+@test "meta: front-matter yields declared targets; deployment: is refused" {
+    rubric "cloudify_runbook_meta -> targets-csv; the removed field dies named"
     run cloudify_runbook_meta "$RUNBOOKS/valid.md"
     [ "$status" -eq 0 ]
-    [ "$output" = "$(printf 'demo\tguest,gateway')" ]
+    [ "$output" = "guest,gateway" ]
+
+    local rb="$CLOUDIFY_TMP/with-dep.md"
+    _make_runbook "$rb" <<'EOF'
+---
+deployment: legacy-id
+targets: guest
+---
+EOF
+    run cloudify_runbook_meta "$rb"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"'deployment:' field was removed"* ]]
 }
 
 @test "parse: 3 typed steps, auto ids, explicit id, multi-line body b64" {
@@ -148,12 +159,29 @@ _declare() {
     [ "$(printf '%s' "$(_field "${lines[2]}" 4)" | base64 -d)" = "Open the URL and confirm the desktop renders." ]
 }
 
+@test "parse rejects reserved framework step ids (defaults, init, direct)" {
+    rubric "framework attribution owns defaults/init/direct; authored steps can never collide"
+    local f="$CLOUDIFY_TMP/reserved.md"
+    for id in defaults init direct; do
+        _make_runbook "$f" <<EOF
+---
+targets: guest
+---
+\`\`\`bash step=run phase=install id=$id
+echo taken
+\`\`\`
+EOF
+        run cloudify_runbook_parse "$f"
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"reserved for framework attribution"* ]]
+    done
+}
+
 @test "parse accepts a generic run step (no target, no pkg)" {
     rubric "run is a passthrough: target and pkg optional"
     local f="$CLOUDIFY_TMP/run.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=run phase=install
@@ -180,7 +208,6 @@ EOF
     local f="$CLOUDIFY_TMP/unknown.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=frobnicate target=guest pkg=x
@@ -190,7 +217,7 @@ EOF
     run cloudify_runbook_parse "$f"
     [ "$status" -ne 0 ]
     [[ "$output" == *"$f"* ]]
-    [[ "$output" == *"line 5"* ]]
+    [[ "$output" == *"line 4"* ]]
     [[ "$output" == *"unknown step type 'frobnicate'"* ]]
 }
 
@@ -199,7 +226,6 @@ EOF
     local f="$CLOUDIFY_TMP/no-target.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=install pkg=x
@@ -216,7 +242,6 @@ EOF
     local f="$CLOUDIFY_TMP/no-pkg.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=install target=guest
@@ -233,7 +258,6 @@ EOF
     local f="$CLOUDIFY_TMP/undeclared.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=install target=other pkg=x
@@ -250,7 +274,6 @@ EOF
     local f="$CLOUDIFY_TMP/dup.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=install target=guest pkg=x id=dup
@@ -270,7 +293,6 @@ EOF
     local f="$CLOUDIFY_TMP/bad-attr.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=install target=guest pkg=x timeout=5
@@ -300,85 +322,43 @@ EOF
 # Discovery
 # ---------------------------------------------------------------
 
-@test "find: the single runbook declaring the deployment" {
-    rubric "only a canonical runbooks/<app>/<flavor>/runbook.md is discoverable"
+@test "find_app: the canonical path of the application reference" {
+    rubric "only runbooks/<app>/<flavor>/runbook.md is discoverable"
+    CLOUDIFY_RUNBOOKS_DIR="$CLOUDIFY_TMP/scan-root" run cloudify_runbook_find_app one default
+    [ "$status" -ne 0 ]
+
     local root="$CLOUDIFY_TMP/scan"
     _make_runbook "$root/one/default/runbook.md" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 EOF
-    _make_runbook "$root/other/default/runbook.md" <<'EOF'
----
-deployment: other
-targets: guest
----
-EOF
-    run cloudify_runbook_find demo "$root"
+    CLOUDIFY_RUNBOOKS_DIR="$root" run cloudify_runbook_find_app one default
     [ "$status" -eq 0 ]
     [ "$output" = "$root/one/default/runbook.md" ]
 }
 
-@test "find: a Markdown file that is not runbook.md is invisible" {
-    rubric "a non-canonical name is never discoverable, whatever its front matter"
-    local root="$CLOUDIFY_TMP/scan-name"
-    _make_runbook "$root/notes/default/other.md" <<'EOF'
----
-deployment: demo
-targets: guest
----
-EOF
-    run cloudify_runbook_find demo "$root"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"No runbook found for deployment 'demo'"* ]]
-}
-
-@test "find: no match dies" {
-    rubric "no matching runbook -> die"
+@test "find_app: no match dies" {
+    rubric "no runbook for the reference -> die"
     local root="$CLOUDIFY_TMP/scan-none"
     _make_runbook "$root/other/default/runbook.md" <<'EOF'
 ---
-deployment: other
 targets: guest
 ---
 EOF
-    run cloudify_runbook_find demo "$root"
+    CLOUDIFY_RUNBOOKS_DIR="$root" run cloudify_runbook_find_app demo default
     [ "$status" -ne 0 ]
-    [[ "$output" == *"No runbook found for deployment 'demo'"* ]]
+    [[ "$output" == *"No runbook found for application 'demo/default'"* ]]
 }
 
-@test "find: two matches dies listing both" {
-    rubric "two runbooks for one deployment -> die, never a silent pick"
-    local root="$CLOUDIFY_TMP/scan-two"
-    _make_runbook "$root/a/default/runbook.md" <<'EOF'
----
-deployment: demo
-targets: guest
----
-EOF
-    _make_runbook "$root/b/default/runbook.md" <<'EOF'
----
-deployment: demo
-targets: guest
----
-EOF
-    run cloudify_runbook_find demo "$root"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"Multiple runbooks"* ]]
-    [[ "$output" == *"$root/a/default/runbook.md"* ]]
-    [[ "$output" == *"$root/b/default/runbook.md"* ]]
-}
-
-@test "find: the default root is \$CLOUDIFY_DIR/runbooks" {
+@test "find_app: the default root is \$CLOUDIFY_DIR/runbooks" {
     rubric "no root argument -> the repo runbooks dir, like pkg/"
     _make_runbook "$CLOUDIFY_DIR/runbooks/app/default/runbook.md" <<'EOF'
 ---
-deployment: demo-default
 targets: guest
 ---
 EOF
-    run cloudify_runbook_find demo-default
+    run cloudify_runbook_find_app app default
     [ "$status" -eq 0 ]
     [ "$output" = "$CLOUDIFY_DIR/runbooks/app/default/runbook.md" ]
 }
@@ -480,12 +460,12 @@ EOF
         export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true
         export CLOUDIFY_DIR='$cf' CLOUDIFY_TMP='$cf/tmp' CLOUDIFY_CREDENTIALS_DIR='$cf/creds'
         export CLOUDIFY_REMOTE_USER=root CLOUDIFY_REMOTE_PWD=test
-        cd '$PWD' && bash cloudify app run demo --dry-run \
+        cd '$PWD' && bash cloudify app run demo --name demo --dry-run \
             --target guest=cloudai:xfce-test --target gateway=cloudai:guac 2>&1
     "
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 0 ] || { echo "APP RUN OUT: $output"; false; }
     [[ "$output" == *"Application: demo/default"* ]]
-    [[ "$output" == *"Deployment: demo"* ]]
+    [[ "$output" == *"Deployment: demo"* ]] || { printf 'PLAN OUT:<%s>\n' "$output"; false; }
     [[ "$output" == *"guest -> node=cloudai instance=xfce-test ssh=xfce-test"* ]]
     [[ "$output" == *"check-guest"* ]]
     [[ "$output" == *"human-gate"* ]]
@@ -497,7 +477,6 @@ EOF
     local rb="$CLOUDIFY_TMP/exec-runbook.md"
     _make_runbook "$rb" <<EOF
 ---
-deployment: demo
 targets: guest
 ---
 \`\`\`bash step=install target=guest pkg=demo-pkg id=one
@@ -505,13 +484,13 @@ echo ran >> "$CLOUDIFY_TMP/exec-marker"
 \`\`\`
 EOF
 
-    run cloudify_deployment_run demo --runbook "$rb" \
+    run cloudify_deployment_run demo --name demo --runbook "$rb" \
         --target guest=cloudai:xfce-test --yes
     [ "$status" -eq 0 ]
     [[ "$output" == *"Deployment: demo"* ]]
     [[ "$output" == *"succeeded"* ]]
     [ -f "$CLOUDIFY_TMP/exec-marker" ]
-    [ -n "$(ls "$CLOUDIFY_DEPLOYMENTS_DIR/demo/runs/"*.yaml 2>/dev/null)" ]
+    [ -n "$(ls "$(cloudify_state_runs_dir demo default demo)/"*.yaml 2>/dev/null)" ]
 }
 
 # ---------------------------------------------------------------
@@ -523,7 +502,6 @@ EOF
     local f="$CLOUDIFY_DIR/runbooks/myapp/prod/runbook.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo-id
 targets: guest
 ---
 EOF
@@ -544,37 +522,19 @@ EOF
     local root="$CLOUDIFY_TMP/deep"
     _make_runbook "$root/app/default/extra/runbook.md" <<'EOF'
 ---
-deployment: deep-id
 targets: guest
 ---
 EOF
     run cloudify_runbook_identity "$root/app/default/extra/runbook.md" "$root"
     [ "$status" -ne 0 ]
-    run cloudify_runbook_find deep-id "$root"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"No runbook found for deployment 'deep-id'"* ]]
-}
-
-@test "meta: deployment: front-matter is optional, CLOUDIFY_DEPLOYMENT fills it" {
-    rubric "one rule for every runbook path"
-    local f="$CLOUDIFY_DIR/runbooks/myapp/default/runbook.md"
-    _make_runbook "$f" <<'EOF'
+    _make_runbook "$root/app/default/runbook.md" <<'EOF'
 ---
 targets: guest
 ---
 EOF
-    export CLOUDIFY_DEPLOYMENT=from-env
-    run cloudify_runbook_meta "$f"
+    CLOUDIFY_RUNBOOKS_DIR="$root" run cloudify_runbook_find_app app default
     [ "$status" -eq 0 ]
-    [ "$output" = "$(printf 'from-env\tguest')" ]
-
-    unset CLOUDIFY_DEPLOYMENT
-    run cloudify_runbook_meta "$f"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"CLOUDIFY_DEPLOYMENT is not set"* ]]
-
-    run cloudify_runbook_meta "$RUNBOOKS/guest-only.md"
-    [ "$status" -eq 0 ]
+    [ "$output" = "$root/app/default/runbook.md" ]
 }
 
 @test "parse: default phase per step type" {
@@ -582,7 +542,6 @@ EOF
     local f="$CLOUDIFY_TMP/phases.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=launch target=guest pkg=x id=l
@@ -615,7 +574,6 @@ EOF
     local f="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=run target=guest id=r
@@ -629,7 +587,6 @@ EOF
     local g="$CLOUDIFY_TMP/run-no-phase.md"
     _make_runbook "$g" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=run target=guest id=r
@@ -646,7 +603,6 @@ EOF
     local f="$CLOUDIFY_TMP/phase-bad.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=run target=guest id=r phase=bogus
@@ -659,7 +615,6 @@ EOF
 
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=install target=guest pkg=x id=i phase=teardown
@@ -676,7 +631,6 @@ EOF
     local f="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 inputs: SHARED, RDP_PASSWORD
 map: SPEC=SHARED, OTHER=RDP_PASSWORD
@@ -697,7 +651,6 @@ EOF
 
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 inputs: SHARED
 map: SPEC=NOT_DECLARED
@@ -712,7 +665,6 @@ EOF
 
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 inputs: SHARED
 map: bad/name=SHARED
@@ -731,7 +683,6 @@ EOF
     local f="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: demo
 targets: guest
 ---
 ```bash step=install target=guest pkg=x id=i
@@ -772,7 +723,6 @@ EOF
     local canonical="$CLOUDIFY_DIR/runbooks/myapp/default/runbook.md"
     _make_runbook "$canonical" <<'EOF'
 ---
-deployment: one
 targets: guest
 ---
 EOF
@@ -807,7 +757,6 @@ _make_app_runbook() {
     mkdir -p "$CLOUDIFY_DIR/runbooks/$app/$flavor"
     cat > "$CLOUDIFY_DIR/runbooks/$app/$flavor/runbook.md" <<EOF
 ---
-deployment: $deploy
 targets: guest
 ---
 \`\`\`bash step=install target=guest pkg=demo id=one
@@ -826,7 +775,6 @@ EOF
     local canonical="$CLOUDIFY_DIR/runbooks/myapp/prod/runbook.md"
     _make_runbook "$canonical" <<'EOF'
 ---
-deployment: my-dep
 targets: guest
 ---
 EOF
@@ -871,7 +819,7 @@ EOF
     _clean_tree
     run cloudify_app_run myapp/prod --name named --target guest=cloudai:xfce-test
     [ "$status" -eq 0 ]
-    [ "$(cat "$CLOUDIFY_TMP/tuple.txt")" = "TUPLE=myapp/prod/named DEP=my-dep" ]
+    [ "$(cat "$CLOUDIFY_TMP/tuple.txt")" = "TUPLE=myapp/prod/named DEP=named" ]
 }
 
 @test "app run: rejects a three-segment reference and a bad component" {
@@ -915,30 +863,30 @@ EOF
 
 # --- Manifest lifecycle ---
 
-@test "manifest: exists as applying before the first mutating step, active after install+verify" {
-    rubric "creation before mutation, applying -> active"
+@test "manifest: exists unproved before the first mutating step, stays null after a run with no state-relevant dispatch" {
+    rubric "creation before mutation, no event -> no word"
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
     _make_app_runbook myapp default my-dep \
-        "test -f \"\$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/manifest.json\" && grep -q '\"status\": \"applying\"' \"\$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/manifest.json\""
+        "test -f \"\$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/manifest.json\" && grep -q '\"status\": null' \"\$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/manifest.json\""
     _clean_tree
     run cloudify_app_run myapp --target guest=cloudai:xfce-test
     [ "$status" -eq 0 ]
-    [ "$(cloudify_manifest_field myapp default default status)" = "active" ]
+    [ "$(cloudify_manifest_field myapp default default status)" = "null" ]
     [ "$(cloudify_manifest_field myapp default default last_run_id)" = "null" ]
     # the compatibility snapshot is still written where it always was
-    [ -n "$(ls "$CLOUDIFY_DEPLOYMENTS_DIR/my-dep/runs/"*.yaml 2>/dev/null)" ]
+    [ -n "$(ls "$(cloudify_state_runs_dir myapp default default)/"*.yaml 2>/dev/null)" ]
 }
 
-@test "manifest: an install-only run never becomes active" {
-    rubric "active requires install and verify, not install alone"
+@test "manifest: a run whose dispatches carry no state-relevant event keeps the recorded word" {
+    rubric "the word comes from dispatch events, not from phase selection"
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
     _make_app_runbook myapp default my-dep
     _clean_tree
-    run cloudify_deployment_run my-dep --target guest=cloudai:xfce-test --phase install
+    run cloudify_deployment_run myapp --target guest=cloudai:xfce-test --phase install
     [ "$status" -eq 0 ]
-    # The manifest was created applying and keeps that recorded status: only a
-    # run that selected both install and verify may end active.
-    [ "$(cloudify_manifest_field myapp default default status)" = "applying" ]
+    # No package dispatch ran, so no state-relevant event landed: the null
+    # written at creation stands.
+    [ "$(cloudify_manifest_field myapp default default status)" = "null" ]
 }
 
 @test "manifest: an observed failure marks the deployment degraded" {
@@ -949,12 +897,12 @@ EOF
     run cloudify_app_run myapp --target guest=cloudai:xfce-test
     [ "$status" -ne 0 ]
     [ "$(cloudify_manifest_field myapp default default status)" = "degraded" ]
-    run cloudify_deployment_show my-dep
+    run cloudify_deployment_show myapp 0 default
     [[ "$output" == *"status: degraded"* ]]
 }
 
-@test "manifest: a run killed between steps stays applying and show reveals it" {
-    rubric "interrupted: no status update, manifest still applying"
+@test "manifest: a run killed between steps stays unproved and show reveals it" {
+    rubric "interrupted: no status update, manifest still null"
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
     local marker="$CLOUDIFY_TMP/killed"
     _make_app_runbook myapp default my-dep \
@@ -968,13 +916,13 @@ EOF
     while [[ ! -f "$marker" ]] && ((i < 100)); do sleep 0.1; i=$((i + 1)); done
     [ -f "$marker" ]
     # Kill the engine while it is inside the first step: it never reaches the
-    # status update, so the manifest stays applying.
+    # status update, so the manifest keeps its creation null.
     kill -9 "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
 
-    [ "$(cloudify_manifest_field myapp default default status)" = "applying" ]
-    run cloudify_deployment_show my-dep
-    [[ "$output" == *"status: applying"* ]]
+    [ "$(cloudify_manifest_field myapp default default status)" = "null" ]
+    run cloudify_deployment_show myapp 0 default
+    [[ "$output" == *"status: null"* ]]
     [[ "$output" == *"interrupted"* ]]
     # No run or event record is fabricated in Phase 3.
     [ ! -d "$CLOUDIFY_STATE_DIR/deployments/myapp/default/default/runs" ]
@@ -1041,6 +989,20 @@ EOF
 
 # --- Source commit ---
 
+@test "commit: an explicit override forces the dev flag even on a clean proved tree" {
+    rubric "dev pushes are the normal dev flow (Rachid, 2026-09-27): a proved tree + explicit override must record development_override=true so the executed-code check accepts the pushed host checkout"
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    _make_app_runbook myapp default my-dep
+    _clean_tree
+
+    CLOUDIFY_DEVELOPMENT_OVERRIDE=1 run cloudify_app_run myapp --target guest=cloudai:xfce-test
+    [ "$status" -eq 0 ]
+    [ "$(cloudify_manifest_field myapp default default development_override)" = "true" ]
+    [[ "$(cloudify_manifest_field myapp default default application_commit)" =~ ^[0-9a-f]{40}$ ]]
+    run cloudify_manifest_describe myapp default default
+    [[ "$output" == *"replayable: no"* ]]
+}
+
 @test "commit: a dirty tree needs the explicit development override and is never replayable" {
     rubric "CLOUDIFY_DEVELOPMENT_OVERRIDE, development_override, replayable: no"
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
@@ -1093,7 +1055,6 @@ EOF
     local f="$CLOUDIFY_DIR/runbooks/phaseapp/default/runbook.md"
     _make_runbook "$f" <<'EOF'
 ---
-deployment: phase-dep
 targets: guest
 ---
 ```bash step=install target=guest pkg=instpkg id=i

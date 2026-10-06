@@ -32,5 +32,6 @@
   "state": {
     "previous_revision": null,
     "resulting_revision": null
-  }
+  },
+  "tool_version": "1.0.0"
 }

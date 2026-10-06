@@ -371,3 +371,118 @@ Decision:
 4. The context records resolved values and their provenance, not a per-package structure.
 
 Consequences: configuration-only packages keep working by depending on what they configure. Two packages that declare the same name share one value, and the one resolved first wins; a collision is prevented by prefixing. The plan and the context contract no longer require per-package views.
+
+## ADR-025: A claim compares only the values its package declares
+
+Status: accepted 2026-09-15 (implements the compatibility sentence in `REDESIGN.md` "Physical package state and claims"; ADR-024's one global value namespace stands unchanged).
+
+Context: REDESIGN requires claims to match on "every configuration-affecting declared value" without defining which dispatch values those are. One dispatch resolves one global namespace, so comparing a claim against the whole namespace makes sharing impossible: two deployments using the same dependency would conflict whenever any unrelated value in their dispatches differs, such as one deployment's RDP password while both share docker.
+
+Decision:
+
+1. A claim's compared value set is exactly the values the claimed package declares in its own `.remote-vars`, resolved from the one dispatch context. No second resolution and no per-package value view exist.
+2. A value declared only by another package (the configuration-package pattern) is claimed by that other package's own state subject, so a conflict on it surfaces there.
+3. The state record's `applied` and `last_attempt` sections keep the full dispatch projection as observation; only claim compatibility uses the restricted set.
+
+Consequences: compatible deployments can share a dependency whose own declared values match, even when the rest of their dispatches differ. A software package that reads a value it does not declare is protected through the configuration package that declares it; an operator who changes such a value without the declaring package in the dispatch gets no claim conflict and must rely on verify to detect drift.
+
+## ADR-026: Deployment-first per-node capture in the ivps tree
+
+Status: accepted 2026-09-15 (supersedes the geometry of ADR-022 - the physical-state-first arrangement and the data-homes split; aligns ADR-023's surface where it depended on them; ADR-021 point 8's immutable ivps ids become now-work; ADR-024 and ADR-025 stand).
+
+Context: the Phase 4 design (revision 9) followed the newest normative files into a physical-state-first geometry - one state record per package instance per host with deployment claims inside - and moved deployment artefacts into Cloudify sibling trees. That departed from standing agreements: architectural information (what application runs where) must be human-readable and live primarily in the ivps node tree; Cloudify's own trees fragment the machine's story; immutable ivps ids were deferred although they are now work. Rachid directed the geometry be redone under the original constraints: a runbook may span many packages and hosts; one runbook may run multiple times producing parallel deployments; a package may serve deployments as a shared runtime or as several separate runtimes; and Cloudify cannot know how many runtimes the installed software actually produces.
+
+Decision:
+
+1. Deployment-first, per-node capture. Under each node's ivps directory, one human-readable directory per deployment running on that node. Walking a node's tree answers what runs where.
+2. The deployment id is the deployment name: human-set through `--name`, else generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix on collision. The same name is the same deployment; it is chosen at first run, recorded in the deployment manifest, and reused unchanged on every host.
+3. Same configuration is the same capture. With an explicit name, the run converges that deployment and changed inputs update it in place. Without a name, the run matches an existing deployment of the same runbook by resolved value source forms and bindings; a match converges it, and a run matching nothing creates a new deployment with a generated id, printed clearly.
+4. Package instances are keyed by configuration: `default`, or the value of the recipe-declared instance variable. The same configuration is the same installation; a different configuration is a different installation. Instance ids are never time-generated.
+5. Capture units are not runtime counts. The software decides how many runtimes exist; capture is a naming discipline that never merges what the operator separated by name and never forks what the operator left identical.
+6. The shared-installation guard stands: two deployments relying on one installation cannot silently break or remove each other's. Installations record which deployments rely on them; conflicts fail before mutation and name the deployments.
+7. Immutable identity is now work: ivps carries an immutable id per node and instance; durable state follows the immutable id, so renames are safe. The adapter seam for infra tools other than ivps stays future.
+8. Cross-host deployment glue (manifest, desired inputs) stays minimal in Cloudify's own trees; the per-node capture is the primary record.
+
+Consequences: REDESIGN's data-homes and physical-state sections are aligned in this commit; the revision-9 Phase 4 design and its review rounds are superseded and redone under this geometry; schemas and writers land only with the redone design; ADR-025's comparison rules carry into the guard mechanism.
+
+## ADR-027: Cloudify inventory - naming, layout, event content, and direct-deployment synthesis
+
+Status: accepted (Rachid, 2026-09-17)
+
+Context: the per-node state tree under ADR-026 was named "capture". Design discussion on audit and reproducibility showed four gaps: the name invited confusion with the ivps inventory and with the deleted registry; the deployment directory left no room for future non-package facts; events carried no value content, so the per-node tree was not derivable from the event log and historical values were unrecoverable once overwritten; and bare direct installs mutated hosts outside any deployment, contradicting the "nothing out-of-band" contract.
+
+Decision:
+
+- The per-node tree is named the **cloudify inventory** (ivps inventory: the hosts tree; cloudify inventories: what cloudify configured on each host, plugged into the ivps tree). The term "capture" is retired; "registry" stays reserved for the deleted old format and its migration command.
+- The deployment directory gains a `packages/` segment: `deployments/<application>/<flavor>/<deployment-name>/packages/<package>/<package-instance>/state.json`, reserving the deployment directory for future non-package facts.
+- Every event records the writing cloudify tool version, and every non-secret event value carries its `source_form`; secrets carry only a reference or a digest, never both, never a source form. Consequence: the inventory is derivable from the event log; reproduction of historical values rests on these recorded forms, never on the availability of a git commit.
+- The commit remains a provenance and drift guard only (executed-code check, commit-drift gate); reproduction is anchored on recorded package versions plus value source forms.
+- The application namespace `_direct` is reserved. A bare direct install with no `--name` synthesizes an ordinary deployment under it: generated name, virtual one-step runbook with reserved stable step ID `direct`, manifest under the uniform commit rule, full inventory, events, guard, reliance, and teardown. Bare installs never match; explicit `--name` reuses that deployment. Direct mutation outside a deployment no longer exists.
+- Native (non-cloudify) dependencies pulled by a recipe stay report-only result subjects; reproducing them is the machine package manager's own ledger.
+
+Consequences: schemas gain `tool_version`, conditional non-secret `source_form`, the `packages/` layout, and the reserved step ID `direct`; docs and GLOSSARY rename capture to cloudify inventory; direct commands gain deployment lifecycle semantics; no compatibility shims are introduced (one v2 path).
+
+## ADR-028: Host origin and continuity anchor
+
+Status: accepted (Rachid, 2026-09-18)
+
+Context: ivps and the engine can mutate hosts (restore, recreate, move), so a cloudify inventory can never claim "the machine is in this state". A host baseline is the machine's origin identity, not a system scan: an os-release-style probe cannot distinguish a pristine image from a sophisticated custom base.
+
+Decision:
+
+- Each host's inventory binds two facts, written once at first inventory write with the same immutable create-if-absent discipline as events, in the framework `cloudify/` directory beside `deployments/`:
+  - `origin`: base image fingerprint and created-at from the engine or ivps inventory (provider and image for created nodes), marked `discovered` (engine answered), `asserted` (operator supplied `--baseline <ref>`), or `unknown`;
+  - `continuity`: the immutable ivps host id plus the last-seen boot id.
+- Every dispatch compares the observed pair (host id, boot id) against the recorded continuity before any mutation. A replaced machine (new instance id) or a rewound one (same id, new boot id) fails before mutation with a named message - verify or re-adoption is the operator's next move. Cloudify never silently mutates on top of an ivps or engine act.
+- Prerequisite: ivps instance records (`nodes/<node-id>/instances/<instance-id>/instance.json`: immutable id, name, engine, base image fingerprint, created-at, engine uuid; approved by Rachid, human scanability first for both tools). Until they exist, instance hosts have no durable identity and external hosts stay suspended (Phase 5).
+
+Consequences: design gains a "Host origin and continuity" section with tests; the ivps instance-record follow-up unlocks instance inventory roots (`ivps node path <node>:<instance>`), cloudify `ivps:<node-id>:<instance-id>` keys, and the baseline fingerprint in one feature.
+
+## ADR-029: The recipe default is the recipe's own on-host fallback, never a cloudify-sourced value
+
+Status: accepted (Rachid, 2026-09-18)
+
+Context: the precedence ladder names `recipe default` as its weakest rung, and `.remote-vars` carries `NAME=value` defaulted stanzas. Read carelessly, the stanza looks like a value source cloudify should export when nothing else supplies the name. The implementation does the opposite: `cloudify_vars_pkg_read` claims a declared name only from the caller env, `_cloudify_vars_decl_line` states the mirror text is "never a value", and a declared-but-unsupplied name is simply absent from the dispatch context - the recipe's own `${NAME:-default}` then applies on the host (for example `pkg/guacamole/configure.sh:44` vs the `CLOUDIFY_GUACAMOLE_ADMIN_USER=guacadmin` stanza).
+
+Decision: the recipe default is the recipe's own shell fallback, evaluated by the recipe on the host. Cloudify never exports the `.remote-vars` mirror text; the mirror is declaration metadata (kind, preflight, `cloudify vars declared` display) and must mirror the recipe's fallback text. The dispatch context carries only supplied values; a declared-but-unsupplied name has no context entry. Effective host values are identical under this model and under stanza-as-source; what differs is that cloudify's context and captures record only what was actually supplied.
+
+Rejected alternative: exporting the mirror text as a `recipe`-sourced value when nothing supplies the name. It would make captures carry the full effective configuration and make matching see defaults explicitly, but it would also put repo-stored mirror text into the forwarding path - breaking the "values live in the caller env or a store, never in the repo" rule for any secret-named defaulted stanza, unless a heuristic/marker guard were added. Rejected for Phase 4; revisiting requires a new ADR.
+
+Consequences: REDESIGN's ladder sentences carry the clarification; `lib/vars.sh`'s header names the on-host fallback; the README value-source list states the non-forwarding consequence. Captures record supplied values only; recipe-internal defaults remain the recipe's private fallback. Diagnostics note: this exact confusion was resolved by reading the code path plus one localhost shell-semantics repro, not by improvising diagnostics.
+
+## ADR-030: Reconfigure seeds from applied set values - a value you set outranks the store until you unset it
+
+Status: accepted (Rachid, 2026-09-21)
+
+Context: The reconfigure ladder needed a seeding rule for previously applied values. Trace the shadow case: install with the deployment store holding PORT=8080 and the caller environment PORT=4000 applies 4000 and records applied=4000. An unscoped ladder fails both ways: applied below the deployment store resurrects 8080 at reconfigure (a never-applied value silently applied because nobody re-supplied the env), and applied above the store freezes it (store edits never land - the door install's refusal points to is dead).
+
+Decision:
+
+- The discriminator is provenance, not application. A value whose resolution source at apply time was the caller environment is "set"; a store-supplied value is not. The applied record and its events carry each value's resolution source (the event enum: caller, deployment, application, package, global, recipe, migration); the interface renders source=caller as "set".
+- Reconfigure resolves, strongest first: caller environment > applied set values > deployment desired inputs > application defaults > package defaults > global defaults > recipe defaults.
+- Applied non-set values never seed: the store re-supplies them when present, and when the store entry is gone the recipe's on-host default is the honest state - the operator deleted the declaration.
+- `cloudify deployment show` gains an applied-inputs section (names, source forms, set/store, secrets masked to reference or digest), and `cloudify deployment unset <id> <NAME>` clears the set-mark through an event-backed inventory transition (host lock, one event, revision bump). The operator's model: a value you set outranks everything until you unset it; a value the store supplied stays the store's to change.
+- A set literal secret is digest-only in applied and cannot seed: reconfigure fails before mutation demanding resupply, digest-checked. Only an explicit environment act changes a set secret.
+- Install is unchanged - same rungs, same order, same exports; only the commit writes the provenance field.
+
+Consequences: no silent resurrection and no dead store-edit door, so no divergence gate is needed; the package-state value object gains the required source field (schema plus fixtures); the comparable value objects that matching consumes carry source; README documents the set/unset model. Rejected: applied above deployment for all values (freezes the store), applied below deployment for all values (resurrects shadowed values), applied non-set as a rung (store redundancy that buffers deliberate deletion).
+
+## ADR-031: An unnamed run creates only the first deployment of an application; a second deployment requires a name
+
+Status: accepted (Rachid, 2026-09-21)
+
+Context: matching had to decide converge-or-fork by comparing a run's resolved values against each candidate deployment's recorded requested values. Literal secrets are stored as digests only, so an unnamed run that did not resupply a recorded secret could not be proven identical - the planned "matching resupply" machinery (demand the plaintext, digest-check it) was growing a third comparison outcome and a silent-fork hazard: a second deployment created because a secret could not be compared, then installing with a recipe fallback secret.
+
+Decision: deploy the same application twice and at least one deployment must be named. An unnamed run with zero existing deployments of that application and flavor creates the first one (generated id, printed). An unnamed run facing existing deployments converges only on proven identity; a differing - or unprovable - configuration refuses with a named error listing the deployments. The matching-resupply machinery is not built; nothing forks silently.
+
+Consequences: matching's comparison survives unchanged for convergence detection; its create path only runs at zero deployments; the fork cases (differing values, differing bindings, differing covered set, interrupted candidate, unprovable secret) all end in the same named refusal directing the operator to --name. REDESIGN's matching sentence is amended in the same commit.
+
+## ADR-032: A bare multi-host invocation synthesizes one _direct deployment spanning its hosts
+
+Status: accepted (Rachid's ruling, 2026-09-30) - implemented 2026-09-30 (unit 790/0; two-host e2e 9/9).
+
+Context: ADR-027 made bare direct installs synthesize ordinary deployments under the reserved `_direct` application so no mutation happens out-of-band. The synthesis today happens per dispatch: `cloudify --on h1 --on h2 install a b c` leaves one deployment per host (each named `<first-package>-<utc>`, one `direct` slot), because the worker synthesizes after each host's child finishes. Deployments are natively multi-host (a runbook binds one slot per target), `deployment delete` already sweeps every inventory tree for the deployment's records, and Rachid ruled that the per-host split is the wrong granularity for one invocation.
+
+Decision: one invocation with no runbook and no explicit `--name` synthesizes ONE `_direct` deployment spanning every host the invocation targeted: one manifest, one binding per host (slot per host word; the single-host case keeps the `direct` slot), all package records of the invocation under that one identity. The name is generated once per invocation (first-package word + UTC timestamp, unchanged shape), not once per host.
+
+Consequences: `deployment delete`/teardown on a synthesized bucket spans hosts - the same semantics as any multi-slot deployment, which is the point. The synthesis moves from the per-dispatch worker hook to invocation level in the router (the name is computed once and carried by every dispatch of the invocation); manifest binding writes gain add-if-absent merge semantics so concurrent host workers accumulate bindings instead of clobbering. ADR-027's synthesis rule is amended; nothing else changes.

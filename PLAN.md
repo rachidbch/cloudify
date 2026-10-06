@@ -1,1 +1,1 @@
-plans/state-model-v2-recovery.md
+adoption-honesty.md

@@ -16,6 +16,11 @@ REPO_DIR="/root/cloudify"
 # Default glob: all package integration tests (NOT recipe-discovery.bats)
 DEFAULT_PATTERN="tests/integration/package-*.bats"
 
+# Out of test scope (Rachid, 2026-08-10 and 2026-09-28): the hermes pair.
+# Vendor drift (installer layout + auth gate) - details and re-entry
+# conditions in ROADMAP.md "Hermes pair out of test scope".
+OUT_OF_SCOPE="package-hermes-dashboard.bats package-hermes-openwebui.bats"
+
 # Allow running a single test: ./tests/run-integration.sh tests/integration/package-bat.bats
 TEST_FILES=()
 if [[ $# -gt 0 ]]; then
@@ -23,6 +28,8 @@ if [[ $# -gt 0 ]]; then
 else
     # Collect matching test files, sorted for determinism
     while IFS= read -r -d '' f; do
+        base="$(basename "$f")"
+        [[ " $OUT_OF_SCOPE " == *" $base "* ]] && continue
         TEST_FILES+=("$f")
     done < <(cd "$PROJECT_DIR" && find . -path "./$DEFAULT_PATTERN" -print0 | sort -z)
 fi
@@ -87,6 +94,11 @@ for test_file in "${TEST_FILES[@]}"; do
 
     # 5. Set env vars for cloudify remote execution
     export CLOUDIFY_DIR="$PROJECT_DIR"
+    # The harness dev-pushes: task sync rsync-mirrors the tree into the
+    # container (no .git, no commit identity), so the executed-code check
+    # would degrade every dispatch as unattestable. Declare the dev push -
+    # the same first-class override the runbook path honors.
+    export CLOUDIFY_DEVELOPMENT_OVERRIDE=1
     export CLOUDIFY_REMOTE_USER=root
     export CLOUDIFY_REMOTE_PWD=dummy
     export CLOUDIFY_SKIPCREDENTIALS=true

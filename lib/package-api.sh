@@ -332,6 +332,34 @@ function cloudify_package_verify_path() {
 #   install+verify and verify-only paths). errexit-safe via if-check (F1).
 # - Timeout: ${PKG_VERIFY_TIMEOUT:-30} seconds. Sleeps 2s between attempts.
 # Returns 0 on success, 1 on timeout.
+
+# _cloudify_verify_seed_env <pkg> - local verify under an active application
+# reference resolves every applied value of that deployment into the calling
+# shell before the recipe runs (phase verify: the seed sits below the caller
+# env and the deployment store, so inputs resupply over the record). Without
+# a reference it is a no-op: the legacy unseeded verify path.
+_cloudify_verify_seed_env() {
+    local pkg="${1:?}"
+    _cloudify_deployment_tuple_active || return 0
+    [[ -n "${CLOUDIFY_APPLIED_SEED:-}" ]] && return 0
+    local st="${CLOUDIFY_CONTEXT_TARGET:-${_CLOUDIFY_CUR_TARGET:-}}"
+    local node rest inst cand
+    [[ -n "$st" ]] || die "verify: no target resolved for the applied seed."
+    node="${st%%$'\t'*}"
+    rest="${st#*$'\t'}"
+    inst="${rest%%$'\t'*}"
+    # || return 1: explicit failure - the producer dies inside $(()) and the
+    # caller's errexit may be off (bats run subshells).
+    CLOUDIFY_APPLIED_SEED=$(cloudify_context_applied_seed verify "$node" "$inst" \
+        "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME") || return 1
+    export CLOUDIFY_APPLIED_SEED
+    [[ -n "${CLOUDIFY_CONTEXT_FILE:-}" ]] || _cloudify_context_file_init
+    cand=$(mktemp "$CLOUDIFY_TMP/cloudify-candidates-XXXXXX")
+    cloudify_context_candidate_names "$pkg" > "$cand"
+    cloudify_context_build verify "${CLOUDIFY_DEPLOYMENT:-deployment}" verify "$cand" "$pkg" > /dev/null
+    rm -f "$cand"
+}
+
 function _cloudify_run_verify() {
     local pkg="$1"
     local verify_path
@@ -399,31 +427,63 @@ function pkg_depends() {
     local package_recipe_path
     local script_basename
     local -a failed_packages=()
+    # Result-line state (Phase 4.3): one line per attempt, emitted when the
+    # attempt ends. attempt_rc carries the recipe/native run's real exit.
+    # version defaults to `none` (native subjects have no declaration and are
+    # exempt from the version contract); a cloudify package's version is its
+    # declared .version file, read by the framework. CLOUDIFY_RESULT_PARENT
+    # (set by the caller) attributes the line: `-` top-level, the declaring
+    # package for dependency pulls, @defaults/@init for framework work.
+    local attempt_rc=0 verification=not-run version="none"
+    # Attribution for this loop's own lines is read ONCE here: nested subshells
+    # rewrite CLOUDIFY_RESULT_PARENT for their own children and must not leak
+    # that rewrite into this loop (SC2031 is design, not accident).
+    local result_parent="${CLOUDIFY_RESULT_PARENT:--}"
     # Track dispatch depth: depth=0 means explicitly dispatched (sees FORCE/CLEAR_DATA),
     # depth>0 means pulled as dependency (FORCE/CLEAR_DATA unset).
     : "${_CLOUDIFY_PKG_DEPTH:=0}"
     for pkg in "$@"; do
+        attempt_rc=0
+        verification=not-run
+        version="none"
         # Does the package even exit?
         if cloudify_is_package "$pkg"; then
             PKG_DEBUG "Installing $pkg cloudify package"
             if cloudify_package_has_recipe "$pkg"; then
                 package_recipe_path=$(cloudify_package_recipe_path "$pkg")
                 PKG_DEBUG sourcing "$package_recipe_path"
-                # shellcheck source=/dev/null
                 if (( _CLOUDIFY_PKG_DEPTH > 0 )); then
                     # Dependency pull: unset FORCE/CLEAR_DATA so dep recipes skip
                     # destructive overwrites. Subshell to avoid polluting caller's env.
-                    if ! (_CLOUDIFY_PKG_DEPTH=$((_CLOUDIFY_PKG_DEPTH + 1)) unset CLOUDIFY_FORCE; unset CLOUDIFY_CLEAR_DATA; _cloudify_source_pkg_phases "$pkg" "$package_recipe_path"); then
-                        failed_packages+=("$pkg")
-                        continue
-                    fi
+                    # CLOUDIFY_RESULT_PARENT=$pkg attributes this recipe's own nested
+                    # pkg_depends calls to this package on their result lines.
+                    (
+                        # shellcheck disable=SC2030 # subshell-local by design: attribution must not leak out
+                        CLOUDIFY_RESULT_PARENT="$pkg"
+                        # shellcheck disable=SC2030,SC2031 # subshell-local by design: depth must not leak out
+                        _CLOUDIFY_PKG_DEPTH=$((_CLOUDIFY_PKG_DEPTH + 1))
+                        unset CLOUDIFY_FORCE
+                        unset CLOUDIFY_CLEAR_DATA
+                        _cloudify_source_pkg_phases "$pkg" "$package_recipe_path"
+                        exit "$?"
+                    ) || attempt_rc=$?
                 else
                     # Explicit dispatch: FORCE/CLEAR_DATA are passed through intact.
                     # Increment depth so this recipe's own pkg_depends calls become deps.
-                    if ! (_CLOUDIFY_PKG_DEPTH=$((_CLOUDIFY_PKG_DEPTH + 1)) _cloudify_source_pkg_phases "$pkg" "$package_recipe_path"); then
-                        failed_packages+=("$pkg")
-                        continue
-                    fi
+                    (
+                        # shellcheck disable=SC2030 # subshell-local by design: attribution must not leak out
+                        CLOUDIFY_RESULT_PARENT="$pkg"
+                        # shellcheck disable=SC2030,SC2031 # subshell-local by design: depth must not leak out
+                        _CLOUDIFY_PKG_DEPTH=$((_CLOUDIFY_PKG_DEPTH + 1))
+                        _cloudify_source_pkg_phases "$pkg" "$package_recipe_path"
+                        exit "$?"
+                    ) || attempt_rc=$?
+                fi
+                version=$(_cloudify_result_version_of "$pkg")
+                if (( attempt_rc != 0 )); then
+                    failed_packages+=("$pkg")
+                    cloudify_result_emit "$result_parent" "$pkg" install install "$attempt_rc" not-run "$version"
+                    continue
                 fi
 
                 # Install package scripts in ~/.local/bin
@@ -444,26 +504,33 @@ function pkg_depends() {
                 # Subshell so a `die` (exit) from inside the sudo/apt-get shadow
                 # (e.g. 'Password not set') is contained, recorded, and the loop
                 # continues — matching the recipe path above.
-                if ! ( pkg_apt_install "${pkg}" ); then
-                    failed_packages+=("$pkg")
-                    continue
-                fi
+                ( pkg_apt_install "${pkg}" ) || attempt_rc=$?
             fi
         else
             msg "${GREEN}No package $pkg found. Trying Native Package Manager.${RESET}"
             # Subshell — same die-containment rationale as the recipe-missing path.
-            if ! ( pkg_apt_install "${pkg}" ); then
-                failed_packages+=("$pkg")
-            fi
+            ( pkg_apt_install "${pkg}" ) || attempt_rc=$?
+        fi
+        if (( attempt_rc != 0 )); then
+            failed_packages+=("$pkg")
+            cloudify_result_emit "$result_parent" "$pkg" install install "$attempt_rc" not-run "$version"
+            continue
         fi
         # === Verification (deep verify) ===
         # Runs after every package (recipe or native apt). _cloudify_run_verify
         # is a no-op when no verify.sh exists. Gated by CLOUDIFY_NO_VERIFY.
         # Continue-on-failure: a verify failure records the package and proceeds,
         # consistent with how install failures are handled above.
-        if [[ "${CLOUDIFY_NO_VERIFY:-}" != "true" ]]; then
-            _cloudify_run_verify "$pkg" || { failed_packages+=("$pkg"); continue; }
+        if [[ "${CLOUDIFY_NO_VERIFY:-}" != "true" ]] && cloudify_package_verify_path "$pkg" >/dev/null 2>&1; then
+            if ! _cloudify_run_verify "$pkg"; then
+                verification=failed
+                failed_packages+=("$pkg")
+                cloudify_result_emit "$result_parent" "$pkg" install install 0 failed "$version"
+                continue
+            fi
+            verification=ok
         fi
+        cloudify_result_emit "$result_parent" "$pkg" install install 0 "$verification" "$version"
     done
     if [[ ${#failed_packages[@]} -gt 0 ]]; then
         msg "${RED}Failed packages: ${failed_packages[*]}${RESET}"

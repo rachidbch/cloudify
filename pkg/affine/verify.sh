@@ -3,7 +3,9 @@
 # Sourced in a clean subshell. Port from env var (yaml) with a default.
 pkg_verify() {
     local port="${AFFINE_PORT:-8787}"
-    systemctl --user is-active affine-mcp >/dev/null 2>&1 || return 1
+    # Unmasked: a swallowed bus/systemd error makes the timeout opaque - the
+    # runner captures stderr as the failure reason.
+    systemctl --user is-active affine-mcp || return 1
     # Unauthenticated POST /mcp must answer 401 (server up + auth enforced).
     local code
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \

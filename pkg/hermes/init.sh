@@ -16,6 +16,18 @@ fi
 
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup
 
+# The installer's layout moved user-local (uv-managed, ~/.local/bin/hermes);
+# the dashboard's systemd unit and operator muscle memory expect the stable
+# system entrypoint. Guarantee it, assert it - a silent absent entrypoint is
+# exactly the 203/EXEC the dashboard unit dies of.
+HERMES_ENTRY="$HOME/.local/bin/hermes"
+if [[ ! -x /usr/local/bin/hermes && -x "$HERMES_ENTRY" ]]; then
+    ln -sfn "$HERMES_ENTRY" /usr/local/bin/hermes \
+        || die "hermes: cannot create the system entrypoint /usr/local/bin/hermes."
+fi
+[[ -x /usr/local/bin/hermes ]] \
+    || die "hermes: no executable entrypoint after install (expected $HERMES_ENTRY or /usr/local/bin/hermes)."
+
 # The installer writes a bash wrapper to /usr/local/lib/hermes-agent/venv/bin/hermes
 # that execs itself in an infinite loop. Restore the correct Python entry point.
 HERMES_VENV_BIN="/usr/local/lib/hermes-agent/venv/bin/hermes"

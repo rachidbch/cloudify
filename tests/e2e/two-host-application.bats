@@ -9,11 +9,12 @@
 # Scenarios are tagged with the phase that unlocks them. A phase runs only its
 # own; the rest stay visible and skipped, never deleted and never silently green.
 #
-# MUTATES the fleet: it launches two throwaway containers on $REMOTE and deletes
-# them in teardown_file. Nothing else on the fleet is touched.
+# MUTATES the tailnet: it launches two throwaway containers on $REMOTE and deletes
+# them in teardown_file. Nothing else on the tailnet is touched.
 #
 # Requirements: `cloudify` on PATH (the local branch), ivps, and SSH reach to the
-# remote. The branch must be PUSHED: each host bootstraps cloudify from GitHub.
+# remote. Code lands on the hosts per CLOUDIFY_TEST_CODE_MODE (push by default;
+# github or branch:<name> exercise the GitHub pull path - push the branch first).
 #
 #   PATH="$PWD:$PATH" bats tests/e2e/two-host-application.bats
 
@@ -33,9 +34,17 @@ CFG_DIR="$WD/cloudify"
 
 _ssh() { ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ConnectTimeout=10 "root@$1" "$2"; }
 
+source "$PWD/tests/helpers/code-mode.bash"
+
 setup_file() {
     export PATH="$HOME/.local/bin:$PATH"
     mkdir -p "$WD" "$CFG_DIR"
+    # A stable suite token: the applied-seed digest check refuses a resupplied
+    # secret whose plaintext changed between the install run and the verify
+    # run, so a per-test `date +%s` token now fails verify by design.
+    # Written to a file because bats runs @test in subshells where
+    # setup_file exports do not propagate.
+    printf 'export K3S_TOKEN=e2e-stable-%s\n' "$(date +%Y%m%d%H%M%S)" > "$WD/token.env"
 
     echo "── launching two disposable hosts on $REMOTE ──"
     for h in "$HOST_A" "$HOST_B"; do
@@ -67,7 +76,6 @@ setup_file() {
     mkdir -p "$CFG_DIR/runbooks/$APP/$FLAVOR"
     cat > "$CFG_DIR/runbooks/$APP/$FLAVOR/runbook.md" <<'RUNBOOK'
 ---
-deployment: two-host-e2e
 targets: alpha, beta
 ---
 
@@ -92,31 +100,12 @@ cloudify --on "$TARGET_BETA" verify fixture-split
 ```
 RUNBOOK
 
-    # The bootstrap gist clones the repo's DEFAULT branch, so a live run would
-    # exercise master and could pass without testing this checkout. Bootstrap the
-    # repo once, pin the freshness marker so the payload skips its git pull, then
-    # push the working tree over it - the same idea as `task sync` for the unit
-    # container, and the reason the branch must be pushed is now only the gist.
-    echo "── bootstrapping and pinning the working tree on both hosts ──"
+    # The code each host runs comes from the test code mode (push by default:
+    # the working tree over ssh; github/branch:<name> exercise the pull path).
+    echo "── preparing cloudify code on both hosts (mode: $(tests_code_mode)) ──"
     for h in "$HOST_A" "$HOST_B"; do
-        # The first dispatch is what bootstraps the repo on a host, and it does so
-        # through the normal payload with the operator's git credentials. It may
-        # fail (nothing is installed yet); the repo is what this step wants.
-        cloudify --on "$h" verify fixture-split >/dev/null 2>&1 || true
-        _ssh "$h" 'test -d /root/cloudify' 2>/dev/null \
-            || { echo "FAIL: $h did not bootstrap"; return 1; }
-        # Pin the freshness marker so the payload skips its own git pull, then put
-        # this checkout over the default branch's clone.
-        _ssh "$h" 'touch /root/cloudify/.#last_update' || return 1
-        for d in lib pkg schemas runbooks; do
-            ivps push "$REMOTE:$h" "$PWD/$d" /root/cloudify/ -- --delete >/dev/null 2>&1 \
-                || { echo "FAIL: cannot push $d to $h"; return 1; }
-        done
-        ivps push "$REMOTE:$h" "$PWD/cloudify" /root/cloudify/ >/dev/null 2>&1 \
-            || { echo "FAIL: cannot push the CLI to $h"; return 1; }
-        _ssh "$h" 'grep -q _cloudify_vars_raw_encode /root/cloudify/lib/vars.sh' \
-            || { echo "FAIL: $h is not running this checkout"; return 1; }
-        echo "  $h has this checkout"
+        tests_code_prepare "$h" || { echo "FAIL: cannot prepare $h"; return 1; }
+        echo "  $h is ready (mode $(tests_code_mode))"
     done
 
     export E2E_TARGETS=(--target "alpha=$HOST_A" --target "beta=$HOST_B")
@@ -124,6 +113,7 @@ RUNBOOK
 
 setup() {
     # bats runs @test in subshells, so re-derive what setup_file exported.
+    source "$WD/token.env"
     source "$BATS_TEST_DIRNAME/../helpers/report.bash"
     export PATH="$HOME/.local/bin:$PATH"
     export CLOUDIFY_DIR="$CFG_DIR"
@@ -137,7 +127,7 @@ setup() {
     export CLOUDIFY_DEVELOPMENT_OVERRIDE=1
     # The fixture package declares K3S_TOKEN as required, so preflight refuses
     # without it. Caller environment is the strongest source, which is fine here.
-    export K3S_TOKEN="e2e-$(date +%s)"
+    # (The stable value comes from token.env sourced in setup().)
     mkdir -p "$XDG_STATE_HOME" "$CLOUDIFY_TMP"
     # Packages resolve from CLOUDIFY_DIR/pkg, and the runbook from
     # CLOUDIFY_DIR/runbooks, so the real package tree has to be visible here.
@@ -150,9 +140,11 @@ setup() {
     # Read the manifest directly: it is the recorded lifecycle status, and the
     # read surface is a later phase.
     _manifest_status() {
+        # THE deployment's manifest - never a find|head lottery over a state
+        # tree that also carries _direct debris from bare-dispatch tests.
         local m
-        m=$(find "$XDG_STATE_HOME/cloudify/deployments" -name manifest.json 2>/dev/null | head -1)
-        [[ -n "$m" ]] || { printf 'missing'; return 0; }
+        m="${XDG_STATE_HOME:-$HOME/.local/state}/cloudify/deployments/$APP/$FLAVOR/$NAME/manifest.json"
+        [[ -f "$m" ]] || { printf 'missing'; return 0; }
         sed -n 's/^  "status": "\(.*\)",$/\1/p' "$m"
     }
 }
@@ -179,7 +171,7 @@ teardown_file() {
 
     subrubric "the manifest records the run across both targets"
     run _manifest_status
-    [[ "$output" == "active" ]] || { echo "manifest status: $output"; return 1; }
+    [[ "$output" == "verified" ]] || { echo "manifest status: $output"; return 1; }
 }
 
 @test "verify (Phase 2 repair): verification passes on both hosts" {
@@ -240,4 +232,54 @@ teardown_file() {
 
 @test "first teardown releases the claim, last teardown removes the package (Phase 7)" {
     skip "unlocks with the pinned-provenance and teardown phase (Phase 7)"
+}
+
+@test "a bare multi-host invocation synthesizes ONE _direct deployment (ADR-032)" {
+    rubric "one invocation, one deployment, one binding per host - same shape as a runbook deployment"
+    run bash -c "PATH=\$PATH cloudify --on $HOST_A $HOST_B install fixture-split"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+    # THIS invocation's manifest is the newest _direct fixture-split one (a
+    # dev controller accumulates e2e debris from prior runs; the sweep owns it).
+    local m
+    m=$(ls -1 "${XDG_STATE_HOME:-$HOME/.local/state}"/cloudify/deployments/_direct/direct/fixture-split-*/manifest.json 2>/dev/null | sort | tail -1)
+    [ -n "$m" ] || { echo "no _direct manifest"; return 1; }
+    [ "$(jq -r '.bindings | length' "$m")" -eq 2 ]
+    jq -e --arg a "cloudai:$HOST_A" --arg b "cloudai:$HOST_B" \
+        '.bindings[$a] and .bindings[$b]' "$m" >/dev/null
+
+    # Both hosts' records under the SAME deployment name, one per instance tree.
+    local n ra rb
+    n=$(basename "$(dirname "$m")")
+    ra="$(_ivps_path cloudai "$HOST_A")/deployments/_direct/direct/$n/packages/fixture-split/default/state.json"
+    rb="$(_ivps_path cloudai "$HOST_B")/deployments/_direct/direct/$n/packages/fixture-split/default/state.json"
+    [ -f "$ra" ] || { echo "missing: $ra"; return 1; }
+    [ -f "$rb" ] || { echo "missing: $rb"; return 1; }
+    [ "$(jq -r .deployment "$ra")" = "$n" ]
+    [ "$(jq -r .deployment "$rb")" = "$n" ]
+    # The word derives from the events: one install across both hosts.
+    [ "$(jq -r .status "$m")" = "installed" ]
+}
+
+_ivps_path() { # <node> <instance> - the controller's inventory dir
+    ivps node path "$1:$2"
+}
+
+@test "--name addresses a direct deployment across invocations (ADR-027 wired)" {
+    rubric "named install, separate named verify - seeded against applied values, the word derives"
+    run bash -c "PATH=\$PATH cloudify --on $HOST_A $HOST_B --name web install fixture-split"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Deployment: _direct/direct/web (status installed)"* ]]
+
+    run bash -c "PATH=\$PATH cloudify --on $HOST_A $HOST_B --name web verify fixture-split"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Deployment: _direct/direct/web (status verified)"* ]]
+
+    local m="${XDG_STATE_HOME:-$HOME/.local/state}/cloudify/deployments/_direct/direct/web/manifest.json"
+    [ "$(jq -r '.bindings | length' "$m")" -eq 2 ]
+    [ "$(jq -r .status "$m")" = "verified" ]
+    local h
+    for h in "$HOST_A" "$HOST_B"; do
+        [ -f "$(_ivps_path cloudai "$h")/deployments/_direct/direct/web/packages/fixture-split/default/state.json" ]
+    done
 }

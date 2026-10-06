@@ -129,6 +129,21 @@ candidate_file() {
     [[ "$output" == *"CLOUDIFY_CONTEXT_FILE"* ]]
 }
 
+@test "context build covers declared dependencies with instance keys" {
+    rubric "the dispatch context's package set is the WALKED graph (requested + declared deps), not just the argument words - the worker's off-graph rule depends on it"
+    declare_pkg foo SPEC
+    declare_pkg bar OTHER
+    reset_stores
+    printf 'pkg_depends bar\n' > "$CLOUDIFY_DIR/pkg/foo/init.sh"
+    cand=$(candidate_file foo)
+    export CLOUDIFY_CONTEXT_FILE="$CLOUDIFY_TMP/ctx-$BATS_TEST_NUMBER"
+    : > "$CLOUDIFY_CONTEXT_FILE"
+    run cloudify_context_build install "" install "$cand" foo
+    [ "$status" -eq 0 ]
+    grep -q '^package\.foo\.instance: default$' "$CLOUDIFY_CONTEXT_FILE"
+    grep -q '^package\.bar\.instance: default$' "$CLOUDIFY_CONTEXT_FILE"
+}
+
 @test "context build prints nothing on stdout" {
     declare_pkg foo SPEC
     reset_stores
@@ -704,4 +719,139 @@ candidate_file() {
     [ "$(_cloudify_vars_store_get "$(_cloudify_deployment_config)" DEP_ONLY)" = "from-nested" ]
 
     unset DEP_ONLY
+}
+
+@test "every value carries a declaration field surfacing the classification origin" {
+    declare_pkg foo \
+        "SPEC=value" \
+        "TOKEN=abc" \
+        "secret MARKERED" \
+        "MARKERED=x"
+    reset_stores
+    set_deployment SPEC deployment-value
+    set_deployment TOKEN heuristic-supplied
+    set_deployment MARKERED marker-supplied
+    set_deployment REF '@base64:YWRtaW4tc2VjcmV0'
+    unset SPEC TOKEN MARKERED REF
+    local cand
+    cand=$(candidate_file foo)
+
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+
+    [ "$(cloudify_context_read "$CTX" value.SPEC.declaration)" = "none" ]
+    [ "$(cloudify_context_read "$CTX" value.TOKEN.declaration)" = "heuristic" ]
+    [ "$(cloudify_context_read "$CTX" value.MARKERED.declaration)" = "explicit" ]
+    subrubric "a reference is explicit"
+    [ "$(cloudify_context_read "$CTX" value.REF.form)" = "reference" ]
+    [ "$(cloudify_context_read "$CTX" value.REF.declaration)" = "explicit" ]
+}
+
+@test "an explicit marker wins over the name heuristic" {
+    declare_pkg foo "secret TOKEN" "TOKEN=abc"
+    reset_stores
+    export TOKEN=abc-supplied
+    local cand
+    cand=$(candidate_file foo)
+
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+
+    [ "$(cloudify_context_read "$CTX" value.TOKEN.declaration)" = "explicit" ]
+    [ "$(cloudify_context_read "$CTX" value.TOKEN.secret)" = "true" ]
+}
+
+@test "context records one sorted package.<PACKAGE>.instance field per precomputed package" {
+    declare_pkg zebra "Z=z"
+    declare_pkg alpha "A=a"
+    reset_stores
+    unset Z A
+    local cand
+    cand=$(candidate_file zebra alpha)
+
+    cloudify_context_build install "$DEP" install "$cand" zebra alpha > /dev/null
+
+    [ "$(cloudify_context_read "$CTX" package.alpha.instance)" = "default" ]
+    [ "$(cloudify_context_read "$CTX" package.zebra.instance)" = "default" ]
+    subrubric "lines are sorted by package and never enter the value allow-list"
+    local line_a line_z
+    line_a=$(grep -n '^package\.alpha\.instance:' "$CTX" | cut -d: -f1)
+    line_z=$(grep -n '^package\.zebra\.instance:' "$CTX" | cut -d: -f1)
+    [ "$line_a" -lt "$line_z" ]
+    [ "$(grep -c '^package\.' "$CTX")" -eq 2 ]
+}
+
+@test "cloudify_context_validate accepts the extended shape and rejects a bad instance value" {
+    declare_pkg foo "SPEC=value"
+    reset_stores
+    set_deployment SPEC deployment-value
+    unset SPEC
+    local cand
+    cand=$(candidate_file foo)
+
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+    run cloudify_context_validate "$CTX"
+    [ "$status" -eq 0 ]
+
+    subrubric "an instance value off the result-line charset fails loudly"
+    local bad="$CLOUDIFY_TMP/bad-context.yaml"
+    cp "$CTX" "$bad"
+    printf 'package.foo.instance: has spaces\n' >> "$bad"
+    run cloudify_context_validate "$bad"
+    [ "$status" -ne 0 ]
+}
+
+@test "package instance: the .package-instance marker selects the variable's resolved value" {
+    declare_pkg foo "API_HOST=eu-1"
+    echo "API_HOST" > "$CLOUDIFY_DIR/pkg/foo/.package-instance"
+    reset_stores
+    export API_HOST=eu-west-3
+    local cand
+    cand=$(candidate_file foo)
+    cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
+    [ "$(cloudify_context_read "$CTX" package.foo.instance)" = "eu-west-3" ]
+}
+
+@test "package instance: a marker whose variable is not declared fails the build" {
+    declare_pkg foo "API_HOST=eu-1"
+    echo "GHOST_VAR" > "$CLOUDIFY_DIR/pkg/foo/.package-instance"
+    reset_stores
+    unset API_HOST GHOST_VAR
+    local cand
+    cand=$(candidate_file foo)
+    run cloudify_context_build install "$DEP" install "$cand" foo
+    [ "$status" -ne 0 ]
+}
+
+@test "package instance: a declared but unsupplied marker variable fails before mutation" {
+    declare_pkg foo "API_HOST="
+    echo "API_HOST" > "$CLOUDIFY_DIR/pkg/foo/.package-instance"
+    reset_stores
+    unset API_HOST
+    local cand
+    cand=$(candidate_file foo)
+    run cloudify_context_build install "$DEP" install "$cand" foo
+    [ "$status" -ne 0 ]
+}
+
+@test "context value json: the applied label (a released pin) is a legal source" {
+    rubric "ADR-030: unset moves a caller pin to applied; a seeded verify re-reads it"
+    local ctx="$CLOUDIFY_TMP/applied-ctx"
+    export CLOUDIFY_CONTEXT_FILE="$ctx"
+    {
+        printf 'context_version: 1\n'
+        printf 'action: verify\n'
+        printf 'deployment: \n'
+        printf 'phase: verify\n'
+        printf 'top_kind: package\n'
+        printf 'value.AFFINE_PORT.source: applied\n'
+        printf 'value.AFFINE_PORT.form: literal\n'
+        printf 'value.AFFINE_PORT.secret: false\n'
+        printf 'value.AFFINE_PORT.declaration: none\n'
+        printf 'value.AFFINE_PORT.reference: \n'
+        printf 'value.AFFINE_PORT.digest: \n'
+        printf 'value.AFFINE_PORT.raw: t:8787\n'
+    } > "$ctx"
+    cloudify_context_load "$ctx"
+    run cloudify_context_value_json AFFINE_PORT
+    [ "$status" -eq 0 ]
+    jq -e '.source == "applied" and .source_form == "8787" and .secret == false' <<<"$output"
 }

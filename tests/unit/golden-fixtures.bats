@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
-# Byte-exact golden fixtures for the dispatch payload and the registry record
+# Byte-exact golden fixtures for the dispatch payload (the transport-integrity
+# tripwire). The legacy registry-record goldens moved to
+# tests/fixtures/legacy-registry/ with the retired writer (4.3, 2026-09-20);
 # (plans/archived/state-model-v2-phase2-attempt-design.md section 9). The legacy walkers
 # (_cloudify_pkg_remote_vars, _cloudify_registry_raw_var) are deleted, so the
 # payload text and the record text are pinned by DATA instead of by the code
@@ -17,8 +19,7 @@
 # part of the normal suite run.
 #
 # The payload is captured through the REAL transport: cloudify_remote_sync with
-# a stubbed ssh that reads the payload from stdin (never argv). The record is
-# captured through cloudify_registry_record_build with a REAL dispatch context.
+# a stubbed ssh that reads the payload from stdin (never argv).
 
 setup() {
     source tests/helpers/common.bash
@@ -45,6 +46,10 @@ setup() {
 
     export CLOUDIFY_REMOTE_USER=testuser
     export CLOUDIFY_REMOTE_PWD=dummy
+    # A fixed mandated ref keeps the payload deterministic (the derivation
+    # would otherwise read the controller's checkout, which is not a repository
+    # in the streamed run dir).
+    export CLOUDIFY_GIT_REF=golden-branch
     export CLOUDIFY_CONTEXT_TARGET=$'local\t\tlocalhost'
     cloudify_init_log
     # A fixed log filename keeps the payload deterministic: cloudify_remote_sync
@@ -180,29 +185,6 @@ _ctx() {
     printf '%s\n' "$ctx"
 }
 
-# _norm <record-text> - blank the three write-time timestamps, which depend on
-# the clock and not on the value source, before pinning the record.
-_norm() {
-    sed -E 's/^(installed_at|configured_at|removed_at):.*/\1: <ts>/' <<< "$1"
-}
-
-# golden_record <case> <pkg> [expected-var-line]
-# Rebuild the record from a real dispatch context and pin it. The optional
-# expected line is a no-false-pass guard: an empty record never sneaks through.
-golden_record() {
-    local case="$1" pkg="$2" expect="${3:-}" ctx text actual
-    ctx=$(_ctx "$pkg")
-    text=$(cloudify_registry_record_build install "$DEP" "$NODE" "" "$HOST" "$pkg" "$ctx" 2>/dev/null)
-    rm -f "$ctx"
-    [ -n "$text" ]
-    if [[ -n "$expect" ]]; then
-        grep -qF "$expect" <<< "$text"
-    fi
-    actual="$CAP_DIR/$case.yaml"
-    _norm "$text" > "$actual"
-    _golden "registry/$case.yaml" "$actual"
-}
-
 # --- payload matrix: caller env, deployment, package, global, reference,
 #     multiline, rightmost package wins, package with a dependency -----------
 
@@ -279,97 +261,49 @@ golden_record() {
     grep -qF "export FIX_DEP_VALUE='dep-value'" "$CAP_DIR/dependency.payload"
 }
 
-# --- registry matrix: the same sources plus a declared name no source provides
-#     and an undeclared ambient name -----------------------------------------
-
-@test "golden registry record: caller env only" {
-    declare_pkg eq-env EQ_ENV
+@test "golden payload: the mandated ref derives from the controller's checkout when unset" {
+    rubric "unset -> the controller's own branch; detached -> its commit; no git -> empty"
+    declare_pkg foo FIX_ENV_ONLY
     reset_stores
-    export EQ_ENV=env-value
-    golden_record caller-env eq-env "var.EQ_ENV: env-value"
-    unset EQ_ENV
-}
+    export FIX_ENV_ONLY=env-value
+    # A throwaway repository with one commit on a named branch.
+    local repo="$CLOUDIFY_TMP/refrepo"
+    mkdir -p "$repo"
+    git -C "$repo" init -q -b feature-golden
+    git -C "$repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m x
 
-@test "golden registry record: deployment store only" {
-    declare_pkg eq-dep EQ_DEP
-    reset_stores
-    set_deployment EQ_DEP deployment-value
-    golden_record deployment-only eq-dep "var.EQ_DEP: deployment-value"
-}
+    unset CLOUDIFY_GIT_REF
+    ( CLOUDIFY_SCRIPT_DIR="$repo" CAP_OUT="$CAP_DIR/refderive"
+      cloudify_remote_sync somehost install foo ) > /dev/null 2>&1
+    grep -q "export CLOUDIFY_GIT_REF='feature-golden'" "$CAP_DIR/refderive.payload"
 
-@test "golden registry record: package yaml only" {
-    declare_pkg eq-pkg EQ_PKG
-    reset_stores
-    set_pkg eq-pkg EQ_PKG package-value
-    golden_record package-only eq-pkg "var.EQ_PKG: package-value"
-}
+    # Detached: the branch probe answers HEAD, the commit lands instead.
+    local sha
+    sha=$(git -C "$repo" rev-parse HEAD)
+    git -C "$repo" checkout -q --detach
+    unset CLOUDIFY_GIT_REF
+    ( CLOUDIFY_SCRIPT_DIR="$repo" CAP_OUT="$CAP_DIR/refdetach"
+      cloudify_remote_sync somehost install foo ) > /dev/null 2>&1
+    grep -q "export CLOUDIFY_GIT_REF='$sha'" "$CAP_DIR/refdetach.payload"
 
-@test "golden registry record: global store only" {
-    declare_pkg eq-global EQ_GLOBAL
-    reset_stores
-    set_global EQ_GLOBAL global-value
-    golden_record global-only eq-global "var.EQ_GLOBAL: global-value"
-}
+    # No repository at all: empty mandate (the remote keeps its own checkout).
+    unset CLOUDIFY_GIT_REF
+    ( CLOUDIFY_SCRIPT_DIR="$CLOUDIFY_TMP" CAP_OUT="$CAP_DIR/refnone"
+      cloudify_remote_sync somehost install foo ) > /dev/null 2>&1
+    grep -q "export CLOUDIFY_GIT_REF=''" "$CAP_DIR/refnone.payload"
 
-@test "golden registry record: caller env beats a conflicting deployment value" {
-    declare_pkg eq-conflict EQ_CONFLICT
-    reset_stores
-    set_deployment EQ_CONFLICT deployment-value
-    export EQ_CONFLICT=caller-value
-    golden_record env-beats-deployment eq-conflict "var.EQ_CONFLICT: caller-value"
-    unset EQ_CONFLICT
-}
+    # The controller probes with `command git`: the git shadow (auth
+    # injection) appends -v to authenticated calls and rev-parse echoes it
+    # back - a two-line value would ride the payload quoting broken. Mimic
+    # the shadow and prove the derivation is immune.
+    git -C "$repo" checkout -q feature-golden   # earlier probes left it detached
+    git() { command git "$@" -v; }
+    unset CLOUDIFY_GIT_REF
+    ( CLOUDIFY_SCRIPT_DIR="$repo" CAP_OUT="$CAP_DIR/refshadow"
+      cloudify_remote_sync somehost install foo ) > /dev/null 2>&1
+    unset -f git
+    grep -q "export CLOUDIFY_GIT_REF='feature-golden'" "$CAP_DIR/refshadow.payload"
 
-@test "golden registry record: @base64 reference from a store" {
-    declare_pkg eq-ref EQ_REF
-    reset_stores
-    set_pkg eq-ref EQ_REF '@base64:aGVsbG8='
-    golden_record base64-reference eq-ref "var.EQ_REF: @base64:aGVsbG8="
-}
-
-@test "golden registry record: multiline stored value encoded as @base64" {
-    declare_pkg eq-multi EQ_MULTI
-    reset_stores
-    set_deployment EQ_MULTI $'line one\nline two'
-    golden_record multiline eq-multi "var.EQ_MULTI: @base64:$(b64 $'line one\nline two')"
-}
-
-@test "golden registry record: a declared name no source provides is absent" {
-    declare_pkg eq-gone EQ_GONE
-    reset_stores
-    unset EQ_GONE
-    golden_record declared-unprovided eq-gone
-    ! grep -q 'var.EQ_GONE' "$CAP_DIR/declared-unprovided.yaml"
-}
-
-@test "golden registry record: an undeclared ambient name never leaks in" {
-    declare_pkg eq-ambient EQ_DECLARED
-    reset_stores
-    export EQ_DECLARED=declared-value EQ_AMBIENT=ambient-leak
-    golden_record undeclared-ambient eq-ambient "var.EQ_DECLARED: declared-value"
-    ! grep -q 'EQ_AMBIENT' "$CAP_DIR/undeclared-ambient.yaml"
-    unset EQ_DECLARED EQ_AMBIENT
-    reset_stores
-}
-
-# --- the pins themselves: an empty or partial fixture cannot pass ------------
-
-@test "every golden fixture is present and non-empty" {
-    local rel
-    for rel in \
-        payload/caller-env.txt payload/deployment-only.txt payload/package-only.txt \
-        payload/global-only.txt payload/base64-reference.txt payload/multiline.txt \
-        payload/rightmost-package-wins.txt payload/dependency.txt \
-        registry/caller-env.yaml registry/deployment-only.yaml registry/package-only.yaml \
-        registry/global-only.yaml registry/env-beats-deployment.yaml registry/base64-reference.yaml \
-        registry/multiline.yaml registry/declared-unprovided.yaml registry/undeclared-ambient.yaml; do
-        subrubric "$rel"
-        [ -s "$GOLDEN/$rel" ]
-    done
-    subrubric "the payload fixtures carry the real rendered export lines"
-    grep -q '^    export FIX_DEP_ONLY=' "$GOLDEN/payload/deployment-only.txt"
-    subrubric "the record fixtures carry the observation header"
-    grep -q '^# cloudify registry record' "$GOLDEN/registry/deployment-only.yaml"
-    subrubric "no timestamp survived normalisation"
-    ! grep -qE '^(installed_at|configured_at|removed_at): 2[0-9]' "$GOLDEN/registry/"*.yaml
+    # Explicit mandate survives untouched.
+    unset FIX_ENV_ONLY
 }

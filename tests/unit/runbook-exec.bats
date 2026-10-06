@@ -5,7 +5,7 @@
 # Contract under test:
 #   cloudify_runbook_execute <path> [--target name=addr]... [--from <id>] [--yes]
 #     -> steps run in order; CLOUDIFY_OUTPUTS_FILE lines become OUT_<name>;
-#        snapshot ${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/<utc>.yaml (0600).
+#        snapshot <state>/deployments/<app>/<flavor>/<name>/runs/<utc>.yaml (0600).
 
 setup() {
     source tests/helpers/common.bash
@@ -24,6 +24,7 @@ setup() {
     source lib/package-api.sh
     source lib/vars.sh
     source lib/deployments.sh
+    source lib/state.sh
     source lib/targets.sh
     source lib/registry.sh
     source lib/context.sh
@@ -72,15 +73,16 @@ _make_runbook() {
     cat > "$1"
 }
 
-# The single run snapshot for <id>.
+# The single run snapshot for the identity the test exported (the positional
+# argument is the old id, kept so call sites read naturally).
 _snapshot() {
-    ls "$CLOUDIFY_DEPLOYMENTS_DIR/$1/runs/"*.yaml
+    ls "$(cloudify_state_runs_dir "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME")"/*.yaml
 }
 
-# The most recently written run snapshot for <id> (a same-second run/replay pair
+# The most recently written run snapshot (a same-second run/replay pair
 # shares the timestamp prefix, so names do not order them).
 _newest_snapshot() {
-    ls -1t "$CLOUDIFY_DEPLOYMENTS_DIR/$1/runs/"*.yaml | head -1
+    ls -1t "$(cloudify_state_runs_dir "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME")"/*.yaml | head -1
 }
 
 # ---------------------------------------------------------------
@@ -92,7 +94,6 @@ _newest_snapshot() {
     local rb="$CLOUDIFY_TMP/two-step.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: exec-demo
 targets: guest
 ---
 ```bash step=install target=guest pkg=demo id=first
@@ -108,7 +109,7 @@ EOF
     _cloudify_vars_file_set "$(_cloudify_deployment_config)" FOO bar
 
     run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 0 ] || { echo "EXEC OUTPUT: $output"; false; }
     [ "$(cat "$CLOUDIFY_TMP/order")" = "$(printf 'first\nsecond')" ]
 
     local snap
@@ -123,11 +124,11 @@ EOF
 }
 
 @test "execute: a step body reading stdin does not truncate the remaining steps" {
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-stdin
     rubric "body stdin must not steal the step list (regression: silent truncation + false success)"
     local rb="$CLOUDIFY_TMP/stdin.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: exec-stdin
 targets: guest
 ---
 ```bash step=install target=guest pkg=demo id=one
@@ -147,11 +148,11 @@ EOF
 }
 
 @test "execute: stops at the first failing step; later steps do not run; snapshot failed" {
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-fail
     rubric "non-zero step -> break with the step id, snapshot status: failed"
     local rb="$CLOUDIFY_TMP/fail.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: exec-fail
 targets: guest
 ---
 ```bash step=install target=guest pkg=demo id=ok
@@ -177,11 +178,11 @@ EOF
 }
 
 @test "execute: human-gate prints its body; --yes proceeds; no TTY + no --yes dies" {
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-gate
     rubric "human-gate: body printed; --yes skips the prompt; no TTY without --yes -> die"
     local rb="$CLOUDIFY_TMP/gate.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: exec-gate
 targets: guest
 ---
 ```bash step=human-gate id=gate phase=verify
@@ -203,11 +204,11 @@ EOF
 }
 
 @test "execute: --from starts at that step and skips the earlier ones" {
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-from
     rubric "--from <id> -> earlier steps skipped, the named step and later ones run"
     local rb="$CLOUDIFY_TMP/from.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: exec-from
 targets: guest
 ---
 ```bash step=install target=guest pkg=demo id=a
@@ -227,11 +228,11 @@ EOF
 }
 
 @test "execute: an unknown --from id dies before any step runs" {
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-from-bad
     rubric "--from typo -> fail closed, no step body executed"
     local rb="$CLOUDIFY_TMP/from-bad.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: exec-from-bad
 targets: guest
 ---
 ```bash step=install target=guest pkg=demo id=a
@@ -250,11 +251,11 @@ EOF
 # ---------------------------------------------------------------
 
 @test "execute: the run snapshot is separate from the registry" {
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-sep
     rubric "snapshot under deployments/<id>/runs; no registry record is written"
     local rb="$CLOUDIFY_TMP/sep.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: exec-sep
 targets: guest
 ---
 ```bash step=install target=guest pkg=demo id=one
@@ -284,7 +285,6 @@ EOF
     local rb="$CLOUDIFY_TMP/add.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: exec-add
 targets: guest
 ---
 ```bash step=install target=guest pkg=demo id=one
@@ -308,11 +308,11 @@ EOF
 # ---------------------------------------------------------------
 
 @test "execute: a canonical bare run selects install+verify; --yes never reaches teardown" {
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-add
     rubric "bare run = install then verify; teardown only with --phase teardown"
     local rb="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: exec-canonical
 targets: guest
 ---
 ```bash step=install target=guest pkg=demo id=i
@@ -335,12 +335,36 @@ EOF
     [ "$(grep -c teardown "$CLOUDIFY_TMP/canon-order")" -eq 1 ]
 }
 
+@test "phase selection: --phase verify re-runs only the verify steps, read-only" {
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-phase
+    rubric "the drift check: verify steps only, no mutating step runs"
+    local rb="$CLOUDIFY_DIR/runbooks/execapp/default/runbook.md"
+    _make_runbook "$rb" <<'EOF'
+---
+targets: guest
+---
+```bash step=install target=guest pkg=demo id=install-one
+echo install >> "$CLOUDIFY_TMP/phase-order"
+```
+```bash step=configure target=guest pkg=demo id=configure-one
+echo configure >> "$CLOUDIFY_TMP/phase-order"
+```
+```bash step=verify target=guest pkg=demo id=verify-one
+echo verify >> "$CLOUDIFY_TMP/phase-order"
+```
+EOF
+    run cloudify_runbook_execute "$rb" --target guest=cloudai:xfce-test --phase verify
+    [ "$status" -eq 0 ]
+    [ "$(cat "$CLOUDIFY_TMP/phase-order")" = "verify" ]
+    rm -f "$CLOUDIFY_TMP/phase-order"
+}
+
 @test "preflight: only selected phases are inspected" {
+    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-preflight
     rubric "a teardown-only required var cannot block the install run"
     local rb="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
     _make_runbook "$rb" <<'EOF'
 ---
-deployment: exec-phases
 targets: guest
 ---
 ```bash step=install target=guest pkg=inst id=i

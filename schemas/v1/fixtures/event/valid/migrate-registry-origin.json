@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "event_id": "20260918T090000Z-1a2b3c4d",
+  "at": "2026-09-18T09:00:00Z",
+  "tool": "cloudify",
+  "writer": {
+    "host": "cloudai",
+    "boot_id": "3f2a1b0c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "pid": 48213,
+    "process_start_ticks": 91726345
+  },
+  "run_id": null,
+  "step_id": null,
+  "application": "k3s",
+  "flavor": "default",
+  "deployment": "legacy-2024",
+  "application_commit": null,
+  "subject": {
+    "kind": "package",
+    "host": "cloudai:cloudify",
+    "host_key": "ivps:cloudai:cloudify",
+    "package": "guacamole",
+    "package_instance": "default"
+  },
+  "phase": null,
+  "command_kind": "migrate-registry",
+  "values": {
+    "CLOUDIFY_DOCKER_DRIVER": {
+      "source": "migration",
+      "secret": false,
+      "declaration": "none",
+      "source_form": "overlay2",
+      "reference": null,
+      "digest": null
+    }
+  },
+  "outcome": {
+    "exit_status": null,
+    "summary": "registry observation migrated"
+  },
+  "state": {
+    "previous_revision": 0,
+    "resulting_revision": 1
+  },
+  "log_reference": {
+    "path": "/tmp/cloudify/logs/20260101T101112Z.log",
+    "sha256": "45ffa9414b900d7b45cfe5d4df258d9d8ac75122da0fcd323fd6bab233248dee"
+  },
+  "tool_version": "1.0.0",
+  "development_override": true,
+  "origin": "old-registry"
+}

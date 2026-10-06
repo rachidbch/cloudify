@@ -155,6 +155,56 @@ function cloudify_context_candidate_names() {
     return 0
 }
 
+
+# cloudify_context_applied_seed <mode> <node> <instance> <app> <flavor> <name>
+# The applied-seed file for one deployment on one host (ADR-030): one
+# `NAME\x1fkind\x1fdigest\x1fraw` line per applied value, records sorted and
+# merged first-per-name (the namespace is dispatch-global).
+#   kind=value  - seedable: a non-secret (its source form) or a secret
+#                 reference (the reference text; the backend resolves it)
+#   kind=secret - a literal secret: digest-only in applied, a demand marker -
+#                 it can never seed, the caller must resupply it
+# mode reconfigure filters to SET values (source=caller); verify and teardown
+# take every applied value. Prints the seed path (0600, context dir). A
+# deployment with no applied record on the host dies named: reconfigure,
+# verify and teardown all require one.
+function cloudify_context_applied_seed() {
+    local mode="${1:?}" node="${2:?}" inst="${3:-}" app="${4:?}" flavor="${5:?}" name="${6:?}"
+    local pkg_root seed records rec rows
+    pkg_root="$(cloudify_state_inventory_root "$node" "$inst")/$app/$flavor/$name/packages"
+    records=$(find "$pkg_root" -mindepth 3 -maxdepth 3 -name state.json 2>/dev/null | sort)
+    [[ -n "$records" ]] ||
+        die "applied seed: no inventory record for deployment $app/$flavor/$name on '$node${inst:+:$inst}'."
+    seed=$(mktemp "${CLOUDIFY_CONTEXT_DIR:-/tmp}/.applied-seed-XXXXXX") || die "applied seed: cannot create the seed file."
+    chmod 600 "$seed" 2>/dev/null || true
+    local -A seen=()
+    while IFS= read -r rec; do
+        [[ -f "$rec" ]] || continue
+        rows=$(jq -r --arg mode "$mode" '
+            .applied.values // {} | to_entries[]
+            | select(if $mode == "reconfigure" then .value.source == "caller" else true end)
+            | .key as $k | .value as $v
+            | (if ($v.secret and $v.redacted) then "secret" else "value" end) as $kind
+            | (if $kind == "secret" then null
+               elif $v.secret then $v.reference
+               else $v.source_form end) as $form
+            | [$k, $kind, ($v.digest // ""),
+               (if $form == null then ""
+                elif ($form | contains("\n") or contains("\t") or contains("\u0001")) then "b:" + ($form | @base64)
+                else "t:" + $form end)]
+            | join("\u001f")' "$rec" 2>/dev/null) || continue
+        local line n kind digest raw rest
+        while IFS= read -r line; do
+            [[ -n "$line" ]] || continue
+            n="${line%%$'\x1f'*}"
+            [[ -n "${seen[$n]+x}" ]] && continue
+            seen[$n]=1
+            printf '%s\n' "$line" >> "$seed"
+        done <<< "$rows"
+    done <<< "$records"
+    printf '%s\n' "$seed"
+}
+
 # _cloudify_context_sha256 <text> - lowercase hex digest, computed at build time.
 _cloudify_context_sha256() {
     printf '%s' "${1:-}" | sha256sum | cut -d' ' -f1
@@ -168,6 +218,43 @@ _cloudify_context_cleanup_tmp() {
         rm -f "$f"
     done
     return 0
+}
+
+
+# _cloudify_context_seed_walk <label> - one applied-seed pass: emit every
+# seedable entry into the ladder with the given provenance label
+# (`environment` for reconfigure set values - a set value keeps its caller
+# identity through reseeding, ADR-030; `applied` for verify/teardown). Only
+# declared candidate names seed; framework-owned names are refused by the
+# emit itself. no-clobber keeps a pre-set caller env value winning.
+_cloudify_context_seed_walk() {
+    local label="$1" seed="${CLOUDIFY_APPLIED_SEED:-}" line n kind digest raw
+    [[ -n "$seed" && -f "$seed" ]] || return 0
+    while IFS=$'\x1f' read -r n kind digest raw; do
+        [[ -n "$n" ]] || continue
+        [[ -n "${_ctx_candidate[$n]:-}" ]] || continue
+        [[ "$kind" == value ]] || continue
+        _cloudify_vars_emit "$n" "$(_cloudify_vars_raw_decode "$raw")" no-clobber "" "$label"
+    done < "$seed"
+}
+
+# _cloudify_context_seed_check - after the walk, every literal-secret demand
+# marker must be resupplied (caller env or a store) with a plaintext whose
+# digest matches the recorded one. Unsupplied or mismatching dies named
+# before any dispatch - a set secret never falls back to a recipe default.
+_cloudify_context_seed_check() {
+    local seed="${CLOUDIFY_APPLIED_SEED:-}" line n kind digest got
+    [[ -n "$seed" && -f "$seed" ]] || return 0
+    while IFS=$'\x1f' read -r n kind digest raw; do
+        [[ "$kind" == "secret" ]] || continue
+        [[ -n "${_ctx_candidate[$n]:-}" ]] || continue
+        if [[ -z "${!n:-}" ]]; then
+            die "applied seed: value '$n' is a literal secret in the applied state (digest only); resupply it in the caller environment or the deployment store."
+        fi
+        got=$(_cloudify_context_sha256 "${!n}")
+        [[ "sha256:$got" == "$digest" ]] ||
+            die "applied seed: resupplied value '$n' does not match the applied digest; refusing to forward it."
+    done < "$seed"
 }
 
 # cloudify_context_build <action> <deployment> <phase> <declared-names-file> <packages...>
@@ -252,8 +339,20 @@ function cloudify_context_build() {
     # The ladder, unchanged: deployment, then application defaults, then the
     # mapped application inputs, then packages rightmost-first with
     # dependencies, then global, then caller env (inv 4, extended by Phase 3).
+    # Applied seeding (ADR-030). Reconfigure: SET values seed between the
+    # caller env and the deployment store (env > applied[set] > store) - the
+    # pass runs BEFORE the store read, so the seed's claim wins the ledger
+    # while a pre-set caller env value still wins through no-clobber.
+    if [[ "$phase" == "reconfigure" ]]; then
+        _cloudify_context_seed_walk environment
+    fi
     if [[ -n "$deployment" ]]; then
         cloudify_vars_deployment_read "$deployment" > /dev/null
+    fi
+    # Verify and teardown: every applied value seeds BELOW the store, so the
+    # caller env and the deployment inputs resupply over the record.
+    if [[ "$phase" == "verify" || "$phase" == "teardown" ]]; then
+        _cloudify_context_seed_walk applied
     fi
     if [[ -n "${CLOUDIFY_APPLICATION:-}" && -n "${CLOUDIFY_FLAVOR:-}" ]]; then
         _cloudify_load_yaml_vars "$(cloudify_vars_app_file "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR")" \
@@ -288,6 +387,10 @@ function cloudify_context_build() {
     if (( ${#candidates[@]} )); then
         cloudify_vars_env_read "${candidates[@]}" > /dev/null
     fi
+
+    # Literal-secret demand markers: resupplied and digest-checked, or the
+    # dispatch dies named before any payload is built.
+    _cloudify_context_seed_check
 
     local top_kind="package"
     [[ "$action" == "verify" ]] && top_kind="verified"
@@ -331,10 +434,14 @@ function cloudify_context_build() {
             [[ -n "$ref" ]] && form="reference"
 
             is_secret=false
+            declaration="none"
             if [[ "$form" == "reference" ]] \
-                || [[ -n "${_ctx_secret[$name]:-}" ]] \
-                || _cloudify_context_name_is_secret "$name"; then
+                || [[ -n "${_ctx_secret[$name]:-}" ]]; then
                 is_secret=true
+                declaration="explicit"
+            elif _cloudify_context_name_is_secret "$name"; then
+                is_secret=true
+                declaration="heuristic"
             fi
             digest=""
             if [[ "$form" == "literal" && "$is_secret" == "true" ]]; then
@@ -344,6 +451,10 @@ function cloudify_context_build() {
             printf 'value.%s.source: %s\n' "$name" "$label"
             printf 'value.%s.form: %s\n' "$name" "$form"
             printf 'value.%s.secret: %s\n' "$name" "$is_secret"
+            # The classification origin, surfaced from the same inputs that set
+            # .secret: a reference or the explicit marker is explicit, the name
+            # heuristic alone is heuristic, everything else is none.
+            printf 'value.%s.declaration: %s\n' "$name" "$declaration"
             printf 'value.%s.reference: %s\n' "$name" "$ref"
             printf 'value.%s.digest: %s\n' "$name" "$digest"
             # The raw source form, in the transport encoding, so a multiline
@@ -351,6 +462,30 @@ function cloudify_context_build() {
             # the run snapshot be built without reopening a source.
             printf 'value.%s.raw: %s\n' "$name" "${_ctx_raw[$name]:-t:}"
         done
+        # One sorted package.<PACKAGE>.instance field per precomputed package:
+        # the instance key is part of the package's configuration (ADR-027).
+        # 4.1 records the default key; the .package-instance recipe contract
+        # upgrades the resolution in 4.2. Sorted, and outside the value namespace,
+        # so the payload allow-list recovery (value.<NAME>.source) never sees it.
+        local _pkg _inst_var _inst_val
+        while IFS= read -r _pkg; do
+            [[ -n "$_pkg" ]] || continue
+            # The instance key is part of the package's configuration
+            # (ADR-027): a .package-instance file names the variable whose
+            # resolved value selects the instance; no marker means default.
+            _inst_var=$(cat "$CLOUDIFY_DIR/pkg/$_pkg/.package-instance" 2>/dev/null || true)
+            _inst_val="default"
+            if [[ -n "$_inst_var" ]]; then
+                _cloudify_identity_check_name "package instance variable" "$_inst_var"
+                cloudify_vars_declared_names "$_pkg" | cut -f1 | grep -qx "$_inst_var" \
+                    || die "package '$_pkg': instance variable '$_inst_var' is not declared in .remote-vars."
+                _inst_val="${!_inst_var:-}"
+                [[ -n "$_inst_val" ]] \
+                    || die "package '$_pkg': instance variable '$_inst_var' is unsupplied; refusing to guess the instance key."
+                _cloudify_identity_check_instance "package instance" "$_inst_val"
+            fi
+            printf 'package.%s.instance: %s\n' "$_pkg" "$_inst_val"
+        done < <(sort -u "$order")
     } > "$out"
 
     chmod 600 "$out" 2>/dev/null || true
@@ -370,7 +505,7 @@ function cloudify_context_validate() {
     while IFS= read -r line; do
         case "$line" in
             "") continue ;;
-            context_version:*|action:*|deployment:*|phase:*|target:*|top_kind:*|value.*) ;;
+            context_version:*|action:*|deployment:*|phase:*|target:*|top_kind:*|value.*|package.*) ;;
             *) seen_bad="$line" ;;
         esac
         case "$line" in
@@ -408,6 +543,15 @@ function cloudify_context_validate() {
         esac
     done < <(sed -n 's/^value\.\([^.]*\)\.source:.*$/\1/p' "$file")
 
+    # Instance keys ride result lines and paths: the space-free result-line
+    # charset is a hard shape, same rule as schemas/v1/identity.md.
+    local _pk _pv
+    while IFS='|' read -r _pk _pv; do
+        [[ -n "$_pk" ]] || continue
+        [[ "$_pv" =~ ^[A-Za-z0-9._+~:-]+$ ]] \
+            || die "context '$file': instance key '$_pv' has characters outside the result-line charset."
+    done < <(sed -n 's/^package\.\([^.]*\)\.instance: \(.*\)$/\1|\2/p' "$file")
+
     return 0
 }
 
@@ -418,6 +562,180 @@ function cloudify_context_validate() {
 # `recipe-default` in _cloudify_vars_source_of).
 function cloudify_context_source_of() {
     _cloudify_vars_source_label "${1:-}" "${2:-}"
+}
+
+#-- One-context projection (state-model-v2 4.3) --
+
+# The one parsed context: cloudify_context_load fills it once, every consumer
+# (matching, the guard, the worker's commits) reads the copy, so two
+# projections can never disagree and no value is ever re-resolved.
+# -gA: a global associative even when this file is first sourced from inside
+# a function (a bats setup), where a plain declare would stay local and the
+# name would later fall back to an indexed array.
+declare -gA _CLOUDIFY_CONTEXT=()
+
+# cloudify_context_load <file> - parse the flat context once into
+# _CLOUDIFY_CONTEXT[key]=value (one shell split at the first ': '). Fail
+# closed: missing file, empty file, malformed line, missing context_version.
+function cloudify_context_load() {
+    local file="${1:-}" line key val
+    [[ -n "$file" && -f "$file" ]] || die "context load: no context file '$file'."
+    [[ -s "$file" ]] || die "context load: context file '$file' is empty."
+    _CLOUDIFY_CONTEXT=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        [[ "$line" == *": "* ]] || die "context load: malformed line: $line"
+        key="${line%%: *}"   # shortest suffix matching ': *' = split at the FIRST ': '
+        val="${line#*: }"    # shortest prefix removal = the rest, verbatim
+        _CLOUDIFY_CONTEXT["$key"]="$val"
+    done < "$file"
+    [[ "${_CLOUDIFY_CONTEXT[context_version]:-}" == "1" ]] ||
+        die "context load: unsupported or missing context_version."
+    return 0
+}
+
+# _cloudify_context_value_field <name> <field> - one field of a value block;
+# fails closed when the field is absent (emptiness is a legal value).
+_cloudify_context_value_field() {
+    local name="${1:-}" field="${2:-}"
+    [[ -n "${_CLOUDIFY_CONTEXT[value.$name.$field]+x}" ]] ||
+        die "context: value '$name' is missing field '$field'."
+    printf '%s' "${_CLOUDIFY_CONTEXT[value.$name.$field]}"
+}
+
+# cloudify_context_value_json <name> - the comparable value object of one
+# resolved name, exactly schemas/v1/package-state.schema.json $defs/value:
+# a non-secret keeps its decoded source form, a secret reference its
+# reference, a literal secret only its digest. Fail closed on a missing
+# field, inconsistent secret metadata or a malformed digest; plaintext of a
+# literal secret never enters the object.
+function cloudify_context_value_json() {
+    local name="${1:?}"
+    local source form secret declaration reference digest raw text
+    source=$(_cloudify_context_value_field "$name" source)
+    form=$(_cloudify_context_value_field "$name" form)
+    secret=$(_cloudify_context_value_field "$name" secret)
+    declaration=$(_cloudify_context_value_field "$name" declaration)
+    reference=$(_cloudify_context_value_field "$name" reference)
+    digest=$(_cloudify_context_value_field "$name" digest)
+    raw=$(_cloudify_context_value_field "$name" raw)
+    case "$form" in literal | reference) ;; *) die "context: value '$name' has malformed form '$form'." ;; esac
+    case "$secret" in true | false) ;; *) die "context: value '$name' has malformed secret '$secret'." ;; esac
+    case "$declaration" in explicit | heuristic | none) ;; *) die "context: value '$name' has malformed declaration '$declaration'." ;; esac
+    case "$source" in
+        environment) source=caller ;;
+        # applied and migration are record-backed labels (ADR-030: a released
+        # pin stays applied; a migrated record carries migration) - a seeded
+        # verify/teardown re-reads them, so the projection must accept them.
+        deployment | application | package | global | recipe | applied | migration | caller) ;;
+        *) die "context: value '$name' has unknown source label '$source'." ;;
+    esac
+    if [[ "$form" == reference ]]; then
+        [[ "$secret" == true ]] || die "context: value '$name' is a reference but not marked secret."
+        [[ "$reference" =~ ^@[A-Za-z0-9_-]+:.+$ ]] || die "context: value '$name' has a malformed reference."
+        jq -cn --arg src "$source" --arg ref "$reference" --arg d "$declaration" \
+            '{source: $src, secret: true, declaration: $d, source_form: $ref, reference: $ref, digest: null, redacted: false}'
+        return 0
+    fi
+    if [[ "$secret" == true ]]; then
+        [[ -z "$reference" ]] || die "context: value '$name' is a literal secret but carries a reference."
+        [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "context: value '$name' has a malformed digest."
+        jq -cn --arg src "$source" --arg digest "$digest" --arg d "$declaration" \
+            '{source: $src, secret: true, declaration: $d, source_form: null, reference: null, digest: $digest, redacted: true}'
+        return 0
+    fi
+    [[ -z "$reference" && -z "$digest" ]] || die "context: value '$name' is not secret but carries a reference or digest."
+    [[ "$declaration" == "none" ]] || die "context: value '$name' is not secret but declares '$declaration'."
+    case "$raw" in
+        t:*) text="${raw#t:}" ;;
+        b:*) text=$(printf '%s' "${raw#b:}" | base64 -d) \
+                || die "context: value '$name' has a malformed base64 raw form." ;;
+        *) die "context: value '$name' has a malformed raw form." ;;
+    esac
+    # The resolution source travels with the comparable form (ADR-030): caller
+    # marks a set value - the fact the reconfigure ladder discriminates on.
+    jq -cn --arg src "$source" --arg sf "$text" \
+        '{source: $src, secret: false, declaration: "none", source_form: $sf, reference: null, digest: null, redacted: false}'
+}
+
+# cloudify_context_values_json [name...] - the comparable projection of the
+# given resolved names (default: none, {}): one JSON object mapping NAME to
+# its comparable value object. The inventory projection passes every resolved
+# name; the compared projection passes one package's declared names only.
+function cloudify_context_values_json() {
+    local n
+    # One `NAME\t<compact-json>` line per name; jq -cn already terminates each
+    # object with a newline, so no extra separator is printed.
+    { for n in "$@"; do
+        printf '%s\t' "$n"
+        cloudify_context_value_json "$n"
+      done; } | jq -cRn '
+        reduce inputs as $line ({};
+            ($line | split("\t")) as $p
+            | . + {($p[0]): ($p[1:] | join("\t") | fromjson)})'
+}
+
+# cloudify_context_event_value_json <name> - one declared value in the EVENT
+# shape (schemas/v1/event.schema.json $defs/value_metadata): a source label
+# (context `environment` maps to `caller`), the secret flag and declaration,
+# reference or digest for secrets, and the source form for non-secrets only.
+# Never raw, never plaintext of a secret. Fail closed like the comparable
+# projection.
+function cloudify_context_event_value_json() {
+    local name="${1:?}"
+    local source form secret declaration reference digest raw text
+    source=$(_cloudify_context_value_field "$name" source)
+    form=$(_cloudify_context_value_field "$name" form)
+    secret=$(_cloudify_context_value_field "$name" secret)
+    declaration=$(_cloudify_context_value_field "$name" declaration)
+    reference=$(_cloudify_context_value_field "$name" reference)
+    digest=$(_cloudify_context_value_field "$name" digest)
+    raw=$(_cloudify_context_value_field "$name" raw)
+    [[ "$source" == environment ]] && source=caller
+    case "$source" in
+        caller | deployment | applied | application | package | global | recipe) ;;
+        *) die "context: value '$name' has unknown source label '$source'." ;;
+    esac
+    case "$form" in literal | reference) ;; *) die "context: value '$name' has malformed form '$form'." ;; esac
+    case "$secret" in true | false) ;; *) die "context: value '$name' has malformed secret '$secret'." ;; esac
+    case "$declaration" in explicit | heuristic | none) ;; *) die "context: value '$name' has malformed declaration '$declaration'." ;; esac
+    if [[ "$secret" == true ]]; then
+        [[ -z "$digest" || "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
+            || die "context: value '$name' has a malformed digest."
+        [[ -z "$reference" || "$reference" =~ ^@[A-Za-z0-9_-]+:.+$ ]] \
+            || die "context: value '$name' has a malformed reference."
+        jq -cn --arg source "$source" --arg d "$declaration" \
+            --arg ref "$reference" --arg digest "$digest" \
+            '{source: $source, secret: true, declaration: $d,
+              reference: (if $ref == "" then null else $ref end),
+              digest: (if $digest == "" then null else $digest end)}'
+        return 0
+    fi
+    [[ -z "$reference" && -z "$digest" ]] || die "context: value '$name' is not secret but carries a reference or digest."
+    [[ "$declaration" == "none" ]] || die "context: value '$name' is not secret but declares '$declaration'."
+    case "$raw" in
+        t:*) text="${raw#t:}" ;;
+        b:*) text=$(printf '%s' "${raw#b:}" | base64 -d) \
+                || die "context: value '$name' has a malformed base64 raw form." ;;
+        *) die "context: value '$name' has a malformed raw form." ;;
+    esac
+    jq -cn --arg source "$source" --arg sf "$text" \
+        '{source: $source, secret: false, declaration: "none",
+          reference: null, digest: null, source_form: $sf}'
+}
+
+# cloudify_context_event_values_json [name...] - the event projection of the
+# given resolved names (default: none, {}): one JSON object mapping NAME to
+# its event-shape value metadata.
+function cloudify_context_event_values_json() {
+    local n
+    { for n in "$@"; do
+        printf '%s\t' "$n"
+        cloudify_context_event_value_json "$n"
+      done; } | jq -cRn '
+        reduce inputs as $line ({};
+            ($line | split("\t")) as $p
+            | . + {($p[0]): ($p[1:] | join("\t") | fromjson)})'
 }
 
 # cloudify_context_read <context-file> <field> - print one field, rc 1 when the

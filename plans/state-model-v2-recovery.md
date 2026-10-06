@@ -1,3 +1,5 @@
+<!-- 2026-09-29: implementation phases COMPLETE (full E2E green 2026-09-29: unit 765+, integration 34/34, both e2e suites). The independent-review exit gate and final closure were REBASED into plans/adoption-honesty.md (item 11) by Rachid's ruling; this plan stays in place as the reviewers' input document and archives when those reviews pass. -->
+
 # State model v2 recovery and completion plan
 
 Goal: repair the committed Phase 2 and Phase 3 foundations, then implement `REDESIGN.md` through completion without carrying rejected code or compatibility layers.
@@ -35,6 +37,8 @@ Two files are normative and are the single source of truth:
 
 - **The design** - `REDESIGN.md`: what the system must be.
 - **The plan** - this file, through `PLAN.md`: what to do, in what order, behind which gate.
+
+The active Phase 4 execution subplan is `plans/state-model-v2-phase4-implementation.md`, reached from this plan; it moves to `plans/archived/` when Phase 4 closes.
 
 Everything else is a working note. Use them freely, put them wherever is convenient, throw them away. The only requirement is that any spec or plan change ends up in one of those two files.
 
@@ -86,7 +90,19 @@ No implementation may weaken the design or the plan silently. A required change 
 - Deleting a migration reader or its fixtures must leave the surviving gates (especially `bash schemas/v1/validate.sh`) passing; name the replacement gate in the same task.
 - No code commit while a SPEC or Technical reviewer has actionable feedback on that slice.
 - Fragile surface (`lib/remote.sh`, `lib/vars.sh`, `lib/context.sh`, `lib/shadows/`, `lib/shadow.sh`): read `docs/FRAGILE.md` before editing any of them, name the invariants touched in the plan or commit, run `task gate`, and keep the byte-exact goldens unchanged. A contract change (visit order, format, ownership) or a pinning-test edit needs Rachid's go first. Everything else is plain TDD.
-- Plan-level reviews are bounded: stop after two consecutive rounds with no must-fix finding, log anything smaller as an implementation checklist item, and let the phase gate settle it on real code. Per-phase reviews of a real diff are the primary gate; reviewing plan prose is not.
+- Reviews are bounded (Rachid, 2026-09-15): a SPEC review gets one review pass, one fixing pass, and one verification pass; a Technical review gets at most three review/fix/verify passes. A verification pass that still finds must-fix findings escalates to Rachid instead of looping. Reason: each extra loop iteration adds micro-drift that becomes truth in the next iteration. Per-phase reviews of a real diff are the primary gate; reviewing plan prose is not.
+
+### Review budget ledger (living; update at every pass)
+
+- SPEC - budget: 1 review + 1 fix + 1 verification.
+  - Review 1: used - superseded revision 2, FAIL (6 must-fix) -> fixed.
+  - Review 2: used - revision 3, FAIL (3 must-fix) -> fixed (revisions 4-6, including the escalation-authorized residue fixes).
+  - Verification: used - revision 6, FAIL (3 residue must-fix) -> escalated; Rachid authorized the fixes (applied, 1e6c67e).
+  - Status: SPEC budget exhausted. Any further SPEC pass happens only on Rachid's explicit direction.
+- Technical - budget: 3 review/fix/verify passes.
+  - Pass 1: used - superseded revision 2, FAIL (2 must-fix) -> fixed.
+  - Pass 2: used - revision 6, FAIL (2 must-fix: native dependency results refused by the classifier; migration fabricating secret classifications) -> fixed (revision 7).
+  - Pass 3: resolved - Rachid accepted revision 7 as the specification without the out-of-budget verification pass (2026-09-17); the missing verdict was harness flake, not findings.
 - `git status --short` is clean at every committed boundary.
 
 Test levels are fixed. L0 is shellcheck plus syntax. L1 is the real code run on a real machine without dispatching a package. It is not a separate file: `tests/unit/context-wiring.bats` already drives the real transport with a stubbed ssh, asserting the payload text and the ssh argument string, which is exactly this level. Later slices add a driver only if nothing existing covers the new wiring. L2 is one no-verify mutation of the disposable package `fixture-split` (already in `pkg/`) with an inspection of Cloudify's own log. L3 is `PKG_VERIFY_TIMEOUT=30 cloudify verify fixture-split`. L4 is the scoped bats acceptance harness. Every level names a concrete artifact, and no driver is created before the code it drives, so none can be satisfied by an empty green file.
@@ -108,7 +124,7 @@ The clean baseline (R0) changes no runtime code and the Phase 4 design gate (R3)
 
 The Phase 3 audit (R2) re-ran this block on its final HEAD: full unit suite 657 ok / 0 not ok (`results/phase3-a4/report.tap`), two-host E2E 4 scenarios green with the 4 later-phase scenarios skipped by name and both disposable hosts torn down (`results/phase3-e2e2/report.tap`), lint rc 0, `git status --short` clean, SPEC review PASS and Technical review PASS with file:line evidence. Its own gate lines carry the detail under R2.3.
 
-The fleet E2E (`tests/e2e/k3s-multi-cluster.bats`, four throwaway nodes, live ACL mutation, up to fifteen minutes per node) is not a per-phase gate: it validates k3s UX rather than the state model, so it runs once at the Phase 9 final gate, where the tailnet and ACL restore is part of the exit criteria.
+The k3s multi-cluster E2E (`tests/e2e/k3s-multi-cluster.bats`, four throwaway nodes, live ACL mutation, up to fifteen minutes per node) is not a per-phase gate: it validates k3s UX rather than the state model, so it runs once at the Phase 9 final gate, where the tailnet and ACL restore is part of the exit criteria.
 If the two-host E2E is genuinely unrunnable for a phase, that is a blocker to raise with Rachid, not a line to tick with a substitute.
 
 ## Known implementation risks carried into the Phase 2 repair (R1)
@@ -240,7 +256,7 @@ The checklist was reconciled against HEAD 6857081 after the Phase 2 repair (2026
 
 - [x] Keep only `runbooks/<application>/<flavor>/runbook.md` discovery. (Done 2026-09-14: `cloudify_runbook_find` searches only `runbook.md` and filters every candidate through `cloudify_runbook_identity`, which now takes the runbooks root and requires the path to sit exactly two levels under it, so `runbooks/<app>/<flavor>/extra/runbook.md` is not canonical. `tests/unit/runbooks.bats`, "a Markdown file that is not runbook.md is invisible" and "a runbook.md one level too deep is not canonical".)
 - [x] Keep only nested desired inputs at `deployments/<application>/<flavor>/<deployment>/values.yaml`. (`cloudify_deployment_values_file` (`lib/deployments.sh:42-46`) is the one path; every reader goes through `_cloudify_deployment_config` (`:60`).)
-- [x] Keep existing `cloudify deployment migrate` as the sole reader of the old single-ID desired-input file and mark it for deletion in the read surface phase (Phase 8); the migration step (4.7) introduces `cloudify state migrate-registry` as the sole old-registry reader. (`_cloudify_deployment_id_config` has exactly one caller, `cloudify_deployment_migrate` (`lib/deployments.sh:33`, `:308`), and the command is marked temporary (`cloudify:44`). `cloudify state migrate-registry` does not exist yet; it is forward work at 4.7, not this phase.)
+- [x] Keep existing `cloudify deployment migrate` as the sole reader of the old single-ID desired-input file and mark it for deletion in the read surface phase (Phase 8); the migration step (4.7) introduces `cloudify state migrate-registry` as the sole old-registry reader. (`_cloudify_deployment_id_config` has exactly one caller, `cloudify_deployment_migrate` (`lib/deployments.sh:33`, `:308`), and the command is marked temporary (`cloudify:44`). `cloudify state migrate-registry` does not exist yet; it is forward work at 4.7, not this phase. Dropped 2026-09-23 - see 4.7.)
 - [x] Prove `inputs:` and `map:` use one parser and that a mapping feeds only names a package in the dispatch declares. (`cloudify_runbook_inputs` and `cloudify_runbook_map` share `_cloudify_runbook_fm_value` (`lib/runbooks.sh:254`, `:273`, `:294`); the declared-name gate is `_ctx_candidate` (`lib/context.sh:287`), asserted by `tests/unit/context.bats`, "application inputs: a mapping is names only".)
 - [x] Prove bare `app run` selects install then verify and can never select teardown through `--yes`. (`lib/runbooks.sh:413`; `--yes` is consumed only by the human gate (`:1324`); `tests/unit/runbook-exec.bats:308`, `tests/unit/runbooks.bats:684`.)
 - [x] Prove selected-phase preflight checks only the selected phases. (`_cloudify_runbook_select_steps` feeds the required-name loop (`lib/runbooks.sh:1094-1113`); `tests/unit/runbooks.bats:1019`, `tests/unit/runbook-exec.bats:338`.)
@@ -263,41 +279,47 @@ The checklist was reconciled against HEAD 6857081 after the Phase 2 repair (2026
 
 Outcome: a reviewed Phase 4 design replaces the rejected flat-state and unsafe-stream attempt.
 
-- [ ] Write a new `plans/state-model-v2-phase4-design.md` from `REDESIGN.md`, the corrected context schema and the package-state/event schemas; do not copy the rejected patch.
-- [ ] State is actual JSON and validates against `schemas/v1/package-state.schema.json` before atomic replacement.
-- [ ] No package state writer lands before the immutable event writer exists.
-- [ ] The design must specify tightening the package-state schema so every new applied, attempt, health and claim object carries a non-null event ID; migration also emits its own event. The schema and fixture edit itself lands in the state and event substrate step (4.1), not in this design-only gate.
-- [ ] Allow `applied.application_commit: null` only for a proved old-registry migration; require a 40-hex commit for every new application mutation and record the migration origin in its event.
+Superseded 2026-09-15: ADR-026 redid the geometry, so the revision-9 design and this gate's evidence describe a superseded direction. The redone design restarts this gate.
+
+- [x] Write a new `plans/state-model-v2-phase4-design.md` from `REDESIGN.md`, the corrected flat context contract and the package-state/event schemas; do not copy the rejected patch. (Drafted from the live sources and reconciled against HEAD on 2026-09-15.)
+- [x] State is actual JSON and validates against `schemas/v1/package-state.schema.json` before atomic replacement. (Design: "Immutable event and state write protocol".)
+- [x] No package state writer lands before the immutable event writer exists. (Design: "Files and ownership" and step 4.1.)
+- [x] The design must specify tightening the package-state schema so every new applied, attempt, health and claim object carries a non-null event ID; migration also emits its own event. The schema and fixture edit itself lands in the state and event substrate step (4.1), not in this design-only gate. (Design: "Schema changes before writers".)
+- [x] Allow `applied.application_commit: null` only through the uniform `development_override` rule, which covers a proved old-registry migration, a direct package command, and a development-override application run; require a proved commit for every normal application mutation and record the migration origin in its event. (Consented supersession of the migration-only wording, 2026-09-15; design "Commit provenance and executed-code identity".)
 - [x] Keep `application_commit` nullable in the manifest and run schemas with one `allOf` rule requiring `development_override: true` whenever it is null, so a dirty or unidentified tree never forces a fabricated commit.
-- [x] Add the matching valid fixtures (`unproved-commit-development-override` for manifest and run, the migrated-observation package state) and invalid fixtures (`null-commit-without-development-override` for manifest and run), and keep `bash schemas/v1/validate.sh` green.
-- [ ] Every state transition is event first, then state with the event ID and revision plus one.
-- [ ] Move the event-directory, event-ID, event-first commit and lock-integration work formerly listed in Phase 6 into Phase 4 before the first state writer.
-- [ ] Prove application commit before the first event or state writer: application runs use their clean HEAD; direct package commands and migration keep it null rather than fabricating provenance.
-- [ ] Keep last successful `applied`, `last_attempt`, `health` and active claims separate.
-- [ ] Key every result and state commit by its reported package instance, never by a dispatch-wide substitute.
-- [ ] Use one lock keyed by durable host identity only across remote mutation and all reported result commits; package and instance identify state subjects, not locks, and no nested package lock exists.
-- [ ] Release the host mutation lock before acquiring the deployment manifest lock.
-- [ ] Treat recipes as trusted but noisy: framing prevents accidental collisions, not a hostile remote root.
-- [ ] Generate a random per-dispatch nonce in the local parent, bake it into the outer remote shell without exporting it to the child cloudify process or recipe, and emit the frame only after that child exits.
-- [ ] Frame exact start, encoded length, digest and end markers; reject missing, duplicate, truncated or malformed frames.
-- [ ] Pass every non-frame stdout byte through unchanged.
-- [ ] Keep local results in a private file and remote results in the framed stdout tail after the child command exits.
-- [ ] Include outcome, parent, package instance and phase for every attempted top-level package and dependency, with no values.
-- [ ] Reconcile results against every precomputed top-level package and dependency and fail closed on an unexpected package.
-- [ ] Freeze lock, state, event and result-frame tests before implementation.
-- [ ] Obtain independent SPEC and Technical design reviews, both `PASS` with no actionable feedback; this gate writes no code, so it runs the reviews only and skips the E2E lines.
+- [x] Add the matching valid fixtures (`unproved-commit-development-override` for manifest and run, the migrated-observation package state) and invalid fixtures (`null-commit-without-development-override` for manifest and run), and keep `bash schemas/v1/validate.sh` green. (The migrated state fixture's preliminary null event IDs are explicitly replaced in step 4.1.)
+- [x] Every state transition is event first, then state with the event ID and revision plus one. (Design: "Immutable event and state write protocol".)
+- [x] Move the event-directory, event-ID, event-first commit and lock-integration work formerly listed in Phase 6 into Phase 4 before the first state writer. (Design: steps 4.1 and 4.3.)
+- [x] Prove checkout commit before the first normal event or state writer: application runs and new direct applied writes prove the executed checkout; direct events keep their application commit null, and any null applied commit carries `development_override: true`. (Design: "Commit provenance and executed-code identity"; uniform rule consented 2026-09-15.)
+- [x] Keep last successful `applied`, `last_attempt`, `health` and active claims separate. (Design: "State transitions".)
+- [x] Key every result and state commit by its reported package instance, never by a dispatch-wide substitute. (Design: "Package instances" and "Result channel".)
+- [x] Use one lock keyed by durable host identity only across remote mutation and all reported result commits; package and instance identify state subjects, not locks, and no nested package lock exists. (Design: "One host lock".)
+- [x] Release the host mutation lock before acquiring the deployment manifest lock. (Design: "One host lock".)
+- [x] Treat recipes as trusted but noisy: framing prevents accidental collisions, not a hostile remote root. (Design: "Result channel".)
+- [x] Emit the remote result as one marked line from the child cloudify process at its own exit; no nonce is generated and no payload byte changes. (Consented supersession of the drafted nonce and outer-shell frame, 2026-09-15; design "Result channel: one marked line in the streamed log".)
+- [x] Mark the result line exactly; reject missing, duplicate, malformed, overlarge, or stale results. (Design "Result channel".)
+- [x] Keep the streamed-log chain (remote tee, SSH channel, host prefix, local log) flowing unbuffered and unfiltered; the result line is captured by a pass-through tap and stays in the stream and both logs. (Fragile invariant added to `docs/FRAGILE.md`.)
+- [x] Keep local results in a private file and the remote result in the marked line carried by the existing stream after the child's package work exits. (Design "Result channel".)
+- [x] Include outcome, parent, package instance and phase for every attempted top-level package and dependency, with no values. (Design: "Result channel".)
+- [x] Reconcile results against every precomputed top-level package and dependency and fail closed on an unexpected package. (Design: "Expected dependency graph".)
+- [x] Freeze lock, state, event and result-frame tests before implementation. (Design: "Tests frozen before implementation".)
+- [x] Obtain independent SPEC and Technical design reviews, both `PASS` with no actionable feedback; this gate writes no code, so it runs the reviews only and skips the E2E lines. (Seven fresh-context rounds on HEAD 598ba94 through 06c5272; round seven, on revision 8 at 5da5f57, returned `PASS` from both reviewers with advisory notes only, applied in revision 9. Delegation was authorized by Rachid after an initial self-review round; the claude/codex backends were unavailable, so the independent rounds ran as fresh-context pi subagents, recorded in `LOGS.md`.)
 - [ ] Obtain explicit Rachid consent for the reviewed Phase 4 design before code.
 
 ## Physical package state, events and claims (Phase 4)
 
-Outcome: one physical installation is represented once, every mutation has an immutable event, and one deployment cannot break another.
+Outcome superseded 2026-09-15 by ADR-026: the checklist below encodes the superseded package-first geometry and is redone with the new deployment-first design; the fragile-surface, testing, and gate rules still apply.
+
+Phase 4 is now executed through `plans/state-model-v2-phase4-implementation.md` (the execution subplan), built to `plans/state-model-v2-phase4-design.md` (redone revision 8, the frozen specification under ADR-026 and ADR-027; design-review budgets closed - see the Review budget ledger). The checklist below is superseded history.
+
+Old outcome: one physical installation is represented once, every mutation has an immutable event, and one deployment cannot break another.
 
 ### Fragile-surface gate (4.0)
 
-Slices here touch `lib/remote.sh` (framed-result transport, host lock) and read the existing flat context in `lib/context.sh` - remote is on the fragile surface. The JSON dispatch-context conversion is NOT part of this phase: it is roadmapped, unscheduled, and nothing here depends on it (see the phase outcome below).
+Slices here touch `lib/remote.sh` (marked-line capture, host lock) and add classification-origin and package-instance fields to the existing flat context in `lib/context.sh` - both are on the fragile surface. The JSON dispatch-context conversion is NOT part of this phase: it is roadmapped, unscheduled, and nothing here depends on it (see the phase outcome below).
 
 - [ ] Apply the fragile-surface rule: name the invariants touched, run `task gate`, goldens unchanged.
-- [ ] The framed-result format is a contract change: Rachid's go before it lands.
+- [x] The result-line format and the added flat-context fields are contract changes: Rachid's go was given on 2026-09-15 (`LOGS.md`).
 
 ### State and event substrate (4.1)
 
@@ -329,14 +351,14 @@ Not planned work for this phase: the JSON dispatch-context contract. It is roadm
 - [ ] Hold it through every top-level and dependency result commit.
 - [ ] Use no nested package lock.
 - [ ] Print holder metadata on timeout.
-- [ ] Implement and validate the reviewed framed result protocol.
+- [ ] Implement and validate the reviewed marked-line result channel.
 - [ ] Prove recipe stdout and stdin are unchanged.
-- [ ] Fail and mark degraded when a successful dispatch has no valid result frame.
+- [ ] Fail and mark degraded when a successful dispatch has no valid result line.
 - [ ] Fail the commit when a reported package or instance was not precomputed.
 - [ ] Commit successful dependency results, not only CLI package words.
 - [ ] Release the host lock before updating the manifest.
 - [ ] Once package state is written here, stop the runtime registry observation writer: the v2 package state becomes the single record of what landed, and the old registry record-write path is deleted rather than kept beside it.
-- [ ] Split `tests/unit/golden-fixtures.bats` in the same slice: delete only the registry-record half and its `tests/fixtures/golden/registry/*` cases, and keep the `tests/fixtures/golden/payload/*` matrix that the byte-exact proof (R1.3) depends on. The record-format fixtures move to the `cloudify state migrate-registry` reader's suite in the migration step (4.7).
+- [ ] Split `tests/unit/golden-fixtures.bats` in the same slice: delete only the registry-record half and its `tests/fixtures/golden/registry/*` cases, and keep the `tests/fixtures/golden/payload/*` matrix that the byte-exact proof (R1.3) depends on. The record-format fixtures are simply deleted (4.7's migrate-registry reader was dropped 2026-09-23 - the legacy registry is empty of real data; see 4.7).
 - [ ] Keep the context-removal ownership installed in the Phase 2 repair (R1) working when the registry writer goes: the wait-loop removal becomes unconditional and the process EXIT trap stays, both proved by the same success, failure and interruption test.
 - [ ] Keep only the migration command's registry reader until Phase 8 deletes it.
 
@@ -375,13 +397,7 @@ Not planned work for this phase: the JSON dispatch-context contract. It is roadm
 
 ### Migration and the Phase 4 gate (4.7)
 
-- [ ] Add temporary `cloudify state migrate-registry` as the sole old-registry reader.
-- [ ] Map only facts the registry proves; write `application_commit: null` and a migration event when the old record cannot prove provenance.
-- [ ] Make migration dry-run first, idempotent and value-safe.
-- [ ] Run focused package API, context, state, event, registry, router and runbook suites.
-- [ ] Run one real shared-dependency case only after L0 through L3 pass.
-- [ ] Run `task lint` and the full unit suite.
-- [ ] Pass the Phase exit gate (two-host E2E, SPEC review, Technical review) before committing.
+Dropped 2026-09-23, Rachid's ruling (HISTORY.md): the host census (ivps instances, read-only) found the legacy registry empty of real data (E2E residue only), so `cloudify state migrate-registry` never ships and adoption is operator-driven (see PKG-ADOPTIONS.md). The former checklist - sole old-registry reader; provable-facts mapping with `application_commit: null` plus a migration event; dry-run first, idempotent, value-safe; focused suites; one real shared-dependency case after L0-L3; lint + full unit; phase exit gate - is void with the slice.
 
 ## Explicit secrets, ephemeral outputs and SSH identity (Phase 5)
 
@@ -520,7 +536,7 @@ Outcome: code, language, docs and operator workflow describe one v2 system and t
 - [ ] Run the full unit suite once on final HEAD.
 - [ ] Run one disposable two-host application through install, verify, reconfigure, interruption, shared claim, conflict, first teardown and last teardown.
 - [ ] Scan every new artifact and Cloudify log for the fixture secret.
-- [ ] Run the full fleet E2E once, only now, as the final exit gate, and record its result in `HISTORY.md`.
+- [ ] Run the full k3s multi-cluster E2E once, only now, as the final exit gate, and record its result in `HISTORY.md`.
 - [ ] Teardown every disposable resource and prove policy restoration.
 
 ### Mandatory independent completion reviews

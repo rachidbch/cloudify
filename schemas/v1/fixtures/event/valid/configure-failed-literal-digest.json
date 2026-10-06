@@ -40,5 +40,6 @@
   "state": {
     "previous_revision": 3,
     "resulting_revision": 4
-  }
+  },
+  "tool_version": "1.0.0"
 }

@@ -90,12 +90,52 @@ _cloudify_deployment_ensure() {
 # the manifest the run wrote is (REDESIGN: list current manifests, not
 # historical run files).
 cloudify_deployment_list() {
-    local app flavor dep path count=0
+    local app flavor dep _path count=0
+    local status sdisp slot node instance rest bline rec n uv hosts pkgs hplural uvplural uvdisp
+    local -A seen_uv
     if declare -F cloudify_state_list_manifests >/dev/null; then
-        while IFS=$'\t' read -r app flavor dep path; do
+        while IFS=$'\t' read -r app flavor dep _path; do
             [[ -n "$app" ]] || continue
-            printf '%s/%s --name %s (%s)\n' "$app" "$flavor" "$dep" "$path"
             count=$((count + 1))
+            status=$(cloudify_manifest_field "$app" "$flavor" "$dep" status 2>/dev/null) || status="-"
+            [[ "$status" == "null" || -z "$status" ]] && status="-"
+            sdisp="$status"
+            [[ "$status" == verified ]] && sdisp="${GREEN}verified${RESET}"
+            [[ "$status" == degraded ]] && sdisp="${RED}degraded${RESET}"
+            hosts=0 pkgs=0 uv=0
+            seen_uv=()
+            local bf
+            bf=$(mktemp "$CLOUDIFY_TMP/list-bindings-XXXXXX")
+            cloudify_manifest_bindings "$app" "$flavor" "$dep" > "$bf" 2>/dev/null || true
+            while IFS= read -r bline; do
+                [[ -n "$bline" ]] || continue
+                hosts=$((hosts + 1))
+                slot="${bline%%$'\t'*}"
+                rest="${bline#*$'\t'}"          # address TAB node TAB instance TAB ssh
+                rest="${rest#*$'\t'}"           # skip the address field
+                node="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+                instance="${rest%%$'\t'*}"
+                local root
+                root=$(cloudify_state_inventory_root "$node" "$instance" 2>/dev/null) || continue
+                while IFS= read -r rec; do
+                    [[ -f "$rec" ]] || continue
+                    pkgs=$((pkgs + 1))
+                    while IFS= read -r n; do
+                        [[ -n "$n" ]] && seen_uv["$n"]=1
+                    done < <(jq -r '.applied.values // {} | to_entries[] | select(.value.source == "caller") | .key' "$rec" 2>/dev/null)
+                done < <(find "$root/$app/$flavor/$dep/packages" -mindepth 3 -maxdepth 3 -name state.json 2>/dev/null | sort)
+            done < "$bf"
+            rm -f "$bf"
+            for n in "${!seen_uv[@]}"; do uv=$((uv + 1)); done
+            hplural="s"; (( hosts == 1 )) && hplural=""
+            uvdisp="-"
+            if (( uv > 0 )); then
+                uvplural="s"; (( uv == 1 )) && uvplural=""
+                uvdisp="$uv user value$uvplural"
+                [[ -n "${YELLOW:-}" ]] && uvdisp="${YELLOW}$uv user value$uvplural${RESET}"
+            fi
+            printf '%s/%s/%s\t%s\t%d pkgs\t%d host%s\t%s\n' \
+                "$app" "$flavor" "$dep" "$sdisp" "$pkgs" "$hosts" "$hplural" "$uvdisp"
         done < <(cloudify_state_list_manifests)
     fi
     [[ $count -gt 0 ]] || echo "(no deployments)"
@@ -111,39 +151,50 @@ cloudify_deployment_list() {
 # from the runbook that declares <id> (the path is the identity), never from
 # splitting the deployment ID.
 function _cloudify_deployment_tuple_of() {
-    local id="${1:-}" runbook
+    local id="${1:-}" name="${2:-default}" runbook
     if _cloudify_deployment_tuple_active; then
         printf '%s\t%s\t%s\n' "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME"
         return 0
     fi
-    declare -F cloudify_runbook_find >/dev/null 2>&1 || return 1
+    declare -F cloudify_runbook_find_app >/dev/null 2>&1 || return 1
     declare -F _cloudify_runbook_tuple_for >/dev/null 2>&1 || return 1
-    runbook=$(cloudify_runbook_find "$id" 2>/dev/null) || return 1
-    _cloudify_runbook_tuple_for "$runbook" "${CLOUDIFY_DEPLOYMENT_NAME:-default}"
+    local app="" flavor=""
+    case "$id" in
+        */*) app="${id%%/*}"; flavor="${id#*/}" ;;
+        *) app="$id"; flavor="default" ;;
+    esac
+    runbook=$(cloudify_runbook_find_app "$app" "$flavor" 2>/dev/null) || return 1
+    _cloudify_runbook_tuple_for "$runbook" "$name"
 }
 
 # cloudify_deployment_show <id> — the read surface for one deployment. Prints
 # the manifest (identity, status, bindings, commit, replayability) when one
 # exists, and always lists the run snapshots. Never a value.
 function cloudify_deployment_show() {
-    local id="${1:-}" tuple app flavor name runs_dir snapshots newest
-    [[ -n "$id" ]] || die "Usage: cloudify deployment show <id>"
+    local id="${1:-}" user_only="${2:-}" name="${3:-default}" tuple app flavor dname runs_dir snapshots newest
+    [[ -n "$id" ]] || die "Usage: cloudify deployment show <application>[/<flavor>] [--name <name>] [--user-values]"
     printf 'deployment: %s\n' "$id"
 
-    if tuple=$(_cloudify_deployment_tuple_of "$id"); then
-        IFS=$'\t' read -r app flavor name <<< "$tuple"
+    if tuple=$(_cloudify_deployment_tuple_of "$id" "$name"); then
+        IFS=$'\t' read -r app flavor dname <<< "$tuple"
         printf 'application: %s/%s\n' "$app" "$flavor"
-        printf 'deployment_name: %s\n' "$name"
-        if ! cloudify_manifest_describe "$app" "$flavor" "$name"; then
+        printf 'deployment_name: %s\n' "$dname"
+        if ! cloudify_manifest_describe "$app" "$flavor" "$dname"; then
             printf 'manifest: <none>\n'
             printf 'status: <no manifest>\n'
         fi
+        if [[ -n "$user_only" ]]; then
+            printf 'values in effect (user only):\n'
+        else
+            printf 'values in effect:\n'
+        fi
+        cloudify_deployment_applied_screen "$app" "$flavor" "$dname" "$user_only"
     else
         printf 'application: <unknown: no canonical runbook declares this deployment>\n'
     fi
 
-    runs_dir="$CLOUDIFY_DEPLOYMENTS_DIR/$id/runs"
-    if [[ -d "$runs_dir" ]]; then
+    runs_dir=$(cloudify_state_runs_dir "${app:-}" "${flavor:-}" "${dname:-$name}" 2>/dev/null) || runs_dir=""
+    if [[ -n "$runs_dir" && -d "$runs_dir" ]]; then
         snapshots=$(find "$runs_dir" -maxdepth 1 -type f -name '*.yaml' 2>/dev/null | grep -c . || true)
         newest=$(find "$runs_dir" -maxdepth 1 -type f -name '*.yaml' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
         printf 'snapshots: %s (newest: %s)\n' "$snapshots" "${newest:-<none>}"
@@ -335,5 +386,391 @@ function cloudify_deployment_migrate() {
     _cloudify_deployment_values_apply "$source" "$target" "$force"
     printf 'result: migrated (%s key names added%s)\n' "$add_count" \
         "${conflicts:+; $conflicts overwritten from the single-ID store}"
+    return 0
+}
+
+#== Applied-state read surface and the unset escape (4.4, ADR-030) ==
+
+# _cloudify_deployment_value_line <name> <value-json> - one screen line of an
+# applied value: secrets as dots plus a short purple fingerprint (never the
+# text), secret references as the reference, literals as their capped source
+# form. The USER marker column prints only for caller-sourced values - the
+# yellow stripe against blank is the screen's staple.
+_cloudify_deployment_value_line() {
+    local name="$1" v="$2"
+    local source secret redacted digest form display usercol
+    source=$(jq -r .source <<<"$v")
+    secret=$(jq -r .secret <<<"$v")
+    redacted=$(jq -r .redacted <<<"$v")
+    if [[ "$secret" == true && "$redacted" == true ]]; then
+        digest=$(jq -r .digest <<<"$v")          # sha256:<64hex>
+        display="${PURPLE}********  ${digest:7:8}${RESET}"
+    elif [[ "$secret" == true ]]; then
+        display=$(jq -r .reference <<<"$v")
+    else
+        form=$(jq -r .source_form <<<"$v")
+        (( ${#form} > 24 )) && form="${form:0:24}…"
+        display="$form"
+    fi
+    usercol=""
+    [[ "$source" == caller ]] && usercol="${YELLOW}USER${RESET}"
+    printf '      %-18s %-32s %b\n' "$name" "$display" "$usercol"
+}
+
+# cloudify_deployment_applied_screen <app> <flavor> <name> [user-only]
+# The applied-state block: one host section per manifest binding, each
+# package with its values in effect nested under it. User values carry the
+# yellow USER marker; the footer names the exact release commands.
+cloudify_deployment_applied_screen() {
+    local app="$1" flavor="$2" name="$3" user_only="${4:-}"
+    local bf bline slot node instance rest display
+    local -A user_pkg=() user_seen=()
+    bf=$(mktemp "$CLOUDIFY_TMP/depl-bindings-XXXXXX")
+    cloudify_manifest_bindings "$app" "$flavor" "$name" > "$bf" || {
+        rm -f "$bf"
+        printf 'values in effect: no hosts bound\n'
+        return 0
+    }
+    local total_hosts=0
+    while IFS= read -r bline; do [[ -n "$bline" ]] && total_hosts=$((total_hosts + 1)); done < "$bf"
+
+    while IFS= read -r bline; do
+        [[ -n "$bline" ]] || continue
+        slot="${bline%%$'\t'*}"
+        rest="${bline#*$'\t'}"          # address TAB node TAB instance TAB ssh
+        rest="${rest#*$'\t'}"           # skip the address field
+        node="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+        instance="${rest%%$'\t'*}"
+        display="${node}${instance:+:$instance}"
+        if (( total_hosts > 1 )); then
+            printf '  %s -> %s\n' "$slot" "$display"
+        else
+            printf '  %s\n' "$display"
+        fi
+        local root rec pkg inst version status at line v
+        root=$(cloudify_state_inventory_root "$node" "$instance")
+        local -a recs=()
+        while IFS= read -r rec; do
+            [[ -n "$rec" ]] || continue
+            recs+=("$rec")
+        done < <(find "$root/$app/$flavor/$name/packages" -mindepth 3 -maxdepth 3 -name state.json 2>/dev/null | sort)
+        if (( ${#recs[@]} == 0 )); then
+            printf '    (no packages recorded on %s)\n' "$display"
+            continue
+        fi
+        for rec in "${recs[@]}"; do
+            pkg="$(basename "$(dirname "$(dirname "$rec")")")"
+            inst="$(basename "$(dirname "$rec")")"
+            # user-only mode: a package with no pinned values drops out whole.
+            if [[ -n "$user_only" ]]; then
+                local caller_count
+                caller_count=$(jq -r '[.applied.values // {} | to_entries[] | select(.value.source == "caller")] | length' "$rec" 2>/dev/null) || caller_count=0
+                (( ${caller_count:-0} > 0 )) || continue
+            fi
+            version=$(jq -r '.applied.version // "-"' "$rec" 2>/dev/null)
+            status=$(jq -r '.health.status // "unknown"' "$rec" 2>/dev/null)
+            at=$(jq -r '.applied.at // ""' "$rec" 2>/dev/null)
+            local sdisp="$status" failinfo=""
+            [[ "$status" == ok ]] && sdisp="${GREEN}ok${RESET}"
+            [[ "$status" == degraded ]] && sdisp="${RED}degraded${RESET}"
+            if [[ "$(jq -r '.last_attempt.outcome // ""' "$rec" 2>/dev/null)" == failed ]]; then
+                local lat
+                lat=$(jq -r '.last_attempt.at // ""' "$rec" 2>/dev/null)
+                failinfo=" ${RED}last try failed ${lat:5:5} ${lat:11:5}${RESET}"
+            fi
+            printf '    %-14s %-10s %-9s %s %s%s\n' "$pkg" "$version" "$sdisp" "${at:5:5}" "${at:11:5}" "$failinfo"
+            while IFS= read -r line; do
+                [[ -n "$line" ]] || continue
+                v=$(jq -c --arg k "${line%%$'\t'*}" '.[$k]' <<<"$(jq -c '.applied.values // {}' "$rec")")
+                local vname="${line%%$'\t'*}" vsource
+                vsource=$(jq -r .source <<<"$v")
+                [[ -n "$user_only" && "$vsource" != caller ]] && continue
+                _cloudify_deployment_value_line "$vname" "$v"
+                if [[ "$vsource" == caller ]]; then
+                    user_seen[$vname]=1
+                    user_pkg[$vname]="$pkg"
+                fi
+            done < <(jq -r '(.applied.values // {}) | to_entries | sort_by(.key)[] | "\(.key)\t\(.value.source)"' "$rec" 2>/dev/null)
+        done
+    done < "$bf"
+    rm -f "$bf"
+
+    local n=0 vname
+    for vname in "${!user_seen[@]}"; do n=$((n + 1)); done
+    if (( n == 1 )); then
+        printf '  1 user value outranks the store - release it:\n'
+    elif (( n > 1 )); then
+        printf '  %d user values outrank the store - release one:\n' "$n"
+    fi
+    if (( n > 0 )); then
+        for vname in "${!user_seen[@]}"; do
+            printf '  cloudify deployment unset %s/%s/%s %s %s\n' "$app" "$flavor" "$name" "${user_pkg[$vname]}" "$vname"
+        done
+    fi
+    return 0
+}
+
+# cloudify_deployment_unset <id> <package> <VAR>...
+# Release user pins: every applied record of this deployment+package that
+# holds one of the named values as caller-sourced transitions it to source
+# `applied` - the value stays in effect on the machine, but the ladder (the
+# store, then the recipe default) governs the next reconfigure. One
+# event-backed transition per record, under the host lock; a named error when
+# a requested var is not a user value anywhere.
+cloudify_deployment_unset() {
+    local id="${1:-}" pkg="${2:-}"
+    [[ -n "$id" && -n "$pkg" && $# -ge 3 ]] ||
+        die "Usage: cloudify deployment unset <app>/<flavor>/<name> <package> <VAR>..."
+    shift 2
+    local -a vars=("$@")
+    local tuple app flavor name
+    tuple=$(_cloudify_deployment_tuple_of "$id") ||
+        die "unset: cannot resolve the deployment '$id' (use cloudify app run <application>, or the three exports)."
+    IFS=$'\t' read -r app flavor name <<< "$tuple"
+    cloudify_manifest_exists "$app" "$flavor" "$name" ||
+        die "unset: no manifest for $app/$flavor/$name."
+    local commit dev
+    commit=$(cloudify_manifest_field "$app" "$flavor" "$name" application_commit) || commit=""
+    [[ "$commit" == "null" ]] && commit=""
+    dev=$(cloudify_manifest_field "$app" "$flavor" "$name" development_override) || dev=false
+
+    local bf bline slot node instance rest root rec
+    local -A released=()
+    bf=$(mktemp "$CLOUDIFY_TMP/unset-bindings-XXXXXX")
+    cloudify_manifest_bindings "$app" "$flavor" "$name" > "$bf" ||
+        { rm -f "$bf"; die "unset: no hosts bound to $app/$flavor/$name."; }
+    while IFS= read -r bline; do
+        [[ -n "$bline" ]] || continue
+        slot="${bline%%$'\t'*}"
+        rest="${bline#*$'\t'}"          # address TAB node TAB instance TAB ssh
+        rest="${rest#*$'\t'}"           # skip the address field
+        node="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+        instance="${rest%%$'\t'*}"
+        root=$(cloudify_state_inventory_root "$node" "$instance")
+        cloudify_state_host_lock "$node" "$instance"
+        while IFS= read -r rec; do
+            [[ -f "$rec" ]] || continue
+            local -a hits=()
+            local v vname
+            for vname in "${vars[@]}"; do
+                v=$(jq -c --arg k "$vname" '.applied.values[$k] // empty' "$rec" 2>/dev/null) || continue
+                [[ -n "$v" ]] || continue
+                [[ "$(jq -r .source <<<"$v")" == caller ]] && hits+=("$vname")
+            done
+            (( ${#hits[@]} > 0 )) || continue
+            local pkgname instname
+            pkgname="$(basename "$(dirname "$(dirname "$rec")")")"
+            instname="$(basename "$(dirname "$rec")")"
+            _cloudify_deployment_unset_record "$rec" "$app" "$flavor" "$name" \
+                "$pkgname" "$instname" "$node" "$instance" "$commit" "$dev" "${hits[@]}" \
+                || { cloudify_state_host_unlock "$node" "$instance"; return 1; }
+            for vname in "${hits[@]}"; do released[$vname]=1; done
+        done < <(find "$root/$app/$flavor/$name/packages/$pkg" -mindepth 2 -maxdepth 2 -name state.json 2>/dev/null | sort)
+        cloudify_state_host_unlock "$node" "$instance"
+    done < "$bf"
+    rm -f "$bf"
+
+    local -a missed=()
+    local vname
+    for vname in "${vars[@]}"; do
+        [[ -n "${released[$vname]+x}" ]] || missed+=("$vname")
+    done
+    if (( ${#missed[@]} > 0 )); then
+        local joined=""
+        for vname in "${missed[@]}"; do joined+="${joined:+, }$vname"; done
+        die "unset: not user values anywhere in $app/$flavor/$name/$pkg: $joined (a user value is one you supplied at apply time - USER on the show screen)."
+    fi
+    for vname in "${vars[@]}"; do
+        msg "unset: $vname released - the store (or the recipe default) governs the next reconfigure."
+    done
+    return 0
+}
+
+# _cloudify_deployment_unset_record <record> <app> <flavor> <name> <pkg>
+#   <instance> <node> <inst> <commit> <dev> <VAR>...
+# One event-backed transition: the named values lose the caller pin
+# (source -> applied); the value text itself is untouched.
+_cloudify_deployment_unset_record() {
+    local rec="$1" app="$2" flavor="$3" name="$4" pkg="$5" inst="$6"
+    local node="$7" ninst="$8" commit="$9" dev="${10}"
+    shift 10
+    local -a names=("$@")
+    local joined="" n
+    for n in "${names[@]}"; do joined+="${joined:+, }$n"; done
+
+    local names_json next values
+    names_json=$(printf '%s\n' "${names[@]}" | jq -R . | jq -s .)
+    next=$(jq --argjson names "$names_json" '
+        reduce $names[] as $k (. ; .applied.values[$k].source = "applied")' "$rec") || return 1
+    values=$(jq --argjson names "$names_json" '
+        .applied.values as $vs
+        | reduce $names[] as $k ({} ; .[$k] = ($vs[$k]
+            | {source: "applied", secret, declaration, reference, digest}
+            | . + (if .secret then {} else {source_form: $vs[$k].source_form} end)))' "$rec") || return 1
+
+    local ev ev_file next_file
+    ev=$(jq -cn \
+        --arg tool_version "$(cloudify_state_writer_identity | jq -r .tool_version)" \
+        --argjson writer "$(cloudify_state_writer_identity | jq -c 'del(.tool_version)')" \
+        --arg app "$app" --arg flavor "$flavor" --arg name "$name" \
+        --arg commit "$commit" --argjson dev "$dev" \
+        --arg host "${node}${ninst:+:$ninst}" \
+        --arg host_key "$(cloudify_state_host_key_of "$node" "$ninst")" \
+        --arg pkg "$pkg" --arg inst "$inst" \
+        --argjson values "$values" \
+        --arg summary "unset $joined: caller pin(s) released" \
+        --arg now "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        '{schema_version: 1, tool: "cloudify", tool_version: $tool_version, writer: $writer,
+          at: $now, run_id: null, step_id: "unset",
+          application: $app, flavor: $flavor, deployment: $name,
+          application_commit: (if $commit == "" then null else $commit end),
+          subject: {kind: "package", host: $host, host_key: $host_key,
+                    package: $pkg, package_instance: $inst},
+          phase: null, command_kind: "unset", values: $values,
+          outcome: {exit_status: 0, summary: $summary}}
+        | . + (if $dev then {development_override: true} else {} end)') || return 1
+
+    mkdir -p "$(dirname "$rec")"
+    ev_file=$(mktemp "$(dirname "$rec")/.unset-ev-XXXXXX") || return 1
+    next_file=$(mktemp "$(dirname "$rec")/.unset-next-XXXXXX") || { rm -f "$ev_file"; return 1; }
+    chmod 600 "$ev_file" "$next_file" 2>/dev/null || true
+    printf '%s\n' "$ev" > "$ev_file"
+    printf '%s\n' "$next" > "$next_file"
+    cloudify_state_inventory_apply "$rec" "$ev_file" "$next_file" || {
+        rm -f "$ev_file" "$next_file"
+        return 1
+    }
+    rm -f "$ev_file" "$next_file"
+    return 0
+}
+
+#== State-tree hygiene (plan: adoption-honesty item 8) ==
+
+# _cloudify_hygiene_nodes_root - the local ivps inventory tree.
+_cloudify_hygiene_nodes_root() {
+    printf '%s\n' "${IVPS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/ivps}/nodes"
+}
+
+# cloudify_deployment_delete <app> <flavor> <name>
+# Remove one deployment's records: the state-tree manifest dir (manifest +
+# runs) and its package records across every ivps inventory tree. The event
+# log stays (the global audit); desired inputs stay (operator data). A
+# physical installation another deployment still records is a reliance: the
+# delete refuses, naming it.
+function cloudify_deployment_delete() {
+    local app="${1:-}" flavor="${2:-}" name="${3:-}"
+    [[ -n "$app" && -n "$flavor" && -n "$name" ]] ||
+        die "Usage: cloudify deployment delete <app>/<flavor>/<name>"
+    cloudify_state_deployment_dir "$app" "$flavor" "$name" >/dev/null ||
+        die "delete: '$app/$flavor/$name' is not a valid deployment identity."
+    cloudify_manifest_exists "$app" "$flavor" "$name" ||
+        die "delete: no manifest for '$app/$flavor/$name'."
+
+    # Every record tree of this deployment, across all ivps inventories.
+    local -a mine=()
+    while IFS= read -r d; do
+        [[ -d "$d" ]] && mine+=("$d")
+    done < <(find "$(_cloudify_hygiene_nodes_root)" -type d -path "*/deployments/$app/$flavor/$name" 2>/dev/null)
+
+    # The reliance check: another deployment recording the same physical
+    # installation (same inventory host dir, same package, same instance).
+    local d pkg inst parent relied=""
+    for d in ${mine[@]+"${mine[@]}"}; do
+        parent="$(dirname "$(dirname "$(dirname "$d")")")"   # the deployments root
+        while IFS= read -r sib; do
+            [[ -f "$sib" ]] || continue
+            pkg="$(basename "$(dirname "$(dirname "$sib")")")"
+            inst="$(basename "$(dirname "$sib")")"
+            relied+="${relied:+ }$pkg@$inst"
+        done < <(find "$parent" -path "*/packages/*/*/state.json" \
+                    -not -path "$d/*" 2>/dev/null)
+    done
+    if [[ -n "$relied" ]]; then
+        die "delete: '$app/$flavor/$name' would leave a reliance: another deployment records the same physical installation(s) ($relied) - release or delete that deployment first."
+    fi
+
+    for d in ${mine[@]+"${mine[@]}"}; do
+        rm -rf "$d"
+        msg "delete: records removed ($d)"
+        # Prune the emptied identity parents, never climbing past deployments/.
+        local p
+        p="$(dirname "$d")"
+        while [[ "$(basename "$p")" != deployments && "$p" != "/" ]]; do
+            rmdir "$p" 2>/dev/null || break
+            p="$(dirname "$p")"
+        done
+    done
+    rm -rf "$(cloudify_state_deployment_dir "$app" "$flavor" "$name")"
+    msg "delete: manifest removed ($(cloudify_state_manifest_file "$app" "$flavor" "$name"))"
+    msg "delete: the event log and the desired inputs stay."
+    return 0
+}
+
+# cloudify_deployment_sweep [--dry-run] [--retention-days N]
+# Two maintenance sweeps: (a) cloudify records under instance directories of
+# instances the live ivps inventory no longer lists - liveness is ivps's
+# word, so an incomplete list (timed-out nodes) refuses outright; (b) `_direct`
+# deployments (bare-dispatch accumulations) past the retention age, manifests
+# and records together. Events are never swept.
+function cloudify_deployment_sweep() {
+    local retention="${CLOUDIFY_DIRECT_RETENTION_DAYS:-30}" dry=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run) dry=1 ;;
+            --retention-days) shift; retention="${1:-}" ;;
+            *) die "deployment sweep: unknown argument '$1'." ;;
+        esac
+        shift
+    done
+    [[ "$retention" =~ ^[0-9]+$ ]] || die "deployment sweep: --retention-days needs a number."
+
+    # (a) The live list, or nothing: an incomplete inventory never sweeps.
+    local listed
+    listed=$(ivps list 2>/dev/null) ||
+        die "deployment sweep: 'ivps list' failed - never sweep a blind inventory."
+    local timedout
+    timedout=$(awk '$1 !~ /:/ && $2 == "TIMEOUT" { print $1 }' <<<"$listed")
+    if [[ -n "$timedout" ]]; then
+        die "deployment sweep: the ivps list shows timed-out node(s) $(tr '\n' ' ' <<<"$timedout")- the inventory is incomplete; retry when it settles."
+    fi
+
+    local root d idir iname nname row
+    root=$(_cloudify_hygiene_nodes_root)
+    while IFS= read -r d; do
+        [[ -d "$d" ]] || continue
+        idir="${d%/deployments}"
+        iname=$(jq -r .name "$idir/instance.json" 2>/dev/null) || iname=""
+        # idir is nodes/<node-id>/instances/<inst-id>: the node metadata sits
+        # two levels up from the instance dir.
+        nname=$(jq -r .name "$(dirname "$(dirname "$idir")")/node.json" 2>/dev/null) \
+            || nname="$(basename "$(dirname "$(dirname "$idir")")")"
+        row="$nname:$iname"
+        grep -qF "$row" <<<"$listed" && continue
+        if ((dry)); then
+            msg "sweep (dry run): instance '$row' is not in the live inventory - would remove $d"
+            continue
+        fi
+        rm -rf "$d"
+        msg "sweep: instance '$row' is not in the live inventory - removed $d"
+    done < <(find "$root" -mindepth 4 -maxdepth 4 -type d -path '*/instances/*/deployments' 2>/dev/null)
+
+    # (b) _direct accumulations past the retention age.
+    local sroot mf depname
+    sroot=$(cloudify_state_root)
+    while IFS= read -r mf; do
+        depname="$(basename "$(dirname "$mf")")"
+        if ((dry)); then
+            msg "sweep (dry run): _direct '$depname' is past ${retention}d - would remove its manifest and records"
+            continue
+        fi
+        # The record trees, by name, across all ivps inventories.
+        while IFS= read -r d; do
+            [[ -d "$d" ]] || continue
+            rm -rf "$d"
+            msg "sweep: _direct '$depname' records removed ($d)"
+        done < <(find "$root" -type d -path "*/deployments/_direct/direct/$depname" 2>/dev/null)
+        rm -rf "$(dirname "$mf")"
+        msg "sweep: _direct '$depname' past ${retention}d - manifest removed"
+    done < <(find "$sroot/deployments/_direct" -name manifest.json -mmin +$((retention * 1440)) 2>/dev/null)
     return 0
 }

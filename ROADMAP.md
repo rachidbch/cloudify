@@ -437,7 +437,7 @@ runbooks on the same application. Lifecycle: explore manually (agent runbook)
 
 - [ ] `~/.config/cloudify/credentials` is per OPERATOR machine and single-valued: one
 remote SSH user/password and one local sudo password, used for every target.
-Heterogeneous fleets (different admin credentials per host) are not expressible.
+Heterogeneous host sets (different admin credentials per host) are not expressible.
 Decide later: host-scoped credentials (e.g. per-node in the ivps tree, or a host
 section in the credentials file) vs relying on per-host SSH keys/MagicSSH.
 No urgent driver.
@@ -457,3 +457,84 @@ Scope: at rest only (config holds a reference); in transit the plaintext still
 reaches the host via the payload, so single-quoting + debug masking stay
 mandatory. Backend failure = die with a clear message, never forward empty.
 Write path unchanged (`vars set --stdin` stores a literal or a reference).
+
+## Open decisions (state-model v2, pending Rachid)
+
+Concluded decisions live in ADR.md and the design docs; this section tracks only the open ones.
+
+- [X] **Host origin and continuity (ADR-028, decided 2026-09-18)**: baseline = machine origin identity (base image fingerprint, created-at; `discovered|asserted|unknown`) bound to a continuity anchor (ivps host id + last-seen boot id); every dispatch compares before mutation; replaced or rewound machines fail before mutation until verify or re-adoption.
+- [ ] **ivps instance records** (shape approved 2026-09-18, implementation pending in the ivps repo): `nodes/<node-id>/instances/<instance-id>/instance.json` (immutable id, name, engine, base image fingerprint, created-at, engine uuid; human scanability first), written by `ivps launch`/`node adopt`, backfilled lazily; `ivps node path <node>:<instance>` returns the id-keyed dir. Unlocks cloudify `ivps:<node-id>:<instance-id>` keys, instance inventory roots, and the ADR-028 origin fingerprint. Blocks cloudify 4.2 (the two-host E2E hosts are `ivps launch`ed instances).
+
+## Controller state durability (2026-09-23, surfaced by the affine adoption backup contract)
+
+- [ ] The controller's own state is irreplaceable with no cure today: `~/.config/cloudify/` (credentials + every stored value incl. secrets in plaintext behind 0600), `~/.local/state/cloudify/` (manifests + the event audit log), `~/.config/ivps/` (the inventory tree, now also holding the per-host package records). A controller loss orphans every deployment: machines keep running, cloudify forgets identities, audit, values, inventories. Cure TBD: a backup/export path (must encrypt the secret-bearing parts - the bucket is never a second live copy of a credential), or a documented external-backup scope. Interim: PKG-ADOPTIONS backup contracts name it in the external agent's scope.
+
+## Human-readable ivps inventory (2026-09-27, Rachid's requirement)
+
+- [ ] Walking the ivps tree raw must be human-readable. Today paths are immutable-id-keyed (`nodes/<16-hex>/instances/<16-hex>/...`, rename-safe per ADR-026 point 7 / ADR-028) and only `ivps node path <name>` resolves them; instance records were approved under "human scanability first" and the paths fail that bar.
+- Direction (Rachid's suggestion): ivps gains a `rename` command, and renames play well with cloudify even though ivps neither knows nor needs to know about cloudify. Candidate shape: name symlinks over id directories (`instances/affine -> ba529b51adee257b`) - names stay walkable, state stays id-keyed and rename-safe. Any alternative must keep both properties.
+- This is ivps-repo work; the entry records cloudify's stake. Cloudify keys durable state on the immutable ids, never on ivps names.
+
+## Hermes pair out of test scope (2026-09-28, Rachid's ruling; history: 2026-08-10)
+
+`package-hermes-dashboard` and `package-hermes-openwebui` are excluded from the
+default integration run (`tests/run-integration.sh` OUT_OF_SCOPE list). They
+were the two failures of the 2026-08-10 battery (ruled out of scope that day)
+and failed identically in the 2026-09-28 full run. Root causes, proven live on
+the test container:
+
+- Vendor layout drift: the Nous installer now installs user-local
+  (`~/.local/bin/hermes`, uv-managed) and no longer writes
+  `/usr/local/bin/hermes` or `/usr/local/lib/hermes-agent`; the dashboard
+  systemd unit's `ExecStart=/usr/local/bin/hermes ...` died `203/EXEC`.
+  Partially fixed 2026-09-28: `pkg/hermes` now guarantees the system entrypoint
+  (symlink + postcondition, v1.1.0).
+- Vendor auth gate: the dashboard refuses non-loopback binds without an auth
+  provider ("Refusing to bind dashboard to 0.0.0.0"), killing the long-standing
+  `HERMES_DASHBOARD_PUBLIC=true` public mode. The value reaches test dispatches
+  from the operator's production `pkgs/hermes-dashboard.yaml` via the recipe
+  name-mention claim path (no `.remote-vars` exists anywhere; no caller env,
+  no global declaration - the mechanism itself deserves a pinning test when
+  this is revisited).
+- hermes-openwebui test 5 (open-webui health after wiring): wiring values land
+  (MagicDNS URL, API key, RAG engine greps pass); the service was healthy at
+  install-verify time and dead at probe time; presumed the same vendor-era
+  drift family (dashboard/API container interplay), unclassified - classified
+  when the pair re-enters scope.
+
+Re-entry conditions (the hermes adoption round, PKG-ADOPTIONS round two):
+- `pkg/hermes-dashboard` public mode redesigned for the vendor gate: basic
+  auth (username + password hash in `~/.hermes/config.yaml`, hashed via the
+  venv python) or a documented loopback+reverse-proxy-only contract; a new
+  var (e.g. `HERMES_DASHBOARD_PASSWORD`), declared in `.remote-vars`, docs.
+- The claim path that forwards the yaml value without a declaration gets a
+  pinning test or an explicit declaration, whichever the adoption round
+  decides.
+- hermes-openwebui test 5 root-caused (docker logs at failure time).
+- Both removed from OUT_OF_SCOPE, full suite green.
+
+## State-tree hygiene (2026-09-29, surfaced by the affine gap investigation)
+
+Cleanup-session scope (plans/runbook-run-store-cleanup.md):
+- `_direct` manifest accumulation: every bare dispatch leaves
+  `~/.local/state/cloudify/deployments/_direct/direct/<pkg>-<ts>/` forever.
+- Deleted-instance residue: package records survive under instance dirs of
+  instances that no longer exist (the torn-down twin still holds records).
+- `deployment delete` does not exist; teardown sweeps only what it knows.
+- Manifest honesty per the 2026-09-29 rulings: rebuildable cache outside the
+  projection path, declared vs derived fields, adoption pins no commit,
+  status vocabulary adopted/installed/reconfigured/verified/degraded.
+
+## Dispatch payload branch skew (found 2026-09-29, affine close-out; repo side landed 2026-09-30)
+
+The bootstrap block pulls the remote's CURRENT branch (usually master). A controller running a feature branch dispatches payloads that execute master's code - the result-line contract (lib/results.sh) does not exist on master, so any dispatch reconciliation fails (`cause: reconcile`). The two-host e2e never sees this (it rsyncs the tree).
+
+Landed 2026-09-30: the payload carries `CLOUDIFY_GIT_REF` - the controller's own branch by default (detached: its commit; no git: empty), an explicit env override, set-empty to disable. Reserved against file stores (lib/vars.sh). Goldens regenerated (one export line per payload) under the gate. Tests pick how a target gets code via `CLOUDIFY_TEST_CODE_MODE` (push | github | branch:<name>, push default) - tests/helpers/code-mode.bash.
+
+REMAINING (Rachid, one paste): the bootstrap gist must honor the ref - the ready-to-paste version is `~/tmp/gist-with-git-ref.sh` (only the update block changes; the symlink logic is byte-identical). Until the gist is updated, remote checkouts keep their current-branch pull behavior and the mandate is inert.
+
+## Bare multi-host invocation synthesis (ADR-032, ruled 2026-09-30 - LANDED same day)
+
+Implemented: the router mints the invocation's one _direct name at dispatch entry (mutating actions only - a bare verify stays an ad-hoc observation: no records to seed against and it records nothing by the standing decision), carries it as the active deployment tuple for every dispatch of the invocation, and decorates each target triple with its binding slot (`direct` for a single host, the host's identity word when several). The workers merge their binding add-if-absent under the manifest lock (cloudify_state_binding_add) instead of each synthesizing a per-host deployment.
+
+`cloudify --on h1 --on h2 install a b c` must leave ONE `_direct` deployment spanning both hosts (one manifest, one binding per host), not one bucket per host. The synthesis moves to invocation level in the router; manifest binding writes gain add-if-absent merge; `deployment delete` already sweeps every host tree (verified). Tests: two-host bare invocation unit + e2e pin.

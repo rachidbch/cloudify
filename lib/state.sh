@@ -23,9 +23,9 @@
 # validation.
 #
 # Run and event IDs stay null here: Phase 6 owns run and event records, and this
-# slice must not fabricate a run record. A run killed between steps leaves
-# `status: applying` in the manifest, which is the discoverable interrupted
-# state; classifying it as stale is Phase 6's job.
+# slice must not fabricate a run record. A run killed before its first event
+# leaves `status: null` in the manifest - recorded, nothing proved; classifying
+# a stale run as stale is Phase 6's job.
 #
 # Interface:
 #   cloudify_state_root                              print the state root
@@ -114,6 +114,12 @@ function _cloudify_state_run_locked() {
     [[ -n "$lockfile" && $# -gt 0 ]] || die "Usage: _cloudify_state_run_locked <lockfile> <cmd...>"
     command -v flock >/dev/null 2>&1 ||
         die "cloudify state: 'flock' is required (util-linux) but not installed."
+    # Test-only invariant assertion: the host lock (fd 200) and the manifest
+    # lock are never held together (design: one host lock section). Off in
+    # production; worker tests run with it on.
+    if [[ "${CLOUDIFY_ASSERT_NO_HOST_LOCK:-}" == "1" && -e "/proc/$$/fd/200" ]]; then
+        die "state: the manifest lock must never be taken while the host lock (fd 200) is held."
+    fi
     _cloudify_state_ensure_file_dir "$lockfile"
     local timeout="${CLOUDIFY_LOCK_TIMEOUT:-$_CLOUDIFY_LOCK_TIMEOUT_DEFAULT}"
     (
@@ -167,6 +173,58 @@ function cloudify_state_manifest_file() {
 # cloudify_state_lock_file <app> <flavor> <name> - the one lock per manifest.
 function cloudify_state_lock_file() {
     printf '%s\n' "$(cloudify_state_deployment_dir "${1:-}" "${2:-}" "${3:-}")/.manifest.lock"
+}
+
+# cloudify_state_binding_add <app> <flavor> <name> <slot> <ssh-host> [node] [instance]
+# ADR-032: a bare multi-host invocation accumulates one binding per host
+# under its ONE synthesized deployment - add-if-absent under the manifest
+# lock, so per-host workers merge instead of clobbering. The manifest is
+# created unproved when absent (status null under the uniform commit rule);
+# an existing manifest keeps its status, commit and word. An already-bound
+# slot is left untouched (its host's own worker wrote it).
+_cloudify_state_binding_add_locked() {
+    local app="$1" flavor="$2" name="$3" slot="$4" ssh_host="$5"
+    local node="${6:-}" inst="${7:-}"
+    local dir manifest status="" commit="" dev=true bindings_file
+    dir=$(cloudify_state_deployment_dir "$app" "$flavor" "$name")
+    manifest="$dir/manifest.json"
+    cloudify_state_ensure_dir "$dir"
+    if [[ -f "$manifest" ]]; then
+        if cloudify_manifest_bindings "$app" "$flavor" "$name" 2>/dev/null \
+            | awk -F'\t' -v s="$slot" '$1 == s { found=1 } END { exit !found }'; then
+            return 0
+        fi
+        status=$(_cloudify_manifest_field_file "$manifest" status) || status=""
+        [[ "$status" == "null" ]] && status=""
+        commit=$(_cloudify_manifest_field_file "$manifest" application_commit) || commit=""
+        [[ "$commit" == "null" ]] && commit=""
+        dev=$(_cloudify_manifest_field_file "$manifest" development_override) || dev=true
+        [[ "$dev" == "true" ]] || dev=false
+    else
+        IFS=$'\t' read -r dev commit <<< "$(_cloudify_state_commit_rule)"
+    fi
+    bindings_file=$(mktemp "${CLOUDIFY_TMP:-/tmp}/binding-add-XXXXXX") \
+        || die "binding add: cannot create a bindings file."
+    {
+        [[ -f "$manifest" ]] && cloudify_manifest_bindings "$app" "$flavor" "$name" 2>/dev/null
+        printf '%s\t%s\t%s\t%s\t%s\n' "$slot" "$ssh_host" "$node" "$inst" "$ssh_host"
+    } > "$bindings_file"
+    # No nested lock: the caller holds the manifest lock, so the inner writer
+    # is the unlocked render (the same one cloudify_manifest_write uses).
+    _cloudify_manifest_render_write "$dir" "$manifest" "$app" "$flavor" "$name" \
+        "$status" "$commit" "$dev" "$bindings_file" ""
+    rm -f "$bindings_file"
+}
+
+function cloudify_state_binding_add() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}" slot="${4:?}" ssh_host="${5:?}"
+    local node="${6:-}" inst="${7:-}"
+    _cloudify_manifest_require_tools
+    local dir lock
+    dir=$(cloudify_state_deployment_dir "$app" "$flavor" "$name")
+    lock="$dir/.manifest.lock"
+    _cloudify_state_run_locked "$lock" _cloudify_state_binding_add_locked \
+        "$app" "$flavor" "$name" "$slot" "$ssh_host" "$node" "$inst"
 }
 
 # cloudify_state_runs_dir <app> <flavor> <name> - Phase 6 run records.
@@ -266,12 +324,440 @@ function _cloudify_manifest_render() {
             deployment: $name,
             application_commit: (if $commit == "" then null else $commit end),
             development_override: $dev,
-            status: $status,
+            status: (if $status == "" then null else $status end),
             created_at: $created,
             bindings: $b,
             last_run_id: (if $last_run == "" then null else $last_run end),
             last_event_id: (if $last_event == "" then null else $last_event end)
           }'
+}
+
+# --- inventory paths (ADR-026): the tree lives on the host, under the
+# id-keyed directory ivps hands back; the host lock sits beside it. ---
+
+# cloudify_state_inventory_root <node> [<instance>] - the per-node inventory
+# root: the id-keyed directory ivps hands back for the host. A host the local
+# ivps inventory cannot resolve is a named error before anything is created
+# (the local-inventory prerequisite).
+function cloudify_state_inventory_root() {
+    local node="${1:?}" inst="${2:-}"
+    command -v ivps >/dev/null 2>&1 ||
+        die "inventory: 'ivps' is required to resolve the node path (the local-inventory prerequisite)."
+    local d
+    d=$(ivps node path "$node${inst:+:$inst}") ||
+        die "inventory: the local ivps inventory cannot resolve '$node${inst:+:$inst}' (host unknown or node path failed)."
+    [[ -n "$d" ]] || die "inventory: 'ivps node path $node${inst:+:$inst}' returned nothing."
+    printf '%s/deployments\n' "$d"
+}
+
+# cloudify_state_host_lock_path <node> [<instance>] - the one host mutation
+# lock, keyed by the host only (never by package or instance).
+function cloudify_state_host_lock_path() {
+    local node="${1:?}" inst="${2:-}"
+    local root
+    root=$(cloudify_state_inventory_root "$node" "${inst:-}")
+    printf '%s/cloudify/.host-mutation.lock\n' "$(dirname "$root")"
+}
+
+# _cloudify_state_check_package <name> - the package-name shape from the
+# inventory schema.
+_cloudify_state_check_package() {
+    [[ "${1:-}" =~ ^[a-z0-9][a-z0-9._-]*$ ]] ||
+        die "Invalid package name '${1:-}' (leading alphanumeric, then lowercase, digits, '.' '_' '-')."
+}
+
+# cloudify_state_record_dir <node> [<instance>] <app> <flavor> <deployment>
+#   <package> <instance> - the per-deployment inventory record directory on
+# the host; every component is validated before anything is printed.
+function cloudify_state_record_dir() {
+    local node="${1:?}" inst="${2:-}" app="${3:?}" flavor="${4:?}" dep="${5:?}" pkg="${6:?}" key="${7:?}"
+    _cloudify_identity_check_component "application" "$app"
+    _cloudify_identity_check_component "flavor" "$flavor"
+    _cloudify_identity_check_component "deployment name" "$dep"
+    _cloudify_state_check_package "$pkg"
+    _cloudify_identity_check_instance "package instance" "$key"
+    printf '%s/%s/%s/%s/packages/%s/%s\n' \
+        "$(cloudify_state_inventory_root "$node" "${inst:-}")" "$app" "$flavor" "$dep" "$pkg" "$key"
+}
+
+# cloudify_state_host_baseline_path <capture-root> - the ADR-028 host record:
+# origin (image, created_at; discovered/asserted/unknown) beside the
+# continuity anchor, written once at first inventory write.
+function cloudify_state_host_baseline_path() {
+    printf '%s/cloudify/host.json\n' "${1:?}"
+}
+
+# cloudify_state_host_baseline_init <capture-root> <discovered|asserted|unknown> [origin-json]
+# - create-if-absent (hard link), never overwriting: the origin is recorded
+# once; `discovered` reads the engine-sourced record through the local ivps
+# inventory, `asserted` takes the operator's origin JSON, `unknown` records
+# that nothing could answer. Idempotent: an existing record is a no-op.
+function cloudify_state_host_baseline_init() {
+    local root="${1:?}" mode="${2:-}"
+    local bp
+    bp=$(cloudify_state_host_baseline_path "$root")
+    [[ -f "$bp" ]] && return 0
+    _cloudify_state_event_require_tools
+    local host_id origin_json="null"
+    host_id=$(basename "$root")
+    if [[ "$mode" == discovered ]]; then
+        if command -v ivps >/dev/null 2>&1 && \
+            origin_json=$(ivps node show "${CLOUDIFY_BASELINE_TARGET:-$host_id}" --json 2>/dev/null); then
+            : # engine-sourced facts captured below
+        else
+            origin_json="null"
+            mode="unknown"
+        fi
+    fi
+    mkdir -p "$(dirname "$bp")"
+    [[ -n "$origin_json" ]] || origin_json="null"
+    local tmp="$bp.tmp$$"
+    jq -n --arg host_id "$host_id" --arg mode "$mode" \
+        --argjson origin "$origin_json" --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" '
+        {schema_version: 1,
+         origin: {mode: $mode,
+                  image: ($origin.image // null),
+                  created_at: ($origin.created_at // null),
+                  engine: ($origin.engine // null)},
+         continuity: {host_id: $host_id, boot_id: null},
+         recorded_at: $ts}' > "$tmp" \
+        || { rm -f "$tmp"; die "baseline: cannot render the host origin."; }
+    mkdir -p "$(dirname "$bp")"
+    chmod 600 "$tmp"
+    sync "$tmp" 2>/dev/null || true
+    if ! ln "$tmp" "$bp" 2>/dev/null; then
+        rm -f "$tmp"
+        [[ -f "$bp" ]] && return 0
+        die "baseline: could not commit '$bp'."
+    fi
+    rm -f "$tmp"
+    sync -d "$(dirname "$bp")" 2>/dev/null || true
+    return 0
+}
+
+# cloudify_state_host_baseline_check <capture-root> <observed-boot-id> - the
+# ADR-028 continuity comparison: the machine present must be the machine the
+# baseline describes. Same boot id: refreshes last-seen and passes. A changed
+# boot id on the same host id means the machine was rewound or replaced: a
+# named refusal, never a silent mutation. No baseline: rc 1 (caller inits).
+function cloudify_state_host_baseline_check() {
+    local root="${1:?}" boot="${2:?}" bp
+    bp=$(cloudify_state_host_baseline_path "$root")
+    [[ -f "$bp" ]] || { printf 'baseline: none at %s\n' "$bp"; return 1; }
+    local last
+    last=$(jq -r '.continuity.boot_id // empty' "$bp")
+    if [[ -n "$last" && "$last" != "$boot" ]]; then
+        printf 'baseline: host %s was rewound or replaced (last-seen boot %s, now %s); verify or re-adopt.\n' \
+            "$(jq -r .continuity.host_id "$bp")" "$last" "$boot"
+        return 2
+    fi
+    local tmp="$bp.tmp$$"
+    if ! jq --arg boot "$boot" '.continuity.boot_id = $boot' "$bp" > "$tmp" \
+            || ! mv "$tmp" "$bp"; then
+        rm -f "$tmp"
+        die "baseline: cannot record last-seen boot id."
+    fi
+    return 0
+}
+
+# cloudify_state_host_key_of <node> [<instance>] - the durable host identity
+# (schema host_key shape): ivps:<node-id> or ivps:<node-id>:<instance-id>,
+# derived from the id-keyed directory ivps hands back (nodes/<nid>[/instances
+# /<iid>]).
+cloudify_state_host_key_of() {
+    local node="${1:?}" inst="${2:-}" root base iid nid
+    root=$(cloudify_state_inventory_root "$node" "$inst")   # <id-dir>/deployments
+    base=$(dirname "$root")                                  # the id-keyed dir
+    if [[ "$base" == */instances/* ]]; then
+        iid="${base##*/}"
+        nid=$(basename "$(dirname "$(dirname "$base")")")
+        printf 'ivps:%s:%s\n' "$nid" "$iid"
+    else
+        printf 'ivps:%s\n' "${base##*/}"
+    fi
+}
+
+# cloudify_state_host_lock <node> [<instance>] - the one bounded host mutation
+# lock (flock, descriptor 200): acquired before any scan or remote execution,
+# held through every write, never nested. Holder metadata (writer host, boot
+# id, pid with start ticks, acquired time, host key) is written into the lock
+# file under the held flock; a timeout prints it.
+function cloudify_state_host_lock() {
+    local node="${1:?}" inst="${2:-}"
+    local lp timeout holder
+    lp=$(cloudify_state_host_lock_path "$node" "${inst:-}")
+    mkdir -p "$(dirname "$lp")"
+    timeout=${CLOUDIFY_LOCK_TIMEOUT:-$_CLOUDIFY_LOCK_TIMEOUT_DEFAULT}
+    exec 200>>"$lp"
+    flock -w "$timeout" 200 || {
+        holder=$(cat "$lp" 2>/dev/null || printf '(no holder metadata)')
+        die "host lock: '$lp' is held by: $holder"
+    }
+    cloudify_state_writer_identity | jq -c \
+        --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" --arg hk "$node${inst:+:$inst}" \
+        '{host: .host, boot_id: .boot_id, pid: .pid, process_start_ticks: .process_start_ticks,
+          acquired_at: $ts, host_key: $hk}' > "$lp"
+}
+
+# cloudify_state_host_unlock <node> [<instance>] - release descriptor 200.
+function cloudify_state_host_unlock() {
+    flock -u 200 2>/dev/null || true
+    # Never `exec 200>&- 2>/dev/null`: redirections on exec persist in the
+    # shell, so that form permanently silenced every later message. Guard the
+    # close instead - a plain exec with a bad fd exits a non-interactive shell.
+    if [[ -e "/proc/$BASHPID/fd/200" ]]; then
+        exec 200>&-
+    fi
+}
+
+# cloudify_state_event_id - UTC second plus an 8-hex suffix that is strictly
+# increasing within the writer's second: 4 hex of per-second randomness, then
+# a 4-hex counter. The counter is file-backed under one flock because ids are
+# minted inside command substitution (a subshell) - process globals cannot
+# carry them across calls. The log's path order then recovers write order (a
+# same-second batch - line events, then their worker-level degraded event -
+# sorts as it happened); a new second redraws the random half. Collision
+# handling stays with the event writer's create-if-absent link, which
+# regenerates; this generator never overwrites a landed event.
+function cloudify_state_event_id() {
+    local sec root
+    sec=$(date -u '+%Y%m%dT%H%M%SZ')
+    root=$(cloudify_state_root)
+    ( umask 077; mkdir -p "$root" )
+    # shellcheck disable=SC2016
+    flock "$root/.event-seq" sh -c '
+        s=""; r=""; n=0
+        read -r s r n < "$1" 2>/dev/null || true
+        if [ "$s" != "$2" ] || [ -z "$r" ] || [ -z "$n" ] || [ "$n" -le 0 ]; then
+            r=$(od -An -N2 -tx1 /dev/urandom | tr -d " \n")
+            n=0
+        fi
+        n=$(( n + 1 ))
+        printf "%s %s %s\n" "$2" "$r" "$n" > "$1"
+        printf "%s-%s%04x\n" "$2" "$r" "$n"
+    ' event-seq "$root/.event-seq" "$sec"
+}
+
+# cloudify_state_writer_identity - who is writing, read once per worker:
+# hostname, kernel boot id, pid, process start ticks (proc stat field 22 -
+# what distinguishes a reused pid) and the cloudify tool version. Cached in
+# the worker so every event of one dispatch carries identical identity.
+_CLOUDIFY_STATE_WRITER=""
+function cloudify_state_writer_identity() {
+    if [[ -z "$_CLOUDIFY_STATE_WRITER" ]]; then
+        local ticks
+        ticks=$(cut -d' ' -f22 /proc/$$/stat)
+        # Strict SemVer, single-sourced: the env override wins (tests), then
+        # the repo's VERSION file, then git describe, else unknown.
+        local version="${CLOUDIFY_VERSION:-}"
+        if [[ -z "$version" ]]; then
+            version=$(head -n 1 "${CLOUDIFY_SCHEMA_DIR%/schemas/v1}/VERSION" 2>/dev/null || true)
+        fi
+        if [[ -z "$version" ]]; then
+            version=$(git -C "${CLOUDIFY_SCHEMA_DIR%/schemas/v1}" describe --always --dirty 2>/dev/null || echo unknown)
+        fi
+        _CLOUDIFY_STATE_WRITER=$(jq -n \
+            --arg host "$(hostname)" \
+            --arg boot "$(cat /proc/sys/kernel/random/boot_id)" \
+            --argjson pid "$$" \
+            --argjson ticks "$ticks" \
+            --arg tool "$version" \
+            '{host: $host, boot_id: $boot, pid: $pid, process_start_ticks: $ticks, tool_version: $tool}')
+    fi
+    printf '%s\n' "$_CLOUDIFY_STATE_WRITER"
+}
+
+# cloudify_state_operator_writer <name> - the adoption writer: names who
+# inferred the adopted state, not which process ran (GLOSSARY deployment
+# adoption). The name comes from the caller, or CLOUDIFY_OPERATOR when unset
+# (tests, scripted adoption); the schema pins the shape and the event writer
+# validates it at create time.
+function cloudify_state_operator_writer() {
+    local name="${1:-${CLOUDIFY_OPERATOR:-}}"
+    [[ -n "$name" ]] || die "operator writer: a name is required (argument or CLOUDIFY_OPERATOR)."
+    jq -cn --arg name "$name" '{kind: "operator", name: $name}'
+}
+
+# cloudify_state_events_root - the event root under the Cloudify state root:
+# audit records are per-run history, not node architecture (ADR-026).
+function cloudify_state_events_root() {
+    printf '%s\n' "${XDG_STATE_HOME:-$HOME/.local/state}/cloudify/events"
+}
+
+function _cloudify_state_event_require_tools() {
+    command -v jq >/dev/null 2>&1 ||
+        die "event: 'jq' is required to write events (install it: apt-get install -y jq)."
+    [[ -f "$CLOUDIFY_SCHEMA_DIR/event.schema.json" && -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" ]] ||
+        die "event: the schema checker is missing under '$CLOUDIFY_SCHEMA_DIR'."
+}
+
+# cloudify_state_event_create <body-file> [event-id] - the one immutable event
+# writer. Renders body + event_id (+ `at` when the body has none) into a 0600
+# temporary in the destination, validates against event.schema.json, flushes,
+# then hard-links create-if-absent and flushes the directory. An existing name
+# is never overwritten: generated ids regenerate (bounded at three), a pinned
+# id fails loudly. Prints the committed event id.
+function cloudify_state_event_create() {
+    local body="${1:-}" id="${2:-}"
+    [[ -f "$body" ]] || die "event: body file '$body' missing."
+    _cloudify_state_event_require_tools
+    local root final tmp tries=0 body_json
+    while :; do
+        [[ -n "$id" ]] || id=$(cloudify_state_event_id)
+        root=$(cloudify_state_events_root)
+        final="$root/${id:0:4}-${id:4:2}/$id.json"
+        if [[ -e "$final" ]]; then
+            if [[ -n "${2:-}" ]]; then
+                die "event: '$final' already exists; refusing to overwrite a pinned event id."
+            fi
+            id=""
+            tries=$((tries + 1))
+            (( tries < 3 )) || die "event: no free event id after 3 attempts."
+            continue
+        fi
+        mkdir -p "$(dirname "$final")"
+        body_json=$(jq -c --arg id "$id" --arg now "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" '
+            .event_id = $id
+            | if (has("at") and .at != null) then . else .at = $now end' "$body") \
+            || die "event: body '$body' is not valid JSON."
+        tmp=$(mktemp "$(dirname "$final")/.event-XXXXXX.json")
+        printf '%s\n' "$body_json" > "$tmp"
+        chmod 600 "$tmp"
+        if ! cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/event.schema.json" "$tmp" >/dev/null; then
+            rm -f "$tmp"
+            die "event: the rendered event failed schema validation."
+        fi
+        sync "$tmp" 2>/dev/null || true
+        if ln "$tmp" "$final" 2>/dev/null; then
+            rm -f "$tmp"
+            sync -d "$(dirname "$final")" 2>/dev/null || true
+            printf '%s\n' "$id"
+            return 0
+        fi
+        rm -f "$tmp"
+        if [[ -e "$final" ]]; then
+            if [[ -n "${2:-}" ]]; then
+                die "event: '$final' already exists; refusing to overwrite a pinned event id."
+            fi
+            id=""
+            tries=$((tries + 1))
+            (( tries < 3 )) || die "event: no free event id after 3 attempts."
+            continue
+        fi
+        die "event: could not hard-link the event into '$final'."
+    done
+}
+
+# _cloudify_state_event_refs <record> - the event ids one record links to
+# (applied, last attempt, health; absent when the object is null). One jq read.
+function _cloudify_state_event_refs() {
+    jq -r '.applied.event_id // empty, (.last_attempt | if . then .event_id else empty end), .health.event_id // empty' "$1"
+}
+
+# cloudify_state_inventory_check <record> - subject-level gap check: rc 0 when
+# the record is schema-valid and every referenced event is committed; rc 2
+# names the first gap; rc 1 when the record is missing or invalid. Read-only.
+function cloudify_state_inventory_check() {
+    local record="${1:?}" eid
+    [[ -f "$record" ]] || { printf 'inventory check: no record at %s\n' "$record"; return 1; }
+    cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$record" >/dev/null \
+        || { printf 'inventory check: %s is not a valid record\n' "$record"; return 1; }
+    while IFS= read -r eid; do
+        [[ -n "$eid" ]] || continue
+        if [[ ! -f "$(cloudify_state_events_root)/${eid:0:4}-${eid:4:2}/$eid.json" ]]; then
+            printf 'inventory check: %s references missing event %s\n' "$record" "$eid"
+            return 2
+        fi
+    done < <(_cloudify_state_event_refs "$record")
+    return 0
+}
+
+# cloudify_state_inventory_apply <record-path> <event-body> <next-capture> -
+# the event-first inventory transition. Reads and validates the current record
+# (conceptual revision 0 when absent), refuses a record pointing at a missing
+# event, stamps the next capture (revision +1; the new event id on every object
+# the transition changed), validates event and capture, hard-links the event,
+# then atomically replaces the record and re-reads it before reporting
+# success. Prints the committed event id.
+function cloudify_state_inventory_apply() {
+    local record="${1:?}" event_body="${2:?}" next="${3:?}"
+    command -v jq >/dev/null 2>&1 ||
+        die "inventory: 'jq' is required to write state."
+    [[ -f "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" && -f "$CLOUDIFY_SCHEMA_DIR/event.schema.json" && -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" ]] ||
+        die "inventory: the schema tree is missing under '$CLOUDIFY_SCHEMA_DIR'."
+    [[ -f "$event_body" && -f "$next" ]] || die "inventory: event body or next capture missing."
+
+    local cur_rev=0 cur_empty=true
+    if [[ -f "$record" ]]; then
+        cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$record" >/dev/null \
+            || die "inventory: '$record' is not a valid record; refusing to mutate."
+        cur_rev=$(jq -r '.revision' "$record")
+        cur_empty=false
+        local eid
+        while IFS= read -r eid; do
+            [[ -n "$eid" ]] || continue
+            if [[ ! -f "$(cloudify_state_events_root)/${eid:0:4}-${eid:4:2}/$eid.json" ]]; then
+                die "inventory: '$record' references missing event '$eid'; verify before mutating."
+            fi
+        done < <(_cloudify_state_event_refs "$record")
+    fi
+    local next_rev=$((cur_rev + 1))
+
+    local id workdir
+    workdir=$(dirname "$record")
+    id=$(cloudify_state_event_id)
+    mkdir -p "$workdir"
+    local cap_tmp ev_dir ev_tmp
+    cap_tmp=$(mktemp "$workdir/.inventory-XXXXXX.json")
+    ev_dir=$(cloudify_state_events_root)/${id:0:4}-${id:4:2}
+    mkdir -p "$ev_dir"
+    ev_tmp=$(mktemp "$ev_dir/.event-XXXXXX.json")
+
+    jq --slurpfile cur <(if [[ "$cur_empty" == true ]]; then echo '{}'; else cat "$record"; fi) \
+        --argjson rev "$next_rev" --arg eid "$id" '
+        . as $next | $cur[0] as $cur
+        | .revision = $rev
+        | .applied = (if $next.applied == $cur.applied then $next.applied
+                      else (if $next.applied == null then null else ($next.applied | .event_id = $eid) end) end)
+        | .last_attempt = (if $next.last_attempt == $cur.last_attempt then $next.last_attempt
+                      else (if $next.last_attempt == null then null else ($next.last_attempt | .event_id = $eid) end) end)
+        | .health = (if $next.health == $cur.health then $next.health
+                      else (if $next.health == null then null else ($next.health | .event_id = $eid) end) end)
+    ' "$next" > "$cap_tmp" \
+        || { rm -f "$cap_tmp" "$ev_tmp"; die "inventory: the next capture is not valid JSON."; }
+    if ! cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$cap_tmp" >/dev/null; then
+        rm -f "$cap_tmp" "$ev_tmp"
+        die "inventory: the next capture failed schema validation; nothing written."
+    fi
+
+    jq --arg id "$id" --argjson prev "$cur_rev" --argjson result "$next_rev" '
+        .event_id = $id
+        | .state = {previous_revision: $prev, resulting_revision: $result}' "$event_body" > "$ev_tmp" \
+        || { rm -f "$cap_tmp" "$ev_tmp"; die "inventory: the event body is not valid JSON."; }
+    if ! cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/event.schema.json" "$ev_tmp" >/dev/null; then
+        rm -f "$cap_tmp" "$ev_tmp"
+        die "inventory: the rendered event failed schema validation; nothing written."
+    fi
+
+    chmod 600 "$cap_tmp" "$ev_tmp"
+    sync "$cap_tmp" "$ev_tmp" 2>/dev/null || true
+    if ! ln "$ev_tmp" "$ev_dir/$id.json" 2>/dev/null; then
+        rm -f "$cap_tmp" "$ev_tmp"
+        die "inventory: could not commit event '$id'."
+    fi
+    rm -f "$ev_tmp"
+    sync -d "$ev_dir" 2>/dev/null || true
+    if ! mv "$cap_tmp" "$record" 2>/dev/null; then
+        die "inventory: the event '$id' is committed but the capture replace failed; repair before mutating (state check)."
+    fi
+    sync -d "$workdir" 2>/dev/null || true
+
+    local got_rev got_id
+    got_rev=$(jq -r '.revision' "$record")
+    got_id=$(jq -r '.applied.event_id // .last_attempt.event_id // .health.event_id' "$record")
+    [[ "$got_rev" == "$next_rev" && ("$got_id" == "$id" || -f "$(cloudify_state_events_root)/${id:0:4}-${id:4:2}/$id.json") ]] \
+        || die "inventory: the committed record does not read back revision $next_rev with event $id."
+    printf '%s\n' "$id"
 }
 
 # _cloudify_manifest_require_tools - jq and the schema tree, checked before any
@@ -297,22 +783,37 @@ function _cloudify_manifest_shape_hint() {
     ' 2>/dev/null
 }
 
-# _cloudify_manifest_reference_check <file> - the one validator. Prints the
-# rejection reason. rc 0 accepted, 1 the checker is unusable (jq or the schema
-# tree is missing), 2 rejected.
-function _cloudify_manifest_reference_check() {
-    local file="${1:-}" checker schema hint
+# cloudify_state_validate_file <schema> <file> - the one generic schema
+# validator: any schema in the tree, any file. Prints the rejection reason.
+# rc 0 accepted, 1 the checker is unusable (jq or a missing input), 2 rejected.
+function cloudify_state_validate_file() {
+    local schema="${1:-}" file="${2:-}"
+    [[ -f "$schema" && -f "$file" ]] || return 1
     command -v jq >/dev/null 2>&1 || return 1
-    checker="$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq"
-    schema="$CLOUDIFY_SCHEMA_DIR/deployment-manifest.schema.json"
-    [[ -f "$checker" && -f "$schema" ]] || return 1
+    [[ -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" ]] || return 1
     if ! jq -e . "$file" >/dev/null 2>&1; then
         printf '%s\n' 'not valid JSON'
         return 2
     fi
-    if jq -e --slurpfile schema "$schema" -f "$checker" "$file" >/dev/null 2>&1; then
+    if jq -e --slurpfile schema "$schema" -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" "$file" >/dev/null 2>&1; then
         return 0
     fi
+    printf '%s\n' "rejected by the schema"
+    return 2
+}
+
+# _cloudify_manifest_reference_check <file> - the manifest validation front:
+# delegates to cloudify_state_validate_file and enriches the rejection with the
+# manifest shape hint (missing/unexpected fields from the schema itself).
+# rc 0 accepted, 1 the checker is unusable (jq or the schema tree is missing), 2 rejected.
+function _cloudify_manifest_reference_check() {
+    local file="${1:-}" schema="$CLOUDIFY_SCHEMA_DIR/deployment-manifest.schema.json" rc=0
+    command -v jq >/dev/null 2>&1 || return 1
+    [[ -f "$CLOUDIFY_SCHEMA_DIR/lib/schema-check.jq" && -f "$schema" ]] || return 1
+    cloudify_state_validate_file "$schema" "$file" && return 0
+    rc=$?
+    [[ $rc -eq 2 ]] || return $rc
+    local hint
     hint=$(_cloudify_manifest_shape_hint "$file")
     printf '%s\n' "rejected by the schema${hint:+ ($(printf '%s' "$hint" | paste -sd'; ' -))}"
     return 2
@@ -338,12 +839,14 @@ function cloudify_manifest_validate_file() {
 
 #== Manifest writes ==
 
-# _cloudify_manifest_render_write <dir> <manifest> <app> <flavor> <name> <status> <commit> <dev> <bindings-file>
+# _cloudify_manifest_render_write <dir> <manifest> <app> <flavor> <name> <status> <commit> <dev> <bindings-file> [last-event-id]
 # Runs inside the lock: carry created_at and the last IDs over, render, validate,
 # then move into place (atomic rename; the lock is what serializes writers).
+# A non-empty 10th argument pins last_event_id explicitly (the worker's
+# projection); empty keeps the carry-over behavior.
 function _cloudify_manifest_render_write() {
     local dir="$1" manifest="$2" app="$3" flavor="$4" name="$5" status="$6"
-    local commit="$7" dev="$8" bindings="$9"
+    local commit="$7" dev="$8" bindings="$9" last_event_override="${10:-}"
     local created last_run last_event tmp
     created=""
     last_run=""
@@ -356,6 +859,7 @@ function _cloudify_manifest_render_write() {
         [[ "$last_event" == "null" ]] && last_event=""
     fi
     [[ -n "$created" ]] || created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    [[ -n "$last_event_override" ]] && last_event="$last_event_override"
 
     tmp=$(mktemp "$dir/.manifest.XXXXXX") || die "manifest: cannot create a temporary file under '$dir'."
     chmod 600 "$tmp" 2>/dev/null || true
@@ -371,12 +875,26 @@ function _cloudify_manifest_render_write() {
     mv "$tmp" "$manifest" || die "manifest: cannot move '$tmp' into place."
 }
 
-# cloudify_manifest_write <app> <flavor> <name> <status> <commit> <dev> <bindings-file>
+# cloudify_manifest_write <app> <flavor> <name> <status> <commit> <dev> <bindings-file> [last-event-id]
 # One manifest writer. Every write takes the manifest lock (REDESIGN: the lock is
 # taken before the first manifest writer lands) and lands by atomic rename.
+# The optional 8th argument pins last_event_id (the dispatch worker's
+# projection); omitted, the previously recorded value is carried over.
+# cloudify_state_bindings_render <app> <flavor> <name> <out-file> - the
+# manifest's recorded bindings as the TSV the manifest writer and the worker
+# take: slot\taddress\tnode\tinstance\tssh_host, declaration order.
+function cloudify_state_bindings_render() {
+    local app="$1" flavor="$2" name="$3" out="$4" manifest
+    manifest=$(cloudify_state_manifest_file "$app" "$flavor" "$name")
+    [[ -f "$manifest" ]] || die "bindings render: manifest '$manifest' not found."
+    jq -r '.bindings | to_entries[] | [.key, .value.address, .value.node, .value.instance, .value.ssh_host] | @tsv' \
+        "$manifest" > "$out" || die "bindings render: cannot read '$manifest'."
+    [[ -s "$out" ]] || die "bindings render: '$manifest' carries no bindings."
+}
+
 function cloudify_manifest_write() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" status="${4:-}"
-    local commit="${5:-}" dev="${6:-}" bindings="${7:-}"
+    local commit="${5:-}" dev="${6:-}" bindings="${7:-}" last_event="${8:-}"
     local dir manifest lock
     # The tools and the schema tree are checked BEFORE anything is created, so a
     # host that cannot validate never gets a deployment directory or a lock file.
@@ -393,16 +911,18 @@ function cloudify_manifest_write() {
     lock="$dir/.manifest.lock"
     cloudify_state_ensure_dir "$dir"
     _cloudify_state_run_locked "$lock" _cloudify_manifest_render_write \
-        "$dir" "$manifest" "$app" "$flavor" "$name" "$status" "$commit" "$dev" "$bindings"
+        "$dir" "$manifest" "$app" "$flavor" "$name" "$status" "$commit" "$dev" "$bindings" "$last_event"
 }
 
 # cloudify_manifest_update_status <app> <flavor> <name> <status> <commit> <dev>
+#                            [last-event-id]
 # Rewrite the recorded manifest with a new status and commit, keeping its
-# created_at, its bindings, and its last run and event IDs. Used at the end of a
-# run: `active` after install plus verify, `degraded` on an observed failure.
+# created_at, its bindings, and its last run ID. An optional 7th argument pins
+# last_event_id (the adoption command's derived-field update); an empty status
+# writes null (nothing proved).
 function cloudify_manifest_update_status() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" status="${4:-}"
-    local commit="${5:-}" dev="${6:-}" file bindings_file rc=0
+    local commit="${5:-}" dev="${6:-}" last_event="${7:-}" file bindings_file rc=0
     file=$(cloudify_state_manifest_file "$app" "$flavor" "$name")
     [[ -f "$file" ]] || die "manifest: '$file' not found; refusing to update a manifest that was never created."
     bindings_file=$(mktemp) || die "manifest: cannot create a bindings file."
@@ -411,7 +931,7 @@ function cloudify_manifest_update_status() {
         rm -f "$bindings_file"
         die "manifest '$file': no bindings recorded."
     }
-    cloudify_manifest_write "$app" "$flavor" "$name" "$status" "$commit" "$dev" "$bindings_file" || rc=$?
+    cloudify_manifest_write "$app" "$flavor" "$name" "$status" "$commit" "$dev" "$bindings_file" "$last_event" || rc=$?
     rm -f "$bindings_file"
     return "$rc"
 }
@@ -421,6 +941,143 @@ function cloudify_manifest_exists() {
     local file
     file=$(cloudify_state_manifest_file "${1:-}" "${2:-}" "${3:-}") || return 1
     [[ -f "$file" ]]
+}
+
+# _cloudify_state_event_scan <app> <flavor> <name> - one newest-first pass over
+# the deployment's event log; prints "HEAD<TAB>COMMIT<TAB>HOST": the newest
+# event id (any kind), the newest proved application commit (the manifest
+# caches the latest such commit), and the newest package event's host key
+# (what a rebuild can still bind). Empty fields where the log proves nothing.
+function _cloudify_state_event_scan() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}"
+    local root f head="" commit="" host="" row
+    local id c kind hk
+    root=$(cloudify_state_events_root)
+    [[ -d "$root" ]] || { printf '\x1f\x1f\n'; return 0; }
+    while IFS= read -r f; do
+        row=$(jq -r --arg app "$app" --arg flavor "$flavor" --arg name "$name" '
+            select(.application == $app and .flavor == $flavor and .deployment == $name)
+            | [.event_id, (.application_commit // ""), (.subject.kind // ""),
+               (.subject.host_key // ""), (.command_kind // "")]
+            | join("\u001f")' "$f" 2>/dev/null) || continue
+        [[ -n "$row" ]] || continue
+        local id c kind hk cmd
+        IFS=$'\x1f' read -r id c kind hk cmd <<< "$row"
+        [[ -n "$head" ]] || head="$id"
+        # The commit cache comes from dispatch events only: an adoption event
+        # never proves one (GLOSSARY deployment adoption), not even a legacy
+        # fog-era adopt event that carries a commit claim.
+        [[ -n "$commit" || "$cmd" == "adopt" ]] || commit="$c"
+        if [[ -z "$host" && "$kind" == "package" ]]; then
+            host="$hk"
+        fi
+        [[ -n "$head" && -n "$commit" && -n "$host" ]] && break
+    done < <(find "$root" -type f -name '*.json' -printf '%p\n' 2>/dev/null | sort -r)
+    printf '%s\x1f%s\x1f%s\n' "$head" "$commit" "$host"
+}
+
+# cloudify_state_manifest_rebuild <app> <flavor> <name>
+# The manifest is a rebuildable cache outside the projection path (REDESIGN):
+# declared fields carried from the readable manifest when one exists, derived
+# fields (status, last event id, the cached commit) recomputed from the event
+# log. A lost manifest is recovered: bindings come from the runbook's one slot
+# bound to the host the newest package event proves - nothing is invented; a
+# log that proves no host is a named refusal (re-run the application to rebind).
+function cloudify_state_manifest_rebuild() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}"
+    cloudify_state_deployment_dir "$app" "$flavor" "$name" >/dev/null ||
+        die "rebuild: '$app/$flavor/$name' is not a valid deployment identity."
+    local scan head commit host
+    scan=$(_cloudify_state_event_scan "$app" "$flavor" "$name")
+    IFS=$'\x1f' read -r head commit host <<< "$scan"
+    [[ -n "$head" ]] || die "rebuild: the event log proves nothing for '$app/$flavor/$name' - a manifest without events cannot be rebuilt; re-run the application to rebind."
+
+    local bindings_file dev word
+    bindings_file=$(mktemp "$CLOUDIFY_TMP/rebuild-bindings-XXXXXX") ||
+        die "rebuild: cannot create a bindings file."
+    if cloudify_manifest_exists "$app" "$flavor" "$name" &&
+        cloudify_manifest_bindings "$app" "$flavor" "$name" > "$bindings_file" 2>/dev/null && [[ -s "$bindings_file" ]]; then
+        : # the readable manifest carries its bindings over
+    else
+        local rb slot node inst
+        rb="$(_cloudify_runbook_root)/$app/$flavor/runbook.md"
+        [[ -f "$rb" ]] || die "rebuild: no manifest to carry bindings and no runbook at runbooks/$app/$flavor/runbook.md - re-run the application to rebind."
+        slot=$(_cloudify_runbook_fm_value "$rb" targets)
+        [[ -n "$slot" && "$slot" != *,* ]] || die "rebuild: the runbook declares no single slot to bind - re-run the application to rebind."
+        [[ "$host" =~ ^ivps:([^:]+)(:(.+))?$ ]] || die "rebuild: the event log proves no bindable host for '$app/$flavor/$name' - re-run the application to rebind."
+        node="${BASH_REMATCH[1]}"
+        inst="${BASH_REMATCH[3]:-}"
+        printf '%s\t%s\t%s\t%s\t%s\n' "$slot" "${inst:-$node}" "$node" "$inst" "${inst:-$node}" > "$bindings_file"
+    fi
+
+    # development_override is true whenever no commit is proved - the schema's
+    # encoding for "not exactly replayable" - or when the proving dispatch
+    # itself ran under the override.
+    dev=false
+    if [[ -z "$commit" ]]; then
+        dev=true
+    else
+        dev=$(jq -r 'select(.application == $app and .flavor == $flavor and .deployment == $name and .application_commit != null) |
+              .development_override // false' \
+              "$(cloudify_state_events_root)/${head:0:4}-${head:4:2}/$head.json" 2>/dev/null || true)
+        [[ "$dev" == "true" ]] || dev=false
+    fi
+    word=$(cloudify_state_status_from_events "$app" "$flavor" "$name")
+    [[ "$word" == "null" ]] && word=""
+    cloudify_manifest_write "$app" "$flavor" "$name" "$word" "$commit" "$dev" "$bindings_file" "$head"
+    rm -f "$bindings_file"
+}
+
+# cloudify_state_status_from_events <app> <flavor> <name>
+# The derived status: the kind of the last successful state-relevant event
+# (GLOSSARY manifest status), read from the event log - never from the
+# manifest. Newest first (paths sort chronologically); the first event that
+# decides wins:
+#   - install/configure/verify/adopt with exit_status 0 -> the kind's word;
+#   - anything else -> degraded: a failed attempt (its line event carries the
+#     non-zero exit), a failed verify dispatch (drift observed - the check
+#     exists to catch it), or a worker-level event (exit_status null).
+#     Only the install-line verify-stage observation keeps its word, and it
+#     does so by carrying exit 0 on the line (written-but-unverified).
+# Non-state-relevant kinds never decide. No deciding event prints null.
+function cloudify_state_status_from_events() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}"
+    local root f word
+    root=$(cloudify_state_events_root)
+    [[ -d "$root" ]] || { printf 'null\n'; return 0; }
+    while IFS= read -r f; do
+        word=$(jq -r --arg app "$app" --arg flavor "$flavor" --arg name "$name" '
+            select(.application == $app and .flavor == $flavor and .deployment == $name)
+            | .command_kind as $k | (.outcome.exit_status // "null") as $e |
+            select($k == "install" or $k == "configure" or $k == "verify" or $k == "adopt") |
+            if $e == 0 then
+                {install: "installed", configure: "reconfigured", verify: "verified", adopt: "adopted"}[$k]
+            else
+                "degraded"
+            end' "$f" 2>/dev/null) || continue
+        [[ -n "$word" ]] || continue
+        printf '%s\n' "$word"
+        return 0
+    done < <(find "$root" -type f -name '*.json' -printf '%p\n' 2>/dev/null | sort -r)
+    printf 'null\n'
+    return 0
+}
+
+# cloudify_state_deployment_regrade_status <app> <flavor> <name>
+# Migration (plan: adoption-honesty item 3): regrade a manifest written with
+# the retired words (applying/active) by event-log inspection. No deciding
+# event regrades to null - recorded, nothing proved; the rebuild surface
+# (manifest as cache) recomputes the same derivation.
+function cloudify_state_deployment_regrade_status() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}" word dev commit
+    cloudify_manifest_exists "$app" "$flavor" "$name" ||
+        die "regrade: no manifest for '$app/$flavor --name $name'."
+    dev=$(cloudify_manifest_field "$app" "$flavor" "$name" development_override) || dev=false
+    commit=$(cloudify_manifest_field "$app" "$flavor" "$name" application_commit) || commit=""
+    [[ "$commit" == "null" ]] && commit=""
+    word=$(cloudify_state_status_from_events "$app" "$flavor" "$name")
+    [[ "$word" == "null" ]] && word=""
+    cloudify_manifest_update_status "$app" "$flavor" "$name" "$word" "$commit" "$dev"
 }
 
 # cloudify_manifest_field <app> <flavor> <name> <key>
@@ -441,7 +1098,7 @@ function cloudify_manifest_bindings() {
 }
 
 # cloudify_manifest_describe <app> <flavor> <name> - the human read surface (no
-# values). Reveals an interrupted run: `applying` is printed with its meaning.
+# values). Reveals an unproved record: a null status is printed with its meaning.
 function cloudify_manifest_describe() {
     local app="${1:-}" flavor="${2:-}" name="${3:-}" file status dev created commit
     local line slot address node instance ssh_host rest recorded=""
@@ -477,8 +1134,117 @@ function cloudify_manifest_describe() {
         printf 'binding %s: %s (node=%s instance=%s ssh=%s)\n' \
             "$slot" "$address" "${node:-<none>}" "${instance:-<none>}" "${ssh_host:-<none>}"
     done <<< "$recorded"
-    if [[ "$status" == "applying" ]]; then
-        printf '%s\n' 'state: applying - a run may be in flight, or it was interrupted before it could finish; classifying a stale run arrives with the run and event records (Phase 6)'
+    if [[ "$status" == "null" || -z "$status" ]]; then
+        printf '%s\n' 'state: no state-relevant event yet - the deployment is recorded but nothing has proved it; a run may be in flight, or it was interrupted before its first event (run and event records classify a stale run)'
     fi
     return 0
+}
+
+#== `_direct` synthesis (state-model-v2 4.3; ADR-027) ==
+#
+# A bare `cloudify install <pkg>` with no --name synthesizes an ordinary
+# deployment under the reserved application namespace `_direct`: generated
+# name `<pkg>-<UTC-timestamp>[-suffix]`, virtual one-step runbook whose stable
+# step ID is `direct` (nothing is written for it; the worker knows the step),
+# and a manifest under the uniform commit rule - the proved current commit, or
+# a null commit with development_override when the tree is unreproducible.
+# Bare installs never match; an explicit --name is that deployment, every time.
+
+_DIRECT_APP="_direct"
+_DIRECT_FLAVOR="direct"
+
+# _cloudify_state_unique_name <base> <app> <flavor> - a deployment name unique
+# against existing deployments: <base>, or <base>-<4hex> (bounded retries,
+# then a named death - never a silent reuse). Shared by the `_direct`
+# synthesis and application matching.
+_cloudify_state_unique_name() {
+    local base="${1:?}" app="${2:?}" flavor="${3:?}" name dir attempt
+    name="$base"
+    for attempt in 1 2 3 4 5; do
+        dir=$(cloudify_state_deployment_dir "$app" "$flavor" "$name") \
+            || die "state: generated deployment name '$name' is not a valid component."
+        [[ -d "$dir" ]] || { printf '%s\n' "$name"; return 0; }
+        name="${base}-$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    done
+    die "state: could not generate a unique deployment name from '$base' after $attempt attempts."
+}
+
+# _cloudify_state_commit_rule - the uniform commit rule, one `dev<TAB>commit`
+# line: a proved current commit when the tree is identified and clean, else a
+# null commit with the development override. Shared by every deployment
+# synthesis (direct and application matching).
+_cloudify_state_commit_rule() {
+    # The dev-push ruling (first-class for runbook deployments) extends to
+    # bare dispatches: a forced override records the deployment as a
+    # development push, never pinning a commit the child cannot attest.
+    if [[ "${CLOUDIFY_DEVELOPMENT_OVERRIDE:-}" == "1" ]]; then
+        printf 'true\t\n'
+    elif cloudify_tree_unreproducible "${CLOUDIFY_SCRIPT_DIR:-$PWD}"; then
+        printf 'true\t\n'
+    else
+        printf 'false\t%s\n' "$(cloudify_commit_of "${CLOUDIFY_SCRIPT_DIR:-$PWD}")"
+    fi
+}
+
+# cloudify_state_deployment_create <app> <flavor> <name> <bindings-file>
+# The created deployment: manifest status null (no state-relevant event yet -
+# recorded, nothing proved; the worker or the run projects the word) under the
+# uniform commit rule, bindings exactly as given.
+cloudify_state_deployment_create() {
+    local app="${1:?}" flavor="${2:?}" name="${3:?}" bindings="${4:?}"
+    local dev commit
+    IFS=$'\t' read -r dev commit <<< "$(_cloudify_state_commit_rule)"
+    cloudify_manifest_write "$app" "$flavor" "$name" "" "$commit" "$dev" "$bindings"
+}
+
+# cloudify_state_direct_generated_name <pkg>
+# Propose a unique generated deployment name. The package segment is
+# truncated so the whole name fits the 255-byte component cap; a name whose
+# deployment directory already exists gains a `-<4hex>` suffix (bounded
+# retries, then a named death - never a silent reuse).
+function cloudify_state_direct_generated_name() {
+    local pkg="${1:?cloudify_state_direct_generated_name: package required}"
+    local cap=255 ts base
+    ts=$(date -u +%Y%m%dT%H%M%SZ)
+    base="${pkg}-${ts}"
+    if (( ${#base} > cap )); then
+        base="${pkg:0:cap-${#ts}-1}-${ts}"
+    fi
+    _cloudify_state_unique_name "$base" "$_DIRECT_APP" "$_DIRECT_FLAVOR"
+}
+
+# cloudify_state_direct_synthesize <pkg> <node> <instance> <ssh-host>
+# Create the synthesized deployment: directory, one binding for the host the
+# direct command runs on (slot `direct` - a direct deployment is an ordinary
+# one: guard, reliance, teardown all read this binding), manifest (status
+# manifest (status null: no state-relevant event yet, uniform commit rule);
+# prints the generated name. The virtual
+# `direct` step exists in the worker, not on disk.
+function cloudify_state_direct_synthesize() {
+    local pkg="${1:?cloudify_state_direct_synthesize: package required}"
+    local node="${2:-}" instance="${3:-}" ssh_host="${4:-}"
+    local name dev commit bindings address
+    name=$(cloudify_state_direct_generated_name "$pkg")
+    IFS=$'\t' read -r dev commit <<< "$(_cloudify_state_commit_rule)"
+    if [[ -n "$ssh_host" ]]; then
+        address="$ssh_host"
+    else
+        address="$node${instance:+:$instance}"
+    fi
+    bindings=$(mktemp "$CLOUDIFY_TMP/direct-bindings-XXXXXX")
+    printf 'direct\t%s\t%s\t%s\t%s\n' "$address" "$node" "$instance" "$ssh_host" > "$bindings"
+    cloudify_manifest_write "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$name" "" "$commit" "$dev" "$bindings"
+    rm -f "$bindings"
+    printf '%s\n' "$name"
+}
+
+# cloudify_state_direct_resolve <name> <pkg>
+# Resolution is identity: an explicit --name names that deployment every time
+# and creates nothing (creation happens at the first commit, like any other
+# deployment). Prints app<TAB>flavor<TAB>name. Bare installs never resolve -
+# the caller synthesizes instead.
+function cloudify_state_direct_resolve() {
+    local name="${1:-}" pkg="${2:-}"
+    [[ -n "$name" ]] || die "cloudify_state_direct_resolve: bare installs synthesize; do not resolve."
+    printf '%s\t%s\t%s\n' "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$name"
 }

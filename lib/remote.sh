@@ -54,6 +54,13 @@ function cloudify_remote_payload_template() {
     export CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY='$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY'
     export RESTIC_PASSWORD='$RESTIC_PASSWORD'
 
+    # The ref the remote checkout must run (the bootstrap gist honors it when
+    # set: fetch + checkout + reset, bypassing the update delay when the
+    # checked-out ref differs). The controller derives its own branch by
+    # default - prod on master forwards master, dev on a feature branch
+    # auto-follows; set-but-empty disables the mandate.
+    export CLOUDIFY_GIT_REF='$CLOUDIFY_GIT_REF'
+
     # Package-specific vars are injected dynamically from ~/.config/cloudify/pkgs/<pkg>.yaml
     : _CLOUDIFY_PKG_EXPORTS_
 
@@ -118,6 +125,31 @@ function _cloudify_dispatch_vars() {
     if (( ${#pkgs[@]} )); then
         cloudify_context_candidate_names "${pkgs[@]}" > "$cand_file"
     fi
+    # Applied seeding (4.4, ADR-030): a configure dispatch under an active
+    # application reference resolves as a reconfigure of that deployment - the
+    # applied SET values seed between the caller env and the stores. A bare
+    # configure (no reference) stays an unseeded raw dispatch. The seed is
+    # produced parent-side, so local, remote-payload and runbook configure
+    # dispatches all flow through this one point.
+    if [[ "$action" =~ ^(configure|verify)$ && -z "${CLOUDIFY_APPLIED_SEED:-}" ]] \
+        && _cloudify_deployment_tuple_active; then
+        local _st="${CLOUDIFY_CONTEXT_TARGET:-${_CLOUDIFY_CUR_TARGET:-}}" _snode _srest _sinst
+        [[ -n "$_st" ]] || die "$action: no target resolved for the applied seed."
+        _snode="${_st%%$'\t'*}"
+        _srest="${_st#*$'\t'}"
+        _sinst="${_srest%%$'\t'*}"
+        # || return 1: the producer dies inside $(...) and errexit may be off
+        # in the caller (bats run subshells) - the failure must be explicit.
+        # configure seeds the SET values (reconfigure mode); verify seeds every
+        # applied value below the store (verify mode) - the walk's phase gate
+        # consumes whichever mode this is.
+        local _mode=reconfigure
+        [[ "$action" == "verify" ]] && _mode=verify
+        CLOUDIFY_APPLIED_SEED=$(cloudify_context_applied_seed "$_mode" \
+            "$_snode" "$_sinst" \
+            "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME") || return 1
+        export CLOUDIFY_APPLIED_SEED
+    fi
     cloudify_context_build "$action" "$deployment" "$phase" "$cand_file" \
         "${pkgs[@]}" > /dev/null
     # The context's resolved names ARE the payload's allow-list entries, and the
@@ -166,6 +198,21 @@ function cloudify_remote_sync() {
         export CLOUDIFY_LOG_BASENAME
         CLOUDIFY_LOG_BASENAME="$(basename "${CLOUDIFY_LOG_FILE:-}")"
 
+        # The mandated remote ref, before the payload build (envsubst reads the
+        # environment): unset -> the controller's own branch (a detached
+        # checkout forwards its commit; no git at all -> empty, the remote keeps
+        # its own checkout); set non-empty -> the explicit mandate; set empty
+        # -> the mandate explicitly off. `command git` bypasses the git shadow
+        # (it appends -v to authenticated calls, and rev-parse echoes it back -
+        # a two-line value would ride the payload quoting broken).
+        if [[ ! -v CLOUDIFY_GIT_REF ]]; then
+            CLOUDIFY_GIT_REF=$(command git -C "${CLOUDIFY_SCRIPT_DIR:-$PWD}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+            if [[ -z "${CLOUDIFY_GIT_REF:-}" || "$CLOUDIFY_GIT_REF" == "HEAD" ]]; then
+                CLOUDIFY_GIT_REF=$(command git -C "${CLOUDIFY_SCRIPT_DIR:-$PWD}" rev-parse HEAD 2>/dev/null || true)
+            fi
+            export CLOUDIFY_GIT_REF
+        fi
+
         # --- Resolve the forwarded names and their literals (one resolution) ---
         # Run in THIS shell (not $()) so the exports survive for envsubst below
         # (inv 1); only the NAMES come back, through a file.
@@ -183,14 +230,15 @@ function cloudify_remote_sync() {
                 install | --install) _ctx_action=install; _ctx_phase=install; break ;;
                 configure | --configure) _ctx_action=configure; _ctx_phase=install; break ;;
                 uninstall | --uninstall | u) _ctx_action=uninstall; _ctx_phase=install; break ;;
+                verify | --verify) _ctx_action=verify; _ctx_phase=verify; break ;;
             esac
         done
         _ctx_action="${_ctx_action:-${_ctx_args[0]:-verify}}"
-        if [[ "$_ctx_phase" == install ]]; then
+        if [[ "$_ctx_action" =~ ^(install|configure|uninstall|verify)$ ]]; then
             local _ctx_saw_action=false
             for _ctx_arg in ${_ctx_args[@]+"${_ctx_args[@]}"}; do
                 case "$_ctx_arg" in
-                    install | --install | configure | --configure | uninstall | --uninstall | u)
+                    install | --install | configure | --configure | uninstall | --uninstall | u | verify | --verify)
                         _ctx_saw_action=true
                         continue
                         ;;
@@ -210,7 +258,7 @@ function cloudify_remote_sync() {
             _ctx_own=1
         fi
         _cloudify_dispatch_vars "$_pkg_vars_list" "$_ctx_action" "$_ctx_deployment" "$_ctx_phase" \
-            "${_ctx_pkgs[@]}"
+            "${_ctx_pkgs[@]}" || return 1
         if [[ -n "$_ctx_own" ]]; then
             # Remove the self-created context only when THIS function returns, so
             # the provenance labels are still readable for the debug rendering
@@ -241,7 +289,7 @@ function cloudify_remote_sync() {
         # Substitute template variables via envsubst (only listed variables are expanded)
         # shellcheck disable=SC2016
         cloudify_remote_payload=$(envsubst \
-            "\$CLOUDIFY_DISABLE_COLORS \$DEBUG \$CLOUDIFY_LOG_LEVEL \$CLOUDIFY_NO_DEFAULTS \$CLOUDIFY_CLEAR_DATA \$CLOUDIFY_FORCE \$CLOUDIFY_NO_VERIFY \$PKG_VERIFY_TIMEOUT \$CLOUDIFY_FORCE_UPDATE \$CLOUDIFY_UPDATE_DELAY \$CLOUDIFY_REMOTE_USER \$CLOUDIFY_REMOTE_PWD \$CLOUDIFY_GITHUBUSER \$CLOUDIFY_GITHUBPWD \$CLOUDIFY_GITHUB_READONLY_TOKEN \$CLOUDIFY_GITLABUSER \$CLOUDIFY_GITLABPWD \$CLOUDIFY_RCLONE_REMOTE \$CLOUDIFY_RCLONE_REMOTE_REGION \$CLOUDIFY_RCLONE_REMOTE_ENDPOINT \$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID \$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY \$RESTIC_PASSWORD \$CLOUDIFY_BOOTSTRAP_URL \$CLOUDIFY_LOG_BASENAME${pkg_envsubst}" \
+            "\$CLOUDIFY_DISABLE_COLORS \$DEBUG \$CLOUDIFY_LOG_LEVEL \$CLOUDIFY_NO_DEFAULTS \$CLOUDIFY_CLEAR_DATA \$CLOUDIFY_FORCE \$CLOUDIFY_NO_VERIFY \$PKG_VERIFY_TIMEOUT \$CLOUDIFY_FORCE_UPDATE \$CLOUDIFY_UPDATE_DELAY \$CLOUDIFY_REMOTE_USER \$CLOUDIFY_REMOTE_PWD \$CLOUDIFY_GITHUBUSER \$CLOUDIFY_GITHUBPWD \$CLOUDIFY_GITHUB_READONLY_TOKEN \$CLOUDIFY_GITLABUSER \$CLOUDIFY_GITLABPWD \$CLOUDIFY_RCLONE_REMOTE \$CLOUDIFY_RCLONE_REMOTE_REGION \$CLOUDIFY_RCLONE_REMOTE_ENDPOINT \$CLOUDIFY_RCLONE_REMOTE_ACCESSKEYID \$CLOUDIFY_RCLONE_REMOTE_SECRETACCESSKEY \$RESTIC_PASSWORD \$CLOUDIFY_BOOTSTRAP_URL \$CLOUDIFY_GIT_REF \$CLOUDIFY_LOG_BASENAME${pkg_envsubst}" \
             <<< "$cloudify_remote_payload")
 
         # Append the command; </dev/null keeps package code off the payload's stdin.
@@ -273,10 +321,20 @@ function cloudify_remote_sync() {
         payload_file=$(mktemp "$CLOUDIFY_TMP/cloudify-payload-XXXXXX")
         chmod 600 "$payload_file"
         printf '%s\n' "$cloudify_remote_payload" > "$payload_file"
+        # The result channel's collection file: fresh per dispatch, so stale
+        # lines from earlier runs cannot enter it. The pass-through tap stage
+        # below appends the keyed lines; the log keeps flowing whole.
+        # Deterministic per-pid path: this forked subshell's BASHPID ($$ would
+        # report the router's pid - the logged trap) is the pid the router's
+        # wait loop waits, which hands the collection to the dispatch worker.
+        local results_file
+        results_file="$CLOUDIFY_TMP/results-${BASHPID}"
+        export CLOUDIFY_RESULTS_FILE="$results_file"
         ssh -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" -o "ConnectTimeout=10" \
             "$CLOUDIFY_REMOTE_USER@$host" 'bash -s' < "$payload_file" 2>&1 \
             | stdbuf -oL sed "s/^/$host: /" \
             | stdbuf -oL sed "s/^${host}: \$//" \
+            | cloudify_results_tap "$results_file" \
             | tee -a "${CLOUDIFY_LOG_FILE:-/dev/null}" >&2 \
             || cloudify_remote_exit_code=$?
         rm -f "$payload_file"

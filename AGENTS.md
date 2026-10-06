@@ -18,6 +18,7 @@ Everything else: plain TDD, no gate.
 - **Tool priority.** cloudify > ivps > incus; incus only with explicit consent.
 - **Verify stuck before killing.** A slow mutating op isn't a hang - confirm no progress (D-state, zero I/O) first. Mid-op kills leave dirty state that breaks the next run.
 - **Docs before code, logs before hypotheses.** Read README/AGENTS + logs before diagnosing; never assert an unconfirmed root cause.
+- **Superseded ADRs need surfaced consent.** ADRs are append-only, so a newer ADR contradicting an older one is normal and must not stop work. But when a decision departs from an agreed-upon ADR, surface the departure first and get explicit, well-informed consent - never follow the supersession chain silently.
 
 ## Conventions
 
@@ -41,7 +42,7 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 - **Plugin API**: `pkg_*` functions in `lib/package-api.sh`. Signatures are stable — used by 75+ packages.
 - **Shadow commands**: `lib/shadows/*.sh` override `sudo`, `apt-get`, `add-apt-repository`, `git` with wrappers for password injection, idempotency, auth. Recipes call bare commands — shadows handle the rest.
 - **Targets** (`lib/targets.sh`): resolve an `--on` target host to (node, instance, ssh host); ivps is the inventory provider; validation only, never provisioning.
-- **Registry** (`lib/registry.sh`): observation records per (deployment, target, package) at `$(ivps node path <node>)/[<instance>/]deployments/<id>/pkgs/<pkg>/config.yaml`, cloudify-owned fallback bucket when no node resolves; written after a successful dispatch, uninstall marks `removed`, `deployment delete` sweeps. Observation only, never a precedence source (ADR-020).
+- **Registry** (`lib/registry.sh`): legacy records at `$(ivps node path <node>)/[<instance>/]deployments/<id>/pkgs/<pkg>/config.yaml` (cloudify-owned fallback bucket when no node resolves), read-only at runtime; migration consumes them, `deployment delete` sweeps. Never a precedence source (ADR-020).
 - **Runbooks** (`lib/runbooks.sh`): repo-tracked Markdown plan (`runbooks/<app>/<flavor>/runbook.md`, the only discoverable shape: front-matter `deployment` + `targets`, `bash step=<type>` fences). `cloudify deployment run <id>` binds targets, preflights required vars, runs the steps (a `human-gate` step pauses), writes a run snapshot; `deployment replay` re-runs from one. See `runbooks/README.md`.
 - **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Var sources, weakest to strongest: recipe default < `remote-vars.yaml` (global) < `pkgs/<pkg>.yaml` (package) < `apps/<app>/<flavor>/defaults.yaml` (application defaults) < `deployments/<app>/<flavor>/<name>/values.yaml` (deployment) < caller env; a name forwards only if a `.remote-vars` declaration or a file store knows it. Values may be secret references (`@backend:locator`, `@@` escapes). Loaded by `lib/vars.sh` (+ `lib/secrets.sh` backends); `lib/credentials.sh` loads only system credentials.
 - **Remote payload**: `declare -f` extracts template body as literal text, `envsubst` with explicit allow-list substitutes only listed vars. Single-quoted `$VAR` references resolve on the remote side.
@@ -51,6 +52,8 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 - **Container OS**: Ubuntu 24.04
 
 ## SDLC
+
+Review passes are bounded: a SPEC review gets one review pass, one fixing pass, and one verification pass; a Technical review gets at most three review/fix/verify passes. A verification pass that still finds must-fix findings escalates to Rachid - never another loop. Budgets are per reviewed artifact; when a budget is exhausted, stop and escalate. Reason: each extra loop iteration adds micro-drift that becomes truth in the next iteration, so drift multiplies.
 
 TDD cycle. All tests run inside an Incus container (`cloudai:cloudify`), never on localhost.
 
@@ -71,9 +74,12 @@ Full suite at phase and milestone boundaries; E2E is an exit gate, never a debug
 
 **Implementation:** the lead agent writes the code and shows the moves; subagents review, research, and read large taps.
 
-**Debugging:** Read `/tmp/cloudify/logs/<timestamp>.log`. Fix one issue, push, re-test.
+**Logs and observability:** Two channels only, for debugging, background tasks and agent observability alike: cloudify's live log (`/tmp/cloudify/logs/latest.log`) and the run's TAP (`results/<suite>/report.tap`). Read them before forming any hypothesis; improvised repro scripts, custom logs and test-output greps are forbidden. Fix one issue, push, re-test.
+**Test transport:** plain `ssh root@X` (Tailscale SSH, no options, no incus daemon) is the only test transport: one ssh session streams the tree to the test target (`X` = `CLOUDIFY_TEST_TARGET`, default `cloudify`), runs bats there, streams the TAP back live, and the ssh exit is the run's exit. Never `ivps exec`, never the incus API, never per-command round trips, never backgrounded remote runs. A repeat of the improvisation trap escalates to Rachid immediately.
 
 **Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues.
+
+**Versioning:** strict SemVer. The `VERSION` file at the repo root is the single source; `cloudify --version` prints it; `CLOUDIFY_VERSION` overrides it in tests. Bump per semver whenever the tool meaningfully changes (breaking: MAJOR, behavior/features: MINOR, fixes: PATCH).
 
 **Normative files:** the design (`REDESIGN.md`) and the plan (`plans/<current>.md` via `PLAN.md`) are the single source of truth. Everything else is a working note I may use freely, except `schemas/v1/` (machine-enforced), `AGENTS.md` (process) and `LOGS.md`/`HISTORY.md` (required records). Every spec or plan change must land in a normative file, and a design change lands in `REDESIGN.md` in the same commit as the decision that authorizes it.
 

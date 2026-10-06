@@ -13,6 +13,7 @@ function usage() {
     IMPORTANT: --on <host> must come BEFORE install/uninstall, not after.
     examples:
         cloudify help                                   print this usage help
+        cloudify --version                              print the version (strict semver, VERSION file)
         cloudify init                                   Full setup: PATH, tools, credentials (once per machine)
         cloudify credentials|c                          Set all credentials interactively
         cloudify credentials <section>                  Set specific credentials (remote, local, github, gitlab)
@@ -71,8 +72,23 @@ CLOUDIFY_SCRIPT_DIR=$(cd "$(dirname "$( [ -L "${BASH_SOURCE[0]}" ] && readlink -
 export CLOUDIFY_LOCAL_BIN="$HOME"/.local/bin
 : "${EDITOR:=vim}" && export EDITOR
 export CLOUDIFY_RECIPE_FILENAME="init.sh"
-export CLOUDIFY_BOOTSTRAP_URL="https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh"
-export CLOUDIFY_TMP=/tmp/cloudify
+# Always-latest gist form (Rachid's ruling 2026-09-30): gist edits go live at
+# each host's next update window. The revision-pinned form stays available for
+# emergencies by restoring the /raw/<revision>/ segment.
+export CLOUDIFY_BOOTSTRAP_URL="https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/cloudify.sh"
+# Per-process scratch (Rachid-consented 2026-09-27; tmp/tmp-isolation-description.md):
+# a fixed shared dir let any exiting process sweep every other live process's
+# temps. The ROOT is env-overridable (tests sandbox it); the scratch dir itself
+# is unconditionally fresh per process, so an inherited CLOUDIFY_TMP is never
+# reused. Logs keep the fixed home under the ROOT (remote.sh + init_log).
+: "${CLOUDIFY_TMP_ROOT:=/tmp/cloudify}" && export CLOUDIFY_TMP_ROOT
+mkdir -p "$CLOUDIFY_TMP_ROOT"
+# Bounded orphan control: scratch dirs of processes killed before their own
+# cleanup, older than a day, are swept at startup; fresh siblings stay.
+find "$CLOUDIFY_TMP_ROOT" -maxdepth 1 -name 'tmp-*' -type d -mmin +1440 -exec rm -rf {} + 2>/dev/null || true
+CLOUDIFY_TMP="$(mktemp -d "$CLOUDIFY_TMP_ROOT/tmp-XXXXXXXXXXXX")"
+export _CLOUDIFY_TMP_OWNER="$$"
+export CLOUDIFY_TMP
 export CLOUDIFY_CONTEXT_DIR="${CLOUDIFY_TMP}/context"
 
 #== ENVIRONMENT
@@ -117,7 +133,10 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/targets.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/registry.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/state.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/context.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/matching.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/worker.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/runbooks.sh"
+source "$CLOUDIFY_SCRIPT_DIR/lib/adoption.sh"
 
 #== INITIALIZATION
 function cloudify_init_paths() {
@@ -252,6 +271,11 @@ function _cloudify_execute_package_action() {
         _cloudify_context_file_init
     fi
     if [[ "$action" == "install" ]]; then
+        # Local collection file for the result channel: fresh per dispatch; the
+        # in-process child appends its lines directly (remote dispatches collect
+        # through the stream's tap stage instead).
+        CLOUDIFY_RESULTS_FILE=$(mktemp "$CLOUDIFY_TMP/cloudify-results-XXXXXX")
+        export CLOUDIFY_RESULTS_FILE
         # Auto-install @default packages first (idempotent — apt skips already-installed)
         # With --no-defaults, install only basics (essential tooling) instead of all defaults
         local defaults
@@ -269,7 +293,8 @@ function _cloudify_execute_package_action() {
             # NOT attempted — fail fast with a clear message + remediation.
             # R1: the same one-resolution path runs on the local path too, so one
             # precedence governs local and remote installs (I9).
-            if ! ( _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install $defaults; cloudify_install_package $defaults ); then
+            if ! ( _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install $defaults; # shellcheck disable=SC2034 # consumed by pkg_depends result emission
+                CLOUDIFY_RESULT_PARENT=@defaults; cloudify_install_package $defaults ); then
                 msg "${RED}@default package(s) failed to install — your requested package(s) were NOT attempted.${RESET}"
                 msg "${RED}Fix the failure above, or re-run with --no-defaults to install only basics + your package(s).${RESET}"
                 exit 1
@@ -281,14 +306,16 @@ function _cloudify_execute_package_action() {
         # --clear-data implies CLOUDIFY_FORCE.
         PKG_DEBUG "${YELLOW}cloudify_install_package ${pkgs[*]}${RESET}"
         # shellcheck disable=SC2030
-        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_install_package "${pkgs[@]}") &
+        # shellcheck disable=SC2030 # subshell-local on purpose: per-pid collection
+        (export CLOUDIFY_FORCE=true; [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]] && export CLOUDIFY_FORCE=true; export CLOUDIFY_RESULTS_FILE="$CLOUDIFY_TMP/results-${BASHPID}"; _cloudify_dispatch_vars /dev/null install "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_install_package "${pkgs[@]}") &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
         is_setup_in_progress=true
     elif [[ "$action" == "configure" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_configure_package ${pkgs[*]}${RESET}"
-        ( _cloudify_dispatch_vars /dev/null configure "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_configure_package "${pkgs[@]}" ) &
+        # shellcheck disable=SC2030,SC2031 # subshell-local on purpose: per-pid collection
+        ( export CLOUDIFY_RESULTS_FILE="$CLOUDIFY_TMP/results-${BASHPID}"; _cloudify_dispatch_vars /dev/null configure "${CLOUDIFY_DEPLOYMENT:-}" reconfigure "${pkgs[@]}"; cloudify_configure_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
@@ -296,18 +323,24 @@ function _cloudify_execute_package_action() {
     elif [[ "$action" == "uninstall" ]]; then
         PKG_DEBUG "${YELLOW}cloudify_uninstall_package ${pkgs[*]}${RESET}"
         # The uninstall leg needs the same resolved vars as install/configure.
-        ( _cloudify_dispatch_vars /dev/null uninstall "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_uninstall_package "${pkgs[@]}" ) &
+        # shellcheck disable=SC2031 # subshell-local on purpose: per-pid collection
+        ( export CLOUDIFY_RESULTS_FILE="$CLOUDIFY_TMP/results-${BASHPID}"; _cloudify_dispatch_vars /dev/null uninstall "${CLOUDIFY_DEPLOYMENT:-}" install "${pkgs[@]}"; cloudify_uninstall_package "${pkgs[@]}" ) &
         _CLOUDIFY_BG_PIDS+=($!)
         _CLOUDIFY_BG_HOSTS[$!]="localhost"
         _cloudify_note_bg "$!" "$action" "${pkgs[*]}" "${_CLOUDIFY_CUR_TARGET:-$'local\t\tlocalhost'}" "${CLOUDIFY_CONTEXT_FILE:-}"
         is_setup_in_progress=true
     elif [[ "$action" == "verify" ]]; then
         PKG_DEBUG "${YELLOW}cloudify verify ${pkgs[*]}${RESET}"
+        # shellcheck disable=SC2030,SC2031 # subshell-local on purpose
         (
             _rc=0
+            cloudify_results_print_checkout
             for _vpkg in "${pkgs[@]}"; do
                 [[ -d "$CLOUDIFY_DIR/pkg/$_vpkg" ]] || die "Not a cloudify package: $_vpkg"
-                _cloudify_run_verify "$_vpkg" || _rc=1
+                _cloudify_verify_seed_env "$_vpkg"
+                local _vverif=failed _vrc=1
+                if _cloudify_run_verify "$_vpkg"; then _vverif=ok; _vrc=0; else _rc=1; fi
+                cloudify_result_emit - "$_vpkg" verify verify "$_vrc" "$_vverif" "$(_cloudify_result_version_of "$_vpkg")"
             done
             exit "$_rc"
         ) &
@@ -329,6 +362,33 @@ function _cloudify_dispatch() {
     [[ "$packages" == *--install || "$packages" == *--configure || "$packages" == *--uninstall ]] && die "Cloudify usage error: Empty package section."
     [[ "$hosts" != "localhost" ]] && _cloudify_require_remote_creds
 
+    # ADR-032 + the --name addressing rule: a bare MUTATING invocation (no
+    # runbook tuple active, package words present) synthesizes ONE _direct
+    # deployment for ALL its hosts - the name minted once HERE (or the
+    # operator's --name, reused, never regenerated) and carried by every
+    # dispatch of this invocation; the per-host workers accumulate their
+    # bindings into it. An UNNAMED verify stays out (an ad-hoc observation:
+    # no records to seed against per ADR-030, records nothing by the standing
+    # decision) - a NAMED verify is deliberate addressing and runs under the
+    # deployment (seeded against its applied values, event recorded).
+    if [[ -z "${CLOUDIFY_APPLICATION:-}" && -n "${packages#--"$action"}" ]]; then
+        local _dp="${packages#--"$action"}"
+        _dp="${_dp# }"; _dp="${_dp%% *}"
+        [[ -n "$_dp" ]] || _dp="$action"
+        local _dname=""
+        if [[ -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]]; then
+            _dname="$CLOUDIFY_DEPLOYMENT_NAME"   # --name: explicit addressing
+            cloudify_state_deployment_dir "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$_dname" >/dev/null ||
+                die "--name '$_dname' is not a valid deployment name."
+        elif [[ "$action" != "verify" && "${CLOUDIFY_VERIFY_ONLY:-}" != "true" ]]; then
+            _dname=$(cloudify_state_direct_generated_name "$_dp")
+        fi
+        if [[ -n "$_dname" ]]; then
+            export CLOUDIFY_APPLICATION="$_DIRECT_APP" CLOUDIFY_FLAVOR="$_DIRECT_FLAVOR"
+            export CLOUDIFY_DEPLOYMENT_NAME="$_dname"
+        fi
+    fi
+
     # Map each ssh host back to the target triple the resolver produced for it
     # (T1 stored them in _CLOUDIFY_TARGETS, same order as the hosts list). No
     # ivps call here; a target with no triple (should not happen) records nothing.
@@ -337,6 +397,27 @@ function _cloudify_dispatch() {
     for _t in ${_CLOUDIFY_TARGETS[@]+"${_CLOUDIFY_TARGETS[@]}"}; do
         _target_of_host["${_t##*$'\t'}"]="$_t"
     done
+
+    # The binding slot each host lands in (ADR-032): `direct` for a single
+    # host (unchanged), the host's own identity word when the invocation
+    # spans several. Carried as a 4th tab field on the target triple.
+    local _slot _n _i _s _TAB=$'\t'
+    if (( $(wc -w <<< "$hosts") > 1 )); then
+        for _s in $hosts; do
+            _t="${_target_of_host[$_s]:-$'\t\t'$_s}"
+            _n="${_t%%$'\t'*}"
+            local _tr="${_t#*$'\t'}"; _i="${_tr%%$'\t'*}"
+            if [[ -n "$_i" ]]; then _slot="${_n}:${_i}"
+            elif [[ -n "$_n" ]]; then _slot="$_n"
+            else _slot="$_s"; fi
+            _target_of_host["$_s"]="$_t${_TAB}$_slot"
+        done
+    else
+        for _s in $hosts; do
+            _t="${_target_of_host[$_s]:-}"
+            [[ -n "$_t" ]] && _target_of_host["$_s"]="$_t${_TAB}direct"
+        done
+    fi
 
     # Verify path: the `verify` action, or the `--verify install` alias.
     if [[ "$action" == "verify" || "${CLOUDIFY_VERIFY_ONLY:-}" == "true" ]]; then
@@ -349,10 +430,23 @@ function _cloudify_dispatch() {
             if [[ "$hosts" == "localhost" ]]; then
                 local -a _vp=()
                 read -ra _vp <<< "$verify_pkgs"
+                # The same target export the remote arm makes: the active
+                # deployment tuple (bare dispatches included, ADR-032) means
+                # the applied-seed block needs THIS dispatch's resolved triple.
+                export CLOUDIFY_CONTEXT_TARGET="${_target_of_host[localhost]:-}"
                 _cloudify_execute_package_action verify "${_vp[@]}"
             else
                 PKG_DEBUG_LN "${GREEN}cloudify_remote $host verify $verify_pkgs${RESET}"
+                # The resolved triple for THIS dispatch: the applied-seed block
+                # reads it parent-side (never a command argument); before this
+                # export, runbook verify/configure steps under an active tuple
+                # died "no target resolved for the applied seed".
+                export CLOUDIFY_CONTEXT_TARGET="${_target_of_host[$host]:-}"
                 cloudify_remote "$host" "verify $verify_pkgs" && is_setup_in_progress=true
+                # The verify dispatch records too: its worker writes health and
+                # projects the verified word (the seeded verify is how adoption
+                # and re-runs observe - a verify is an event like any other).
+                _cloudify_note_bg "$!" "verify" "$verify_pkgs" "${_target_of_host[$host]:-$'\t\t'$host}" "${CLOUDIFY_CONTEXT_FILE:-}"
             fi
         done
         return 0
@@ -376,6 +470,9 @@ function _cloudify_dispatch() {
             # shellcheck disable=SC2031
             [[ "$action" == "install" ]] && export CLOUDIFY_FORCE=true
             # --clear-data implies CLOUDIFY_FORCE (already set above if --clear-data)
+            # The resolved triple for THIS dispatch (same rationale as the verify
+            # path): the applied-seed block reads it parent-side.
+            export CLOUDIFY_CONTEXT_TARGET="${_target_of_host[$host]:-}"
             cloudify_remote "$host" "$packages" && is_setup_in_progress=true
             # $! is the pid cloudify_remote just backgrounded; attach the metadata
             # the final wait loop needs for the registry record (T3).
@@ -434,6 +531,10 @@ function main() {
             usage
             break
             ;;
+        -V | --version | version)
+            printf 'cloudify %s\n' "$(head -n 1 "$CLOUDIFY_SCRIPT_DIR/VERSION" 2>/dev/null || printf 'unknown')"
+            break
+            ;;
         -v)
             set -x
             ;;
@@ -453,6 +554,10 @@ function main() {
                 break
             fi
             cloudify_init_paths
+            # Framework attribution: init's converge reports parent=@init on its
+            # result lines (design: framework work reports truthfully).
+            # shellcheck disable=SC2034 # consumed by pkg_depends result emission
+            CLOUDIFY_RESULT_PARENT=@init
             cloudify_install_package required
             command -v rsync >/dev/null 2>&1 || cloudify_install_package rsync
             # shellcheck source=/dev/null
@@ -645,19 +750,55 @@ function main() {
                     ;;
                 show)
                     shift
-                    [[ -n "${1:-}" ]] || die "Usage: cloudify deployment show <id>"
-                    cloudify_deployment_show "$1"
+                    local _show_id="" _show_user=0 _show_name="default"
+                    while [[ -n "${1:-}" ]]; do
+                        case "$1" in
+                            --user-values) _show_user=1 ;;
+                            --name)
+                                shift
+                                _show_name="${1:-}"
+                                [[ -n "$_show_name" ]] || die "Usage: cloudify deployment show <application>[/<flavor>] [--name <name>] [--user-values]"
+                                ;;
+                            *)
+                                if [[ -z "$_show_id" ]]; then _show_id="$1"; else die "Usage: cloudify deployment show <application>[/<flavor>] [--name <name>] [--user-values]"; fi
+                                ;;
+                        esac
+                        shift
+                    done
+                    [[ -n "$_show_id" ]] || die "Usage: cloudify deployment show <application>[/<flavor>] [--name <name>] [--user-values]"
+                    cloudify_deployment_show "$_show_id" "$_show_user" "$_show_name"
+                    ;;
+                unset)
+                    shift
+                    cloudify_deployment_unset "$@"
                     ;;
                 migrate)
                     shift
                     cloudify_deployment_migrate "$@"
+                    ;;
+                delete)
+                    shift
+                    [[ -n "${1:-}" && "$1" =~ ^[^/]+/[^/]+/[^/]+$ ]] || die "Usage: cloudify deployment delete <app>/<flavor>/<name>"
+                    IFS='/' read -r _del_app _del_flavor _del_name <<< "$1"
+                    cloudify_deployment_delete "$_del_app" "$_del_flavor" "$_del_name"
+                    ;;
+                sweep)
+                    shift
+                    cloudify_deployment_sweep "$@"
+                    ;;
+                rebuild-manifest)
+                    shift
+                    [[ -n "${1:-}" && "$1" =~ ^[^/]+/[^/]+/[^/]+$ ]] || die "Usage: cloudify deployment rebuild-manifest <app>/<flavor>/<name>"
+                    IFS='/' read -r _rb_app _rb_flavor _rb_name <<< "$1"
+                    cloudify_state_manifest_rebuild "$_rb_app" "$_rb_flavor" "$_rb_name"
+                    msg "Manifest: $(cloudify_state_manifest_file "$_rb_app" "$_rb_flavor" "$_rb_name") (rebuilt from events)"
                     ;;
                 replay)
                     shift
                     cloudify_deployment_replay "$@"
                     ;;
                 *)
-                    die "Usage: cloudify deployment <list|show|migrate|replay> [args]"
+                    die "Usage: cloudify deployment <list|show|unset|migrate|replay|rebuild-manifest|delete|sweep> [args]"
                     ;;
             esac
             break
@@ -674,6 +815,19 @@ function main() {
                     ;;
                 *)
                     die "Usage: cloudify app <run> [args] (reconfigure, verify and teardown arrive in Phase 4)"
+                    ;;
+            esac
+            break
+            ;;
+        adoption)
+            shift
+            case "${1:-}" in
+                record)
+                    shift
+                    cloudify_adoption_record "$@"
+                    ;;
+                *)
+                    die "Usage: cloudify adoption record <app>/<flavor>/<name> --on <target> [--notes <text>] [--operator <name>] [--facts <file>] <pkg>..."
                     ;;
             esac
             break
@@ -702,6 +856,16 @@ function main() {
             PKG_DEBUG "In cloudify, Running: " cloudify_hostnames "$@"
             shift && cloudify_hostnames "$@"
             break
+            ;;
+        --name)
+            # Direct-deployment addressing (ADR-027's "explicit --name reuses
+            # the deployment", now wired): bare dispatches run under the named
+            # deployment instead of synthesizing one. The runbook engine parses
+            # its own --name inside its subcommand line. Shift only the VALUE:
+            # the loop's bottom shift consumes the option word itself.
+            [[ -z "${2:-}" ]] && die "Cloudify usage error: --name needs a deployment name."
+            export CLOUDIFY_DEPLOYMENT_NAME="${2:-}"
+            shift
             ;;
         --on)
             # Build hosts list
@@ -817,27 +981,47 @@ function main() {
             total_count=$((total_count + 1))
             _bg_host="${_CLOUDIFY_BG_HOSTS[$_bg_pid]:-unknown}"
             wait "$_bg_pid" && _bg_rc=0 || _bg_rc=$?
+            # The dispatch worker (the last mile): events + inventory + manifest
+            # projection for THIS dispatch, before its context is removed (the
+            # worker reads the context; it never re-resolves a value). A worker
+            # failure fails the dispatch's accounting - the records stand, the
+            # exit says so.
+            if [[ -n "${_CLOUDIFY_BG_ACTION[$_bg_pid]:-}" && -n "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]:-}" ]]; then
+                local -a _worker_words=()
+                read -r -a _worker_words <<< "${_CLOUDIFY_BG_PKGS[$_bg_pid]:-}"
+                if ! _cloudify_dispatch_worker \
+                    "${_CLOUDIFY_BG_ACTION[$_bg_pid]}" \
+                    "${_CLOUDIFY_BG_TARGET[$_bg_pid]}" \
+                    "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}" \
+                    "$CLOUDIFY_TMP/results-$_bg_pid" \
+                    "${_worker_words[@]}"; then
+                    _bg_rc=1
+                fi
+            fi
             if [[ "$_bg_rc" -eq 0 ]]; then
                 msg "  ${GREEN}${_bg_host}: OK${RESET}"
-                # _cloudify_registry_record_bg removes the dispatch context when
-                # it writes a record. It returns early when there is no deployment
-                # (a direct package command), so remove it here too: the file
-                # carries resolved values and must not outlive the dispatch.
-                _cloudify_registry_record_bg "$_bg_pid"
-                if [[ -n "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]:-}" && -e "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}" ]]; then
-                    rm -f "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}"
-                fi
             else
                 msg "  ${RED}${_bg_host}: FAILED (exit ${_bg_rc})${RESET}"
                 had_failures=true
                 failed_count=$((failed_count + 1))
-                # Failure path: no record write, so the parent removes the
-                # dispatch context itself (design section 5).
-                if [[ -n "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]:-}" && -e "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}" ]]; then
-                    rm -f "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}"
-                fi
+            fi
+            # Unconditional context cleanup: the dispatch context carries
+            # resolved values and must not outlive the dispatch - success,
+            # failure, or no deployment (design section 5).
+            if [[ -n "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]:-}" && -e "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}" ]]; then
+                rm -f "${_CLOUDIFY_BG_CONTEXT[$_bg_pid]}"
             fi
         done
+
+        # The acted-upon deployment identity, fed back: a synthesized name is
+        # otherwise unaddressable (ADR-027 wired the --name reuse; this prints
+        # what ran). Runbook deployments are excluded - the operator named them.
+        if [[ "${CLOUDIFY_APPLICATION:-}" == "$_DIRECT_APP" && -n "${CLOUDIFY_DEPLOYMENT_NAME:-}" ]]; then
+            local _dep_word
+            _dep_word=$(cloudify_manifest_field "$CLOUDIFY_APPLICATION" "$CLOUDIFY_FLAVOR" "$CLOUDIFY_DEPLOYMENT_NAME" status 2>/dev/null) || _dep_word=""
+            [[ "$_dep_word" == "null" || -z "$_dep_word" ]] && _dep_word=none
+            msg "Deployment: ${CLOUDIFY_APPLICATION}/${CLOUDIFY_FLAVOR}/${CLOUDIFY_DEPLOYMENT_NAME} (status ${_dep_word})"
+        fi
 
         if $had_failures; then
             msg "${RED}${failed_count}/${total_count} hosts failed. Log: ${CLOUDIFY_LOG_FILE:-}${RESET}"

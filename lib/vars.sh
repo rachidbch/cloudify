@@ -5,7 +5,9 @@
 # cloudify_context_build, reached through lib/remote.sh:_cloudify_dispatch_vars)
 # is a thin precedence walker over these helpers. Target precedence (weakest ->
 # strongest), extended by the state model v2 application inputs:
-#   recipe default < global < package < application < deployment < caller env
+#   recipe default (the recipe's own on-host shell fallback, never exported
+#   by cloudify - a declared-but-unsupplied name stays absent from the context)
+#   < global < package < application < deployment < caller env
 # `application` covers an application default (apps/<app>/<flavor>/defaults.yaml)
 # and the mapped application input; its own value resolves as
 # application default < deployment value for the input name < caller env for the
@@ -36,6 +38,7 @@ _CLOUDIFY_VARS_RESERVED=(
     DEBUG
     CLOUDIFY_BOOTSTRAP_URL
     CLOUDIFY_UPDATE_DELAY
+    CLOUDIFY_GIT_REF
     CLOUDIFY_FORCE
     CLOUDIFY_NO_VERIFY
     CLOUDIFY_DEPLOYMENT
@@ -148,9 +151,20 @@ function _cloudify_identity_valid_name() {
     [[ "${1:-}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
 }
 
+function _cloudify_identity_check_instance() {
+    _cloudify_identity_valid_instance "${2:-}" ||
+        die "Invalid ${1:-instance key} '${2:-}' (space-free result-line charset [A-Za-z0-9._+~:-])."
+}
+
 function _cloudify_identity_check_name() {
     _cloudify_identity_valid_name "${2:-}" ||
         die "Invalid ${1:-name} '${2:-}' (expected a letter or '_' followed by letters, digits or '_')."
+}
+
+# _cloudify_identity_valid_instance <value> - the space-free result-line
+# charset (schemas/v1/identity.md): safe on a result line and in a path.
+function _cloudify_identity_valid_instance() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9._+~:-]+$ ]]
 }
 
 # _cloudify_identity_valid_step_id <value> - the frozen stable runbook step ID

@@ -1,5 +1,4 @@
 ---
-deployment: demo-bind
 targets: guest
 ---
 

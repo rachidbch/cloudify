@@ -141,6 +141,6 @@ Targets bind with `--target name=addr`, else the deployment var `TARGET_<NAME>`.
 `--dry-run` prints the plan (including the selected phases) and runs nothing (and creates no manifest).
 A canonical runbook also writes the deployment manifest; a path outside the tree carries no identity and writes no manifest.
 
-Each run writes a 0600 snapshot in `${CLOUDIFY_DEPLOYMENTS_DIR}/<id>/runs/` (target bindings, raw values by name, step outputs).
+Each run writes a 0600 snapshot in the deployment's state-tree runs dir (`~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/runs/<utc>.yaml`) - target bindings, raw values by name, step outputs.
 `cloudify deployment replay <id> [--at <run>]` re-runs one: the snapshot's bindings and values are seeded (references resolved) and the same engine runs, so a repeated run sees the recorded values even if the store changed.
 Values never appear in the runbook, in output, or on a command line.

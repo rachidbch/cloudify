@@ -41,6 +41,9 @@ tasks:
   test-unit:
     desc: Run unit suites on the test target (one ssh)
     cmds:
+      # Serial on purpose: several suites pin fixed paths (/tmp/cloudify,
+      # /tmp/unit-split-log, /etc/systemd units) - cross-file parallelism
+      # races them (measured 2026-10-01; --jobs 4 experiment reverted).
       - bash tests/remote-bats.sh unit tests/unit
   test-unit:container:
     desc: Run unit suites in the container (clean room)
@@ -62,6 +65,11 @@ tasks:
     desc: Run integration tests from localhost
     cmds:
       - bash tests/run-integration.sh
+
+  test-canary:
+    desc: One complex pkg (guacamole) - proves the tool on a real stack when only cloudify code changed
+    cmds:
+      - bash tests/run-integration.sh tests/integration/package-guacamole.bats
 
   test-integration:*:
     desc: Run a specific integration test (e.g. task test-integration:bat)

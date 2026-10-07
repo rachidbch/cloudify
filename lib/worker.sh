@@ -347,6 +347,14 @@ function _cloudify_dispatch_worker() {
         if [[ "$app" == "$_DIRECT_APP" ]]; then
             cloudify_state_binding_add "$app" "$flavor" "$name" "$slot" "$ssh" "$node" "$inst"
         fi
+    elif [[ "$action" == "verify" || "${CLOUDIFY_VERIFY_ONLY:-}" == "true" ]]; then
+        # An UNNAMED verify is an ad-hoc observation (the standing decision,
+        # same wording as the router's synthesis gate): no records to seed
+        # against (ADR-030), nothing synthesized - else a multi-host bare
+        # verify would mint one _direct deployment PER HOST, contradicting
+        # ADR-032's one-invocation-one-deployment rule.
+        log_warn "worker: unnamed verify on '$node${inst:+:$inst}' is ad-hoc - no records, no event"
+        return 0
     else
         app="$_DIRECT_APP" flavor="$_DIRECT_FLAVOR"
         name=$(cloudify_state_direct_synthesize "${words[0]:-direct}" "$node" "$inst" "$ssh")

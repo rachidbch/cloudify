@@ -341,6 +341,9 @@ function cloudify_package_verify_path() {
 _cloudify_verify_seed_env() {
     local pkg="${1:?}"
     _cloudify_deployment_tuple_active || return 0
+    # A synthesized _direct name (ADR-032) never seeds: observation bucket, not
+    # an operator address - same rule as the remote gate in _cloudify_dispatch_vars.
+    [[ "${CLOUDIFY_DEPLOYMENT_SYNTHESIZED:-}" == "true" ]] && return 0
     [[ -n "${CLOUDIFY_APPLIED_SEED:-}" ]] && return 0
     local st="${CLOUDIFY_CONTEXT_TARGET:-${_CLOUDIFY_CUR_TARGET:-}}"
     local node rest inst cand

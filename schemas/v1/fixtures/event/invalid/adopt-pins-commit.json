@@ -13,7 +13,7 @@
   "application": "affine",
   "flavor": "default",
   "deployment": "main",
-  "application_commit": null,
+  "application_commit": "0123456789abcdef0123456789abcdef01234567",
   "subject": {
     "kind": "package",
     "host": "cloudai:affine",
@@ -41,5 +41,5 @@
     "previous_revision": 0,
     "resulting_revision": 1
   },
-  "development_override": true
+  "development_override": false
 }

@@ -479,6 +479,15 @@ function cloudify_context_build() {
                 _cloudify_identity_check_name "package instance variable" "$_inst_var"
                 cloudify_vars_declared_names "$_pkg" | cut -f1 | grep -qx "$_inst_var" \
                     || die "package '$_pkg': instance variable '$_inst_var' is not declared in .remote-vars."
+                # The instance key lands in state paths and result lines
+                # (both logged) - a secret-classified value can never be it.
+                # Explicit `secret` declarations and the masking name
+                # heuristic both refuse: whatever the walker would mask
+                # anywhere else must not become a path component here.
+                if [[ -n "${_ctx_secret[$_inst_var]:-}" ]] \
+                    || _cloudify_context_name_is_secret "$_inst_var"; then
+                    die "package '$_pkg': instance variable '$_inst_var' is secret-classified - a secret value can never be the instance key (it would land in paths and result lines)."
+                fi
                 _inst_val="${!_inst_var:-}"
                 [[ -n "$_inst_val" ]] \
                     || die "package '$_pkg': instance variable '$_inst_var' is unsupplied; refusing to guess the instance key."

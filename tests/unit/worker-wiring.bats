@@ -105,6 +105,19 @@ res() {
     [ "$(cloudify_manifest_field web default main last_event_id)" != "null" ]
 }
 
+@test "hook: an unnamed verify is ad-hoc - no synthesis, no records, rc 0" {
+    rubric "the standing decision: a bare verify records nothing; per-host synthesis here would fork one _direct deployment PER HOST (ADR-032 violation)"
+    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
+    : > "$CLOUDIFY_TMP/collected"
+
+    run _cloudify_dispatch_worker verify $'web1\t\tlocalhost' "$CLOUDIFY_TMP/ctx" "$CLOUDIFY_TMP/collected" nginx
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ad-hoc"* ]]
+    # Nothing was synthesized: no _direct manifest, no events.
+    [ -z "$(ls "$CLOUDIFY_STATE_DIR/deployments/_direct" 2>/dev/null)" ]
+    [ -z "$(find "$(cloudify_state_events_root)" -name '*.json' 2>/dev/null | head -1)" ]
+}
+
 @test "hook: a bare dispatch synthesizes the reserved _direct deployment" {
     unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
     {

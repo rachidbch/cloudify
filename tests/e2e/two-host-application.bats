@@ -54,9 +54,9 @@ setup_file() {
 
     # Both must answer before any dispatch, or a failure below is ambiguous.
     for h in "$HOST_A" "$HOST_B"; do
-        for _ in $(seq 1 30); do
+        for _ in $(seq 1 20); do
             _ssh "$h" true 2>/dev/null && break
-            sleep 5
+            sleep 2
         done
         _ssh "$h" true 2>/dev/null || { echo "FAIL: $h is not reachable"; return 1; }
     done

@@ -19,7 +19,11 @@ DEFAULT_PATTERN="tests/integration/package-*.bats"
 # Out of test scope (Rachid, 2026-08-10 and 2026-09-28): the hermes pair.
 # Vendor drift (installer layout + auth gate) - details and re-entry
 # conditions in ROADMAP.md "Hermes pair out of test scope".
-OUT_OF_SCOPE="package-hermes-dashboard.bats package-hermes-openwebui.bats"
+# Out of the DEFAULT sweep (Rachid, 2026-09-30): zitadel - the securevault
+# agent owns its testing; it re-enters the sweep when that work is called done
+# (explicit file args below bypass this list, so its own acceptance runs are
+# unaffected).
+OUT_OF_SCOPE="package-hermes-dashboard.bats package-hermes-openwebui.bats package-zitadel.bats"
 
 # Allow running a single test: ./tests/run-integration.sh tests/integration/package-bat.bats
 TEST_FILES=()
@@ -65,6 +69,11 @@ ensure_snapshot
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 
+# The tree is read-only during a sweep: push it ONCE, not per package
+# (7 subtree pushes x 33 packages was 5-8 min of pure repetition).
+echo "Pushing local codebase to container (once for the sweep)..."
+(cd "$PROJECT_DIR" && task sync) > /dev/null 2>&1
+
 # Run each test hermetically
 passed=0
 failed=0
@@ -85,9 +94,16 @@ for test_file in "${TEST_FILES[@]}"; do
     echo "  Clearing stale SSH host key..."
     ssh-keygen -R "$TEST_HOST" > /dev/null 2>&1 || true
 
-    # 3. Push local codebase into the restored container
-    echo "  Pushing local codebase to container..."
-    (cd "$PROJECT_DIR" && task sync) > /dev/null 2>&1
+    # 3. Prewarm ssh: the restore just rebooted the container; answering here
+    # keeps the boot wait out of the first test's dispatch ssh-wait.
+    # accept-new, not plain ssh: keygen -R just removed the entry, and plain
+    # ssh under no-TTY (ask) never connects - the loop degenerates to a fixed
+    # 20s sleep (verify-2 finding: the tailnet plain-ssh rule governs the test
+    # transport, not this harness loop).
+    for _ in $(seq 1 10); do
+        ssh -o "StrictHostKeyChecking=accept-new" "root@$TEST_HOST" true 2>/dev/null && break
+        sleep 2
+    done
 
     # 4. Ensure cloudify is on PATH (project dir contains the CLI router)
     export PATH="$PROJECT_DIR:$PATH"

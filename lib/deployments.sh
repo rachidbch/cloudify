@@ -97,7 +97,7 @@ cloudify_deployment_list() {
         while IFS=$'\t' read -r app flavor dep _path; do
             [[ -n "$app" ]] || continue
             count=$((count + 1))
-            status=$(cloudify_manifest_field "$app" "$flavor" "$dep" status 2>/dev/null) || status="-"
+            status=$(cloudify_state_status_read "$app" "$flavor" "$dep" 2>/dev/null) || status="-"
             [[ "$status" == "null" || -z "$status" ]] && status="-"
             sdisp="$status"
             [[ "$status" == verified ]] && sdisp="${GREEN}verified${RESET}"

@@ -380,6 +380,29 @@
           ]
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "command_kind": {
+            "const": "adopt"
+          }
+        },
+        "required": [
+          "command_kind"
+        ]
+      },
+      "then": {
+        "description": "An adoption event names who inferred (operator writer, never a process) and pins no commit (REDESIGN: adoption is operator-asserted).",
+        "properties": {
+          "writer": {
+            "$ref": "#/$defs/writer-operator"
+          },
+          "application_commit": {
+            "type": "null"
+          }
+        }
+      }
     }
   ],
   "$defs": {

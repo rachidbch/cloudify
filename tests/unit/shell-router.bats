@@ -497,3 +497,15 @@ ENV
     [ "$status" -ne 0 ]
     [[ "$output" == *"--application is required"* ]]
 }
+
+@test "real router: a NAMED verify on localhost refuses instead of silently recording nothing" {
+    rubric "the named verify promises an event through the dispatch worker; the localhost arm cannot keep it - die named, never lie"
+    local dep_dir
+    dep_dir="$CLOUDIFY_TMP/state/deployments/_direct/direct/named-verify-probe"
+    mkdir -p "$dep_dir"
+    run bash -c "cd $PWD && CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true \
+        CLOUDIFY_DIR=$CLOUDIFY_DIR CLOUDIFY_TMP=$CLOUDIFY_TMP CLOUDIFY_STATE_DIR=$CLOUDIFY_TMP/state DEBUG=false \
+        bash cloudify --name named-verify-probe verify bats-test 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"localhost arm is not wired"* ]]
+}

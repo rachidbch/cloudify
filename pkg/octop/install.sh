@@ -100,8 +100,8 @@ systemctl --user is-active octop >/dev/null 2>&1 \
 # --- Wait for health ------------------------------------------------------------
 _ok=""
 for _ in $(seq 1 60); do
-    _body=$(curl -s --max-time 3 "http://127.0.0.1:${OCTOP_PORT}/health" 2>/dev/null || true)
-    [[ "$_body" == *'"status": "ok"'* || "$_body" == *'"status":"ok"'* ]] && { _ok=1; break; }
+    _body=$(curl -s --max-time 3 "http://127.0.0.1:${OCTOP_PORT}/api/health" 2>/dev/null || true)
+    [[ "$_body" == *'"ok":true'* ]] && { _ok=1; break; }
     sleep 2
 done
 if [[ -z "$_ok" ]]; then
@@ -112,7 +112,7 @@ fi
 # --- Post-install ----------------------------------------------------------------
 msg ""
 msg "${GREEN}octop running (systemd user unit 'octop')${RESET}"
-msg "Health:    http://127.0.0.1:${OCTOP_PORT}/health"
+msg "Health:    http://127.0.0.1:${OCTOP_PORT}/api/health"
 msg "Dashboard: http://${OCTOP_BIND_HOST}:${OCTOP_PORT}/ (bind per OCTOP_BIND_HOST)"
 msg "State:     $OCTOP_HOME (database, workspaces, env file)"
 msg "Logs:      journalctl --user -u octop -f"

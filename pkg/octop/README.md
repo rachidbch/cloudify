@@ -31,8 +31,10 @@ state under `~/.octop/` (SQLite control plane, workspaces, secrets).
   itself loads at start; env overrides `config.json`. Foreign keys in that
   file (dashboard-set API keys) are preserved: upsert, never replace. Then
   `octop service restart` (only when something changed) and a health probe.
-- **Verify**: `systemctl --user is-active octop` + public `GET /health`
-  answering `{"status":"ok",...}`.
+- **Verify**: `systemctl --user is-active octop` + `GET /api/health`
+  answering `{"ok":true,...}` (the upstream README's `/health` is swallowed
+  by the dashboard SPA catch-all - 200 HTML; the JSON endpoint is
+  `/api/health`).
 - **Uninstall**: stops/disables the unit, removes unit + drop-in, keeps
   `~/.octop` (data). `--clear-data` removes `~/.octop` entirely - a wiped
   admin is a dead admin, the next install re-inits.

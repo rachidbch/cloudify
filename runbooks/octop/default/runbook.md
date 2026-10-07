@@ -46,7 +46,7 @@ the admin with your own credentials. The file self-removes after use.
 cloudify --on "$TARGET_SERVER" verify octop
 ```
 
-Expect an active `octop` user unit and a healthy `GET /health`.
+Expect an active `octop` user unit and a healthy `GET /api/health` (`"ok":true`).
 
 ## Reconfigure
 

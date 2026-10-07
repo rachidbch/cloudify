@@ -61,8 +61,8 @@ systemctl --user is-active octop >/dev/null 2>&1 || die "octop: service not acti
 
 _ok=""
 for _ in $(seq 1 30); do
-    _body=$(curl -s --max-time 3 "http://127.0.0.1:${OCTOP_PORT}/health" 2>/dev/null || true)
-    [[ "$_body" == *'"status": "ok"'* || "$_body" == *'"status":"ok"'* ]] && { _ok=1; break; }
+    _body=$(curl -s --max-time 3 "http://127.0.0.1:${OCTOP_PORT}/api/health" 2>/dev/null || true)
+    [[ "$_body" == *'"ok":true'* ]] && { _ok=1; break; }
     sleep 2
 done
 [[ -n "$_ok" ]] || { journalctl --user -u octop -n 20 --no-pager || true; die "octop: no healthy /health on 127.0.0.1:${OCTOP_PORT} after configure"; }

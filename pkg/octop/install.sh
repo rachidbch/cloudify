@@ -46,8 +46,13 @@ fi
 # --- Install (official installer, pinned version) ------------------------------
 if [[ ! -x "$OCTOP_BIN" ]]; then
     log_info "octop: running official installer (version $OCTOP_VERSION; uv venv under $OCTOP_HOME)..."
-    bash -c "$(curl -fsSL "$OCTOP_INSTALLER")" -s -- --version "$OCTOP_VERSION" \
-        || die "octop: installer failed (network or version '$OCTOP_VERSION' not on PyPI)" 1
+    _installer=$(mktemp) || die "octop: cannot create temp file" 1
+    curl -fsSL "$OCTOP_INSTALLER" -o "$_installer" \
+        || { rm -f "$_installer"; die "octop: cannot download the installer from $OCTOP_INSTALLER" 1; }
+    bash "$_installer" --version "$OCTOP_VERSION"
+    _rc=$?
+    rm -f "$_installer"
+    [[ $_rc -eq 0 ]] || die "octop: installer failed (see its output above; version '$OCTOP_VERSION' on PyPI?)" 1
 else
     log_info "octop: wrapper already present at $OCTOP_BIN - keeping it (upgrade is OCTOP_VERSION + --clear-data)"
 fi

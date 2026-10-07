@@ -20,7 +20,7 @@ Playable: `cloudify app run affine --name main --target server=<node>:<instance>
 - No required inputs - every knob has a recipe default. Optional: the secret
   `AFFINE_LINEAR_API_KEY` (compatibility door, see the package README):
   ```bash
-  cloudify vars set AFFINE_LINEAR_API_KEY --stdin --deployment affine.main
+  cloudify vars set AFFINE_LINEAR_API_KEY --stdin --deployment affine/default/main
   ```
 
 ## Steps

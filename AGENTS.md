@@ -44,7 +44,7 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 - **Shadow commands**: `lib/shadows/*.sh` override `sudo`, `apt-get`, `add-apt-repository`, `git` with wrappers for password injection, idempotency, auth. Recipes call bare commands — shadows handle the rest.
 - **Targets** (`lib/targets.sh`): resolve an `--on` target host to (node, instance, ssh host); ivps is the inventory provider; validation only, never provisioning.
 - **Registry** (`lib/registry.sh`): legacy records at `$(ivps node path <node>)/[<instance>/]deployments/<id>/pkgs/<pkg>/config.yaml` (cloudify-owned fallback bucket when no node resolves), read-only at runtime; migration consumes them, `deployment delete` sweeps. Never a precedence source (ADR-020).
-- **Runbooks** (`lib/runbooks.sh`): repo-tracked Markdown plan (`runbooks/<app>/<flavor>/runbook.md`, the only discoverable shape: front-matter `deployment` + `targets`, `bash step=<type>` fences). `cloudify deployment run <id>` binds targets, preflights required vars, runs the steps (a `human-gate` step pauses), writes a run snapshot; `deployment replay` re-runs from one. See `runbooks/README.md`.
+- **Runbooks** (`lib/runbooks.sh`): repo-tracked Markdown plan (`runbooks/<app>/<flavor>/runbook.md`, the only discoverable shape: front-matter `targets:` + optional `inputs:`/`map:`, `bash step=<type>` fences). `cloudify app run <app>[/<flavor>] --name <name> --target <role>=<addr>` binds targets, preflights required vars, runs the steps (a `human-gate` step pauses), writes a run snapshot; `deployment replay` re-runs from one. See `runbooks/README.md`.
 - **Configuration**: `~/.config/cloudify/` (XDG, chmod 700). System credentials in `credentials` (remote/github/gitlab). Var sources, weakest to strongest: recipe default < `remote-vars.yaml` (global) < `pkgs/<pkg>.yaml` (package) < `apps/<app>/<flavor>/defaults.yaml` (application defaults) < `deployments/<app>/<flavor>/<name>/values.yaml` (deployment) < caller env; a name forwards only if a `.remote-vars` declaration or a file store knows it. Values may be secret references (`@backend:locator`, `@@` escapes). Loaded by `lib/vars.sh` (+ `lib/secrets.sh` backends); `lib/credentials.sh` loads only system credentials.
 - **Remote payload**: `declare -f` extracts template body as literal text, `envsubst` with explicit allow-list substitutes only listed vars. Single-quoted `$VAR` references resolve on the remote side.
 - **Install guards**: stateful packages use `CLOUDIFY_FORCE`/`CLOUDIFY_CLEAR_DATA` convention. See "Install Guards" in README.md.
@@ -79,7 +79,7 @@ Full suite at phase and milestone boundaries; E2E is an exit gate, never a debug
 
 **Implementation:** the lead agent writes the code and shows the moves; subagents review, research, and read large taps.
 
-**Logs and observability:** Two channels only, for debugging, background tasks and agent observability alike: cloudify's live log (`/tmp/cloudify/logs/latest.log`) and the run's TAP (`results/<suite>/report.tap`). Read them before forming any hypothesis; improvised repro scripts, custom logs and test-output greps are forbidden. Fix one issue, push, re-test.
+**Logs and observability:** LOGS section below. Native logs only, raw; never redirect, filter or discard.
 **Test transport:** plain `ssh root@X` (Tailscale SSH, no options, no incus daemon) is the only test transport: one ssh session streams the tree to the test target (`X` = `CLOUDIFY_TEST_TARGET`, default `cloudify`), runs bats there, streams the TAP back live, and the ssh exit is the run's exit. Never `ivps exec`, never the incus API, never per-command round trips, never backgrounded remote runs. A repeat of the improvisation trap escalates to Rachid immediately.
 
 **Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues.
@@ -99,6 +99,15 @@ Full suite at phase and milestone boundaries; E2E is an exit gate, never a debug
 
 **Recipe conventions:** see "Directory structure" and "Recipe conventions" in README.md. Packages with non-obvious config/exposure/gotchas ship a `README.md` (and `docs/` if needed) — update it alongside the recipe.
 
+
+## LOGS
+
+Cloudify's native evidence channels - always these, always raw:
+
+- Every dispatch writes a full transcript on this machine: `/tmp/cloudify/logs/<YYYYMMDD-HHMMSS>.log` (the path is printed in the run's summary line). The same basename is written on the target host under its `/tmp/cloudify/logs/`, with a `latest.log` symlink there. `latest.log` does not exist on the controller.
+- bats suites stream to `results/<name>/report.tap` via `--report-formatter tap13`.
+- Read raw (`cat`, `tail`). No filters, no pipes, no `>/dev/null`, no discarding dispatch stdout: filtered or discarded output is destroyed evidence and repeats failures.
+- Read the log before forming any hypothesis. Fix one issue, push, re-test.
 
 ## Working Plan
 

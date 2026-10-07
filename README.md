@@ -33,7 +33,7 @@ cloudify install bat
 cloudify packages
 ```
 
-Cloudify itself needs `jq` for deployment state: `cloudify deployment run` renders
+Cloudify itself needs `jq` for deployment state: `cloudify app run` renders
 and validates the deployment manifest with it. It ships in the `basics` package
 (`cloudify install basics`).
 

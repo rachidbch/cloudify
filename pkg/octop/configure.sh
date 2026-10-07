@@ -23,8 +23,10 @@ fi
 [[ "$OCTOP_BIND_HOST" =~ ^[0-9a-zA-Z._-]+$ ]] \
     || die "octop: OCTOP_BIND_HOST must be an IP or hostname without spaces/specials (got '$OCTOP_BIND_HOST')"
 [[ -x "$OCTOP_BIN" ]] || die "octop: $OCTOP_BIN missing - run install first (configure never installs)"
-[[ -f "$OCTOP_HOME/octop.db" ]] || die "octop: $OCTOP_HOME/octop.db missing - run install first (configure never installs)"
 [[ -f "$OCTOP_HOME/env" ]] || die "octop: $OCTOP_HOME/env missing - run install first (configure never installs)"
+# NOTE: no octop.db precondition - the database materializes only after the
+# first-run setup wizard completes; converging env + restart on a pre-setup
+# server is safe (the one-time wizard password self-heals across restarts).
 
 # --- Converge the env file (upsert ours, keep foreign keys) --------------------
 _changed=0

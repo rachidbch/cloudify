@@ -1344,6 +1344,12 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Rachid's rulings: (1) two-products test scopes - cloudify code change => unit + gate + `task test-canary` (guacamole); pkg change => that pkg only; full sweep milestone-only; (2) fail-fast constitution rule (no env healing mid-tests). Harness: tree pushed once per sweep, plain-ssh prewarm after restore, e2e budgets tightened to measured reality (two-host 40s/host settle, k3s 200s ready, 24s MagicDNS), `test-canary` target added, `--jobs 4` tried and reverted on evidence (fixed-path suites race). Validations: unit 797/0, canary 7/0.
 
+## 2026-10-07 - pkg octop + runbook octop/default: deployed, suite 7/7
+
+- New package `octop` (self-hosted AI assistant, TencentCloud/Octop): official installer pinned 1.0.1, Octop-owned systemd user unit, config.json convergence, wizard-password first boot (no creds transit cloudify). Deployed through `cloudify app run` on cloudstation:octop - manifest verified. Suite package-octop.bats 7/7.
+- Upstream findings (pinned in pkg/octop/README.md): installer cannot install 1.0.2b* (`--prerelease=explicit` rejects transitive prerelease pins); CLI `octop init` unusable post-install (demands empty OCTOP_HOME, --force wipes the venv); README's `/health` is SPA-swallowed HTML (real endpoint `/api/health`); bind keys in `~/.octop/env` are dead under systemd (`octop run` resolves bind before apply_env_file).
+- Bootstrap gist fixed (owning layer): same-branch pushes never propagated to hosts (checkout -B only ran when the ref NAME differed); now always advances to the mandated ref head. CDN staleness on the raw gist URL remains - issue filed.
+
 ## 2026-10-07 - ivps interop audit: no impact
 
 - 78 ivps commits (since 1ec32dc, 2026-09-20) live via the ~/.local/bin symlink. Cloudify's five consumption surfaces (`node path` node+instance forms, `list` row grammar incl. TIMEOUT rows, `ip`, `node show --json`, `IVPS_DEFAULT_NODE` from config.env): zero diff hunks - byte-identical. Adjacent changes are additive tolerance (colon-normalized remote prefix, defensive `incus remote list` JSON validation, warn-not-exit on missing config). Today's two prod dispatches double as a live canary against ivps HEAD. Noted gap: cloudify tests stub ivps, so interop is only provable live.

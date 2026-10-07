@@ -26,11 +26,16 @@ state under `~/.octop/` (SQLite control plane, workspaces, secrets).
   **user** unit `octop` (+ a `LimitNOFILE` drop-in it manages). The unit
   file is Octop-owned; recipes never hand-write or rewrite it - upgrades
   that only restart still come back (upstream design).
-- **Configure**: upserts `OCTOP_PORT`, `OCTOP_BIND_HOST`,
-  `OCTOP_LOG_LEVEL` into `~/.octop/env` (0600) - the dotenv the server
-  itself loads at start; env overrides `config.json`. Foreign keys in that
-  file (dashboard-set API keys) are preserved: upsert, never replace. Then
-  `octop service restart` (only when something changed) and a health probe.
+- **Configure**: merges `OCTOP_PORT`, `OCTOP_BIND_HOST`, `OCTOP_LOG_LEVEL`
+  into `~/.octop/config.json` (jq read-merge-write, foreign keys preserved)
+  and restarts only when something changed, then probes `/api/health`.
+  config.json - NOT `~/.octop/env` - is the bind truth: `octop run`
+  resolves CLI flag > process env > config.json, and applies the env file
+  only AFTER binding, so env-file `OCTOP_PORT` is silently ignored under
+  systemd (upstream ordering: `env_bind_overrides` precedes the server's
+  `apply_env_file`). The env file stays the dashboard/admin's own surface
+  (API keys, database - keys the server reads at runtime); this recipe
+  never touches it.
 - **Verify**: `systemctl --user is-active octop` + `GET /api/health`
   answering `{"ok":true,...}` (the upstream README's `/health` is swallowed
   by the dashboard SPA catch-all - 200 HTML; the JSON endpoint is

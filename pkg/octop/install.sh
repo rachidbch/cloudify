@@ -70,23 +70,21 @@ fi
 # mints a one-time wizard password (~/octop-login.txt) - no CLI init, no env
 # creds. The post-install banner prints it for the operator.
 
-# --- Baseline runtime config (first converge, files only) ----------------------
-# The server loads $OCTOP_HOME/env itself at start; install writes the baseline
-# so the first boot serves on the declared port/bind. Later convergence is
-# configure.sh's job (same upsert, never destructive to foreign keys).
+# --- Baseline runtime config (files only) --------------------------------------
+# The bind truth for `octop run` is: CLI flag > process env > config.json -
+# the env FILE is applied only after binding, so OCTOP_PORT/OCTOP_BIND_HOST
+# in ~/.octop/env would be ignored under systemd (upstream: env_bind_overrides
+# runs in the CLI before OctopServer.start applies the env file). config.json
+# is the surface that works; jq read-merge-write preserves foreign keys.
 mkdir -p "$OCTOP_HOME" || die "octop: cannot create $OCTOP_HOME" 1
-touch "$OCTOP_HOME/env" && chmod 600 "$OCTOP_HOME/env"
-_cloudify_octop_env_upsert() {
-    local key="$1" value="$2" file="$OCTOP_HOME/env"
-    if grep -q "^${key}=" "$file" 2>/dev/null; then
-        sed -i "s|^${key}=.*|${key}=${value}|" "$file"
-    else
-        printf '%s=%s\n' "$key" "$value" >> "$file"
-    fi
-}
-_cloudify_octop_env_upsert OCTOP_PORT "$OCTOP_PORT"
-_cloudify_octop_env_upsert OCTOP_BIND_HOST "$OCTOP_BIND_HOST"
-_cloudify_octop_env_upsert OCTOP_LOG_LEVEL "$OCTOP_LOG_LEVEL"
+_config="$OCTOP_HOME/config.json"
+[[ -f "$_config" ]] || printf '{}\n' > "$_config"
+_tmp="$_config.cloudify-new"
+jq --arg h "$OCTOP_BIND_HOST" --argjson p "$OCTOP_PORT" --arg l "$OCTOP_LOG_LEVEL" \
+    '.bind_host=$h | .port=$p | .log_level=$l' "$_config" > "$_tmp" \
+    || die "octop: cannot merge $_config (corrupt json?)" 1
+mv "$_tmp" "$_config" || die "octop: cannot rewrite $_config" 1
+log_info "octop: config.json baseline (bind ${OCTOP_BIND_HOST}:${OCTOP_PORT}, log ${OCTOP_LOG_LEVEL})"
 
 # --- systemd user service (Octop's own registration) ---------------------------
 # `octop service start` installs the unit if missing (+ LimitNOFILE drop-in)

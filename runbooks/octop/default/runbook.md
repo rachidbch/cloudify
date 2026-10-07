@@ -54,7 +54,7 @@ Expect an active `octop` user unit and a healthy `GET /api/health` (`"ok":true`)
 cloudify --on "$TARGET_SERVER" configure octop
 ```
 
-Converges the env file (port, bind host, log level) and restarts only when
+Converges config.json (port, bind host, log level) and restarts only when
 something changed; never touches the database or the unit file.
 
 ## Teardown

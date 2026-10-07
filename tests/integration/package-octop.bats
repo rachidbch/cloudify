@@ -51,11 +51,11 @@ setup_file() {
     [ "$output" = "600" ]
 }
 
-@test "env file carries the managed knobs on $TEST_HOST" {
-    rubric "install writes the dotenv the server loads itself"
-    run $TEST_SSH "root@$TEST_HOST" 'grep -c "^OCTOP_\(PORT\|BIND_HOST\|LOG_LEVEL\)=" /root/.octop/env'
+@test "config.json carries the managed knobs on $TEST_HOST" {
+    rubric "install merges the bind truth into config.json (env-file bind keys are upstream-dead)"
+    run $TEST_SSH "root@$TEST_HOST" 'jq -r "[.port, .bind_host, .log_level] | @csv" /root/.octop/config.json'
     [ "$status" -eq 0 ]
-    [ "$output" -ge 3 ]
+    [ "$output" = '8088,"127.0.0.1","info"' ]
 }
 
 @test "configure converges a port change and stays healthy on $TEST_HOST" {

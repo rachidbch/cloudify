@@ -1348,3 +1348,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Exit-gate reviews: SPEC PASS; Technical FAIL->FIX twice (9 defects total, all verified-fixed; the last round was 2 test-harness one-liners, MEDIUM/LOW per Rachid's gravity rule -> rerun; two transport wedges -> pre-agreed evidence-acceptance fallback). VERSION 0.2.0 -> 0.3.0 (MINOR: status vocabulary, adoption command, ADR-032 direct deployments, seeding split, schema adoption-shape enforcement, run-store normalization, hygiene sweeps, ref mandate).
 - Plans archived: adoption-honesty.md, state-model-v2-recovery.md (+ phase4 design/implementation siblings). Test scopes per the two-products ruling; zitdel merged accepted-as-is (writer-tested, owner ruling).
+
+## 2026-10-01 - technical review completed on retry: PASS
+
+- After two transport-wedge deaths, the technical verification review completed and returned exactly PASS (final line of ~/tmp/reviews-item11/verify-tech-out6.md, 479KB of full-delta review). Per Rachid's gravity rule the gate stayed open until a COMPLETED review returned; the merged master (option a, fix-forward) now stands legitimized by that completed review. Repro notes for the three pi-stack bugs involved: /home/rbc/PROJECTS/GIT/pi-loop-mode/BUGS-REPRO.md.

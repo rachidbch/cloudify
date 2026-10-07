@@ -72,7 +72,7 @@ function cloudify_remote_payload_template() {
     # shellcheck disable=SC1009,SC1054,SC1056,SC1072,SC1073,SC1083,SC2016,SC2086
     if '$CLOUDIFY_FORCE_UPDATE' || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -'$CLOUDIFY_UPDATE_DELAY' 2>/dev/null)" ]]; then
         command -v git >/dev/null 2>&1 || apt-get install -y -qq git
-        bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL')" </dev/null
+        bash -c "$(curl -sL '$CLOUDIFY_BOOTSTRAP_URL'?ts=$(date +%s))" </dev/null
     fi
     mkdir -p /tmp/cloudify/logs
     # Use the local log filename if passed (matching pair), otherwise generate one

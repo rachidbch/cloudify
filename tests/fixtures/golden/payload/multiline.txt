@@ -32,7 +32,7 @@ line-two';
     export PKG_VERIFY_TIMEOUT='';
     if '' || [[ -z "$(find $HOME/cloudify/.#last_update -mmin -'' 2> /dev/null)" ]]; then
         command -v git > /dev/null 2>&1 || apt-get install -y -qq git;
-        bash -c "$(curl -sL 'https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh')" < /dev/null;
+        bash -c "$(curl -sL 'https://gist.githubusercontent.com/rachidbch/2e10095b0042e784c557a15e2c804807/raw/3741c58d083f1463f6580e792f75ec227744a304/cloudify.sh'?ts=$(date +%s))" < /dev/null;
     fi;
     mkdir -p /tmp/cloudify/logs;
     if [ -n 'golden.log' ]; then

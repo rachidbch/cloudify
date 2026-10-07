@@ -7,9 +7,14 @@ state under `~/.octop/` (SQLite control plane, workspaces, secrets).
 ## How it is deployed
 
 - **Install**: the official installer script, version-pinned
-  (`OCTOP_VERSION`, default `1.0.2b6`) provisions an isolated uv-managed
+  (`OCTOP_VERSION`, default `1.0.1`) provisions an isolated uv-managed
   Python 3.12 venv under `~/.octop/` with a `~/.octop/bin/octop` wrapper.
-  No system Python is touched.
+  No system Python is touched. NOTE: 1.0.2b* versions are NOT installable
+  by the official installer today - it passes `--prerelease=explicit` for
+  b/rc versions, which rejects a transitive prerelease pin
+  (`opentelemetry-semantic-conventions==0.54b1`) on every index. 1.0.1 is
+  the newest installable version; bump when upstream fixes the flag or
+  ships a stable 1.0.2.
 - **First boot**: `octop init` runs unattended
   (`OCTOP_ADMIN_USERNAME` + `OCTOP_ADMIN_PASSWORD` +
   `OCTOP_REQUIRE_SETUP_PASSWORD=false` - the docs' sanctioned bootstrap).

@@ -16,7 +16,7 @@
 #   OCTOP_ADMIN_USERNAME / OCTOP_ADMIN_PASSWORD - first-boot admin, secrets;
 #     read from process env during `octop init`, NEVER written to disk here.
 
-OCTOP_VERSION="${OCTOP_VERSION:-1.0.2b6}"
+OCTOP_VERSION="${OCTOP_VERSION:-1.0.1}"
 OCTOP_PORT="${OCTOP_PORT:-8088}"
 OCTOP_BIND_HOST="${OCTOP_BIND_HOST:-127.0.0.1}"
 OCTOP_LOG_LEVEL="${OCTOP_LOG_LEVEL:-info}"

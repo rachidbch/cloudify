@@ -4,7 +4,7 @@
 # runtime truth - keep the two in sync. OCTOP_HOME's default is dynamic
 # (~/.octop), hence declared optional with no mirror text.
 # Secrets must not contain single quotes or control chars (payload landmine L1).
-OCTOP_VERSION=1.0.2b6
+OCTOP_VERSION=1.0.1
 OCTOP_PORT=8088
 OCTOP_BIND_HOST=127.0.0.1
 OCTOP_LOG_LEVEL=info

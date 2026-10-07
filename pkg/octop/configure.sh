@@ -62,7 +62,7 @@ fi
 systemctl --user is-active octop >/dev/null 2>&1 || die "octop: service not active after configure"
 
 _ok=""
-for _ in $(seq 1 30); do
+for _ in $(seq 1 90); do
     _body=$(curl -s --max-time 3 "http://127.0.0.1:${OCTOP_PORT}/api/health" 2>/dev/null || true)
     [[ "$_body" == *'"ok":true'* ]] && { _ok=1; break; }
     sleep 2

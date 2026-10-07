@@ -1,30 +1,34 @@
 ---
 name: cloudify
-description: Provision software on Ubuntu/Debian hosts with the `cloudify` CLI, and author new package recipes. Use when the user mentions cloudify, wants to install/uninstall/verify on a host or fleet, manage an inventory, or create a new package (`pkg/<name>/init.sh`).
+description: "Provision software on Ubuntu/Debian hosts with the `cloudify` CLI. Use when installing, uninstalling or verifying packages on a host or fleet, managing the inventory, or using vars/deployments. For authoring recipes see cloudify-pkg-dev, for changing cloudify itself see cloudify-dev."
 ---
 
 # Cloudify
 
-Bash CLI for installing packages on Ubuntu/Debian — locally or over SSH.
-
-Discovery: `cloudify packages` lists all installable packages. Each `pkg/<name>/init.sh` header comment describes what it does (e.g. `# bat is better cat`). `cloudify packages show <pkg>` prints the full recipe.
+Bash CLI for installing packages on Ubuntu/Debian, locally or over SSH.
+`cloudify packages` lists packages; `cloudify packages show <pkg>` prints a recipe; `cloudify help` lists everything.
 
 ## The one rule
 
-`--on <host>` comes BEFORE `install`/`uninstall` — never after:
+`--on <target>` comes BEFORE `install`/`uninstall`:
 
 ```bash
 cloudify --on srv install bat      # correct
 cloudify install bat --on srv      # runs locally, ignores --on
 ```
 
+Target grammar: `X` (must exist; node or instance), `X:` (a node), `X:Y` (instance Y on
+node X), `:Y` (instance Y on the active node - `cloudify node use <node>`, else the ivps
+default). No localhost fallback.
+
 ## Commands
 
 ```bash
 cloudify install|inst|i <pkg...>          # local install (auto-installs @default first)
 cloudify --on <host|@tag> install <pkg>   # remote install, parallel across hosts
-cloudify uninstall|u <pkg>                # STUB — not yet implemented
+cloudify uninstall|remove|rem|r <pkg>     # uninstall (needs pkg/uninstall.sh)
 cloudify verify <pkg>                     # verify-only (local)
+cloudify --on <host> verify <pkg>         # verify-only on a host
 cloudify --verify install <pkg>           # verify-only alias
 cloudify --no-verify install <pkg>        # skip verify
 cloudify --no-defaults install <pkg>      # install only basics (not full @default)
@@ -32,74 +36,62 @@ cloudify --clear-data install <pkg>       # wipe persistent data, force reinstal
 
 cloudify packages [@tag|default|show <pkg>]   # list by tag, or print recipe
 cloudify hosts [@tag]                          # inventory, filtered by tag
-cloudify host <host>                           # single-host status
-cloudify info <host> [ipv4|ipv6]              # container IP
-cloudify <host> shell                          # interactive SSH, or `-i`
-cloudify exec <host> '<cmd>'                   # non-interactive SSH
+cloudify host <host> / info <host> [ipv4|ipv6] # single-host status / container IP
+cloudify <host> shell|-i / exec <host> '<cmd>' # interactive / non-interactive SSH
 cloudify launch [remote:]<name> [image]        # create container (default: ubuntu/24.04/cloud)
 cloudify delete [remote:]<name>                # delete container
-cloudify credentials [remote|github|gitlab]    # set credentials
-cloudify credentials --check                   # credential status
-cloudify hostnames <host> [IP]                 # add to /etc/hosts
-cloudify init                                  # first-run: PATH, tools, credentials
+cloudify credentials [remote|github|gitlab] / --check
+cloudify hostnames <host> [IP] / cloudify init  # /etc/hosts entry / first-run setup
+cloudify node use <node>                       # set the active node (prints the export)
+cloudify app run <app>[/<flavor>] [--name <n>] [--target name=addr]  # run its runbook
+cloudify deployment replay <id> [--at <run>]   # re-run a recorded run from its snapshot
 ```
 
-`cloudify help` lists everything.
+## Deployments & runbooks
+
+- `cloudify deployment list|show|replay|delete <id>`; values via `vars ... --deployment <app>/<flavor>/<name>`.
+- A runbook is repo-tracked Markdown (`runbooks/<app>/<flavor>/runbook.md`): front-matter `targets:` (+ optional `inputs:`/`map:`), `bash step=<type>` fences (`launch|install|configure|verify|uninstall|run|human-gate`). `app run` binds targets (`--target name=addr`, else the deployment var `TARGET_<NAME>`), preflights required vars, runs the steps in order (a `human-gate` step pauses), and writes a run snapshot; `deployment replay` re-runs one from its snapshot. See `runbooks/README.md`.
+- An install also writes an observation record under the target's ivps node dir; `deployment delete` sweeps it.
+
+## Vars
+
+```bash
+cloudify vars set NAME value [--global|--pkg <p>|--deployment <app>/<flavor>/<name>] [--stdin|--file <path>]
+cloudify vars show|list [--json] NAME [scope] [--reveal] [--resolve]
+cloudify vars delete|unset NAME [scope]
+cloudify vars declared <pkg> [--sources]
+```
+Precedence: recipe default < global < package < deployment < caller env.
+`show`/`list` mask `PASSWORD|TOKEN|SECRET|KEY` unless `--reveal`; `--resolve` decodes a `@<backend>:<locator>` reference.
+Secrets: prefer `--stdin`. A value may be `@base64:<b64>` (multi-line) or `@<backend>:<locator>` (`@@` escapes a literal `@`).
+
+## Logging (baked in, never invent logs)
+
+Every run auto-logs; on failure it prints `Log: /tmp/cloudify/logs/<ts>.log` (remote runs stream + tee the same). stdout IS the live stream: a foreground run needs no redirect.
+
+- Detach a long run: `setsid cloudify ... &`, then `tail` the newest `/tmp/cloudify/logs/<ts>.log` (`ls -t /tmp/cloudify/logs/*.log | head -1`). Never discard output (`>/dev/null`) and never write your own log/progress file.
+- Read raw: plain `tail -N` with no sed/grep pipes; every poll prints fresh content.
+- `DEBUG=true` (forwarded) traces each command; `CLOUDIFY_LOG_LEVEL` filters verbosity. Verify retries emit a heartbeat every ~20s.
 
 ## Key facts
 
-- **Remote hosts pull from GitHub, not your checkout** → `git push` before testing remote changes.
-- `@default` packages auto-install on every host before any requested package.
-- Install verifies by default (opt-in `verify.sh` per package). Deep verify: deps verified too.
-- On failure, read the log: `/tmp/cloudify/logs/<timestamp>.log`.
-- `CLOUDIFY_FORCE` = set for explicit installs; unset for `pkg_depends` pulls.
-- `CLOUDIFY_CLEAR_DATA` = `--clear-data` flag, implies FORCE, wipes persistent data.
-- **`uninstall` is a stub** — raises `die "not ready"`.
-
-## Authoring a package
-
-File layout:
-```
-pkg/<name>/
-├── init.sh        # required — the install recipe
-├── verify.sh      # optional — defines pkg_verify() { ...; return 0; }
-├── @default       # optional — empty tag file (installed by cloudify install default)
-└── #linux         # optional — platform filter (only installs on matching OS)
-```
-
-Recipe API (`lib/package-api.sh`):
-```bash
-pkg_apt_install <pkg...>            # apt-get install (idempotent via shadow)
-pkg_apt_update [--force]            # apt-get update
-pkg_apt_repository <ppa>            # add-apt-repository (idempotent)
-pkg_install_release <name> <repo>   # GitHub release download (auto arch)
-pkg_depends <pkg...>                # cloudify pkg if exists, else apt fallback
-pkg_backup <path>                   # backup file/dir (rotated, up to 5)
-pkg_restore <path>                  # restore from backup
-pkg_in_startuprc <line>             # deduped append to ~/.bashrc
-PKG_DEBUG <msg>                     # debug output (when DEBUG=true)
-```
-
-Install guard pattern for stateful packages:
-```bash
-pkg_depends <deps>
-if <already_installed_check> && [[ -z "${CLOUDIFY_FORCE:-}" ]] && [[ -z "${CLOUDIFY_CLEAR_DATA:-}" ]]; then
-    log_info "Already installed. Skipping (use --clear-data to reinstall)."
-    return 0
-fi
-if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
-    rm -rf <data_dir>
-fi
-# ... install ...
-```
-
-Verify runs in clean subshell (env vars + disk only, not recipe locals). Use `PKG_VERIFY_TIMEOUT` from `pkgs/<pkg>.yaml` or env. Details: README.md "Verification" section.
-
-Full authoring docs: `README.md` sections "Writing a Package Recipe" and "Verification".
+- Remote hosts pull from GitHub, not your checkout.
+- `@default` packages auto-install before any requested package. Install verifies by default (`verify.sh` opt-in, deps deep-verified).
+- `CLOUDIFY_FORCE` = explicit installs; unset for `pkg_depends` pulls. `--clear-data` implies FORCE and wipes persistent data.
+- `uninstall` runs the package's optional `uninstall.sh`. No leg = clear error, nothing changed, non-zero exit. Dependencies are never removed; verify is not run.
 
 ## Credentials & secrets
 
-- System secrets: `~/.config/cloudify/credentials` (0600), set via `cloudify credentials <section>` (remote, local, github, gitlab).
-- Forwarding: only vars on lib/remote.sh's envsubst allow-list reach the host — a var is inert otherwise.
-- git auth on hosts: the git shadow uses GIT_ASKPASS + url.insteadOf and needs a TOKEN; GitHub rejects passwords (since 2021). Use `CLOUDIFY_GITHUB_READONLY_TOKEN` (fine-grained PAT, Contents: read-only) for clones.
-- Package-level secrets: `pkg/<name>/.remote-vars` — NAMES in repo, values from caller env at install (ADR-007).
+- System secrets: `~/.config/cloudify/credentials` (0600), via `cloudify credentials <section>`.
+- Forwarding: only vars on the envsubst allow-list reach a host; others are inert.
+- Git auth on hosts needs a TOKEN (`CLOUDIFY_GITHUB_READONLY_TOKEN`); GitHub rejects passwords.
+- Package secrets: `pkg/<name>/.remote-vars` declares names; values come from the caller env.
+
+## Security
+
+- Payload travels on stdin, never argv: no secret in either process list.
+- At rest `~/.config/cloudify/` is 0700/0600; prefer `@<backend>:<locator>` over a literal.
+- Masking: `vars show|list` mask secret-looking names unless `--reveal`. Never echo a secret.
+- Vault: operator-side (default) ships plaintext; host-side ships the reference. The host always holds plaintext to use it.
+- Tailnet access is least-privilege: scope ACL grants to the smallest set. If only a few devices need a port, create per-role tags (`rdp-client`/`rdp-server`) and grant between them; never make one shared tag reach itself (any-to-any).
+- URLs and cross-host references use MagicDNS names, never IPs.

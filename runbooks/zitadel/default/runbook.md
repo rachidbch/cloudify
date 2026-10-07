@@ -21,7 +21,7 @@ Playable: `cloudify app run zitadel --name main --target anchor=<node>:<instance
   `ivps launch <node>:zitadel`.
 - Input (once per deployment):
   ```bash
-  cloudify vars set ZITADEL_DOMAIN --stdin --deployment zitadel.main
+  cloudify vars set ZITADEL_DOMAIN --stdin --deployment zitadel/default/main
   # e.g. zitadel.komodo-everest.ts.net
   ```
 

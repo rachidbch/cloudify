@@ -25,7 +25,7 @@ Playable: `cloudify app run octop --name main --target server=<node>:<instance>`
 - No required inputs - every knob has a recipe default. Recommended deployment
   value: `OCTOP_BIND_HOST=0.0.0.0` (dashboard reachable over the tailnet).
   ```bash
-  cloudify vars set OCTOP_BIND_HOST 0.0.0.0 --deployment octop.main
+  cloudify vars set OCTOP_BIND_HOST 0.0.0.0 --deployment octop/default/main
   ```
 
 ## Steps

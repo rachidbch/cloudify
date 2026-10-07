@@ -37,6 +37,7 @@ if [[ "${CLOUDIFY_CLEAR_DATA:-}" == "true" ]]; then
         rm -rf "$OCTOP_HOME" || die "octop: cannot remove $OCTOP_HOME"
         log_info "octop: removed $OCTOP_HOME (venv + database + workspaces)"
     fi
+    rm -f "$HOME/octop-login.txt" 2>/dev/null || true
 elif [[ -d "$OCTOP_HOME" ]]; then
     log_info "octop: state kept at $OCTOP_HOME (venv + data; --clear-data to wipe)"
 fi

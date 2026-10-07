@@ -15,11 +15,13 @@ state under `~/.octop/` (SQLite control plane, workspaces, secrets).
   (`opentelemetry-semantic-conventions==0.54b1`) on every index. 1.0.1 is
   the newest installable version; bump when upstream fixes the flag or
   ships a stable 1.0.2.
-- **First boot**: `octop init` runs unattended
-  (`OCTOP_ADMIN_USERNAME` + `OCTOP_ADMIN_PASSWORD` +
-  `OCTOP_REQUIRE_SETUP_PASSWORD=false` - the docs' sanctioned bootstrap).
-  The credentials exist in process env during init only; this recipe never
-  writes them to disk. After init the admin lives in the control-plane DB.
+- **First boot**: no credentials transit cloudify. The server's setup-wizard
+  flow mints a one-time password into `~/octop-login.txt` (printed by the
+  install banner); the operator opens the dashboard, pastes it, and creates
+  the admin with their own username/password. The file self-removes after
+  use. NOTE: CLI `octop init` CANNOT be used post-install - it demands an
+  empty `OCTOP_HOME`, but the installer puts the venv there, and its
+  `--force` wipes the venv. Never call it.
 - **Service**: Octop's own `octop service start` registers the systemd
   **user** unit `octop` (+ a `LimitNOFILE` drop-in it manages). The unit
   file is Octop-owned; recipes never hand-write or rewrite it - upgrades
@@ -41,9 +43,11 @@ state under `~/.octop/` (SQLite control plane, workspaces, secrets).
 - `OCTOP_PORT` (8088) - listen port.
 - `OCTOP_BIND_HOST` (127.0.0.1) - `0.0.0.0` for tailnet/LAN reachability.
 - `OCTOP_LOG_LEVEL` (info) - debug|info|warning|error.
-- `OCTOP_ADMIN_USERNAME` / `OCTOP_ADMIN_PASSWORD` (secrets, first boot
-  only) - the first admin. Supply via the deployment store or caller env;
-  no single quotes or control chars (payload landmine).
+
+## Knobs removed
+
+No `OCTOP_ADMIN_*`: admin creation is the dashboard setup wizard (one-time
+  password printed at first boot), never a cloudify variable.
 
 ## Gotchas
 

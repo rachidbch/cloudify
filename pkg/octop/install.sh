@@ -13,8 +13,12 @@
 #   OCTOP_VERSION (default 1.0.2b6, PyPI-style)
 #   OCTOP_PORT (default 8088)   OCTOP_BIND_HOST (default 127.0.0.1)
 #   OCTOP_LOG_LEVEL (default info)
-#   OCTOP_ADMIN_USERNAME / OCTOP_ADMIN_PASSWORD - first-boot admin, secrets;
-#     read from process env during `octop init`, NEVER written to disk here.
+# No admin credentials ever pass through this recipe: first boot (zero
+# users) mints a one-time wizard password into ~/octop-login.txt which this
+# recipe prints; the operator completes the dashboard setup wizard with
+# their OWN admin username/password. (CLI `octop init` cannot run
+# post-install: it demands an empty OCTOP_HOME, but the installer puts the
+# venv there - its --force wipes the venv. Never call it.)
 
 OCTOP_VERSION="${OCTOP_VERSION:-1.0.1}"
 OCTOP_PORT="${OCTOP_PORT:-8088}"
@@ -23,6 +27,7 @@ OCTOP_LOG_LEVEL="${OCTOP_LOG_LEVEL:-info}"
 OCTOP_HOME="${OCTOP_HOME:-$HOME/.octop}"
 OCTOP_BIN="$OCTOP_HOME/bin/octop"
 OCTOP_INSTALLER="https://finnie-1258344699.cos.ap-guangzhou.myqcloud.com/octop/install.sh"
+OCTOP_WIZARD_FILE="$HOME/octop-login.txt"
 
 # The installer + recipe resolve the wrapper through ~/.octop/bin.
 export PATH="$OCTOP_HOME/bin:$PATH"
@@ -61,25 +66,9 @@ fi
 [[ -x "$OCTOP_BIN" ]] || die "octop: $OCTOP_BIN missing after install" 1
 "$OCTOP_BIN" version || die "octop: 'octop version' failed after install" 1
 
-# --- Unattended first-boot init ------------------------------------------------
-# docs/configuration.md: OCTOP_ADMIN_USERNAME/PASSWORD + REQUIRE_SETUP_PASSWORD=false
-# is the sanctioned unattended bootstrap. Creds live in process env only -
-# this recipe never writes them to $OCTOP_HOME/env or anywhere else.
-if [[ ! -f "$OCTOP_HOME/octop.db" ]]; then
-    if [[ -z "${OCTOP_ADMIN_USERNAME:-}" || -z "${OCTOP_ADMIN_PASSWORD:-}" ]]; then
-        die "octop: no $OCTOP_HOME/octop.db and no OCTOP_ADMIN_USERNAME/OCTOP_ADMIN_PASSWORD - cannot run the unattended first-boot init (supply both; they are never persisted)" 1
-    fi
-    [[ "${OCTOP_ADMIN_PASSWORD}" != *"'"* && "${OCTOP_ADMIN_PASSWORD}" != *$'\n'* && "${OCTOP_ADMIN_PASSWORD}" != *$'\r'* ]] \
-        || die "octop: OCTOP_ADMIN_PASSWORD contains a single quote or control char - cloudify cannot forward it (see README)" 1
-    log_info "octop: unattended init (admin '${OCTOP_ADMIN_USERNAME}', creds never persisted)..."
-    OCTOP_REQUIRE_SETUP_PASSWORD=false \
-    OCTOP_ADMIN_USERNAME="$OCTOP_ADMIN_USERNAME" \
-    OCTOP_ADMIN_PASSWORD="$OCTOP_ADMIN_PASSWORD" \
-        "$OCTOP_BIN" init </dev/null \
-        || die "octop: 'octop init' failed - see $OCTOP_HOME/octop.log" 1
-else
-    log_info "octop: $OCTOP_HOME/octop.db present - init skipped (existing users stand)"
-fi
+# First boot is the server's own setup-wizard flow (zero users): at start it
+# mints a one-time wizard password (~/octop-login.txt) - no CLI init, no env
+# creds. The post-install banner prints it for the operator.
 
 # --- Baseline runtime config (first converge, files only) ----------------------
 # The server loads $OCTOP_HOME/env itself at start; install writes the baseline
@@ -123,9 +112,24 @@ fi
 # --- Post-install ----------------------------------------------------------------
 msg ""
 msg "${GREEN}octop running (systemd user unit 'octop')${RESET}"
-msg "Health:   http://127.0.0.1:${OCTOP_PORT}/health"
+msg "Health:    http://127.0.0.1:${OCTOP_PORT}/health"
 msg "Dashboard: http://${OCTOP_BIND_HOST}:${OCTOP_PORT}/ (bind per OCTOP_BIND_HOST)"
-msg "State:    $OCTOP_HOME (database, workspaces, env file)"
-msg "Logs:     journalctl --user -u octop -f"
-msg "Admin:    first admin '${OCTOP_ADMIN_USERNAME:-existing}' (creds supplied at init only; never stored by cloudify)"
+msg "State:     $OCTOP_HOME (database, workspaces, env file)"
+msg "Logs:      journalctl --user -u octop -f"
+if [[ -s "$OCTOP_WIZARD_FILE" ]]; then
+    _wizard_pw=$(tr -d '[:space:]' < "$OCTOP_WIZARD_FILE")
+    if [[ -n "$_wizard_pw" ]]; then
+        msg ""
+        msg "${RED}==============================================================${RESET}"
+        msg "${RED}  OCTOP FIRST-RUN WIZARD PASSWORD (one-time use)${RESET}"
+        msg "${RED}==============================================================${RESET}"
+        msg "  $_wizard_pw"
+        msg ""
+        msg "${YELLOW}Open the dashboard, paste this into the setup wizard,${RESET}"
+        msg "${YELLOW}and create the admin with YOUR username + password.${RESET}"
+        msg "One-time file: $OCTOP_WIZARD_FILE (self-removes after use)"
+    fi
+else
+    msg "Admin:     existing users stand (no first-run wizard on a re-run)"
+fi
 msg ""

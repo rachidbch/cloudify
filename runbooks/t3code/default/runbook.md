@@ -103,7 +103,7 @@ esac
 HELPER
 ivps push "$TARGET_SERVER" "$_tmp" /root/t3-connect-helper.sh
 rm -f "$_tmp"
-cloudify exec "$TARGET_SERVER" bash /root/t3-connect-helper.sh start
+cloudify exec "${TARGET_SERVER##*:}" bash /root/t3-connect-helper.sh start
 ```
 
 Prints the device-flow URL and the confirmation code to this transcript.
@@ -125,7 +125,7 @@ the transcript. After the human approves, resume the rest with
 ### 4. Confirm the link
 
 ```bash step=run target=server id=wait-connect phase=install
-cloudify exec "$TARGET_SERVER" bash /root/t3-connect-helper.sh wait
+cloudify exec "${TARGET_SERVER##*:}" bash /root/t3-connect-helper.sh wait
 ```
 
 Waits for the flow to finish, shows `t3 connect status`, and restarts the
@@ -142,7 +142,7 @@ Expect an active `t3code.service` user unit and an answer on `127.0.0.1:3773`.
 ### 6. Connection status
 
 ```bash step=run target=server id=connect-status phase=verify
-cloudify exec "$TARGET_SERVER" bash /root/t3-connect-helper.sh status
+cloudify exec "${TARGET_SERVER##*:}" bash /root/t3-connect-helper.sh status
 ```
 
 Then sign in at https://app.t3.codes (or desktop/mobile) with the SAME account

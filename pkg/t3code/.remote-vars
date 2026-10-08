@@ -1,0 +1,8 @@
+# pkg/t3code - declared names (values live in the caller env or
+# ~/.config/cloudify/pkgs/t3code.yaml, never in the repo). The recipe default
+# stays runtime truth - keep the two in sync. T3CODE_VERSION is optional
+# (empty = newest release on T3CODE_CHANNEL, resolved by the vendor installer).
+T3CODE_CHANNEL=nightly
+T3CODE_VERSION=
+T3CODE_USER=t3
+T3CODE_PORT=3773

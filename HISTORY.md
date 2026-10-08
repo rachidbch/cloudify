@@ -1366,3 +1366,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ## 2026-10-01 - technical review completed on retry: PASS
 
 - After two transport-wedge deaths, the technical verification review completed and returned exactly PASS (final line of ~/tmp/reviews-item11/verify-tech-out6.md, 479KB of full-delta review). Per Rachid's gravity rule the gate stayed open until a COMPLETED review returned; the merged master (option a, fix-forward) now stands legitimized by that completed review. Repro notes for the three pi-stack bugs involved: /home/rbc/PROJECTS/GIT/pi-loop-mode/BUGS-REPRO.md.
+
+## 2026-10-08 — pkg/runbook t3code: T3 Code v2 (nightly) headless agent server
+
+- **New pkg `t3code` + runbook `runbooks/t3code/default`**: installs pingdotgg/t3code on the nightly train via the official installer (download-to-file, never curl|sh), as a DEDICATED NON-ROOT USER (upstream: root = separate installation + Connect identity), systemd user unit via `t3 service install`, linger on, health-wait on 127.0.0.1:3773. configure = update path (installer re-run, restart only on version move); uninstall keeps ~/.t3 unless --clear-data (wipes user + home).
+- **Probe-verified on ubuntu/24.04 cloud (v0.0.46-nightly.20261007.2787)**: binary needs libatomic1; `t3 service install` under sudo -u needs XDG_RUNTIME_DIR=/run/user/<uid> (user manager runs once linger is on); browser sandbox needs apparmor pkg, then `t3 browser setup` succeeds; real default port is 3773 (the popular guide's 35489 is wrong).
+- **Pairing = T3 Connect device flow** (`t3 connect --headless`): relay client (cloudflared) auto-installs, URL + code printed, 10-min approval window. Runbook: run step (detached start + URL) -> human-gate -> wait step (status + service restart). No hand-wired tailscale serve in containers (ivps rule); `t3 pair --tailscale` documented as alternative only.
+- **Nightly protocol caveat** (upstream updating.md): nightly servers need matching clients; store mobile apps can't connect (TestFlight/Play beta only).

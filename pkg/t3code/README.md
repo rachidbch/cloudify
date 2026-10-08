@@ -54,15 +54,23 @@ device flow), driven by the `t3code` runbook.
 
 ## Pairing (operator, after install - runbook owns it)
 
-- **T3 Connect** (default, vendor path for headless hosts):
-  `t3 connect --headless` - downloads the relay client (cloudflared) on first
-  use, prints `https://accounts.t3.codes/device?user_code=XXXX-XXXX`, waits up
-  to 10 minutes for approval in any browser; then the environment shows up in
-  app.t3.codes / desktop / mobile for that account.
-- `t3 pair` - one-time pairing URL (`http://localhost:3773/pair#token=...`),
-  for SSH-tunnel or same-host use; token TTL 5 minutes by default.
-- `t3 pair --tailscale` - publishes via `tailscale serve`. NOT used by the
-  runbook: containers publish through ivps, never hand-wired serve mappings.
+**Default route - the tailnet is the boundary (Rachid, 2026-10-08):**
+publish tailnet-only with ivps (`ivps expose-service <node>:<instance> t3 3773`
+-> `svc:t3`, ACL-gated, tailscale TLS), mint a one-time pairing token
+(`t3 pair --ttl 1h` as the T3 user) and rewrite its URL onto the service host
+(`https://t3.<tailnet>/pair#token=...`). Paste into app.t3.codes / Add
+environment. The secret rides in the URL fragment (stays in the browser).
+No inbound exposure beyond the ACL, no relay, no account needed.
+
+**Opt-in - T3 Connect (off-tailnet access):** `t3 connect --headless` -
+downloads the relay client (cloudflared) on first use, prints
+`https://accounts.t3.codes/device?user_code=XXXX-XXXX`, waits up to 10
+minutes for approval in any browser. The environment becomes reachable from
+the whole internet behind the T3 account - a WIDER surface than the tailnet
+ACL; use only when genuinely needed. Tear down with `t3 connect logout`.
+
+**Also available:** `t3 pair` over an SSH tunnel (local-only); token TTL
+5 minutes by default.
 
 ## Nightly client compatibility
 

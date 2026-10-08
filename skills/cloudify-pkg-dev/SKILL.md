@@ -27,8 +27,8 @@ description: Use when writing, upgrading or modifying cloudify packages. For usi
 - Never rerun with a timeout below the last observed duration. After any self-inflicted timeout kill, the next timeout is 3x observed.
 - Never inline quotes, pipes or `$()` in `cloudify exec '<cmd>'` - the channel mangles them. Push a script (`ivps push`) and run the file.
 - Never `cloudify app run` on a dirty tree - commit the plan first.
-- Never `sudo` inside a recipe (known shadow bug, ROADMAP 2026-10-08): the sudo shadow joins all argv into one `bash -c` string, so `sudo -u <user> env ...` turns into bash parsing `-u` as ITS OWN option. User-switch = `runuser -u <user> -- env ...` (root-only, no shadow). Fixed-in-shadow is tracked on the ROADMAP, not by recipes.
-- Never spend throwaway mechanics on a target created ad-hoc for the deployment (fresh `ivps launch` for this app): no clear-data rounds, no force-reinstall cycles, no rehearsal deploy on a second throwaway "to protect" the real one. Guards and throwaway rehearsal protect PREEXISTING state from a malformed deploy; a virgin target has nothing to protect - deploy straight at it and read failures from the run. (The research probe stays legitimate when it answers vendor-install questions BEFORE authoring - it is investigation, not rehearsal.)
+- Never `sudo` in recipes: the shadow joins all argv into one `bash -c` string; `sudo -u <user> ...` becomes bash parsing `-u` as its own option (ROADMAP 2026-10-08). User-switch: `runuser -u <user> -- env ...`.
+- Never rehearse a deploy on a throwaway when the target was created ad-hoc for it: guards protect preexisting state; a virgin target has none - deploy straight, read failures from the run. Research probes (vendor behavior, pre-authoring) stay legitimate.
 
 ## Layout
 

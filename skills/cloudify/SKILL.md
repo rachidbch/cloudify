@@ -94,5 +94,5 @@ Every run auto-logs; on failure it prints `Log: /tmp/cloudify/logs/<ts>.log` (re
 - Masking: `vars show|list` mask secret-looking names unless `--reveal`. Never echo a secret.
 - Vault: operator-side (default) ships plaintext; host-side ships the reference. The host always holds plaintext to use it.
 - Tailnet access is least-privilege: scope ACL grants to the smallest set. If only a few devices need a port, create per-role tags (`rdp-client`/`rdp-server`) and grant between them; never make one shared tag reach itself (any-to-any).
-- Publishing default is in-tailnet (`ivps expose-service` / tailscale routes): the ACL is the security boundary and stays the only one needed. Surface off-tailnet routes (funnel, public DNS, account-relayed tunnels such as T3 Connect) only when off-tailnet access is a real requirement - and state the surface tradeoff (external relay/third party/account credential as the gate) when you propose one. Ruled 2026-10-08 after T3 Connect shipped by default and was torn down same-day.
+- Publish in-tailnet by default (`ivps expose-service`): the ACL is the boundary. Surface off-tailnet routes (funnel, public DNS, account relays) only on a real off-tailnet requirement, with the surface tradeoff stated (2026-10-08: T3 Connect shipped by default, torn down same day).
 - URLs and cross-host references use MagicDNS names, never IPs.

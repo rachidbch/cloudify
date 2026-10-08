@@ -17,7 +17,9 @@ T3_BIN="/home/$T3CODE_USER/.local/bin/t3"
 T3_UNIT="/home/$T3CODE_USER/.config/systemd/user/t3code.service"
 
 _uenv() {
-    sudo -u "$T3CODE_USER" env \
+    # runuser, never sudo: the sudo shadow flattens argv into 'bash -c' and
+    # mangles 'sudo -u <user> env ...' (see install.sh).
+    runuser -u "$T3CODE_USER" -- env \
         HOME="/home/$T3CODE_USER" \
         XDG_RUNTIME_DIR="/run/user/$(id -u "$T3CODE_USER")" \
         PATH="/home/$T3CODE_USER/.local/bin:/usr/local/bin:/usr/bin:/bin" \

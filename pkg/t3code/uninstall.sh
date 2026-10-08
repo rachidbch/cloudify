@@ -14,7 +14,9 @@ T3_BIN="/home/$T3CODE_USER/.local/bin/t3"
 T3_UNIT="/home/$T3CODE_USER/.config/systemd/user/t3code.service"
 
 _uenv() {
-    sudo -u "$T3CODE_USER" env \
+    # runuser, never sudo: the sudo shadow flattens argv into 'bash -c' and
+    # mangles 'sudo -u <user> env ...' (see install.sh).
+    runuser -u "$T3CODE_USER" -- env \
         HOME="/home/$T3CODE_USER" \
         XDG_RUNTIME_DIR="/run/user/$(id -u "$T3CODE_USER")" \
         PATH="/home/$T3CODE_USER/.local/bin:/usr/local/bin:/usr/bin:/bin" \
@@ -51,7 +53,7 @@ fi
 # --- Postconditions (recipes run with errexit suspended - assert explicitly) ---------
 if [[ -f "$T3_UNIT" ]]; then die "t3code: unit file still present after uninstall"; fi
 if id -u "$T3CODE_USER" >/dev/null 2>&1 \
-    && sudo -u "$T3CODE_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$T3CODE_USER")" \
+    && runuser -u "$T3CODE_USER" -- env XDG_RUNTIME_DIR="/run/user/$(id -u "$T3CODE_USER")" \
         systemctl --user is-active t3code.service >/dev/null 2>&1; then
     die "t3code: service still active after uninstall"
 fi

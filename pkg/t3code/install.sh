@@ -33,7 +33,10 @@ T3_UNIT="/home/$T3CODE_USER/.config/systemd/user/t3code.service"
 T3_INSTALLER="https://t3.codes/install.sh"
 
 _uenv() { # run a command as the T3 user with the session env systemd needs
-    sudo -u "$T3CODE_USER" env \
+    # runuser, never sudo: the cloudify sudo shadow flattens argv into one
+    # 'bash -c' string, which mangles 'sudo -u <user> env ...' into bash
+    # option-parsing garbage. runuser is plain util-linux, root-only.
+    runuser -u "$T3CODE_USER" -- env \
         HOME="/home/$T3CODE_USER" \
         XDG_RUNTIME_DIR="/run/user/$(id -u "$T3CODE_USER")" \
         PATH="/home/$T3CODE_USER/.local/bin:/usr/local/bin:/usr/bin:/bin" \

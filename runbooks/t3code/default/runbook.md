@@ -65,7 +65,9 @@ case "$MODE" in
         echo "A device flow is already running - its details:"; tail -5 "$LOG"; exit 0
     fi
     : > "$LOG"
-    printf 'y\n' | nohup RUN t3 connect --headless >> "$LOG" 2>&1 &
+    # nohup cannot exec a shell function - inline the full runuser invocation
+    TUID=$(id -u "$T3_USER")
+    printf 'y\n' | nohup runuser -u "$T3_USER" -- env HOME="/home/$T3_USER" XDG_RUNTIME_DIR="/run/user/$TUID" PATH="/home/$T3_USER/.local/bin:/usr/local/bin:/usr/bin:/bin" t3 connect --headless >> "$LOG" 2>&1 &
     ok=""
     for i in $(seq 1 45); do
         grep -aq "accounts.t3.codes/device" "$LOG" 2>/dev/null && { ok=1; break; }

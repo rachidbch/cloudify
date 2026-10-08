@@ -538,3 +538,37 @@ REMAINING (Rachid, one paste): the bootstrap gist must honor the ref - the ready
 Implemented: the router mints the invocation's one _direct name at dispatch entry (mutating actions only - a bare verify stays an ad-hoc observation: no records to seed against and it records nothing by the standing decision), carries it as the active deployment tuple for every dispatch of the invocation, and decorates each target triple with its binding slot (`direct` for a single host, the host's identity word when several). The workers merge their binding add-if-absent under the manifest lock (cloudify_state_binding_add) instead of each synthesizing a per-host deployment.
 
 `cloudify --on h1 --on h2 install a b c` must leave ONE `_direct` deployment spanning both hosts (one manifest, one binding per host), not one bucket per host. The synthesis moves to invocation level in the router; manifest binding writes gain add-if-absent merge; `deployment delete` already sweeps every host tree (verified). Tests: two-host bare invocation unit + e2e pin.
+
+## sudo shadow flattens argv into one bash -c string (found 2026-10-08, t3code close-out)
+
+`lib/shadows/sudo.sh` wraps the `sudo` command inside recipes to inject the
+host password. Its generic branch (`lineargs="${*}"`) joins EVERY argument -
+including sudo's own flags - into ONE string and executes it as
+`command sudo -kS -p "" bash -c "$lineargs" <<<"$password"`. Any invocation
+whose first argument is a sudo flag therefore breaks: the flags become the
+bash SCRIPT text, not sudo's argv. Proven live (t3code 1.0.0): the recipe's
+user switching `sudo -u t3 env HOME=/home/t3 ... t3 --version` executed
+`bash -c "-u t3 env HOME=..."` and bash died parsing `-u` as its own option
+(`bash: - : invalid option`); the dispatch failed with a bash usage dump as
+the only symptom. Worked around in the recipe (1.0.1: `runuser -u t3 -- env
+...`, no shadow on runuser) - the workaround is load-bearing until this is
+fixed; any recipe that must run a command as another user is stuck choosing
+between runuser (fine as root dispatch) or this bug.
+
+Secondary sharp edges in the same wrapper, fix in the same pass: it cats
+stdin whenever present (`pipeargs="$(cat -)"`) to forward pipes, so a sudo
+call at the top of a pipeline hangs or swallows the stream if stdin is a
+slow producer; and the >10000-char branch re-executes `"$lineargs" "$tfile"`
+which is only correct for file-taking commands.
+
+Fix direction: split sudo's own flags (`-u`, `-g`, `-E`, `-p`, `--`) from the
+command words; rebuild as `command sudo -kS -p "" <flags> <cmd words...>
+<<<"$password"` - the bash -c wrapping exists ONLY to re-create piped stdin,
+so argv-split execution is correct for the no-pipe case and the pipe case
+keeps `bash -c` but with the command words quoted individually, never
+pre-joined. Pin with unit tests: `sudo -u user env A=B cmd --flag` (flags
+survive), leading-flag invocations, piped-stdin case, >10k case.
+
+Constraint: `lib/shadows/*` is fragile surface (project AGENTS.md CRITICAL
+GATE) - byte-exact goldens cover the shadow contracts. This entry is the
+written proposal; implementation waits on Rachid's go + gate run.

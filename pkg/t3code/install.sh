@@ -79,6 +79,7 @@ fi
 if [[ ! -x "$T3_BIN" ]]; then
     log_info "t3code: running official installer (channel $T3CODE_CHANNEL${T3CODE_VERSION:+, version $T3CODE_VERSION})..."
     _installer=$(mktemp) || die "t3code: cannot create temp file" 1
+    chmod 644 "$_installer" # mktemp is 0600 root; t3 must read it
     curl -fsSL "$T3_INSTALLER" -o "$_installer" \
         || { rm -f "$_installer"; die "t3code: cannot download the installer from $T3_INSTALLER" 1; }
     if [[ -n "$T3CODE_VERSION" ]]; then

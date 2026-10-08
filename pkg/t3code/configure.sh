@@ -37,6 +37,7 @@ loginctl enable-linger "$T3CODE_USER" || die "t3code: loginctl enable-linger $T3
 # Vendor installer re-run: newest release on the channel (or the pinned version).
 # Same rules as install: file, then `sh <file>`; never pipe into sh.
 _installer=$(mktemp) || die "t3code: cannot create temp file" 1
+chmod 644 "$_installer" # mktemp is 0600 root; t3 must read it
 curl -fsSL "https://t3.codes/install.sh" -o "$_installer" \
     || { rm -f "$_installer"; die "t3code: cannot download the installer" 1; }
 if [[ -n "$T3CODE_VERSION" ]]; then

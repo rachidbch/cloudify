@@ -117,6 +117,10 @@ echo "Open https://accounts.t3.codes/device, sign in with YOUR T3 account, and a
 A gate step pauses here: open the URL from step 2 on any device, confirm the
 code matches, approve. Then confirm this gate. Missed the 10-minute window?
 Re-run from `start-connect` (`cloudify app run t3code --from start-connect ...`).
+Driving headless (no TTY): the run dies AT this gate by design (`no TTY to
+confirm`). That is the expected shape: steps 1-2 already ran and the URL is in
+the transcript. After the human approves, resume the rest with
+`cloudify app run t3code ... --from wait-connect` (gate not reached, no --yes needed).
 
 ### 4. Confirm the link
 

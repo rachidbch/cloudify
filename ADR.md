@@ -486,3 +486,13 @@ Context: ADR-027 made bare direct installs synthesize ordinary deployments under
 Decision: one invocation with no runbook and no explicit `--name` synthesizes ONE `_direct` deployment spanning every host the invocation targeted: one manifest, one binding per host (slot per host word; the single-host case keeps the `direct` slot), all package records of the invocation under that one identity. The name is generated once per invocation (first-package word + UTC timestamp, unchanged shape), not once per host.
 
 Consequences: `deployment delete`/teardown on a synthesized bucket spans hosts - the same semantics as any multi-slot deployment, which is the point. The synthesis moves from the per-dispatch worker hook to invocation level in the router (the name is computed once and carried by every dispatch of the invocation); manifest binding writes gain add-if-absent merge semantics so concurrent host workers accumulate bindings instead of clobbering. ADR-027's synthesis rule is amended; nothing else changes.
+
+## ADR-033: Omarchy is a standing wait, not a rejection; GUI keyboard capture gets canonical evasions
+
+**Status:** Accepted (amends ADR-016's revisit clause; ADR-016 otherwise stands)
+
+**Context:** Rachid ruled (2026-10-12) that Omarchy is a dead end as a flat rejection - wrong verdict shape. Hyprland is actively averse to VPS/containers, and we are *waiting for the community* to offer a container path (headless Hyprland + wayvnc in LXC/Incus, software rendering, or equivalent), not closing the door. Separately, the same review surfaced that the i3 rejection (2026-08-31) rested on the browser key-capture pit - Super/Alt/Ctrl combos are eaten by the Windows host before the browser - and that this pit has canonical evasions we had not evaluated: dedicated clients bypassing the browser entirely (xrdp:3389 via mstsc), Guacamole's post-1.6.0 mitigations (on-screen keyboard GUACAMOLE-2277, meta-to-ctrl GUACAMOLE-2229), and streaming stacks (Sunshine/Moonlight) if full-keys-in-browser ever becomes a requirement.
+
+**Decision:** Omarchy status = **waiting**, not rejected. The trigger to reopen stays ADR-016's community-proven container path; no timeline, no experiment until then. Keyboard capture is treated as an engineering problem with the evasion ladder above (native client first, Guacamole upgrade second, streaming last), not as a reason to avoid keyboard-driven tooling on GUI guests.
+
+**Consequences:** No Omarchy package or experiment now; ADR-016's park remains in force. Future GUI-guest work evaluates the keyboard evasion ladder when keyboard-driven WMs are candidates; the i3 rejection is understood as Cortile-vs-i3 under browser constraints, not tiling-vs-tiling.

@@ -572,3 +572,38 @@ survive), leading-flag invocations, piped-stdin case, >10k case.
 Constraint: `lib/shadows/*` is fragile surface (project AGENTS.md CRITICAL
 GATE) - byte-exact goldens cover the shadow contracts. This entry is the
 written proposal; implementation waits on Rachid's go + gate run.
+
+## GUI keyboard capture: evasive tests on a disposable container (Rachid, 2026-10-12)
+
+The GUI oracle (`cloudstation:guac-gui`, XFCE + xrdp + Guacamole in browser)
+loses Super/Alt/Ctrl combos to the Windows host before the browser sees them.
+Consequence chain: i3 (keyboard-driven tiling) is blocked in the browser leg,
+Cortile (auto-tiling, keyless) was chosen instead (2026-08-31). Guacamole
+stays the default web gateway - Rachid evaluated the alternatives before
+adopting it and non-paying options were worse; "connect with mstsc instead"
+is not the default path (also: Windows is de-emphasizing its RDP client -
+countless disgruntled-user reports). On-screen keyboards are rescue tools,
+never the workhorse.
+
+What the field does (Apache lists/Jira, 2023-2026): (a) accept it - Apache's
+own stance is that a clientless web app cannot fully capture system shortcuts
+(GUACAMOLE-2016); 1.6.0's fullscreen+keyboard-lock cannot override host OS
+window management (Alt+Tab, Win stay host-side); (b) thick-client wrappers -
+e.g. jochenwezel/GuacamoleClient: a WebView2 shell around the SAME Guacamole
+web UI that intercepts keys a browser reserves (Alt+Tab works); (c) in-product
+mitigations (on-screen keyboard GUACAMOLE-2277, meta-to-ctrl GUACAMOLE-2229,
+Ctrl+Alt+End intercepts) - rescue-grade.
+
+TEST PLAN (disposable container only - never on guac-gui; fresh ivps guest
+with pkg/xfce + pkg/guacamole, the never-run clean rebuild doubles as the
+vehicle):
+1. Baseline matrix on current 1.6.0: fullscreen, keyboard-lock, which
+   combos actually pass from a Windows host (record, don't assume).
+2. Thick-client wrapper (GuacamoleClient/WebView2 or equivalent) against the
+   same gateway: Alt+Tab, Win, Super-drives-i3 test - if i3 becomes usable
+   through it, the 2026-08-31 i3 rejection is void.
+3. Guacamole stack bump (1.6.0 -> current): meta-to-ctrl, on-screen keyboard,
+   Meta/Super keysym fix (GUACAMOLE-1386) - measure what actually changes.
+Success = a documented path where a keyboard-driven WM (i3 first candidate)
+is fully usable; the winner lands as a pkg/runbook change, the oracle
+migrates only after Rachid's go.

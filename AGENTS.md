@@ -14,6 +14,7 @@ Before editing any of them:
 Everything else: plain TDD, no gate.
 
 ## Constitution (project-specific; global rules in ~/AGENTS.md)
+- **Fetch first.** GitHub is the sync bus between machines. Every session opens with `git fetch --all --prune`, and every remote-state claim rides on that same fetch; plain `git status` compares cached refs only.
 - **Fail fast on test-env trouble; never heal the environment mid-tests.** A red environment (host-key churn, container recreated, probe timeouts, wiped results) is a STOP and a ping to Rachid with the evidence - not `ssh-keygen -R`, re-accepts, re-syncs, or silent relaunches. Healing mid-ladder hides the fault and burns hours on reruns of runs that were never going to hold.
 - **Timeouts.** Estimate task time, set 3×. Never fail a command by being too conservative.
 - **Tool priority.** cloudify > ivps > incus; incus only with explicit consent.

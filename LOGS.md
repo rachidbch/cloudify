@@ -994,3 +994,33 @@
 
 - Review verify outcomes: SPEC PASS (clean). TECH: pass-2 FAIL confirmed all prior fixes hold and found 2 test-harness lines (MEDIUM prewarm no-op, LOW message drift) - fixed in 4a11aad; pass-3 and the rerun both wedged on the pi transport bug (retry notice -> end_turn -> silence; the watcher bounded each at minutes, killed the zombies). Per Rachid's gravity rule (low-to-high fixed => rerun; very-low => pass) the MEDIUM band required the rerun; per the pre-agreed fallback, a second wedge closes the gate on the standing evidence: every defect any reviewer ever found is fixed and confirmed holding.
 - Reviewer stack hardened along the way, now standing policy: pi-loop-mode end-marker trigger (613b203) + killed-check-is-not-a-pass guard (3c4e5ea - works around pi core resolving signal-death to exit 0); ~/.local/bin/watch-run (marker/death/dual-channel-freeze/deadline, descendant-tree kill); delegates run bounded (--timeout 2400 --prompt-retries 0), one per cwd, minimax for long missions. pi core bug (exec code ?? 0) remains upstream to fix.
+
+## 2026-10-12/13 - t3code: first deployment + route pivot (evidence trail)
+
+- Deployment t3code/default/main: 6 run snapshots at ~/.local/state/cloudify/deployments/t3code/default/main/runs/ (first failed dispatch -> executed-code divergent -> final succeeded, manifest status verified). Manifest: .../t3code/default/main/manifest.json.
+- Full operation timeline (research probe -> deploy -> REX), 26 lines: reproduced below (source was volatile ~/tmp/t3code-research/REX.md).
+- Dispatch transcripts were under /tmp/cloudify/logs/20261008-02{50,53,54,62}*.log (ephemeral, not preserved - the durable evidence is the run snapshots + events JSON noted in HISTORY 2026-10-08 entries).
+
+    02:07:45 R start research: skills + ivps surface
+    02:08:04 R docs fetched (install/background-service/remote-access/internals/updating + installer 227 lines)
+    02:10:45 R probe container t3probe launched (cloudai, ubuntu 24.04 cloud)
+    02:12:30 R obstacle: ssh host-key first contact (manual probe only; cloudify dispatch disables checking)
+    02:13:40 R probe finding 1: libatomic.so.1 missing -> dep libatomic1 (installer self-test caught it)
+    02:15:20 R probe ok: t3 v0.0.46-nightly.20261007.2787 via T3CODE_CHANNEL=nightly as non-root user
+    02:17:10 R probe finding 2: service install fails user-manager-unavailable via sudo -u -> fix XDG_RUNTIME_DIR=/run/user/uid
+    02:18:30 R probe ok: user unit t3code.service active, 127.0.0.1:3773, linger=yes, logs ~/.t3/userdata/logs/boot-service.log
+    02:19:50 R probe finding 3: GEMINI GUIDE WRONG port 35489 -> real 3773
+    02:21:00 R probe ok: t3 connect --headless = device flow (auto-installs cloudflared relay, URL accounts.t3.codes/device + code, 10min expiry)
+    02:22:30 R probe finding 4: t3 browser setup needs apparmor pkg in container -> then succeeds
+    02:23:30 R research done: verified truths list complete, authoring next
+    02:34:35 D re-dispatch after push: runuser needed (sudo shadow flattens argv -> bash -c mangling)
+    02:39:49 D re-dispatch: chmod 644 installer (mktemp 0600 root unreadable by t3 user)
+    02:42:32 D re-dispatch: verify machined stale -> runuser + systemctl --user (1.0.3)
+    02:46:19 D t3probe GREEN: status installed, verify ok
+    02:49:19 D real instance cloudai:t3code launched
+    02:50:21 D app run leg 1: install ok on target but worker verdict executed-code divergent (mid-run tree pollution, untracked results/ synced; event JSON named it)
+    02:53-03:04 D exec-host grammar fix + nohup-function fix; device flow URL handed to Rachid
+    03:04-03:05 D code expired unapproved; fresh code WDXW-BPHR
+    03:40ish D Rachid approved; wait-connect + verify legs: RUNBOOK SUCCEEDED, manifest verified; cloudflared tunnel registered
+    04:0x D Rachid rejected T3 Connect surface: t3 connect logout, cloudflared gone; ivps expose-service svc:t3 LIVE (renamed from t3code-app); pairing URL handed (tailnet route)
+    (2026-10-09) D Rachid drove an in-guest agent migration: server now hand-started from fork checkout (~/.local/share/t3-source/prod-home) on 3773; systemd unit disabled; second listener 3774 + agent-added t3code:8443 serve mapping. Not touched (Rachid's call); fresh pair tokens minted on demand.

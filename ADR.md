@@ -496,3 +496,18 @@ Consequences: `deployment delete`/teardown on a synthesized bucket spans hosts -
 **Decision:** Omarchy status = **waiting**, not rejected. The trigger to reopen stays ADR-016's community-proven container path; no timeline, no experiment until then. Keyboard capture is treated as an engineering problem with the evasion ladder above (native client first, Guacamole upgrade second, streaming last), not as a reason to avoid keyboard-driven tooling on GUI guests.
 
 **Consequences:** No Omarchy package or experiment now; ADR-016's park remains in force. Future GUI-guest work evaluates the keyboard evasion ladder when keyboard-driven WMs are candidates; the i3 rejection is understood as Cortile-vs-i3 under browser constraints, not tiling-vs-tiling.
+
+## ADR-034: Secret capture is opt-in; MVP capture target is secretspec (file provider)
+
+**Status:** Accepted 2026-10-13 (supersedes ADR-011 point 7 - unconditional plaintext capture). Design in REDESIGN.md "Secret capture". No plan, no implementation until Rachid's go; implementation will touch the replay/value path - gate applies.
+
+**Context:** The ivps inventory folder is becoming a GitHub-synced fleet state. Registry value snapshots (ADR-020) hold plaintext secrets, so the sync would publish them. ADR-011 point 7 deferred a secrets backend. Evaluated: placeholder/env-reference snapshots (rejected - redundant with declarations, breaks replay self-containment), relocate registry (unblocks ivps but keeps plaintext), @backend:locator now (post-MVP scope). Rachid's ruling: capture is opt-in policy; the capture target must keep replay self-contained; secretspec (declarative CLI, pluggable providers) is the MVP store - its `file` provider only, later backends follow.
+
+**Decision:**
+1. `.remote-vars` `secret NAME` declarations classify vars (existing marker). Name-pattern masking stays for payload debug only.
+2. Capture policy is per-deployment, default **off**: secret-declared values are never written to the registry snapshot. Replay without supply fails closed, naming the var and the supply commands (helpful error reads the declaration, not the snapshot).
+3. Opt-in modes: **plaintext** (today: value in the registry snapshot; inventory then carries secrets - operator's choice, documented) and **secretspec** (value captured into secretspec; snapshot records mode + key only, never the value).
+4. MVP secretspec support = the **file provider only**, active provider discovered from secretspec's own configuration (project `secretspec.toml` / user `~/.config/secretspec/config.toml`); cloudify refuses capture with a job-to-be-done error when the configured provider is not supported. Recommended convention: root under `~/.config/secretspec/secrets`. All secretspec access through the `secretspec` CLI (`get`/`set`), never by writing secretspec's store directly.
+5. Capture targets implement two operations (store, fetch) behind one interface; new backends (keyring next, then others) extend the allowlist + target, not the design.
+
+**Consequences:** Default inventories are sync-safe by construction (secrets never captured). Replays of uncaptured secret deployments need env supply or a capture mode - failure is loud and names the fix. Existing snapshots with captured secrets stay as-is (no retro scrub; a scrub verb is future work). secretspec becomes a runtime dependency only when capture=secretspec. The ivps inventory push remains gated on an audit of what else the folder carries (config.env must stay out).

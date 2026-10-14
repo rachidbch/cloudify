@@ -681,3 +681,45 @@ The redesign is complete only when all of these are true:
 - Existing direct package commands and all shadow behavior remain intact.
 - Every old artifact is migrated explicitly or reported, and final runtime code contains no migration bridge or old-format reader.
 - The scoped unit, integration, and disposable E2E gates pass.
+
+## Secret capture (ADR-034 - design only; no plan/implementation until Rachid's go)
+
+Three layers, one concern each:
+
+- **Classification** (exists): `.remote-vars` marks vars with `secret NAME`.
+  The declaration is the single source of secret-ness; the name-pattern
+  list in `lib/vars.sh` keeps its only job - payload debug masking.
+- **Policy** (new): per-deployment, default `off`. Stored beside the
+  deployment's desired inputs (`capture: off|plaintext|secretspec`).
+  Surface: `cloudify deployment capture <mode>`.
+- **Target** (new): implements exactly two operations - `store(deployment,
+  name, value)` and `fetch(deployment, name) -> value`. Registry snapshot
+  semantics per policy: `off` -> nothing recorded; `plaintext` -> value in
+  the snapshot (today's behavior); `secretspec` -> `mode: secretspec` +
+  key name in the snapshot, value only inside secretspec.
+
+MVP target: secretspec **file provider**. All access through the
+`secretspec` CLI (`get`/`set`), never direct store writes. Before capture,
+cloudify reads secretspec's own configuration (project `secretspec.toml`,
+else `~/.config/secretspec/config.toml`) and resolves the active provider;
+anything outside the MVP allowlist (`file`) fails capture with a
+job-to-be-done error naming the var, the current provider, and both fixes
+(switch provider, or keep capture off and supply by env). Recommended
+convention for the file root: `~/.config/secretspec/secrets` (secretspec
+config stays the source of truth for the root; cloudify only checks the
+provider family and records the alias it used).
+
+Replay resolution, fail closed: a snapshot value line that is a secret
+resolves by policy - `plaintext` reads the snapshot, `secretspec` fetches
+via CLI, `off` aborts the replay before any dispatch with the var name,
+the supply commands (env prefix or `secretspec set`), and the capture
+enable command. No literal placeholder ever reaches a payload.
+
+Extension path: a new backend = allowlist entry + target implementation
+behind the same two operations (keyring first - zero new concepts; the CLI
+is provider-agnostic). `@backend:locator` references in stores remain a
+separate future extension and are not implied by this design.
+
+Open point for the plan: the capture write sits on the dispatch path
+(post-install snapshot) and fetch on the replay seed - both touch the
+value channel (`lib/vars.sh` / `lib/registry.sh`); gate applies.

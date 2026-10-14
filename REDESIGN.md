@@ -699,15 +699,16 @@ Three layers, one concern each:
   key name in the snapshot, value only inside secretspec.
 
 MVP target: secretspec **file provider**. All access through the
-`secretspec` CLI (`get`/`set`), never direct store writes. Before capture,
-cloudify reads secretspec's own configuration (project `secretspec.toml`,
-else `~/.config/secretspec/config.toml`) and resolves the active provider;
-anything outside the MVP allowlist (`file`) fails capture with a
-job-to-be-done error naming the var, the current provider, and both fixes
-(switch provider, or keep capture off and supply by env). Recommended
-convention for the file root: `~/.config/secretspec/secrets` (secretspec
-config stays the source of truth for the root; cloudify only checks the
-provider family and records the alias it used).
+`secretspec` CLI (`get`/`set`), never direct store writes. Cloudify has
+exactly one knob - secretspec's own selection surface: `SECRETSPEC_FILE` /
+`--file` for the project spec, default user config
+`~/.config/secretspec/config.toml` (hardcoded upstream). The store root is
+whatever the configured provider URI says; cloudify neither knows, records,
+nor documents roots. Before capture, cloudify resolves the active provider
+from that config; anything outside the MVP allowlist (`file`) fails capture
+with a job-to-be-done error naming the var, the current provider, and both
+fixes (point the spec at a file provider, or keep capture off and supply
+by env).
 
 Replay resolution, fail closed: a snapshot value line that is a secret
 resolves by policy - `plaintext` reads the snapshot, `secretspec` fetches

@@ -2,22 +2,27 @@
 # youtube-mcp — YouTube MCP server (Streamable HTTP transport)
 # https://github.com/rachidbch/youtube-mcp
 #
-# Serves YouTube video info, comments, transcripts, search via MCP protocol.
-# No YouTube API key required — uses youtubei.js (InnerTube) + youtube-transcript-plus.
+# Server surface (fork >= 1.1.0, commit 57c0f7d):
+#   - The SERVER owns its endpoint token: generated on first start, stored
+#     mode 600 in /var/lib/youtube-mcp/token, never taken from env
+#     (API_TOKEN is ignored). Rolled via the MCP "auth" tool.
+#   - Google account / feed auth state lives in /var/lib/youtube-mcp/ so
+#     reinstalls of the code directory never destroy credentials.
+#   - 11 tools anonymous; add YT_GOOGLE_CLIENT_ID/SECRET for account tools.
 #
 # Config (~/.config/cloudify/pkgs/youtube-mcp.yaml):
-#   API_TOKEN: "<token>"           — bearer token for MCP endpoint auth
-#   YOUTUBE_MCP_PORT: "8443"       — HTTP port (default: 8443)
+#   YOUTUBE_MCP_PORT: "8443"          - HTTP port (default: 8443)
+#   YT_GOOGLE_CLIENT_ID: ""           - optional: enable account tools
+#   YT_GOOGLE_CLIENT_SECRET: ""       - optional (both or neither)
 #
-# Post-install:
-#   Access MCP endpoint at http://<host>:<port>/mcp
-#   Authorization: Bearer <token>
+# Post-install output prints the generated endpoint token ONCE.
 #
 # Service management:
 #   systemctl status youtube-mcp
 #   journalctl -u youtube-mcp -f
 
 MCP_DIR="/opt/youtube-mcp"
+MCP_STATE="/var/lib/youtube-mcp"
 MCP_PORT="${YOUTUBE_MCP_PORT:-8443}"
 MCP_SERVICE="/etc/systemd/system/youtube-mcp.service"
 
@@ -35,53 +40,53 @@ pkg_depends mise git
 # pkg_depends node would skip if apt node exists (FORCE/CLEAR_DATA unset for deps).
 # Install directly so mise manages the runtime regardless of existing apt node.
 export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
-mise use -g node@lts
+mise use -g node@lts || die "mise node@lts install failed"
 
-# --- Clone/pull source ---
+# --- Source: clone or pull ---
 if [[ -d "$MCP_DIR/.git" ]]; then
     log_info "Updating youtube-mcp source..."
-    git -C "$MCP_DIR" pull --ff-only
+    git -C "$MCP_DIR" pull --ff-only \
+        || die "git pull failed (local divergence?); resolve manually or reinstall with --clear-data"
 else
     log_info "Cloning youtube-mcp..."
     rm -rf "$MCP_DIR"
-    git clone https://github.com/rachidbch/youtube-mcp.git "$MCP_DIR"
+    git clone https://github.com/rachidbch/youtube-mcp.git "$MCP_DIR" || die "git clone failed"
 fi
 
 # --- Build ---
 cd "$MCP_DIR" || die "Failed to cd into $MCP_DIR"
 log_info "Installing npm dependencies..."
-npm install
+npm install || die "npm install failed"
 log_info "Building TypeScript..."
-npm run build
+npm run build || die "npm run build failed"
 
-# --- Token ---
-if [[ -n "${API_TOKEN:-}" ]]; then
-    TOKEN="$API_TOKEN"
-    log_info "Using API_TOKEN from configuration."
-else
-    TOKEN=$(openssl rand -hex 32)
-    msg ""
-    msg "${YELLOW}=== GENERATED API TOKEN — SAVE THIS ===${RESET}"
-    msg "  ${TOKEN}"
-    msg ""
-    msg "Save to ~/.config/cloudify/pkgs/youtube-mcp.yaml:"
-    msg "  API_TOKEN: \"${TOKEN}\""
-    msg ""
-    msg "Without it, --clear-data will generate a new token."
-    msg "${YELLOW}=========================================${RESET}"
-    msg ""
-fi
+# --- State dir (survives code reinstalls; holds server-owned token + auth) ---
+mkdir -p "$MCP_STATE"
+chmod 700 "$MCP_STATE"
+# Migration: earlier fork builds wrote the token into the code dir.
+[[ -f "$MCP_DIR/.youtube-mcp-token" && ! -f "$MCP_STATE/token" ]] && mv "$MCP_DIR/.youtube-mcp-token" "$MCP_STATE/token"
+[[ -d "$MCP_DIR/.youtube-mcp-auth.json" ]] && true
+[[ -f "$MCP_DIR/.youtube-mcp-auth.json" && ! -f "$MCP_STATE/auth.json" ]] && mv "$MCP_DIR/.youtube-mcp-auth.json" "$MCP_STATE/auth.json"
 
 # --- Systemd service ---
+# Note: expanded inside the heredoc on its own line (empty when unset;
+# a blank line in a unit file is harmless, a mangled one is not).
+GOOG_ENV_LINES=""
+if [[ -n "${YT_GOOGLE_CLIENT_ID:-}" && -n "${YT_GOOGLE_CLIENT_SECRET:-}" ]]; then
+    GOOG_ENV_LINES=$(printf 'Environment=YT_GOOGLE_CLIENT_ID=%s\nEnvironment=YT_GOOGLE_CLIENT_SECRET=%s' "${YT_GOOGLE_CLIENT_ID}" "${YT_GOOGLE_CLIENT_SECRET}")
+fi
+
 cat > "$MCP_SERVICE" << SYSTEMDEOF
 [Unit]
-Description=YouTube Transcript MCP Server
+Description=YouTube MCP Server (fork: playlists, auth state machine, feed)
 After=network.target
 
 [Service]
 Type=simple
 Environment=PORT=${MCP_PORT}
-Environment=API_TOKEN=${TOKEN}
+Environment=YT_TOKEN_FILE=${MCP_STATE}/token
+Environment=YT_AUTH_STATE_FILE=${MCP_STATE}/auth.json
+${GOOG_ENV_LINES}
 WorkingDirectory=${MCP_DIR}
 ExecStart=/root/.local/share/mise/shims/node dist/index.js --http
 Restart=always
@@ -92,13 +97,32 @@ WantedBy=multi-user.target
 SYSTEMDEOF
 
 systemctl daemon-reload
-systemctl enable --now youtube-mcp
+systemctl enable --now youtube-mcp || die "service enable/start failed"
 
-# --- Post-install ---
+# --- Surface the server-owned token to the installing actor ---
+# The token is generated by the server at first start; poll for it briefly.
+TOKEN=""
+for _ in $(seq 1 30); do
+    [[ -s "$MCP_STATE/token" ]] && { TOKEN=$(<"$MCP_STATE/token"); break; }
+    sleep 1
+done
+
 msg ""
 msg "${GREEN}youtube-mcp installed and running.${RESET}"
 msg ""
 msg "Endpoint: http://$(hostname):${MCP_PORT}/mcp  (replace hostname with IP if needed)"
+if [[ -n "$TOKEN" ]]; then
+    msg ""
+    msg "${YELLOW}=== ENDPOINT TOKEN (server-owned, stored at ${MCP_STATE}/token) ===${RESET}"
+    msg "  ${TOKEN}"
+    msg "  Clients send: Authorization: Bearer <token>"
+    msg "  Rolls instantly when google auth completes or via the MCP auth tool;"
+    msg "  the rolling response carries the new token."
+    msg "${YELLOW}=====================================================================${RESET}"
+else
+    msg "WARNING: token file did not appear at ${MCP_STATE}/token; check journalctl -u youtube-mcp"
+fi
+msg ""
 msg "Logs:     journalctl -u youtube-mcp -f"
 msg "Restart:  systemctl restart youtube-mcp"
 msg ""

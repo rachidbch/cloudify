@@ -607,3 +607,50 @@ vehicle):
 Success = a documented path where a keyboard-driven WM (i3 first candidate)
 is fully usable; the winner lands as a pkg/runbook change, the oracle
 migrates only after Rachid's go.
+
+## secretspec generate=true: first-boot secrets minted into the store, not transcribed (Rachid, 2026-10-13)
+
+Today first-boot secrets are minted ON THE GUEST by the packages themselves:
+k3s generates the join token, octop writes a one-time wizard password to
+~/octop-login.txt, affine prints the master token. Capture (ADR-034,
+capture=secretspec) records those guest-generated values after the fact -
+the value exists in cleartext on the guest, gets read by the snapshot, and
+transcription is the fragile hop. Rotation is undocumented per package.
+
+secretspec's per-secret `generate = true` + `type` (password, hex, uuid)
+inverts the flow: the value is minted INTO the store on first run - nobody
+invents or transcribes a first-boot secret; rotation = `secretspec delete`
++ rerun; presence is `secretspec check`-able before dispatch.
+
+Shape when picked up: recipes that mint first-boot secrets gain an
+"accept supplied value" path (k3s token, affine master token are already
+supply-compatible); capture=secretspec deployments let cloudify mint once
+via `secretspec set` before dispatch and supply by env to the guest.
+Generate-once guards already in recipes (create-if-absent) map 1:1 onto
+delete-rerun rotation. Precondition: ADR-034 capture shipped.
+
+## secretspec serve: replay resolves secrets on the target machine, values never leave it (Rachid, 2026-10-13)
+
+ADR-034 capture=secretspec resolves on the CONTROLLER: dispatch payloads
+carry secret values from the controller's store to the target, and a replay
+from machine B needs B's store synced or re-seeded. The fleet end-state is
+N machines each owning their secretspec substrate - which breaks.
+
+`secretspec serve` is secretspec's aware-consumer protocol (versioned
+message exchange over stdio): a program pins one manifest/profile/scope
+once, then asks for secrets by name at the moment of need. Documented gains
+that map onto cloudify: least access (only declared names, pinned scope),
+values deliverable as temporary files released at session close, prompts
+flowing back to the client, and REMOTE RESOLUTION OVER SSH - a deploy tool
+asks the TARGET machine's resolver so values never leave the target.
+Caveat from the field guide: no coding agent speaks this protocol today;
+it is plumbing for tools that embed secretspec.
+
+Shape when picked up: cloudify (Go - the protocol is stdio messages) gains
+a second resolution backend beside the CLI verbs; dispatch of serve-backed
+deployments sends secret NAMES, not values, and the guest resolves at
+recipe time; pairs with require_reason + SECRETSPEC_AGENT=1 so every
+machine-side handout is purpose-logged (AI-driven tool, self-declared).
+Preconditions: ADR-034 capture shipped; serve protocol stable across a
+secretspec release; target machines run secretspec. Revisit when any second
+cloudify host needs replay.

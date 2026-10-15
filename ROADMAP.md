@@ -627,7 +627,10 @@ Shape when picked up: recipes that mint first-boot secrets gain an
 supply-compatible); capture=secretspec deployments let cloudify mint once
 via `secretspec set` before dispatch and supply by env to the guest.
 Generate-once guards already in recipes (create-if-absent) map 1:1 onto
-delete-rerun rotation. Precondition: ADR-034 capture shipped.
+delete-rerun rotation. Precondition (real, not thematic): recipes minting
+first-boot secrets gain an accept-supplied-value path (k3s token, affine
+master token are supply-compatible already); secretspec CLI on the
+dispatch machine. Independent of ADR-034 capture.
 
 ## secretspec serve: replay resolves secrets on the target machine, values never leave it (Rachid, 2026-10-13)
 
@@ -651,6 +654,8 @@ a second resolution backend beside the CLI verbs; dispatch of serve-backed
 deployments sends secret NAMES, not values, and the guest resolves at
 recipe time; pairs with require_reason + SECRETSPEC_AGENT=1 so every
 machine-side handout is purpose-logged (AI-driven tool, self-declared).
-Preconditions: ADR-034 capture shipped; serve protocol stable across a
-secretspec release; target machines run secretspec. Revisit when any second
+Preconditions (real, not thematic): serve protocol stable across a
+secretspec release; target machines run secretspec. Orthogonal to ADR-034
+capture - target-side resolution reduces controller capture's relevance
+over time, it does not queue behind it. Revisit when any second
 cloudify host needs replay.

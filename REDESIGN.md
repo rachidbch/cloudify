@@ -698,17 +698,22 @@ Three layers, one concern each:
   the snapshot (today's behavior); `secretspec` -> `mode: secretspec` +
   key name in the snapshot, value only inside secretspec.
 
-MVP target: secretspec **file provider**. All access through the
-`secretspec` CLI (`get`/`set`), never direct store writes. Cloudify has
-exactly one knob - secretspec's own selection surface: `SECRETSPEC_FILE` /
-`--file` for the project spec, default user config
-`~/.config/secretspec/config.toml` (hardcoded upstream). The store root is
-whatever the configured provider URI says; cloudify neither knows, records,
-nor documents roots. Before capture, cloudify resolves the active provider
-from that config; anything outside the MVP allowlist (`file`) fails capture
-with a job-to-be-done error naming the var, the current provider, and both
-fixes (point the spec at a file provider, or keep capture off and supply
-by env).
+MVP target: secretspec **file provider**, per-product layout (production-style
+discovery - this is a machine substrate, not a repo): a self-contained
+`~/.config/secretspec/cloudify/` holding the spec (`secretspec.toml`,
+`[project] name = "cloudify"`, chain pinned to the file provider - never
+env-headed: writes must land) and the store root (`file:~/.config/
+secretspec/cloudify/secrets`). Cloudify resolves the spec file in this
+order: operator's `SECRETSPEC_FILE` (override wins), else the product spec
+above - never the working directory (no walking up; cloudify runs from
+anywhere and will one day be a binary without a checkout). All access
+through the `secretspec` CLI verbs (`set`/`get`, and `check` as the
+capture-mode preflight), never direct store writes. Cloudify resolves the
+active provider from the pinned spec; anything outside the MVP allowlist
+(`file`) fails capture with a job-to-be-done error naming the var, the
+current provider, and both fixes (re-point the spec's chain, or keep
+capture off and supply by env). The audit log (`~/.local/state/secretspec/
+audit.log`, values never written) comes free and is the capture trail.
 
 Replay resolution, fail closed: a snapshot value line that is a secret
 resolves by policy - `plaintext` reads the snapshot, `secretspec` fetches

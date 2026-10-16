@@ -39,13 +39,23 @@ Policy: compose-ability. Fix at the root (CRITICAL GATE where lib/router touches
 
 - [X] b) Cloudify runbooks (`cloudify deployment run <id>`), after (a). Deployment declares targets + typed steps as data: launch, install, configure, verify, uninstall, human-gate. Addresses by name. Step outputs (e.g. the launched guest's tailnet name) live in the registry (deployment, target, package), never merged into intent config; later steps consume them live. Preflight validates required vars via `vars declared` before launching anything. Secrets referenced by name (five-source walker; optional vault on either end). Per-step security rules: payload via stdin, no secret in argv, masking. Build on the fixed surface only (trap cleanups first).
 
-## Registry distribution (non-urgent)
+## Shared mutation permission and state distribution (2026-10-16)
 
-**Problem:** the registry (deployment/target/package records) lives only on the operator host, so that host is a single point of failure for the records themselves - not just for concurrent writers. Losing the laptop loses the registry. Runbooks are safe (they live in git); the registry is not.
-
-- [ ] **Experiment:** replicate/publish registry events (NATS/JetStream or equivalent) so records survive an operator loss and several operators can read them. Open question: operator-local append + async replication vs a central broker as the write master. A backup/snapshot step is the cheap first move; replication second.
-
-**Constraint:** the registry holds deployment values and generated outputs, so git is not a valid backup target (it would commit data that must not leave the host). Backups must be secret-aware and local/encrypted.
+- [ ] **What:** investigate NATS/JetStream or an equivalent shared service for permission to mutate deployments and for durable distribution of Cloudify events.
+  These are separate jobs; publishing records after two competing changes does not prevent the changes.
+- **Why:** controllers on different machines cannot coordinate through local file locks, and Git cannot decide which controller may change a deployment first.
+  Git conflicts arrive after the machines may already disagree with their records.
+- **First step:** one controller obtains exclusive permission for the whole deployment before mutation, refreshes the inventory, performs the work, publishes the resulting records, then releases permission.
+  Define the authoritative inventory revision and what happens when publication fails before granting the next controller permission.
+  Deployments sharing an installation must also share protection for that installation; different deployment names are not sufficient isolation.
+- **Failure cases:** a controller losing contact with the shared service may still have work running on the target.
+  Do not grant overlapping permission merely because a timer expired; prove the earlier work stopped or ensure the target rejects its further writes.
+  Record crashes between host mutation and inventory publication as incomplete work to inspect, not completed work to overwrite.
+- **End game:** start with whole-deployment protection, then test progressively smaller independent changes, such as different settings that do not restart or otherwise affect the same installation.
+  Keep the coarse permission whenever independence has not been proved.
+  Success means conflicting changes are prevented, with exceptional recovery reviewed by an agent and the human rather than routinely reconciled after Git conflicts.
+- **Boundary:** a broker choice and its permission protocol need their own decision and failure tests.
+  This entry does not authorize replacing Git, implementing a broker, or synchronizing secret values through it.
 
 ## IPv6 and the target `:` delimiter (non-urgent)
 
@@ -469,11 +479,31 @@ Concluded decisions live in ADR.md and the design docs; this section tracks only
 
 - [ ] The controller's own state is irreplaceable with no cure today: `~/.config/cloudify/` (credentials + every stored value incl. secrets in plaintext behind 0600), `~/.local/state/cloudify/` (manifests + the event audit log), `~/.config/ivps/` (the inventory tree, now also holding the per-host package records). A controller loss orphans every deployment: machines keep running, cloudify forgets identities, audit, values, inventories. Cure TBD: a backup/export path (must encrypt the secret-bearing parts - the bucket is never a second live copy of a credential), or a documented external-backup scope. Interim: PKG-ADOPTIONS backup contracts name it in the external agent's scope.
 
-## Human-readable ivps inventory (2026-09-27, Rachid's requirement)
+## Human-readable ivps inventory and rename safety (reopened 2026-10-16)
 
-- [ ] Walking the ivps tree raw must be human-readable. Today paths are immutable-id-keyed (`nodes/<16-hex>/instances/<16-hex>/...`, rename-safe per ADR-026 point 7 / ADR-028) and only `ivps node path <name>` resolves them; instance records were approved under "human scanability first" and the paths fail that bar.
-- Direction (Rachid's suggestion): ivps gains a `rename` command, and renames play well with cloudify even though ivps neither knows nor needs to know about cloudify. Candidate shape: name symlinks over id directories (`instances/affine -> ba529b51adee257b`) - names stay walkable, state stays id-keyed and rename-safe. Any alternative must keep both properties.
-- This is ivps-repo work; the entry records cloudify's stake. Cloudify keys durable state on the immutable ids, never on ivps names.
+- [ ] **What:** revisit name-keyed directories while keeping immutable ids in records.
+  Current instance record: `/home/rbc/.config/ivps/nodes/d12a512b2b0ebc14/instances/311bbdd276b8bc91/instance.json`.
+  Rachid's proposed shape: `/home/rbc/.config/ivps/nodes/cloudstation/instances/guac-gui/id.json`, with the node identity also in `id.json`.
+- **Why:** readable names make the inventory easier for humans and agents to navigate without a lookup command for every directory.
+  The earlier candidate was name symlinks over id directories; compare that with moving name-keyed directories during rename rather than assuming either wins.
+- **How:** keep immutable ids as identity, resolve current paths through ivps, and move the complete node or instance directory on rename, including Cloudify-owned contents.
+  Cover interrupted renames, concurrent readers, name collisions, Git changes, node deletion, and instance discovery under a changed name.
+  Cloudify currently derives durable host ids from directory names; change that assumption to read the identity record before changing directory layout.
+  Test that a rename preserves deployment identity, applied settings, target bindings, and shared-installation protection.
+- **Decision boundary:** this is ivps-owned work and a proposed revisit of ivps's immutable-directory decisions, not permission to change them.
+  Surface the departure from Immutable node identity (ivps ADR-009), Instance inventory records (ivps ADR-010), and Deployment-first inventory (Cloudify ADR-026) before implementation.
+
+## XDG homes for ivps configuration and inventory (2026-10-16)
+
+- [ ] **What:** separate operator configuration and credentials from machine-owned inventory rather than keeping both under `/home/rbc/.config/ivps/`.
+- **Why:** the current directory mixes settings with observed cloud records, complicating permissions, backup, Git allowlists, and reasoning about which files are portable state.
+  Cloudify already separates configuration from local state, although its host-bound records inherit ivps's current location.
+- **How:** classify ivps files as configuration, persistent data, state, or cache against the XDG specification, then decide the inventory's home.
+  Coordinate with ivps's existing fleet-state/Git plan rather than introducing a second relocation mechanism.
+  Specify an explicit migration and rollback; keep credentials out of tracked inventory.
+  Test `ivps node path`, Cloudify record discovery, rename, sweep, adoption, and inventory-only recovery after relocation.
+- **Boundary:** do not move files or replace directories with symlinks in this discussion.
+  The final XDG home and the name-keyed layout are separate decisions.
 
 ## Hermes pair out of test scope (2026-09-28, Rachid's ruling; history: 2026-08-10)
 
@@ -610,27 +640,21 @@ migrates only after Rachid's go.
 
 ## secretspec generate=true: first-boot secrets minted into the store, not transcribed (Rachid, 2026-10-13)
 
-Today first-boot secrets are minted ON THE GUEST by the packages themselves:
-k3s generates the join token, octop writes a one-time wizard password to
-~/octop-login.txt, affine prints the master token. Capture (ADR-034,
-capture=secretspec) records those guest-generated values after the fact -
-the value exists in cleartext on the guest, gets read by the snapshot, and
-transcription is the fragile hop. Rotation is undocumented per package.
+Some packages mint first-boot secrets on the guest: k3s can generate a join token, octop writes a one-time wizard password, and affine prints a master token.
+Secret capture (ADR-034) is not implemented, and current snapshots do not provide a general protected channel for returning those guest-generated secrets to a provider.
+Distinguish capturing a supplied value from retrieving a value created on the guest.
 
-secretspec's per-secret `generate = true` + `type` (password, hex, uuid)
-inverts the flow: the value is minted INTO the store on first run - nobody
-invents or transcribes a first-boot secret; rotation = `secretspec delete`
-+ rerun; presence is `secretspec check`-able before dispatch.
+secretspec's per-secret `generate = true` + `type` (password, hex, uuid) can invert the flow: create a missing value in the provider before supplying it to an installation.
+That removes manual invention and transcription of first-boot secrets, but does not make an existing installation accept a replacement.
+Also distinguish read-only retrieval from `secretspec check`, which can prompt for or store missing values; do not treat it as a harmless presence-only check.
 
-Shape when picked up: recipes that mint first-boot secrets gain an
-"accept supplied value" path (k3s token, affine master token are already
-supply-compatible); capture=secretspec deployments let cloudify mint once
-via `secretspec set` before dispatch and supply by env to the guest.
-Generate-once guards already in recipes (create-if-absent) map 1:1 onto
-delete-rerun rotation. Precondition (real, not thematic): recipes minting
-first-boot secrets gain an accept-supplied-value path (k3s token, affine
-master token are supply-compatible already); secretspec CLI on the
-dispatch machine. Independent of ADR-034 capture.
+Shape when picked up: recipes that mint first-boot secrets need an accept-supplied-value path; resolve generation into the provider before dispatch and supply the result to the guest.
+The value's name, creator, and destination must be known before execution, but a declaration is not proof of storage or successful application.
+Import existing installations' current secrets rather than generating replacements during adoption.
+Deleting a provider entry and generating a new value does not rotate a running application; rotation needs an explicit package operation that updates the application and provider consistently.
+Preconditions: validate each recipe's supply and rotation behavior and the selected secretspec generation command.
+Independent of Secret capture (ADR-034).
+The generation/capture UX is deferred until first-install selection, classification, and recorded secret locations are settled.
 
 ## secretspec serve: replay resolves secrets on the target machine, values never leave it (Rachid, 2026-10-13)
 
@@ -659,3 +683,75 @@ secretspec release; target machines run secretspec. Orthogonal to ADR-034
 capture - target-side resolution reduces controller capture's relevance
 over time, it does not queue behind it. Revisit when any second
 cloudify host needs replay.
+
+## Inventory-only recovery and lean package records (2026-10-16)
+
+- [ ] **What:** honor the agreed ability to reconstruct current cloud state from the ivps inventory alone, with secret values supplied separately.
+  History is not required for current-state recovery.
+- **Why:** current manifest rebuilding and some inventory updates require local events; target bindings live outside the package records; adopted records and reserved step ids cannot reliably recover targets from a runbook step.
+  The manifest is a cache, not the only home of a binding.
+- **How:** preserve the target-to-host association and every required applied setting in inventory.
+  Use a valid manifest when present; rebuild it from inventory when missing, corrupt, or out of date.
+  Test a fresh controller holding only runbooks/recipes plus synced inventory and access to the secret provider, with no local manifests, runs, events, or desired-input files.
+  Include adopted deployments, dependencies, single-target and multi-target runbooks, and incomplete operations.
+- **Record shape:** review path-derived identity fields duplicated inside package records.
+  Prefer reading identities from the inventory path and parent identity records rather than storing independent copies; preserve the target name because the path does not encode it.
+  Events still need identities in their bodies because their filenames do not encode deployment or package identity.
+  Schema changes, event reconstruction, and moved-directory behavior need an explicit design before implementation.
+- **Related drift:** unnamed `app run` currently selects `default`, while Named second deployments (ADR-031) requires proven matching or first-deployment name generation.
+  Reconcile this deliberately; use explicit semantic deployment names while the mismatch remains.
+
+## Secret classification without mandatory new package syntax (2026-10-16)
+
+- [ ] **What:** compare explicit package/application markers, name conventions, and secretspec declarations as sources of secret classification.
+  Simple MVP package classification (ADR-035) keeps existing name recognition and optional explicit markers; no recipe migration is required now.
+- **Why:** name matching can miss a secret such as `LICENSE` or classify a public key as secret, while mandatory parallel declarations can create clerical drift.
+  Cloudify must know secret status before resolving, forwarding, capturing, or snapshotting a value.
+- **How:** compare one classification rule shared by package variables and runbook inputs with classification supplied by secretspec.
+  A runbook input has no implemented secret marker today; classification is not carried through its mappings.
+  Cover one secret mapped to differently named package variables, optional inputs, unmarked names, explicit references, and applications with no packages.
+  Preserve secret status and original input identity through mappings.
+  Treat unknown-content detection as a limit, not a promise to discover arbitrary mislabeled secrets.
+- **Boundary:** runbook naming-convention parity is a proposal to settle, not an implemented feature or a reason to introduce mandatory syntax now.
+
+## Secret locations before the first installation (2026-10-16, design open)
+
+- [ ] **What:** settle canonical first-run UX before further generation/capture design.
+  A first run has no applied inventory from which to read a secret location.
+- **How:** compare Cloudify selecting secretspec by default and deriving a deployment-specific selection from the application, flavor, deployment name, and original application input name, against wrapping Cloudify with secretspec.
+  A wrapper resolves from the spec, not the ivps inventory, so it is not circular; it repeats selection when the user must also name the Cloudify deployment.
+  Per-name retrieval can avoid injecting unrelated secrets without requiring a wrapper to load a whole profile.
+- **Decisions still open:** deployment-to-project/profile/key mapping, how declarations reach the spec with minimal manual work, same-name secrets on different targets, flat persisted mode/key fields, value precedence, capture-off behavior, and how identity survives application mappings.
+  Do not infer these from later inventory or silently add a new policy file.
+  Secretspec-first resolution would expand the capture-only scope and optional runtime dependency in Secret capture (ADR-034), so amend that decision only after informed approval.
+
+## Secret-manager selection settings (2026-10-16, discussion only)
+
+- [ ] Discuss whether Cloudify should default to secretspec, with an optional Cloudify-wide selection and a runbook-specific override.
+  Separate selecting a secret manager from selecting a secretspec provider; moving from files to a network vault may require only a provider change.
+  Do not add settings or precedence levels without a demonstrated use case.
+  The MVP default and any future override hierarchy need agreement after canonical first-run UX is settled.
+
+## Safe run snapshots and honest historical replay (2026-10-16)
+
+- [ ] **What:** stop storing literal secret values in local run snapshots and persist the secret mode/key selected at the time of each run, using the same secret-location representation as inventory.
+- **Why:** current snapshots can contain plaintext input values and step outputs.
+  They remain local and unsafe for now; document the warning and keep them out of Git and unencrypted/shared backup.
+- **How:** capture each run's complete secret address at execution time, including the manager and the context needed to interpret its key.
+  Historical replay reads that recorded address, never today's deployment inventory or today's default manager to guess what the old run meant.
+  It retrieves the current value at the recorded address, not a historical secret value.
+  If the address no longer resolves, fail before mutation with the secret name, recorded mode/key, and an actionable explanation; never silently fall back to a different current address or recipe default.
+  Prevent automatic persisted step outputs from bypassing secret handling.
+- **Tests:** rotate a value at an unchanged address; change a deployment's address; change its manager; remove the old secret; remove local current-state caches; map one input to several packages; fail midway through a run.
+  Snapshot history must retain its own addressing metadata even when current inventory changes.
+- **Boundary:** retaining unsafe snapshots temporarily is not permission to publish them, and this work does not require historical-secret versioning or historical-leak cleanup.
+
+## Value-containing base64 references and insecure capture (2026-10-16)
+
+- [ ] Remove value-containing `@base64:` secret references or require explicit insecure consent before recording them as publishable references.
+  Encoding a value does not make it a secret location.
+- The current backend also implements multiline file-store values, so design a distinct literal transport and migrate its callers before removing it.
+  Preserve exact multiline bytes and escaping; do not conflate this backend with private dispatch-context encoding.
+- Cover literal-secret capture and explicit plaintext capture as well as base64 references.
+  An insecure local capture choice must not silently authorize publishing the value through inventory sync.
+  No runtime change or historical-leak cleanup is authorized by this entry.

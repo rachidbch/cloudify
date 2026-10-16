@@ -335,9 +335,11 @@ The mapping syntax is fixed and tested before existing package names change.
 
 ## Secrets
 
-Secret classification is explicit metadata in the package or application declaration.
+For the MVP, package secret classification keeps explicit markers, reference classification, and name recognition for `PWD|PASSWORD|SECRET|TOKEN|KEY` without requiring new package syntax (Simple package secret classification, ADR-035).
 
-Name matching such as `TOKEN|KEY|PASSWORD|SECRET` remains defense in depth only.
+Name recognition is not confined to debug masking; it also protects persisted package values.
+
+Application-input secret classification and its propagation through mappings are not fully specified or implemented; settle them before enabling application-wide automatic secret handling.
 
 A persisted secret should be a backend reference.
 
@@ -682,13 +684,13 @@ The redesign is complete only when all of these are true:
 - Every old artifact is migrated explicitly or reported, and final runtime code contains no migration bridge or old-format reader.
 - The scoped unit, integration, and disposable E2E gates pass.
 
-## Secret capture (ADR-034 - design only; no plan/implementation until Rachid's go)
+## Secret capture (ADR-034, amended by ADR-035; design only, implementation gated)
 
 Three layers, one concern each:
 
-- **Classification** (exists): `.remote-vars` marks vars with `secret NAME`.
-  The declaration is the single source of secret-ness; the name-pattern
-  list in `lib/vars.sh` keeps its only job - payload debug masking.
+- **Classification** (package behavior retained for the MVP): explicit `secret NAME` markers, references, and name recognition all classify package values.
+  No mandatory package declaration migration is required (Simple package secret classification, ADR-035).
+  The runbook-input rule and propagation through mappings remain open; do not assume either explicit application metadata or secretspec-derived classification already exists.
 - **Policy** (new): per-deployment, default `off`. Stored beside the
   deployment's desired inputs (`capture: off|plaintext|secretspec`).
   Surface: `cloudify deployment capture <mode>`.

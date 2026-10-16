@@ -1402,3 +1402,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - **Skills SSOT**: pkg-dev DONOT no-sudo-in-recipes + no-throwaway-on-adhoc-targets; usage skill publish-in-tailnet default. Style pass applied.
 - **Spun off**: ~/PROJECTS/PROD/guaccess (Wails3/Go Windows shell for full-keyboard Guacamole sessions; scaffold + governance committed; spawned agent to build; t3 container explicitly out of its scope).
 - **LOGS.md**: t3code deployment evidence trail + REX timeline preserved (was volatile in ~/tmp). In-guest agent migration state recorded: t3code server now hand-started from fork checkout (systemd unit disabled), untouched on Rachid's instruction.
+
+## 2026-10-16 - secretspec design stress test: MVP classification retained, follow-ups recorded
+
+- **Simple package secret classification (ADR-035):** retain current name recognition, explicit markers, and reference classification without mandatory package syntax changes; amends Secret capture (ADR-034) point 1 only, with REDESIGN and the roadmap synchronized.
+- **Authorized follow-ups recorded:** shared mutation permission from whole deployments toward tested finer-grained changes; historical snapshot mode/key preservation with current-value resolution and honest missing-secret failure; classification alternatives; first-install secret selection; optional manager settings; unsafe base64/plaintext capture; human-readable ivps paths and rename safety; ivps XDG homes.
+- **Docs corrected:** warn that current local snapshots can contain plaintext secrets and step outputs; distinguish runbook flavors from deployment names; record the current unnamed-run/default-name and manifest-recovery gaps rather than presenting the intended behavior as implemented.
+- **Scope:** documentation only; no runtime, inventory, credentials, harness, or application changes; secret generation/capture UX remains open until the earlier design questions are settled.

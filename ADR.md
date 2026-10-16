@@ -511,3 +511,21 @@ Consequences: `deployment delete`/teardown on a synthesized bucket spans hosts -
 5. Capture targets implement two operations (store, fetch) behind one interface; new backends (keyring next, then others) extend the allowlist + target, not the design.
 
 **Consequences:** Default inventories are sync-safe by construction (secrets never captured). Replays of uncaptured secret deployments need env supply or a capture mode - failure is loud and names the fix. Existing snapshots with captured secrets stay as-is (no retro scrub; a scrub verb is future work). secretspec becomes a runtime dependency only when capture=secretspec. The ivps inventory push remains gated on an audit of what else the folder carries (config.env must stay out).
+
+## ADR-035: Keep simple package secret classification for the MVP
+
+**Status:** Accepted 2026-10-16; supersedes Secret capture (ADR-034) point 1 only where it makes explicit declarations the sole classification source.
+
+**Context:** Existing package variables are also classified by name, while several shipped password declarations have no explicit secret marker.
+Requiring new declaration syntax for every secret would increase package-author work before the secret workflow is settled.
+Rachid chose to retain the simple current package syntax for the MVP and discuss alternatives separately.
+
+**Decision:** Keep existing explicit secret markers and reference classification, and retain package-value name recognition for `PWD`, `PASSWORD`, `SECRET`, `TOKEN`, and `KEY`.
+Name recognition is allowed to classify persisted package values, not only mask debug output.
+Do not require package authors to add markers as part of the secretspec MVP.
+The application-input classification rule, propagation through mappings, secretspec selection, and secret-location record format remain open design questions.
+This decision changes neither capture policy nor the default-off rule.
+
+**Consequences:** Current package classification remains unchanged, including its possible false positives and missed names.
+Compare explicit markers, name conventions, and secretspec declarations before replacing it.
+The design in REDESIGN.md distinguishes this accepted package rule from the still-unsettled application-input rule.

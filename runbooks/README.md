@@ -7,6 +7,9 @@ Deployment procedures an agent or human executes with ONLY `ivps` and `cloudify`
 Canonical: `runbooks/<application>/<flavor>/runbook.md`. It is the only discoverable runbook path: exactly two levels under the runbooks root, so a deeper `runbook.md` is not canonical and carries no application identity.
 The application identity (`<application>/<flavor>`) is derived from the path, not from the file body.
 The default flavor is `default`.
+A flavor is a structural variant of a runbook, such as a single-host plan versus a split-host plan; it is not the name of one running deployment.
+For example, `xfce-guacamole/default` selects a reusable plan, while `--name work-desktop` identifies one deployment of that plan.
+Another deployment of the same plan has its own name, hosts, and inputs.
 A `run` or `human-gate` step must declare an explicit `phase=`.
 REMOVED (2026-09-29): the `deployment:` front-matter field and its `CLOUDIFY_DEPLOYMENT` fallback are gone - a runbook carrying the field is refused named. Identity derives from the runbook path plus the deployment name (`--name`), and runs identify by timestamp under the deployment's state-tree runs dir (`~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/runs/<utc>.yaml`).
 
@@ -43,26 +46,37 @@ application default < deployment value for the input name < caller environment f
 
 Application defaults live at `apps/<application>/<flavor>/defaults.yaml` under the Cloudify configuration root, keyed by the application input name.
 The `application` source label covers both the application defaults file and the mapped input.
-The value is captured once, at emit time; no store is read twice, and the dispatch context file stays metadata only (names, labels, references, digests, never a plaintext value).
+The value is captured once, at emit time; no store is read twice.
+The private dispatch context may hold resolved plaintext for execution and is removed after the dispatch.
+Package classification retains explicit markers, reference classification, and name recognition for the MVP (Simple package secret classification, ADR-035).
+Runbook `inputs:` currently declares names only; it has no implemented secret marker or secret-classification propagation through mappings.
+Do not assume an input's origin in secretspec supplies Cloudify with classification or a persistent secret location.
 
 ## Application commands and the deployment manifest
 
 `cloudify app run <application>[/<flavor>] [--name <name>]` is the application surface.
-The flavor defaults to `default` and the deployment name defaults to `default`, so `cloudify app run k3s` means `k3s/default --name default`.
+The flavor defaults to `default`.
+Current code also selects a deployment literally named `default` when `--name` is omitted.
+That differs from the accepted matching/name-generation rule in Named second deployments (ADR-031); the mismatch is tracked under inventory-only recovery in ROADMAP.md.
+Use an explicit semantic name such as `--name work-desktop` while it remains unresolved.
 It prints the full reference (`Application: k3s/default`) and the deployment name in every plan and error, exports `CLOUDIFY_APPLICATION`, `CLOUDIFY_FLAVOR` and `CLOUDIFY_DEPLOYMENT_NAME` for the child dispatches, and then runs the runbook (bare run: install then verify; teardown is never selected).
 A three-segment reference (`a/b/c`) is rejected rather than guessed.
 `cloudify deployment replay <id>` re-runs a recorded run through the same engine.
 `app reconfigure`, `app verify` and `app teardown` are reserved until Phase 4 has physical package state and claims, and say so.
 
-The deployment's current state lives at `<state-root>/deployments/<application>/<flavor>/<deployment>/manifest.json`, where `<state-root>` is `${XDG_STATE_HOME:-$HOME/.local/state}/cloudify`.
-`cloudify deployment show <id>` prints the manifest (identity, status, bindings, application commit, replayability) and the run snapshots.
-`cloudify deployments` lists the deployment directories and the current manifests.
+Applied package facts live in Cloudify's inventory under the ivps node and instance directories.
+The manifest at `<state-root>/deployments/<application>/<flavor>/<deployment>/manifest.json` is a current-state read cache, where `<state-root>` is `${XDG_STATE_HOME:-$HOME/.local/state}/cloudify`.
+`cloudify deployment show <application>[/<flavor>] --name <name>` prints the manifest and the run snapshots.
+`cloudify deployment list` lists current manifests.
+The plural `cloudify deployments` spelling in the intended read surface is not implemented.
 
-The manifest is created under one `flock` per deployment, before the first mutating step, and holds exactly the `schemas/v1/deployment-manifest.schema.json` fields:
-identity, application commit, development override, lifecycle status, creation time, target bindings, and the last run and event IDs (null until Phase 6 writes run and event records).
-It never holds an applied package value.
-Lifecycle: `applying` before mutation, `active` after install plus verify succeed, `degraded` on an observed failure.
-A run killed between steps never reaches the status update, so the manifest stays `applying` and `cloudify deployment show` reveals it; classifying a stale run is Phase 6's job.
+A local per-deployment file lock protects manifest writes.
+The manifest holds identity, application commit, development override, lifecycle status, creation time, target bindings, and the last run and event IDs.
+It never holds applied package values.
+Status is derived from observed events: `adopted`, `installed`, `reconfigured`, `verified`, or `degraded`; an unproved manifest starts with null status.
+An install whose verification stage fails can remain `installed`, with the failed check recorded in health.
+The required recovery behavior is to use a valid cache or rebuild it from inventory without requiring history.
+Current code instead provides an explicit event-based rebuild and does not fully meet that requirement; see inventory-only recovery in ROADMAP.md.
 
 Target bindings are recorded in the manifest and reused: a later reconfigure, verify or teardown reuses them instead of re-prompting.
 A caller-supplied `--target` that differs is a rebinding and needs `--migrate-targets`, because rebinding is a migration, not a rerun. Once a deployment has active claims (Phase 4) a rebinding fails closed.
@@ -138,9 +152,17 @@ Front-matter declares the named targets; each step is a fence whose info string 
 
 Types: `launch|install|configure|verify|uninstall|run|human-gate`. Every step but `human-gate` and `run` needs `target=`; the four package types need `pkg=` and preflight its required vars. `run` is a generic passthrough (arbitrary operator shell, e.g. `ivps expose-direct`).
 Targets bind with `--target name=addr`, else the deployment var `TARGET_<NAME>`.
+A single-target runbook still declares its name, for example `targets: server`, and the operator supplies `--target server=cloudstation:guac-gui`.
+There is no implicit target name or implicit localhost binding.
+Targetless canonical applications are not supported by the current manifest contract, even though the lower-level parser accepts targetless `run` and `human-gate` steps.
 `--dry-run` prints the plan (including the selected phases) and runs nothing (and creates no manifest).
 A canonical runbook also writes the deployment manifest; a path outside the tree carries no identity and writes no manifest.
 
 Each run writes a 0600 snapshot in the deployment's state-tree runs dir (`~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/runs/<utc>.yaml`) - target bindings, raw values by name, step outputs.
-`cloudify deployment replay <id> [--at <run>]` re-runs one: the snapshot's bindings and values are seeded (references resolved) and the same engine runs, so a repeated run sees the recorded values even if the store changed.
-Values never appear in the runbook, in output, or on a command line.
+**Security warning:** current snapshots can contain plaintext secrets and unclassified step outputs.
+Mode 0600 restricts readers but does not encrypt the file.
+Keep snapshots out of Git, shared directories, and unencrypted backups; current snapshots are not safe publication artifacts.
+`cloudify deployment replay <application>[/<flavor>] --name <name> [--at <run>]` seeds bindings and values from the selected snapshot and executes the same engine.
+Safe snapshots and honest historical replay are tracked in ROADMAP.md: record each run's secret mode/key at that time, fetch the current value at that recorded address, and fail before mutation if it no longer resolves.
+Do not substitute today's inventory address for a historical run's address.
+Values never appear in the runbook or on the Cloudify command line.

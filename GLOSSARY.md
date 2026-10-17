@@ -64,7 +64,7 @@ A target slot is bound to one resolved host.
 
 That binding is persisted in the current deployment manifest because later lifecycle commands need it.
 
-Changing a binding while reliances exist is an explicit migration.
+Changing a binding while other deployments use the same installation is an explicit migration.
 
 ## package
 
@@ -139,17 +139,15 @@ The last verification observation for one package instance.
 
 Health records the verification result and time without changing applied values.
 
-## reliance
+## which deployments use an installation
 
-A statement that one deployment and stable runbook step currently relies on one package instance.
+The guard's input: for one package instance on one host, the set of deployments currently using it, read by scanning the inventory records on that host.
 
-Compatible deployments may share one package instance through separate reliances.
+Compatible deployments may share one installation; a conflicting configuration fails before mutation.
 
-A conflicting reliance fails before mutation.
+Teardown releases its deployment's use of every installation, including dependencies without uninstall actions.
 
-Teardown releases every reliance owned by its deployment, including dependency reliances without uninstall actions.
-
-It may uninstall a package only after the last reliance is released and the pinned teardown phase names that uninstall.
+A package is uninstalled only when no deployment uses it and the pinned teardown phase names that uninstall.
 
 ## value
 
@@ -235,7 +233,7 @@ Adoption pins no application commit that no dispatch proved.
 
 It does not contain package applied values.
 
-A successful teardown removes the manifest only after all reliances and application-owned external resources have been released.
+A successful teardown removes the manifest only after the deployments using it have released every installation and application-owned external resource.
 
 ## manifest status
 
@@ -366,13 +364,13 @@ It must not silently change hosts, package ownership, or persistent-data retenti
 
 ## teardown
 
-The explicit application phase that releases the deployment's resources and package reliances.
+The explicit application phase that releases the deployment's resources and stops its use of installations.
 
-Reliances identify the packages owned or shared by the deployment.
+The inventory records on each host identify the packages the deployment used, shared or not.
 
 The pinned runbook supplies teardown actions and order.
 
-A shared package is uninstalled only after its final reliance is released.
+A shared package is uninstalled only after no deployment uses it.
 
 ## upgrade
 

@@ -457,7 +457,7 @@ cloudify_deployment_applied_screen() {
             # user-only mode: a package with no pinned values drops out whole.
             if [[ -n "$user_only" ]]; then
                 local caller_count
-                caller_count=$(jq -r '[.user_forced // []] | length' "$rec" 2>/dev/null) || caller_count=0
+                caller_count=$(jq -r '(.user_forced // []) | length' "$rec" 2>/dev/null) || caller_count=0
                 (( ${caller_count:-0} > 0 )) || continue
             fi
             version=$(jq -r '.version // "-"' "$rec" 2>/dev/null)

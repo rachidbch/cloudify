@@ -160,8 +160,8 @@ function cloudify_state_match_deployment() {
             [[ -n "$rec_values" ]] || { match=false; break; }
             jq -e --argjson a "$run_values" --argjson b "$rec_values" '
                 ($a | keys | sort) == ($b | keys | sort)
-                and all ($a | keys[];
-                     $a[$.] == "****" or $b[$.] == "****" or $a[$.] == $b[$.])' >/dev/null 2>&1 \
+                and all ($a | keys[]; . as $k |
+                     ($a[$k] == "****" or $b[$k] == "****" or $a[$k] == $b[$k]))' >/dev/null 2>&1 \
                 || { match=false; break; }
         done
         [[ "$match" == true ]] || continue

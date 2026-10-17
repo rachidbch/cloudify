@@ -180,11 +180,11 @@ record() { # record <pkg> [inst]
     run run_worker nginx
     [ "$status" -eq 0 ]
 
-    # The attempt stood; the verify stage observed failure: the lean record
-    # marks failed (any failed operation does), settings stand, and the
-    # manifest status stays installed.
+    # The verify stage observed failure on a FIRST operation: nothing was
+    # ever confirmed, so the lean record marks failed with no settings and a
+    # null version; the manifest status stays installed.
     [ "$(jq -r .failed "$(record nginx)")" = "true" ]
-    [ "$(jq -r .version "$(record nginx)")" = "1.24.0" ]
+    [ "$(jq -r .version "$(record nginx)")" = "null" ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "installed" ]
 }
 
@@ -353,12 +353,13 @@ record() { # record <pkg> [inst]
 
     # The earlier pair stays valid; the off-graph dependency records its own
     # fail-closed inventory (no values invented after execution): no settings,
-    # version null, failed marked.
+    # but the line's own succeeded report still gives the version, and the
+    # succeeded outcome marks no failure (the RUN is degraded, not the record).
     [ -f "$(record nginx)" ]
     [ "$(jq -r .revision "$(record nginx)")" = "1" ]
     [ "$(jq -r '[to_entries[] | select(.key | test("^[A-Z_][A-Z0-9_]*$"))] | length' "$(record wezterm)")" -eq 0 ]
-    [ "$(jq -r '.version' "$(record wezterm)")" = "null" ]
-    [ "$(jq -r .failed "$(record wezterm)")" = "true" ]
+    [ "$(jq -r '.version' "$(record wezterm)")" = "2.0.0" ]
+    [ "$(jq -r '.failed // empty' "$(record wezterm)")" = "" ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "degraded" ]
     # The degraded-run event lands after the line commits: it is the newest,
     # and the word degrades on it (derivable, not asserted from the worker).

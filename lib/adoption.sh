@@ -108,7 +108,7 @@ _cloudify_adoption_facts() {
         vfile_rec="${value_files[$p]}.record"
         # One lean flat map per package: name -> recorded source form.
         jq -s 'add' "${value_files[$p]}" > "$vfile_rec"
-        _ADOPT_VALUE_FILES+=("$p|$vfile_rec|$vfile_ev")
+        _ADOPT_VALUE_FILES+=("$p|$vfile_rec")
     done
 }
 
@@ -213,12 +213,11 @@ function cloudify_adoption_record() {
     local now rec rec_dir next_file ev_file eid last_eid=""
     now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
     for p in ${pkgs[@]+"${pkgs[@]}"}; do
-        local vfile_rec="" vfile_ev=""
+        local vfile_rec=""
         local triple
         for triple in ${_ADOPT_VALUE_FILES[@]+"${_ADOPT_VALUE_FILES[@]}"}; do
             [[ "$triple" == "$p|"* ]] || continue
-            vfile_rec="${triple#*|}"; vfile_rec="${vfile_rec%%|*}"
-            vfile_ev="${triple##*|}"
+            vfile_rec="${triple#*|}"
         done
         ev_file=$(mktemp "$CLOUDIFY_TMP/adoption-ev-XXXXXX")
         next_file=$(mktemp "$CLOUDIFY_TMP/adoption-next-XXXXXX")

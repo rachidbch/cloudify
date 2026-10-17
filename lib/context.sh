@@ -171,7 +171,8 @@ function cloudify_context_applied_seed() {
             (if $mode == "reconfigure" then (.user_forced // []) else null end) as $forced
             | to_entries[]
             | select(.key | test("^[A-Z_][A-Z0-9_]*$"))
-            | select(if $mode == "reconfigure" then ($forced | index(.key) != null) else true end)
+            | .key as $k
+            | select(if $mode == "reconfigure" then ($forced | index($k) != null) else true end)
             | (if .value == "****" then "secret" else "value" end) as $kind
             | [.key, $kind, "",
                (if $kind == "secret" then ""

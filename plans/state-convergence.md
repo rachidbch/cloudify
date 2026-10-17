@@ -84,8 +84,10 @@ Run `task gate` before and after fragile edits and inspect golden diffs individu
   Seven focused checks pass: VERSION and spaced arguments, exact SSH/Bats failure exits, extraction failure stopping Bats, retained reports, producer failure before SSH, report-write errors, and Docker failures before mutation.
   Technical review used one review/fix pass and one verification pass: PASS.
   The dedicated host was explicitly cleaned before restarting the ladder; no environment healing is part of a test run.
-- [ ] Record a fresh unmodified-runtime baseline: full `task test-unit`, `task gate`, and `task lint`, plus the corrected canary prerequisite proof.
-  Historical reference only: unit 797/0 and canary 7/0 on 2026-10-01; do not claim these as fresh results.
+- [x] Fresh unmodified-runtime baseline completed on pushed HEAD `a53cf76`: full unit 804/0, fragile gate 144/0 before and after the comment-only annotation, full lint exit 0, and real canary 7/0.
+  Every task and the serial owner exited 0; independent raw TAP checks found no skips, missing/duplicate results, or bailouts.
+  Reports: `results/unit.PQgTrWrD/report.tap`, `results/gate.dZVKpqXT/report.tap` (before), `results/gate.Hl6OeCOB/report.tap` (after), `results/canary.q5GLaZbG/report.tap`.
+  The payload remained byte-identical; no golden regeneration, environment healing, or acceptance retry occurred.
 - [x] Audited existing package-record producers/readers and conversion inputs: worker and state apply, context seeding/projection, adoption, matching, unset/display/delete, replay, registry staging, and migration reporting.
   All 11 package declaration files were checked: 43 declarations, 41 distinct names, no exact collisions with schema_version/target/user_forced/failed/version/revision.
   No schema filename/URL references were found in selected code paths of ivps, its provider/skeleton, cfy, or clibash; this is bounded evidence, not proof of no external consumers.
@@ -178,12 +180,13 @@ Existing unsafe historical snapshots remain private and unchanged.
 - The planning SPEC review passed with no must-fix findings before runtime tests began.
 - Rachid approved Plan (G1), Schema (G2), and Fragile contracts (G3), then explicitly required a feature branch before implementation; `feat/state-convergence` was created with no implementation edits on master.
 - Live-state approval (G4): pending; no production mutation authorized.
-- Baseline and prerequisites (S0): test host ready, focused checks 7/7, producer/consumer audit complete, Technical verification PASS; full baseline and canary pending; implementation slices (S1)-(S9): not started.
+- Baseline and prerequisites (S0): COMPLETE; focused checks 7/7, producer/consumer audit complete, Technical verification PASS, unit 804/0, before/after gate 144/0 each, canary 7/0, full lint exit 0.
+  Stopped at the S0 boundary; Marker sweep (S1) and later implementation slices have not started.
 - Full lint found SC2046 on the existing numeric `date +%s` expansion in the remote template; added one localized explanatory shellcheck comment, with no executable change.
   Before-edit fragile gate passed 144/144 with actual task exit 0; before/after `declare -f` payload text is byte-identical by cmp; full task lint now exits 0.
   No golden regeneration occurred; payload body, explicit allow-list, exports, stdin transport, and shadow bytes remain unchanged.
-  One detached local owner will run full unit, the after-edit gate, and canary serially, stopping at the first failure; native reports are retained and actual command exits recorded under `~/tmp/cloudify-s0`.
-- Baseline attempt planned 797 unit tests and passed through test 426 before its reader received harness cancellation; no complete exit verdict, gate, or lint result was produced.
+  The detached local owner completed full unit, the after-edit gate, and canary serially with every task and batch exit 0; native reports and actual exits are retained under results and `~/tmp/cloudify-s0`.
+- The earlier interrupted attempt planned 797 unit tests and passed through test 426 before its reader received harness cancellation; that attempt produced no complete verdict and is not counted as a pass.
   Preserved partial TAP at `~/tmp/cloudify-s0/interrupted-unit.tap`; do not count it as a baseline pass.
 - Rachid confirmed cloudify is dedicated to tests and authorized preparation; Tailscale SSH from the laptop works, while same-host self-connections are refused.
   The unrun conventional-SSH preparation scripts were discarded; no SSH daemon, keys, second host, or copied inventory were introduced.

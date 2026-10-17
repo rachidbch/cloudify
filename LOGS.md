@@ -1064,3 +1064,16 @@
 - Added only a localized `SC2046` explanation before the existing numeric timestamp expansion; extracted `declare -f cloudify_remote_payload_template` before/after into `~/tmp/cloudify-s0/payload-{before,after}.sh`; cmp exited 0.
 - Full `task --silent lint` and `git diff --check` exited 0; no payload bytes or golden files changed.
 - Full unit, after-edit gate, and real canary remain pending; the next batch runs them serially and stops on its first nonzero exit.
+
+## 2026-10-17 - Baseline and prerequisites (S0) acceptance closes
+
+- Tested pushed HEAD `a53cf76` on cloudai:cloudify through one plain Tailscale SSH session per suite; local serial owner PID 9143 completed with actual batch exit 0.
+- Full unit: 804 passed, 0 failed/skipped, actual task exit 0; `results/unit.PQgTrWrD/report.tap`.
+- Before-edit gate: 144 passed, actual task exit 0; `results/gate.dZVKpqXT/report.tap`.
+- After-edit gate: 144 passed, actual task exit 0; `results/gate.Hl6OeCOB/report.tap`.
+- Both gates independently checked complete, with all eight payload fixtures byte-identical and matching byte counts; separate before/after function-text cmp also exited 0.
+- Full task lint exited 0 after the localized annotation; no executable payload or golden changed.
+- Real canary: 7 passed, 0 failed/skipped, actual task exit 0; `results/canary.q5GLaZbG/report.tap`.
+- Canary covered install, HTTP/private env file, authentication/RDP configuration, DB-password change, data-preserving reinstall, complete teardown, and expected verify failure after uninstall.
+- Independent raw TAP checks found every result number exactly once, no gaps/duplicates/bailouts or incomplete results; expected no-ivps/no-records warning makes no inventory-coverage claim (ADR-041).
+- No retries, overlapping suites, environment healing, new host, SSH server/key changes, copied credentials/inventory, Incus API use, or production mutation; stopped before Marker sweep (S1).

@@ -1468,3 +1468,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - The before-edit fragile gate passed 144/144; added one localized shellcheck annotation for the numeric timestamp in `lib/remote.sh`, proved emitted payload text byte-identical with cmp, and passed full lint.
 - No executable payload or golden changed; serial full unit, after-edit gate, and Dedicated-host canary (ADR-041) acceptance remain pending.
+
+## 2026-10-17 - Baseline and prerequisites (S0) complete
+
+- On `feat/state-convergence` at `a53cf76`, full unit passed 804/804, fragile gate passed 144/144 before and after the comment-only lint annotation, full lint passed, and Dedicated-host canary (ADR-041) passed 7/7; all task/batch exits were 0, with complete TAP and no skips.
+- Retained native reports, confirmed unchanged payload bytes and successful canary teardown, and closed the prerequisite audit; no acceptance rerun, environment healing, golden regeneration, or production mutation.
+- Stopped at Baseline and prerequisites (S0); Marker sweep (S1) has not started and live-state approval remains pending.

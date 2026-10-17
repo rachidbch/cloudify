@@ -592,3 +592,17 @@ REDESIGN.md records the new boundary; implementation waits for the remaining spe
 5. Command-surface consequences: the per-deployment `vars` scope is retired; target bindings come from `--target` and recorded bindings in the manifest cache (fed by the inventory target field, Inventory owns current state, ADR-036), never from stored `TARGET_*` entries. Migration: the only live per-deployment values file is octop's, already mirrored in its inventory record.
 
 **Consequences:** first installs are fed by the environment or defaults files; persistence across invocations is inventory state. Docs, schemas, CLI surface and captured records realign during the queued implementation; until then current behavior stands and this ADR is the target contract. Secrets remain environment-only (Secrets enter through the environment, ADR-037) with `****` name markers.
+
+## ADR-039: Marker-only secret classification; `failed: true`
+
+**Status:** Accepted 2026-10-17 (Rachid). Supersedes Simple package secret classification (ADR-035); corrects one detail of Defaults ladder, the user-forced bit, and one failure word (ADR-038).
+
+**Context:** the classification debate ended where it started: the explicit `secret NAME` marker already exists in the code (parsed by `lib/context.sh`, used by `pkg/affine`), so name rules - substring or suffix - are extra machinery. Separately, ADR-038 illustrated the failure marker as `failed: <phase>`; Rachid ruled it a boolean.
+
+**Decision:**
+1. Classification is marker-only: a name is secret when its declaration marks it with `secret NAME` in the package's `.remote-vars`. The name-recognition heuristic (`PWD|PASSWORD|SECRET|TOKEN|KEY`) is retired; ADR-035's interim keep-rule is superseded.
+2. Runbook `inputs:` entries carry the same spelling: `secret NAME` entries in the comma list. A mapping is secret when either side is marked.
+3. Implementation adds one sweep over every `pkg/*/.remote-vars` and shipped runbook, retiring the heuristic in the same change.
+4. The failure marker is `"failed": true`, set by any failed operation and cleared only by a successful install or reconfigure (correcting ADR-038's `<phase>` illustration).
+
+**Consequences:** classification needs no name rules; secret status is visible in one place per package and one list per runbook. Misclassification surfaces during the sweep audit or as failed hooks, not silently. Schemas and records land with implementation.

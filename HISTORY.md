@@ -1437,3 +1437,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Rachid's same-day revisions: no suffix rule - classification is the existing `secret NAME` marker only; the sweep adds markers everywhere and retires the name heuristic (runbook `inputs:` marker spelling is the one open bit). The shared-installation refusal for secret-bearing claims is withdrawn: the operator knows how each package reacts to its environment; the guard compares non-secret recorded values only and never compares `****` entries. Replay reads which names are secret from the record's `****` entries; failure reporting (never demanding) names the missing variable via the runbook `map:` (bare dispatches: the variable name).
 - Docs only; implementation still queued.
+
+## 2026-10-17 - ADR-039: marker-only classification; failed true; harness docs synced
+
+- **ADR-039 drafted (Rachid go):** classification is `secret NAME` marker-only (supersedes ADR-035's interim keep-rule; heuristic retired); runbook inputs carry `secret NAME` entries in the list; failure marker is `"failed": true` (corrects ADR-038's `<phase>` illustration).
+- **Harness docs synced:** README and runbooks/README classification notes moved to marker-only; AGENTS.md Configuration bullet updated to the defaults ladder, inventory-owned applied values, environment-only secrets (Rachid consent).
+- Docs only; implementation still queued.

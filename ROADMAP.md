@@ -7,7 +7,8 @@
   The plan includes stale-prose reconciliation, explicit existing-record conversion, and correction of the legacy canary transport before its acceptance gate.
   Dedicated-host canary (ADR-041) moves all seven stack lifecycle checks into cloudify; transport/state/batch-exit E2E claims remain separate.
   Baseline and prerequisites (S0) closed on 2026-10-17: unit 804/0, before/after gate 144/0 each, canary 7/0, lint green.
-  Marker sweep and suffix fallback (S1) is now in progress under Secret markers with suffixes (ADR-042).
+  Marker sweep and suffix fallback (S1) passed on code `24a008a`: unit 821/0, gate 152/0, canary 7/0, lint and Technical verification PASS.
+  Restore canonical SDLC state (R1) is now the active mission in PLAN.md; Schema and lean records (S2) has not started.
   Remaining legacy package integration/snapshot tasks require conversion before any milestone sweep; do not invoke their old Incus/localhost path.
 
 ## URGENT - clean the surface before anything else (2026-09-07 E2E traps)
@@ -768,7 +769,7 @@ A second controller does not require it if its external wrapper can already supp
 
 ## Secret markers and suffix fallback (ADR-042, revised 2026-10-17)
 
-- [ ] Implement explicit `secret NAME` markers plus the exact uppercase suffix list `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD` during Marker sweep and suffix fallback (S1).
+- [x] Implemented explicit `secret NAME` markers plus the exact uppercase suffix list `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD` during Marker sweep and suffix fallback (S1).
   Match the literal underscore and end of name, never a substring or bare name.
   Sweep every package declaration and shipped runbook input; markers cover exceptions such as `CLOUDIFY_ZITADEL_MASTERKEY`.
   Propagate classification from either mapping side to the shared input and all aliases.

@@ -3,6 +3,7 @@
 Bash-based host provisioning and package management for Ubuntu/Debian. Install and manage 60+ software packages on local and remote machines through a single CLI.
 
 The approved [state-convergence plan](PLAN.md) tracks feature-branch implementation of the inventory, secrets, and defaults redesign in [issue #17](https://github.com/rachidbch/cloudify/issues/17); live migration requires separate approval.
+Current mission: Restore canonical SDLC state (R1) before the next implementation slice; see PLAN.md for completed S0/S1 evidence and recovery tasks.
 
 ## What It Does
 

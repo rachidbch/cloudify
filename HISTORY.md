@@ -1492,3 +1492,11 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Review found new classification locals could hide valid lowercase input defaults; reproduced the `origin` collision, moved pure names-only classification outside the value exporter, and passed coverage for all six introduced names plus child propagation.
 - Bounded Technical verification returned PASS for Secret markers with suffixes (ADR-042); full slice-exit checks remain pending, with no later state-convergence slices started.
+
+## 2026-10-17 - S1 exit verified; canonical SDLC restoration takes priority
+
+- Secret markers with suffixes (ADR-042) passed on code commit `24a008a`, VERSION 0.4.0: unit 821/821, gate 152/152, canary 7/7, lint green, all command exits 0, complete TAP without skips/gaps, and all eight payload fixtures unchanged.
+- Rachid stopped the observer for an SDLC discussion; the separately detached test batch finished successfully afterward, without any further test launch or rerun by the observer.
+- Identified misuse of `~/tmp/` for reusable test supervision, an early test draft, and authoritative-looking progress; the temporary-file location rule does not make test logic or project tracking disposable.
+- Session-end mission is Restore canonical SDLC state (R1) in the existing PLAN.md, with a full non-canonical artifact map in the handoff; no files moved/deleted and no AGENTS.md changes made during handoff.
+- Schema and lean records (S2) remains unstarted; harness-rule wording still needs explicit approval and live-state approval remains pending.

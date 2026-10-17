@@ -1105,3 +1105,38 @@
 - `results/s1-input-local-green.tap` passed 3/3, including all six introduced names (origin, explicit_inputs, package_markers, mapped_secrets, secret_inputs, marked_inputs), real child default exports, and both marker-propagation checks.
 - Technical verification pass 2 returned PASS with no remaining must-fix findings; no extra review loop was run.
 - Full unit, after-edit fragile gate, lint, and real Guacamole canary remain the final S1 gates; no broad suite has been used for debugging.
+
+## 2026-10-17 - S1 exit evidence and Canonical restoration handoff
+
+- Tested code `24a008a` on feat/state-convergence, VERSION 0.4.0: unit 821/821, fragile gate 152/152, canary 7/7, full lint exit 0, Technical verification PASS; every suite and local batch exit was 0.
+- Independent readers checked raw TAP completely: no failures, skips, missing/duplicate/out-of-range IDs, or bailouts; all eight payload fixtures byte-identical; canary removed containers/network/database volume/project directory and observed expected verify failure after uninstall.
+- Exact S1 evidence: `results/unit.0rL0UNVS/report.tap`, `results/gate.FhYO4QhP/report.tap`, `results/canary.Xr44M3z7/report.tap`.
+- The observer was stopped by Rachid for the SDLC discussion; its separately detached local owner finished afterward; historical PID 17044 is no longer present.
+- `~/tmp/cloudify-s1/progress.md` is stale (still says unit active at result 409); `batch.current` means last-started suite, not running state; `s1-result` and `s1-stopped` were never written, which is not a test failure.
+- Misuse being repaired: reusable supervisor code, an early test draft, and authoritative-looking progress were left outside the project under `~/tmp/`; its temporary-file rule governs location, not whether work is disposable.
+- Current mission is Restore canonical SDLC state (R1) in PLAN.md; complete file/role inventory and first actions are in `/home/rbc/.pi/handoffs/2026-10-17-cloudify-canonical-restoration.md`.
+- No source moves, deletions, harness edits, test reruns, or S2 implementation were performed for handoff.
+
+### Non-canonical artifact roots and roles
+
+- `/home/rbc/tmp/cloudify-s0/run-gate-before.sh`: authored before-edit gate owner, hard-coded personal paths, writes the real command exit.
+- `/home/rbc/tmp/cloudify-s0/run-acceptance.sh`: authored serial unit/gate/canary owner and receipt writer; reusable logic wrongly outside tracked test tooling.
+- `/home/rbc/tmp/cloudify-s1/run-acceptance.sh`: duplicate S1 owner, differing only in scratch root; do not rerun the completed batch.
+- `/home/rbc/tmp/cloudify-s0/remote-bats.bats`: stale 1908-byte one-case test prototype, superseded by the 4385-byte six-case `tests/unit/remote-bats.bats`; compare, never overwrite the newer test.
+- `/home/rbc/tmp/cloudify-s0/payload-before.sh` and `payload-after.sh`: generated 2408-byte function-text comparison captures, not authored test logic; both SHA256 `944732afdb16900df9894fea9bf24885eb7e4ce51a9760321bd26f286525db1e`.
+- `/home/rbc/tmp/cloudify-s0/interrupted-unit.tap`: preserved incomplete 797-plan baseline through result 426; not passing evidence, superseded by completed S0/S1 runs.
+- Both scratch roots contain non-canonical `progress.md`, historical `acceptance.pid`, `batch.current`, actual `unit.exit`/`gate.exit`/`canary.exit`/`batch.exit`, and absolute `unit.report`/`gate.report`/`canary.report` pointers.
+- S0 additionally contains `gate-before.pid`, `gate-before.exit`, `gate-before.report`, `s0-result`, and `s0-stopped`; these are historical capture/observer records, not the project authority.
+- S0 historical PIDs are 8903 and 9143; S1 historical PID is 17044; never act on stale PID files without checking identity.
+- `.pi-loop-log.jsonl` is an automatic ignored observer log at the project root, not a progress authority or test source; preserve, do not edit/commit it.
+- `/home/rbc/.pi/delegations/s0-baseline/` and `s0-record-audit/` contain automatic meta/state/protocol/session records from cancelled early readers; final useful findings are already in PLAN/HISTORY/LOGS.
+- The once-announced `/home/rbc/.pi/delegations/s0-transport-research/` is absent at handoff; no restoration dependency rests on it.
+- Rejected, unrun SSH-server/inventory preparation drafts remain recoverable at `/home/rbc/.local/share/Trash/files/prepare-host.sh` and `prepare-host.bash`, with their `.trashinfo` entries; do not restore or execute that rejected setup.
+- Native TAP under `results/` is already the sanctioned evidence channel, not scratch test source; keep its bytes/private data out of Git and retain original-to-new path mappings during any recovery.
+
+### Pending SDLC consent
+
+- Rachid directed canonical placement for progress and all authored tests, including transient tests; the proposed recovery implementation and exact AGENTS.md patch were not approved before handoff.
+- Proposed harness work still needs explicit consent: canonical tracking/test-placement rules, scope-by-code-and-feature-radius/debugging/feature-batch-exit wording, and the architecture sentence still citing marker-only ADR-039 instead of marker-plus-suffix ADR-042.
+- Stopping an observer did not stop its detached queue; canonical supervision needs explicit lifecycle semantics rather than another undiscoverable scratch script.
+- Do not infer a gate waiver or resume S2 while that SDLC discussion and Restore canonical SDLC state (R1) remain open.

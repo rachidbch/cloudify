@@ -106,7 +106,28 @@ Run `task gate` before and after fragile edits and inspect golden diffs individu
   Full unit/gate/canary remain slice-exit gates, never debugging loops.
   Fragile invariants: one resolution; unchanged three-field candidate and four-field raw/provenance records; declared-destination gate; caller precedence; 0600 context ownership/cleanup; payload export names/order/bytes and stdin transport unchanged.
   S0's final gate is the fresh before-edit baseline; run the gate again at S1 exit without regenerating payload goldens.
-- [ ] Close the tool gates, affected declaration tests, and approved fragile pins without unrelated golden changes.
+- [x] Closed S1 on tested code commit `24a008a` (VERSION 0.4.0): unit 821/821, gate 152/152, canary 7/7, full lint exit 0, Technical verification PASS.
+  All suite and batch exits were 0; independent raw TAP verification found no failures, skips, missing/duplicate IDs, or bailouts; all eight payload fixtures remained byte-identical.
+  Retained reports: `results/unit.0rL0UNVS/report.tap`, `results/gate.FhYO4QhP/report.tap`, `results/canary.Xr44M3z7/report.tap`.
+
+### Restore canonical SDLC state (R1) - CURRENT SESSION-END MISSION
+
+Rachid stopped the observer to discuss SDLC and requested a restoration-first handoff; do not restart the old loop or begin Schema and lean records (S2) before this recovery is complete.
+The detached batch finished independently; historical PID 17044 is gone, and absent scratch completion markers are not failed tests.
+
+- [x] Verified S1's completed command exits and complete native TAP; recorded the facts above rather than trusting stale scratch progress.
+- [x] Inventoried session-authored non-canonical files and their roles; discovery map: `/home/rbc/.pi/handoffs/2026-10-17-cloudify-canonical-restoration.md`, with a durable root/source index in LOGS.md under "Canonical restoration handoff".
+- [ ] Compare every authored scratch test/runner with tracked code before moving or deleting anything.
+  Preserve any unique test logic under `tests/`, including transient reproducers; the old `~/tmp/cloudify-s0/remote-bats.bats` must not overwrite the newer six-case `tests/unit/remote-bats.bats`.
+- [ ] Consolidate reusable supervision from `~/tmp/cloudify-s{0,1}/run-acceptance.sh` into tracked test tooling and a named Taskfile command; remove hard-coded personal paths and define safe observer/batch lifecycle semantics.
+  Never restart the completed batch merely to reconstruct its records.
+- [ ] Put generated receipts/captures in a project-local results/evidence location, preserving original-to-new path mappings and bytes; keep raw/private artifacts out of Git.
+  Merge important progress into PLAN.md and conclusions/evidence into HISTORY.md/LOGS.md; scratch progress files must not remain authoritative.
+- [ ] Finish the SDLC discussion and obtain explicit consent before AGENTS.md edits: canonical tracking/test placement rules, test selection/debugging/feature-batch gates, and its stale marker-only architecture sentence.
+  The user's canonical-placement directive is clear, but the proposed AGENTS.md patch was not approved in this session.
+- [ ] Validate restoration with the cheapest relevant checks, retain original files until useful information is accounted for, then remove redundant artifacts only with recoverable trash.
+  Do not rerun accepted full suites solely to rebuild bookkeeping; reconcile the existing broad testing rule with Rachid before changing required gates.
+- [ ] Leave this one plan and the tracked tree clean, commit/push the recovery, then continue the remaining implementation from Schema and lean records (S2), with live-state approval (G4) still pending.
 
 ### Schema and lean records (S2)
 
@@ -189,7 +210,8 @@ Existing unsafe historical snapshots remain private and unchanged.
 - Live-state approval (G4): pending; no production mutation authorized.
 - Baseline and prerequisites (S0): COMPLETE; focused checks 7/7, producer/consumer audit complete, Technical verification PASS, unit 804/0, before/after gate 144/0 each, canary 7/0, full lint exit 0.
   S0 closed before implementation; Rachid then authorized Marker sweep and suffix fallback (S1) under the revised classification decision (ADR-042).
-- Marker sweep and suffix fallback (S1): implemented; focused checks pass and bounded Technical verification PASS; full exit gates pending; later slices remain unstarted.
+- Marker sweep and suffix fallback (S1): COMPLETE at code commit `24a008a`; focused checks, Technical verification, lint, unit 821/821, gate 152/152, and canary 7/7 passed.
+- Restore canonical SDLC state (R1) is the active mission; Schema and lean records (S2) and all later slices remain unstarted.
   Technical review found one new-local/input-name collision; isolated classification in a pure helper and passed a regression covering all six new temporary names plus child exports before verification.
   AGENTS.md's classification architecture sentence remains unchanged pending the requested consent; no harness edits were made.
 - Full lint found SC2046 on the existing numeric `date +%s` expansion in the remote template; added one localized explanatory shellcheck comment, with no executable change.

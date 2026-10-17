@@ -1463,3 +1463,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Dedicated-host canary (ADR-041): run all seven real lifecycle checks inside cloudify over one Tailscale SSH session; keep remote payload/state claims in their separate gates, with no snapshot resets, self-SSH, hidden output, or mid-run cleanup.
 - Runner now stages a complete archive including VERSION before SSH, preserves quoted arguments and failure exits, fails on report-write errors, and retains every report; seven focused checks pass, with scoped shellcheck and bounded Technical verification PASS.
 - Audited record producers/consumers and package declarations for Schema v1 evolution (ADR-040); no metadata-name collisions or external consumers found within the stated search bounds; broad baseline/canary acceptance remains pending.
+
+## 2026-10-17 - baseline lint annotation; payload bytes unchanged
+
+- The before-edit fragile gate passed 144/144; added one localized shellcheck annotation for the numeric timestamp in `lib/remote.sh`, proved emitted payload text byte-identical with cmp, and passed full lint.
+- No executable payload or golden changed; serial full unit, after-edit gate, and Dedicated-host canary (ADR-041) acceptance remain pending.

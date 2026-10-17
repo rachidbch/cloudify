@@ -179,6 +179,10 @@ Existing unsafe historical snapshots remain private and unchanged.
 - Rachid approved Plan (G1), Schema (G2), and Fragile contracts (G3), then explicitly required a feature branch before implementation; `feat/state-convergence` was created with no implementation edits on master.
 - Live-state approval (G4): pending; no production mutation authorized.
 - Baseline and prerequisites (S0): test host ready, focused checks 7/7, producer/consumer audit complete, Technical verification PASS; full baseline and canary pending; implementation slices (S1)-(S9): not started.
+- Full lint found SC2046 on the existing numeric `date +%s` expansion in the remote template; added one localized explanatory shellcheck comment, with no executable change.
+  Before-edit fragile gate passed 144/144 with actual task exit 0; before/after `declare -f` payload text is byte-identical by cmp; full task lint now exits 0.
+  No golden regeneration occurred; payload body, explicit allow-list, exports, stdin transport, and shadow bytes remain unchanged.
+  One detached local owner will run full unit, the after-edit gate, and canary serially, stopping at the first failure; native reports are retained and actual command exits recorded under `~/tmp/cloudify-s0`.
 - Baseline attempt planned 797 unit tests and passed through test 426 before its reader received harness cancellation; no complete exit verdict, gate, or lint result was produced.
   Preserved partial TAP at `~/tmp/cloudify-s0/interrupted-unit.tap`; do not count it as a baseline pass.
 - Rachid confirmed cloudify is dedicated to tests and authorized preparation; Tailscale SSH from the laptop works, while same-host self-connections are refused.

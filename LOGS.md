@@ -1057,3 +1057,10 @@
 - Scoped shellcheck and syntax check passed; Technical review found the producer/report and Docker-probe faults, both reproduced/fixed, then verification returned PASS with no must-fix findings.
 - Record audit mapped worker/state/context/adoption/matching/unset/display/replay/migration; all 11 declaration files checked with no exact metadata-name collisions; bounded sibling searches found no schema consumers.
 - Full baseline and real canary have not yet completed; no runtime, recipe, schema, or production changes.
+
+## 2026-10-17 - protected payload lint annotation
+
+- Before-edit `task gate` completed with 144 passing tests and actual task exit 0, recorded by its detached local owner in `~/tmp/cloudify-s0/gate-before.exit`; native TAP retained under results.
+- Added only a localized `SC2046` explanation before the existing numeric timestamp expansion; extracted `declare -f cloudify_remote_payload_template` before/after into `~/tmp/cloudify-s0/payload-{before,after}.sh`; cmp exited 0.
+- Full `task --silent lint` and `git diff --check` exited 0; no payload bytes or golden files changed.
+- Full unit, after-edit gate, and real canary remain pending; the next batch runs them serially and stops on its first nonzero exit.

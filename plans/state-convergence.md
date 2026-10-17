@@ -123,8 +123,7 @@ The detached batch finished independently; historical PID 17044 is gone, and abs
   Never restart the completed batch merely to reconstruct its records.
 - [ ] Put generated receipts/captures in a project-local results/evidence location, preserving original-to-new path mappings and bytes; keep raw/private artifacts out of Git.
   Merge important progress into PLAN.md and conclusions/evidence into HISTORY.md/LOGS.md; scratch progress files must not remain authoritative.
-- [ ] Finish the SDLC discussion and obtain explicit consent before AGENTS.md edits: canonical tracking/test placement rules, test selection/debugging/feature-batch gates, and its stale marker-only architecture sentence.
-  The user's canonical-placement directive is clear, but the proposed AGENTS.md patch was not approved in this session.
+- [x] SDLC consent obtained; harness updated: radius-scoped gates and canonical test/progress placement landed in `c4424f2`, classification citation now cites Secret markers with suffixes (ADR-042).
 - [ ] Validate restoration with the cheapest relevant checks, retain original files until useful information is accounted for, then remove redundant artifacts only with recoverable trash.
   Do not rerun accepted full suites solely to rebuild bookkeeping; reconcile the existing broad testing rule with Rachid before changing required gates.
 - [ ] Leave this one plan and the tracked tree clean, commit/push the recovery, then continue the remaining implementation from Schema and lean records (S2), with live-state approval (G4) still pending.

@@ -1500,3 +1500,4 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Identified misuse of `~/tmp/` for reusable test supervision, an early test draft, and authoritative-looking progress; the temporary-file location rule does not make test logic or project tracking disposable.
 - Session-end mission is Restore canonical SDLC state (R1) in the existing PLAN.md, with a full non-canonical artifact map in the handoff; no files moved/deleted and no AGENTS.md changes made during handoff.
 - Schema and lean records (S2) remains unstarted; harness-rule wording still needs explicit approval and live-state approval remains pending.
+- Rachid consented; AGENTS.md now scopes test gates by code and feature radius, pins canonical test/progress placement, and cites Secret markers with suffixes (ADR-042) for classification; only Restore canonical SDLC state (R1) recovery tasks remain before Schema and lean records (S2).

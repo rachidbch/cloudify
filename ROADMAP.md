@@ -760,7 +760,7 @@ A second controller does not require it if its external wrapper can already supp
   Replace detailed health/last-attempt data with the agreed marker, covering a failed first installation (marker present, no settings).
   Per-value provenance shrinks to the one user-forced bit living beside the applied value in the inventory record (Value ladder entry above); Reconfigure seeds from applied set values (ADR-030) keeps its rule with that bit instead of full source labels.
   Secret-bearing installation sharing is the operator's domain; the guard compares declared non-secret values only, never `****` entries.
-  Schema v1 evolution (ADR-040) approves in-place schema changes and explicit conversion through the State convergence plan; live conversion still needs a reviewed dry-run approval.
+  Schema v1 evolution (ADR-040) approves in-place schema changes and explicit conversion through the State convergence plan; live conversion runs one application at a time with explicit approval per application (per-application live conversion, ADR-043).
 - **Replay default (agreed 2026-10-17):** `deployment replay` without `--at` converges current state from ivps inventory; `--at <run>` time-travels that snapshot's ordinary settings.
   Secrets always come from the current environment (Secrets enter through the environment, ADR-037).
   The current newest-snapshot default is a compliance item to fix with this repair.

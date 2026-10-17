@@ -1507,3 +1507,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Tracked `tests/run-acceptance.sh` + `task acceptance` now own serial acceptance batches and their receipts (commit `e47996a`); both scratch supervisors retired; lint glob extended to `tests/*.sh`; red-test example fixed to plain ssh.
 - All session scratch evidence migrated byte-identical to `results/evidence/` under a written path map; originals trashed recoverably after cmp verification; no accepted suite was rerun.
 - Restore canonical SDLC state (R1) complete; Schema and lean records (S2) is next, live-state approval (G4) still pending.
+
+## 2026-10-17 - Per-application live conversion replaces the dry-run gate
+
+- Rachid ruled the production record conversion follows the earlier adoption pattern: one application at a time, verify each in real time, fix before the next, so harm cannot spread cloud-wide; no bulk dry-run review gates production (per-application live conversion, ADR-043).
+- ADR-043 supersedes only ADR-040's dry-run clause; backup-before-write, idempotence, coordinated reader/writer cutover, and rollback remain; octop's deployment defaults deletion stays separately surfaced.
+- G4 gate, plan conversion task, design migration paragraph, and roadmap live-conversion note updated in the same commit.

@@ -663,3 +663,13 @@ A public name ending in `_KEY` can still be conservatively masked; this rule doe
 Marker-only classification is deferred, not implemented in S1.
 This changes classification only; secret-source, record, preflight, snapshot, and replay changes keep their existing implementation slices.
 REDESIGN.md and PLAN.md carry the revised contract.
+
+## ADR-043: Convert live records per application, not by bulk dry run
+
+**Status:** Accepted 2026-10-17. Supersedes only the dry-run clause of Evolve schema v1 in place for state convergence (ADR-040); its in-place evolution, idempotence, restricted backup, validated atomic writes, coordinated reader/writer cutover, and rollback clauses remain in force.
+
+**Context:** The state convergence plan must convert existing live records (one record per package instance per host, plus legacy registry records) to the evolved schema. ADR-040 gated any live conversion behind approval of a reviewed dry run. Rachid ruled instead that conversion must follow the same pattern as the earlier adoption of existing deployed but undocumented packages and applications into the ivps inventory and cloudify manifests: one application at a time, validating the approach on each and fixing in real time before harm spreads cloud-wide. A converter bug silently corrupts the only copy of an instance's applied values, so the safety net shifts from a pre-conversion dry run to a per-application blast radius with backup before every write and rollback ready.
+
+**Decision:** Live conversion runs in production one application at a time. Each application's conversion is its own event: convert that application's records (backup before every write, idempotent, value-free reports), verify the application still resolves variables and behaves correctly, then move to the next. Any deviation found on one application is fixed before the next begins. No bulk dry-run review gates production; a dry-run mode may exist in the converter but is not the gate. Deleting octop's deployment defaults file remains a separately surfaced decision.
+
+**Consequences:** The first application conversion needs an explicit go, and each subsequent application reports its result before the next starts. A bad conversion is bounded to one application and reversible by backup restoration. Bulk cutover disappears; the campaign becomes a sequence of small reviewed steps - slower overall, but damage cannot spread cloud-wide.

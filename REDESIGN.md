@@ -663,7 +663,7 @@ Cloudify runtime reads and writes v2 paths and schemas only.
 
 Temporary one-shot migration commands are the sole readers of old desired-input files, registry records and snapshots.
 
-Each migration is explicit, dry-run first, idempotent and emits names and paths without values.
+Each migration is explicit, idempotent and emits names and paths without values; live conversion proceeds one application at a time with per-write backups and rollback (per-application live conversion, ADR-043).
 
 Old deployment IDs map only with an explicit application reference because the old string does not encode application and flavor.
 

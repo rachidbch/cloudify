@@ -22,7 +22,7 @@ Files hold defaults; the environment supplies values; inventory records applied 
 - [x] Fragile-contract approval (G3): Rachid authorized the named declaration, ladder, classification, and seeding changes plus their pinning tests.
   Authorize payload-golden regeneration only for explained export differences caused by these approved changes, not blanket acceptance of arbitrary byte changes.
   All unrelated payload and shadow goldens must stay byte-identical.
-- [ ] Live-state approval (G4): approve a reviewed dry-run conversion before touching production inventory or deleting octop's deployment defaults file.
+- [ ] Live-state approval (G4): approve each per-application live conversion before it runs - one application at a time, backup before every write, verify before the next (per-application live conversion, ADR-043); deleting octop's deployment defaults file stays a separately surfaced decision.
   Plan approval does not authorize any production mutation, adoption, restart, or credential change.
 
 Record each approval here before crossing its gate.
@@ -129,7 +129,7 @@ The detached batch finished independently; historical PID 17044 is gone, and abs
 - [ ] Cross Schema approval (G2), then update schemas, bounded validator, valid/invalid fixtures, record goldens, and documentation together.
 - [ ] Cut over every producer and consumer, including worker, state apply, adoption, matching, deployment rendering, and replay/seeding readers; do not land a schema-only incompatible writer state.
 - [ ] Preserve revision monotonicity, host locks, atomic validated replacement, event identity fields, failure preservation, and the target association.
-- [ ] Implement explicit dry-run-first, idempotent old-record conversion with a restricted backup, value-free reports, unresolved-fact refusals, and Git-revert-plus-backup rollback.
+- [ ] Implement an explicit, idempotent old-record conversion with a restricted backup, value-free reports, unresolved-fact refusals, and Git-revert-plus-backup rollback, built for the per-application live sequence (per-application live conversion, ADR-043).
   Derive targets only from proven facts; never invent adopted bindings or success.
   Test on copied synthetic records first; live conversion waits for Live-state approval (G4).
 - [ ] Prove native multiline/empty settings, secret-name-only records/events, first-operation failure, failed reconfigure preserving settings, successful verify retaining failure, and successful install/reconfigure clearing failure.

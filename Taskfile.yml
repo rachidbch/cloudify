@@ -67,9 +67,14 @@ tasks:
       - bash tests/run-integration.sh
 
   test-canary:
-    desc: One complex pkg (guacamole) - proves the tool on a real stack when only cloudify code changed
+    desc: Guacamole lifecycle on the test host (one SSH; payload transport has separate gate coverage)
     cmds:
-      - bash tests/run-integration.sh tests/integration/package-guacamole.bats
+      - bash tests/remote-bats.sh canary tests/integration/package-guacamole.bats
+
+  test-integration:guacamole:
+    desc: Guacamole lifecycle on the dedicated test host
+    cmds:
+      - task: test-canary
 
   test-integration:*:
     desc: Run a specific integration test (e.g. task test-integration:bat)

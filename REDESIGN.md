@@ -715,6 +715,9 @@ The redesign is complete only when all of these are true:
 - Every old artifact is migrated explicitly or reported, and final runtime code contains no migration bridge or old-format reader.
 - The scoped unit, integration, and disposable E2E gates pass.
 
+The Guacamole canary runs its seven real lifecycle checks inside the dedicated cloudify test host through one Tailscale SSH session (Dedicated-host canary, ADR-041).
+It does not prove remote dispatch or inventory recording; transport, state, and batch-exit remote E2E tests cover those claims separately.
+
 ## Environment-only secrets for the MVP (ADR-037; approved implementation queued)
 
 Secretspec stays outside Cloudify and supplies environment variables through its normal wrapper.

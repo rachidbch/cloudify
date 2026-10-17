@@ -1045,3 +1045,15 @@
 - The same raw process list showed containerd shim e26a4ba5915cfdfcb564b70cd28d5a0d40cfb3ec6b059c9a5e214dc1afe4c217 running guacd for seven days; `/root/guacamole` was absent; ownership was not inferred and nothing was removed.
 - Stopped test execution on the missing canary prerequisites; proposed isolated controller inventory plus a separate disposable workload target to preserve real remote-dispatch coverage.
 - No environment healing, host-key edits, snapshot restores, runtime/test-runner changes, or production mutations performed; draft transport regression saved outside the checkout at `~/tmp/cloudify-s0/remote-bats.bats`.
+
+## 2026-10-17 - explicit host preparation and focused transport proofs
+
+- Rachid authorized readying the dedicated cloudai:cloudify host; `tailscale.exe ssh root@cloudify hostname` succeeded, confirming external reachability.
+- Conventional-SSH preparation drafts never ran: shellcheck stopped their command before execution; both drafts were discarded after the mistaken self-SSH requirement was withdrawn.
+- Read raw Docker labels/logs, then stopped/removed only Guacamole containers 7dab03ba2b07 and e26a4ba5915c plus their Compose network; no volumes remained; no production host touched.
+- Explicit `tailscale ssh root@cloudify hostname` from inside cloudify also refused its self-connection, so the canary now uses the real local CLI inside the outer SSH session, not another SSH server.
+- Readiness proof passed: Bats 1.13.0, all three assertion libraries, Docker, jq, envsubst, git, curl, trash-put, and no remaining Guacamole project/containers/volumes.
+- Focused red/green proofs: missing VERSION/spaced args, extraction continuing into Bats, overwritten reports, producer/report errors hidden by SSH success, and failed Docker probes treated as empty; final report `results/s0-focused.tap` has seven passing checks.
+- Scoped shellcheck and syntax check passed; Technical review found the producer/report and Docker-probe faults, both reproduced/fixed, then verification returned PASS with no must-fix findings.
+- Record audit mapped worker/state/context/adoption/matching/unset/display/replay/migration; all 11 declaration files checked with no exact metadata-name collisions; bounded sibling searches found no schema consumers.
+- Full baseline and real canary have not yet completed; no runtime, recipe, schema, or production changes.

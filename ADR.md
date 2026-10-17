@@ -623,3 +623,21 @@ If the consumer audit finds an external compatibility obligation, surface it bef
 **Consequences:** The package record contract is incompatible despite the retained schema-version number; version alone cannot distinguish old and new records.
 The pre-1.0 tool release moves to `0.4.0`, and runtime must not retain a permanent dual reader.
 REDESIGN.md and PLAN.md carry the approved implementation and migration gates.
+
+## ADR-041: Run the Guacamole canary inside the dedicated test host
+
+**Status:** Accepted 2026-10-17 during the authorized test-host preparation and transport correction.
+
+**Context:** The old canary ran Bats on the laptop, reset snapshots through Incus, changed host keys, and hid product output.
+Tests must instead execute inside the dedicated cloudify host through one Tailscale SSH session.
+The host is reachable through Tailscale SSH, but a connection from that host back to itself is refused; that does not make the host inaccessible or require a conventional SSH server.
+
+**Decision:** Stream the test tree into cloudify over the existing plain SSH transport, which uses Tailscale identity and MagicDNS, and run all seven real Guacamole lifecycle checks locally inside that host.
+Use the streamed CLI and real Docker stack, isolated test configuration/state, and raw product output; refuse leftover workload state rather than silently cleaning during a test run.
+Preserve payload forwarding coverage separately through the focused transport tests, byte-exact payload gate, and batch-exit remote E2E.
+Prepare or discard old test workloads explicitly before the ladder; do not add another test host, a conventional SSH server, copied credentials, or a fabricated ivps inventory.
+
+**Consequences:** The canary proves real package install/configure/reinstall/uninstall/verify behavior, not end-to-end remote dispatch or inventory recording.
+Those claims need their separate tests; a passing canary cannot substitute for them.
+Retain complete reports across reruns, include VERSION in the streamed tree, preserve argument boundaries and failure exits, and stop on staging failure.
+PLAN.md records this testing split and the remaining acceptance gates.

@@ -64,7 +64,8 @@ Every tool-code slice closes with full `task test-unit`, `task gate`, `task lint
 Do not repeat full package sweeps per slice; reserve a full sweep for the final milestone and agreed package scope.
 Push committed code before GitHub-backed dispatches and run them with `CLOUDIFY_FORCE_UPDATE=true`.
 Keep results outside the dispatched tracked tree or excluded from executed-code attestation; retain raw evidence and the command exit status.
-Current unit/gate evidence is `results/<suite>.tap`; the legacy report-directory instructions do not match `tests/remote-bats.sh`.
+Each run retains `results/<suite>.<unique>/report.tap`, with `results/<suite>.tap` pointing to the latest report.
+The canary runs all seven real Guacamole lifecycle checks locally inside cloudify; payload/remote-dispatch/inventory claims require their separate transport, state, and batch-exit E2E gates (Dedicated-host canary, ADR-041).
 
 Fragile invariants touched: one resolution per dispatch; first-claim and empty-value semantics; declared-name/mapping gate; 0600 context ownership and cleanup; explicit sorted envsubst allow-list; single-quoted values; stdin-only payload transport; live unfiltered output.
 Ladder order and secret classification change only under Fragile-contract approval (G3).
@@ -78,12 +79,17 @@ Run `task gate` before and after fragile edits and inspect golden diffs individu
 - [x] Created `feat/state-convergence` before implementation; tracking issue is State convergence (#17).
 - [x] Reconciled stale `REDESIGN.md` clauses to the settled contract: secret preflight/open questions, sharing refusal, old record fields, failure semantics, replay source, and obsolete deployment-input wording.
   Synchronize relevant roadmap entries; never rewrite historical ADR bodies or harness instructions without consent.
-- [ ] Resolve the canary transport mismatch before invoking it: `Taskfile.yml` points to `tests/run-integration.sh`, which uses direct Incus, host-key rewrites, and localhost Bats.
-  Preserve the integration coverage while moving execution to the approved single-SSH remote transport, with explicit clean-test prerequisites outside the ladder.
-  Prove target/env handling, retained TAP, and failing SSH/Bats exit propagation with one focused transport test; no environment healing.
+- [x] Replaced the legacy canary path with one plain Tailscale SSH session running Bats inside cloudify, without Incus, snapshot resets, host-key changes, or self-SSH (Dedicated-host canary, ADR-041).
+  Preserved all seven stack lifecycle checks; remote payload and state behavior retain separate gates rather than being claimed by this local canary.
+  Seven focused checks pass: VERSION and spaced arguments, exact SSH/Bats failure exits, extraction failure stopping Bats, retained reports, producer failure before SSH, report-write errors, and Docker failures before mutation.
+  Technical review used one review/fix pass and one verification pass: PASS.
+  The dedicated host was explicitly cleaned before restarting the ladder; no environment healing is part of a test run.
 - [ ] Record a fresh unmodified-runtime baseline: full `task test-unit`, `task gate`, and `task lint`, plus the corrected canary prerequisite proof.
   Historical reference only: unit 797/0 and canary 7/0 on 2026-10-01; do not claim these as fresh results.
-- [ ] Inventory all existing package-record producers/readers and conversion inputs; confirm schema consumers and check that the proposed metadata keys cannot collide with declared setting names.
+- [x] Audited existing package-record producers/readers and conversion inputs: worker and state apply, context seeding/projection, adoption, matching, unset/display/delete, replay, registry staging, and migration reporting.
+  All 11 package declaration files were checked: 43 declarations, 41 distinct names, no exact collisions with schema_version/target/user_forced/failed/version/revision.
+  No schema filename/URL references were found in selected code paths of ivps, its provider/skeleton, cfy, or clibash; this is bounded evidence, not proof of no external consumers.
+  The current active-claim guard hook is reserved and matching is not wired; the approved guard and matching behavior must land during Unnamed matching (S7).
 
 ### Marker sweep (S1)
 
@@ -139,7 +145,7 @@ Run `task gate` before and after fragile edits and inspect golden diffs individu
 
 - [ ] Replace literal `default` selection with Unnamed deployment matching (ADR-031).
 - [ ] Prove generated first name, identical convergence, differing bindings/scalars/secret-name sets, interrupted/unprovable candidates, and ambiguity refusal naming candidates.
-- [ ] Prove explicit names still converge in place and the installation guard compares only own-package declared non-secret settings.
+- [ ] Prove explicit names still converge in place; implement/wire the currently reserved installation guard so it compares only own-package declared non-secret settings.
 - [ ] Close the tool gates.
 
 ### Inventory-backed manifest cache (S8)
@@ -169,14 +175,16 @@ Existing unsafe historical snapshots remain private and unchanged.
 ## Progress and approvals
 
 - Planning only: fetched `origin`; `master` matched `origin/master` at `1f46d5f`, clean before planning.
-- One SPEC review passed with no must-fix findings; no runtime tests or production operations performed.
+- The planning SPEC review passed with no must-fix findings before runtime tests began.
 - Rachid approved Plan (G1), Schema (G2), and Fragile contracts (G3), then explicitly required a feature branch before implementation; `feat/state-convergence` was created with no implementation edits on master.
 - Live-state approval (G4): pending; no production mutation authorized.
-- Baseline and prerequisites (S0): blocked on test preparation; implementation slices (S1)-(S9): not started.
+- Baseline and prerequisites (S0): test host ready, focused checks 7/7, producer/consumer audit complete, Technical verification PASS; full baseline and canary pending; implementation slices (S1)-(S9): not started.
 - Baseline attempt planned 797 unit tests and passed through test 426 before its reader received harness cancellation; no complete exit verdict, gate, or lint result was produced.
   Preserved partial TAP at `~/tmp/cloudify-s0/interrupted-unit.tap`; do not count it as a baseline pass.
-- A subsequent plain-SSH read-only check confirmed no surviving test process, no target-side `ivps` executable or `/root/.config/ivps`, and an existing `guacd` container despite `/root/guacamole` being absent.
-  No repairs, restarts, host-key changes, or cleanup were performed.
-- Canary transport repair must first settle explicit controller/target preparation: retain real `--on` coverage with isolated inventory and a disposable workload target, not a local-install substitute or unproved self-dispatch.
-  Recommendation: prepare a separate disposable canary target and isolated controller inventory outside the test ladder, after Rachid approves the preparation.
-- A draft transport regression is saved at `~/tmp/cloudify-s0/remote-bats.bats`, not committed or run; runtime and test files remain unchanged.
+- Rachid confirmed cloudify is dedicated to tests and authorized preparation; Tailscale SSH from the laptop works, while same-host self-connections are refused.
+  The unrun conventional-SSH preparation scripts were discarded; no SSH daemon, keys, second host, or copied inventory were introduced.
+- Removed only the old Compose project guacamole: two containers and its network; no project volumes remained.
+  Bats 1.13.0, libraries, Docker, jq, envsubst, git, curl, and trash-put are present; clean-state checks pass.
+- Target-side ivps is not required by the local stack canary; do not claim that canary proves inventory recording.
+  The earlier extra-host/inventory recommendation was withdrawn; all tests stay on cloudai:cloudify.
+- The recovered transport regression now lives in the unit suite and passed red/green checks on the target; no runtime, recipe, schema, or production changes yet.

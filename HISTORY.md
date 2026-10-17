@@ -1456,3 +1456,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Reconciled stale design/roadmap clauses to Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), and Marker-only classification (ADR-039); no historical ADR body was rewritten.
 - Baseline reader was cancelled after unit test 426 of 797, with no complete verdict; read-only follow-up found no surviving tests, missing container-side ivps/inventory, and an existing guacd container; test execution stopped without repairs or cleanup, pending explicit canary environment preparation.
 - Runtime, schemas, recipes, test runners, inventory, credentials, and production remain unchanged.
+
+## 2026-10-17 - dedicated test host prepared; canary transport corrected
+
+- Rachid confirmed cloudai:cloudify is dedicated to tests and authorized preparation; removed its old Guacamole Compose containers/network, retaining image caches; no conventional SSH server, copied credentials, new host, or ivps inventory was added.
+- Dedicated-host canary (ADR-041): run all seven real lifecycle checks inside cloudify over one Tailscale SSH session; keep remote payload/state claims in their separate gates, with no snapshot resets, self-SSH, hidden output, or mid-run cleanup.
+- Runner now stages a complete archive including VERSION before SSH, preserves quoted arguments and failure exits, fails on report-write errors, and retains every report; seven focused checks pass, with scoped shellcheck and bounded Technical verification PASS.
+- Audited record producers/consumers and package declarations for Schema v1 evolution (ADR-040); no metadata-name collisions or external consumers found within the stated search bounds; broad baseline/canary acceptance remains pending.

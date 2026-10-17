@@ -491,24 +491,28 @@ recipe default.
 
 ### Prerequisites
 
-- Incus installed and configured
-- `ivps` CLI tool for container file push/exec
-- `task` (Taskfile) — install via `mise use -g task`
-- A running Ubuntu 24.04 container (default: `cloudai:cloudify`)
-- `bats` 1.x on localhost for integration tests
-- Tailscale for SSH-based integration tests
+- A running dedicated Ubuntu 24.04 test host: `cloudai:cloudify`
+- `ivps` for host lifecycle, not test transport
+- `task` on the controller
+- Bats 1.13.0, assertion libraries, jq, envsubst, and trash-put on the test host
+- Docker for the Guacamole canary
+- Tailscale SSH and MagicDNS access through `ssh root@cloudify`
 
 ### TDD Workflow
 
-All tests run inside the Incus container (unit tests) or via SSH against it (integration tests). Always use `task test-unit` or `task test`.
+Run tests inside `cloudai:cloudify` through one plain `ssh root@cloudify` session; this uses Tailscale SSH and MagicDNS, not a conventional SSH server.
 
 ```bash
-task setup-container    # Install bats + libraries in container (one-time)
-task test-unit          # Sync files + run unit tests in container
-task test-integration   # Run SSH-based integration tests from localhost
-task test               # Run all tests (unit + integration)
+task test-unit          # Stream the tree and run unit tests on cloudify
+task gate               # Fragile-surface checks on cloudify
+task test-canary        # Seven real Guacamole lifecycle checks on cloudify
 task lint               # Run shellcheck locally
 ```
+
+The canary exercises the local CLI and Docker stack inside the test host; payload forwarding and inventory behavior have separate tests.
+It refuses leftover Guacamole state; clean it explicitly before a fresh test ladder, never during one.
+Reports are retained under `results/<suite>.<unique>/report.tap`; `results/<suite>.tap` points to the latest.
+The remaining legacy integration/snapshot tasks still need transport conversion before use; they are not an approved route around the single-SSH rule.
 
 ### Writing a Package Recipe
 

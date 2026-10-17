@@ -5,6 +5,8 @@
 - [ ] Implement Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Marker-only classification (ADR-039), and Unnamed matching (ADR-031) through [the active plan](PLAN.md), tracked in [issue #17](https://github.com/rachidbch/cloudify/issues/17).
   Plan, in-place schema v1, and explained fragile-contract/golden changes are approved on `feat/state-convergence`; production migration requires separate approval.
   The plan includes stale-prose reconciliation, explicit existing-record conversion, and correction of the legacy canary transport before its acceptance gate.
+  Dedicated-host canary (ADR-041) moves all seven stack lifecycle checks into cloudify; transport/state/batch-exit E2E claims remain separate.
+  Remaining legacy package integration/snapshot tasks require conversion before any milestone sweep; do not invoke their old Incus/localhost path.
 
 ## URGENT - clean the surface before anything else (2026-09-07 E2E traps)
 

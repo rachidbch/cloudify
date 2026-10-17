@@ -96,12 +96,14 @@ Run `task gate` before and after fragile edits and inspect golden diffs individu
 
 ### Marker sweep and suffix fallback (S1)
 
-- [ ] Audit every `pkg/*/.remote-vars` and shipped runbook input; add explicit markers for actual secrets, including k3s tokens, guacamole passwords, xfce password, and mapped `RDP_PASSWORD`.
-- [ ] Teach runbook parsing/display the settled `secret NAME` input syntax and preserve original input identity through mappings.
-- [ ] Replace broad substring guessing with one shared exact-suffix predicate for context and display; keep explicit markers and mask marked non-obvious names in scoped vars display.
-- [ ] Prove suffix boundaries, marked non-obvious names, either-side mapping classification and fan-out, mapped-secret instance-key refusal, and unchanged declaration/default/optional-input contracts.
-- [ ] Bump VERSION to 0.4.0 at this first tool-behavior change; final release verification retains that planned pre-1.0 version.
-- [ ] Run one focused red test at a time and cheap target-side drivers; full unit/gate/canary are slice-exit gates, never debugging loops.
+- [x] Audited all 11 `pkg/*/.remote-vars` and six shipped runbooks; added 11 missing package marker sites plus runbook `secret RDP_PASSWORD`, retaining affine's existing marker.
+- [x] Added `secret NAME` input parsing without changing the bare-name API; names-only `CLOUDIFY_APP_SECRET_INPUTS` metadata crosses child processes and resets per runbook.
+- [x] Shared the exact suffix predicate and marker reader across context/display; marked default mirrors and stored package-variable values are masked unless explicitly revealed.
+- [x] Focused contracts prove suffix boundaries, explicit exceptions, fan-out/cycles, either mapping side, dependency markers, stronger caller overrides, child-process propagation, instance-key refusal, and unchanged declaration kinds/raw/source fields.
+  Connected-name propagation is O(names + mappings), with no second value-source walk; file stores cannot replace the mapping controls.
+- [x] Bumped VERSION to 0.4.0 and verified CLI file output plus the event writer's test override.
+- [x] Used focused red/green contracts on cloudify; combined S1-focused run passed 28/28, plus the active-map display regression and affected display checks passed 3/3, with scoped shellcheck and shell syntax clean.
+  Full unit/gate/canary remain slice-exit gates, never debugging loops.
   Fragile invariants: one resolution; unchanged three-field candidate and four-field raw/provenance records; declared-destination gate; caller precedence; 0600 context ownership/cleanup; payload export names/order/bytes and stdin transport unchanged.
   S0's final gate is the fresh before-edit baseline; run the gate again at S1 exit without regenerating payload goldens.
 - [ ] Close the tool gates, affected declaration tests, and approved fragile pins without unrelated golden changes.
@@ -187,7 +189,9 @@ Existing unsafe historical snapshots remain private and unchanged.
 - Live-state approval (G4): pending; no production mutation authorized.
 - Baseline and prerequisites (S0): COMPLETE; focused checks 7/7, producer/consumer audit complete, Technical verification PASS, unit 804/0, before/after gate 144/0 each, canary 7/0, full lint exit 0.
   S0 closed before implementation; Rachid then authorized Marker sweep and suffix fallback (S1) under the revised classification decision (ADR-042).
-- Marker sweep and suffix fallback (S1): in progress; later slices remain unstarted.
+- Marker sweep and suffix fallback (S1): implemented; focused checks pass and bounded Technical verification PASS; full exit gates pending; later slices remain unstarted.
+  Technical review found one new-local/input-name collision; isolated classification in a pure helper and passed a regression covering all six new temporary names plus child exports before verification.
+  AGENTS.md's classification architecture sentence remains unchanged pending the requested consent; no harness edits were made.
 - Full lint found SC2046 on the existing numeric `date +%s` expansion in the remote template; added one localized explanatory shellcheck comment, with no executable change.
   Before-edit fragile gate passed 144/144 with actual task exit 0; before/after `declare -f` payload text is byte-identical by cmp; full task lint now exits 0.
   No golden regeneration occurred; payload body, explicit allow-list, exports, stdin transport, and shadow bytes remain unchanged.

@@ -1082,3 +1082,110 @@ EOF
     [[ "$output" == *"teardownpkg: REQ_TEARDOWN"* ]]
     [[ "$output" != *"instpkg: REQ_INSTALL"* ]]
 }
+
+@test "secret-inputs: annotations preserve bare-name order and merge duplicate markers" {
+    rubric "secret NAME is one annotated input, never an input named secret"
+    local f="$CLOUDIFY_TMP/marked-runbook.md"
+    _make_runbook "$f" <<'EOF'
+---
+targets: guest
+inputs: DOMAIN LICENSE, secret LICENSE, DOMAIN
+---
+EOF
+    run cloudify_runbook_inputs "$f"
+    [ "$status" -eq 0 ]
+    [ "$output" = $'DOMAIN\nLICENSE' ]
+    run cloudify_runbook_secret_inputs "$f"
+    [ "$status" -eq 0 ]
+    [ "$output" = LICENSE ]
+}
+
+@test "secret-input-errors: reject dangling and malformed markers" {
+    rubric "a marker must name its input before the next comma"
+    local f="$CLOUDIFY_TMP/bad-marked-runbook.md" entry
+    for entry in secret 'secret, LICENSE' 'secret secret LICENSE' 'secret BAD-NAME'; do
+        step "reject: $entry"
+        printf -- '---\ntargets: guest\ninputs: %s\n---\n' "$entry" > "$f"
+        run cloudify_runbook_inputs "$f"
+        [ "$status" -ne 0 ]
+    done
+}
+
+@test "secret-input-export: child inherits names only and next runbook clears stale markers" {
+    rubric "classification crosses the child-process boundary even without a supplied value"
+    local marked="$CLOUDIFY_TMP/marked-spec.md" ordinary="$CLOUDIFY_TMP/ordinary-spec.md"
+    _make_runbook "$marked" <<'EOF'
+---
+targets: guest
+inputs: secret LICENSE, DOMAIN
+map: PLAIN=LICENSE
+---
+EOF
+    _make_runbook "$ordinary" <<'EOF'
+---
+targets: guest
+inputs: DOMAIN
+---
+EOF
+    unset LICENSE
+    _cloudify_runbook_export_app_spec "$marked" demo
+    [ "${CLOUDIFY_APP_SECRET_INPUTS:-}" = LICENSE ]
+    run bash -c 'printf "%s|%s" "$CLOUDIFY_APP_SECRET_INPUTS" "$CLOUDIFY_APP_MAP"'
+    [ "$status" -eq 0 ]
+    [ "$output" = 'LICENSE|PLAIN=LICENSE' ]
+    _cloudify_runbook_export_app_spec "$ordinary" demo
+    [ "${CLOUDIFY_APP_SECRET_INPUTS:-}" = '' ]
+    [ "$CLOUDIFY_APP_MAP" = '' ]
+}
+
+@test "secret-input-package: package-side marker protects a different child dispatch" {
+    rubric "a secret package alias protects the same input in another step"
+    _declare provider SERVER_SEED
+    printf 'secret SERVER_SEED\n' >> "$CLOUDIFY_DIR/pkg/provider/.remote-vars"
+    _declare consumer PLAIN
+    local f="$CLOUDIFY_TMP/package-marked.md"
+    _make_runbook "$f" <<'EOF'
+---
+targets: guest
+inputs: LICENSE
+map: SERVER_SEED=LICENSE, PLAIN=LICENSE
+---
+EOF
+    export LICENSE=fixture-private
+    _cloudify_runbook_export_app_spec "$f" demo
+    [ "$CLOUDIFY_APP_SECRET_INPUTS" = LICENSE ]
+    run bash -c '
+        for module in colors utils os pkg-config package-api packages vars deployments context; do
+            source "$CLOUDIFY_SCRIPT_DIR/lib/$module.sh"
+        done
+        cloudify_setup_colors
+        export CLOUDIFY_CONTEXT_FILE="$CLOUDIFY_TMP/child-context"
+        cloudify_context_candidate_names consumer > "$CLOUDIFY_TMP/child-candidates"
+        cloudify_context_build install "" install "$CLOUDIFY_TMP/child-candidates" consumer
+        cloudify_context_read "$CLOUDIFY_CONTEXT_FILE" value.PLAIN.secret
+    '
+    [ "$status" -eq 0 ]
+    [ "$output" = true ]
+}
+
+@test "input-local-collisions: classification temporaries cannot hide ordinary input defaults" {
+    rubric "new classification locals must not become application input bindings"
+    local f="$CLOUDIFY_DIR/runbooks/collision/default/runbook.md" defaults input_name
+    export CLOUDIFY_APPLICATION=collision CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=default
+    defaults=$(cloudify_vars_app_file collision default)
+    mkdir -p "$(dirname "$defaults")"
+    for input_name in origin explicit_inputs package_markers mapped_secrets secret_inputs marked_inputs; do
+        step "ordinary input: $input_name"
+        unset "$input_name"
+        printf -- '---\ntargets: guest\ninputs: %s\nmap: REGION=%s\n---\n' "$input_name" "$input_name" > "$CLOUDIFY_TMP/spec-body"
+        _make_runbook "$f" < "$CLOUDIFY_TMP/spec-body"
+        printf '%s: eu-west-1\n' "$input_name" > "$defaults"
+        _cloudify_runbook_export_app_spec "$f" demo
+        [ "${!input_name:-}" = eu-west-1 ]
+        export APP_INPUT_NAME="$input_name"
+        run bash -c 'printf "%s" "${!APP_INPUT_NAME}"'
+        [ "$status" -eq 0 ]
+        [ "$output" = eu-west-1 ]
+        unset "$input_name"
+    done
+}

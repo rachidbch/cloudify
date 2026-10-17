@@ -1480,3 +1480,15 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Rachid replaced ADR-039's marker-only classification with explicit markers plus a fixed end-of-name suffix list (ADR-042), retaining the marker sweep while reducing missed-marker risk; complete removal of name-based detection is a deferred roadmap entry.
 - The chosen exact uppercase endings are `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD`; non-obvious secrets retain explicit markers, and either mapping side protects all aliases of the shared input.
 - Design, plan, glossary, README/runbook notes, and roadmap synchronized before implementation; record/preflight/replay changes remain in later slices, and live-state consent remains pending.
+
+## 2026-10-17 - S1 implementation: markers, suffixes, and mapped classification
+
+- Implemented Secret markers with suffixes (ADR-042): shared exact-suffix detection, explicit marker/display handling, runbook marker parsing, names-only child metadata, connected-alias propagation with explicit origin precedence, and effective instance-key rejection.
+- Added the 11 missing package-marker sites and `secret RDP_PASSWORD`, retained ordinary declarations/defaults/optional kinds, protected mapping controls from file overrides, and bumped tool VERSION to 0.4.0 without changing recipe execution.
+- Focused red/green checks passed, including 28 combined cases plus active-map display protection; corrected the YouTube runbook's unsupported API_TOKEN claim and documented its server-owned token.
+- Schema/record/preflight/replay work remains queued; S1 still awaits bounded Technical verification and its full unit/gate/canary exit checks; AGENTS.md remains unchanged pending consent.
+
+## 2026-10-17 - S1 Technical verification passes
+
+- Review found new classification locals could hide valid lowercase input defaults; reproduced the `origin` collision, moved pure names-only classification outside the value exporter, and passed coverage for all six introduced names plus child propagation.
+- Bounded Technical verification returned PASS for Secret markers with suffixes (ADR-042); full slice-exit checks remain pending, with no later state-convergence slices started.

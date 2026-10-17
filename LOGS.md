@@ -1086,3 +1086,22 @@
 - Fixed suffix list: `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD`, exact uppercase end matches including underscore; MASTERKEY needs its explicit marker; no ordinary audited declaration ends in a listed suffix.
 - Planned S1 preserves legacy raw/provenance/context schemas and reference handling until their coordinated later slices; payload names/order/bytes remain unchanged.
 - No implementation tests or runtime changes yet; AGENTS.md remains untouched pending consent for its classification architecture sentence.
+
+## 2026-10-17 - S1 focused implementation evidence
+
+- Revised-classification SPEC review found one stale roadmap status, fixed it, and final verification returned PASS before code edits; contract commit `33af497` pushed on feat/state-convergence.
+- Target red/green checks reproduced suffix inconsistency, missing marker display/masking, spurious runbook input `secret`, malformed comma-boundary acceptance, missing child marker metadata, file override of mapping controls, unprotected aliases, missing shipped markers, and active-map display leakage.
+- Added one shared marker reader and exact suffix predicate; mapping classification visits each name/link a bounded number of times, with explicit markers stronger than suffix-only origin and no second value-source walk.
+- Kept candidate fields, raw/provenance formats, value precedence, map syntax, payload export names/order, and 0600 context ownership unchanged; legacy reference/digest/preflight behavior remains for its planned later slices.
+- All 12 audited secret declaration sites now have markers (affine already did); runbook RDP_PASSWORD is marked; ordinary declaration shapes remain unchanged.
+- Combined focused report `results/s1-focused.tap`: 28 passed; later active-map display report `results/s1-active-map-green.tap`: 3 passed; scoped shellcheck and Bash syntax checks passed.
+- Verified real child-process marker propagation, connected/cyclic aliases, dependency-side markers, stronger caller values, instance-key protection including references, CLI VERSION output, and event-writer version override.
+- Tool VERSION is 0.4.0; no package execution code, schemas, record formats, production state, SSH setup, or harness instructions changed; Technical review and full slice-exit gates remain pending.
+
+## 2026-10-17 - S1 bounded Technical review closes
+
+- Pass 1 found one regression: a new local named origin shadowed an ordinary application input default and discarded its exported binding on return.
+- Reproduced red in `results/s1-input-local-red.tap`, then extracted the names-only classifier into a command-substitution helper without adding value-binding locals to the exporter.
+- `results/s1-input-local-green.tap` passed 3/3, including all six introduced names (origin, explicit_inputs, package_markers, mapped_secrets, secret_inputs, marked_inputs), real child default exports, and both marker-propagation checks.
+- Technical verification pass 2 returned PASS with no remaining must-fix findings; no extra review loop was run.
+- Full unit, after-edit fragile gate, lint, and real Guacamole canary remain the final S1 gates; no broad suite has been used for debugging.

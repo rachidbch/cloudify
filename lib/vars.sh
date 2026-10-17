@@ -44,6 +44,8 @@ _CLOUDIFY_VARS_RESERVED=(
     CLOUDIFY_DEPLOYMENT
     CLOUDIFY_NODE
     CLOUDIFY_INSTANCE
+    CLOUDIFY_APP_MAP
+    CLOUDIFY_APP_SECRET_INPUTS
 )
 
 _cloudify_vars_reserved() {
@@ -384,6 +386,102 @@ function cloudify_vars_declared_names() {
     done < "$decl"
 }
 
+# Explicit markers only; without a package, scan declaration files once for display.
+_cloudify_vars_secret_names() {
+    local pkg="${1:-}" decl line
+    [[ -n "${CLOUDIFY_DIR:-}" ]] || return 0
+    local -a declarations=()
+    if [[ -n "$pkg" ]]; then
+        declarations=("$CLOUDIFY_DIR/pkg/$pkg/.remote-vars")
+    else
+        declarations=("$CLOUDIFY_DIR"/pkg/*/.remote-vars)
+    fi
+    for decl in "${declarations[@]}"; do
+        [[ -f "$decl" ]] || continue
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            line="${line%%#*}"
+            if [[ "$line" =~ ^[[:space:]]*secret[[:space:]]+([A-Z_][A-Z0-9_]*)[[:space:]]*$ ]]; then
+                printf '%s\n' "${BASH_REMATCH[1]}"
+            fi
+        done < "$decl"
+    done
+    return 0
+}
+
+# A caller listing several names passes its already-read marker list, even empty.
+_cloudify_vars_is_secret() {
+    local name="${1:-}" markers
+    [[ -n "$name" ]] || return 1
+    _cloudify_vars_is_secret_name "$name" && return 0
+    if (( $# >= 2 )); then
+        markers="$2"
+    else
+        markers=$(_cloudify_vars_display_secret_names) || die "vars: cannot classify secret names."
+    fi
+    [[ $'\n'"$markers"$'\n' == *$'\n'"$name"$'\n'* ]]
+}
+
+# Classify connected mapping names, never values; explicit beats suffix-only.
+# Each node can upgrade at most twice, so the queue is O(names + mappings).
+_cloudify_vars_mapping_secrets() {
+    local map="${1:-}" explicit="${2:-}" pair left right name neighbor rank head=0
+    local -a pairs=() queue=()
+    local -A adjacent=() levels=()
+    IFS=',' read -ra pairs <<< "$map" || true
+    for pair in ${pairs[@]+"${pairs[@]}"}; do
+        pair="$(_cloudify_vars_trim "$pair")"
+        [[ -n "$pair" && "$pair" == *=* ]] || continue
+        left="${pair%%=*}"; right="${pair#*=}"
+        _cloudify_identity_check_name "mapped package variable" "$left"
+        _cloudify_identity_check_name "mapped application input" "$right"
+        adjacent[$left]="${adjacent[$left]:-}$right"$'\n'
+        adjacent[$right]="${adjacent[$right]:-}$left"$'\n'
+    done
+    while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        _cloudify_identity_check_name "secret variable" "$name"
+        [[ "${levels[$name]:-0}" == 2 ]] && continue
+        levels[$name]=2
+        queue+=("$name")
+    done <<< "$explicit"
+    for name in "${!adjacent[@]}"; do
+        if _cloudify_vars_is_secret_name "$name" && [[ -z "${levels[$name]:-}" ]]; then
+            levels[$name]=1
+            queue+=("$name")
+        fi
+    done
+    while (( head < ${#queue[@]} )); do
+        name="${queue[head]}"; head=$((head + 1))
+        rank="${levels[$name]}"
+        while IFS= read -r neighbor; do
+            [[ -n "$neighbor" ]] || continue
+            (( ${levels[$neighbor]:-0} >= rank )) && continue
+            levels[$neighbor]="$rank"
+            queue+=("$neighbor")
+        done <<< "${adjacent[$name]:-}"
+    done
+    for name in "${!levels[@]}"; do
+        if [[ "${levels[$name]}" == 2 ]]; then rank=explicit; else rank=heuristic; fi
+        printf '%s\x1f%s\n' "$name" "$rank"
+    done
+}
+
+# Display uses declaration markers plus any active runbook's names-only metadata.
+_cloudify_vars_display_secret_names() {
+    local explicit rows name
+    local -a marked_inputs=()
+    explicit=$(_cloudify_vars_secret_names "${1:-}")
+    IFS=',' read -ra marked_inputs <<< "${CLOUDIFY_APP_SECRET_INPUTS:-}" || true
+    for name in ${marked_inputs[@]+"${marked_inputs[@]}"}; do
+        [[ -n "$name" ]] && explicit+=$'\n'"$name"
+    done
+    rows=$(_cloudify_vars_mapping_secrets "${CLOUDIFY_APP_MAP:-}" "$explicit") || return 1
+    while IFS=$'\x1f' read -r name _; do
+        [[ -n "$name" ]] && printf '%s\n' "$name"
+    done <<< "$rows"
+    return 0
+}
+
 # cloudify_vars_pkg_read <pkg> [yaml-file]
 # Declared names come from pkg/<pkg>/.remote-vars (values from caller env);
 # values come from the per-package yaml. Declared names are recorded for the
@@ -516,9 +614,9 @@ cloudify_vars_env_read() {
 
 # --- generic flat-store ops + scope/arg helpers (branch 1b) ---
 
-# _cloudify_vars_is_secret_name <name> — the masking heuristic (name-based).
+# Exact uppercase suffix safety net (ADR-042); markers cover other spellings.
 _cloudify_vars_is_secret_name() {
-    [[ "$1" =~ (PASSWORD|TOKEN|SECRET|KEY) ]]
+    [[ "${1:-}" =~ _(PASSWORD|SECRET|TOKEN|KEY|PWD)$ ]]
 }
 
 # _cloudify_vars_store_get <file> <key> — raw stored value; missing key = empty, rc 0.
@@ -533,10 +631,13 @@ _cloudify_vars_store_get() {
 # _cloudify_vars_store_list <file> [--json] [mask] — raw by default; mask=1 replaces
 # secret-looking values with *** (the router passes it unless --reveal).
 _cloudify_vars_store_list() {
-    local file="$1" mode="${2:-}" mask="${3:-}" line k v kt
+    local file="$1" mode="${2:-}" mask="${3:-}" line k v kt markers=""
     if [[ ! -f "$file" || ! -s "$file" ]]; then
         if [[ "$mode" == "--json" ]]; then echo "{}"; else echo "(no vars)"; fi
         return 0
+    fi
+    if [[ -n "$mask" ]]; then
+        markers=$(_cloudify_vars_display_secret_names) || die "vars: cannot classify secret names."
     fi
     if [[ "$mode" == "--json" ]]; then
         # One JSON encoder (jq). The shell only splits the flat lines and masks;
@@ -553,7 +654,7 @@ _cloudify_vars_store_list() {
                 k="$(_cloudify_vars_trim "${line%%:*}")"
                 v="$(_cloudify_vars_trim "${line#*:}")"
                 [[ -n "$k" ]] || continue
-                [[ -n "$mask" ]] && _cloudify_vars_is_secret_name "$k" && v="***"
+                [[ -n "$mask" ]] && _cloudify_vars_is_secret "$k" "$markers" && v="***"
                 printf '%s\n%s\n' "$k" "$v"
             done < "$file"
         )
@@ -561,7 +662,7 @@ _cloudify_vars_store_list() {
         while IFS= read -r line; do
             if [[ "$line" == *:* && "$line" != \#* ]]; then
                 kt="$(_cloudify_vars_trim "${line%%:*}")"
-                if _cloudify_vars_is_secret_name "$kt"; then printf '%s: ***\n' "$kt"; continue; fi
+                if _cloudify_vars_is_secret "$kt" "$markers"; then printf '%s: ***\n' "$kt"; continue; fi
             fi
             printf '%s\n' "$line"
         done < "$file"
@@ -721,24 +822,29 @@ _cloudify_vars_source_of() {
 
 # cloudify_vars_declared <pkg> [--sources] — the declaration mirror, three kinds.
 cloudify_vars_declared() {
-    local pkg="$1" sources="" reveal="" name kind mirror src shown
+    local pkg="$1" sources="" reveal="" name kind mirror src shown markers secret
     [[ "${2:-}" == "1" || "${2:-}" == "--sources" ]] && sources=1
     [[ "${3:-}" == "1" || "${3:-}" == "--reveal" ]] && reveal=1
     [[ -n "$pkg" ]] || die "Usage: cloudify vars declared <pkg> [--sources]"
     [[ -d "$CLOUDIFY_DIR/pkg/$pkg" ]] || die "Unknown package '$pkg'."
     if [[ ! -f "$CLOUDIFY_DIR/pkg/$pkg/.remote-vars" ]]; then echo "(no declared vars)"; return 0; fi
+    markers=$(_cloudify_vars_display_secret_names "$pkg") || die "vars: cannot classify secret names."
     while IFS=$'\t' read -r name kind mirror; do
         [[ -n "$name" ]] || continue
+        secret=""
+        _cloudify_vars_is_secret "$name" "$markers" && secret=1
         case "$kind" in
             required) shown="$name" ;;
             optional) shown="$name=" ;;
             defaulted)
-                if _cloudify_vars_is_secret_name "$name" && [[ -z "$reveal" ]]; then shown="$name=***"; else shown="$name=$mirror"; fi ;;
+                if [[ -n "$secret" && -z "$reveal" ]]; then shown="$name=***"; else shown="$name=$mirror"; fi ;;
         esac
         if [[ -n "$sources" ]]; then
             src="$(_cloudify_vars_source_of "$name" "$pkg")"
+            [[ -n "$secret" ]] && printf 'secret %s\t%s\n' "$name" "$src"
             printf '%s\t%s\n' "$shown" "$src"
         else
+            [[ -n "$secret" ]] && printf 'secret %s\n' "$name"
             printf '%s\n' "$shown"
         fi
     done < <(cloudify_vars_declared_names "$pkg")

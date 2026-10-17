@@ -27,11 +27,12 @@ The syntax is flat `key: value`, parsed with a flat reader, no YAML library:
 
     ---
     targets: guest, gateway
-    inputs: RDP_PASSWORD
+    inputs: secret RDP_PASSWORD
     map: CLOUDIFY_XFCE_USER_PASSWORD=RDP_PASSWORD, CLOUDIFY_GUACAMOLE_RDP_PASSWORD=RDP_PASSWORD
     ---
 
-`inputs:` is a comma-separated list of application input names.
+`inputs:` is a comma-separated list of names or `secret NAME` entries.
+A marker needs its name before the next comma; duplicate declarations keep their first position and any secret annotation wins.
 `map:` is a comma-separated list of `PACKAGE_VAR=APPLICATION_INPUT` pairs.
 Both sides of every entry, and every declared input name, are validated against the identity rules in `schemas/v1/identity.md` (and must be a shell variable name).
 A mapping whose application input is not declared is rejected before any step runs.
@@ -48,10 +49,11 @@ Application defaults live at `apps/<application>/<flavor>/defaults.yaml` under t
 The `application` source label covers both the application defaults file and the mapped input.
 The value is captured once, at emit time; no store is read twice.
 The private dispatch context may hold resolved plaintext for execution and is removed after the dispatch.
-The accepted classification rule uses `secret NAME` markers in package `.remote-vars` and runbook `inputs:`, plus exact uppercase endings `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD` (Secret markers with suffixes, ADR-042).
+Classification uses `secret NAME` markers in package `.remote-vars` and runbook `inputs:`, plus exact uppercase endings `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD` (Secret markers with suffixes, ADR-042).
 Either qualifying mapping side makes the input and its aliases secret; the sweep replaces substring guessing but does not remove the suffix safety net.
 Complete removal of name-based recognition is deferred to ROADMAP.md.
-Runbook `inputs:` currently declares names only; it has no implemented secret marker or secret-classification propagation through mappings.
+The input-name API still returns bare names, without annotations.
+Legacy reference classification, secret-demand preflight, and unsafe snapshots remain until their separate implementation slices; this marker sweep does not make old snapshots safe.
 Do not assume an input's origin in secretspec supplies Cloudify with classification or a persistent secret location.
 
 ## Application commands and the deployment manifest
@@ -115,8 +117,10 @@ Document order is preserved inside each selected phase; phases run in the order 
 ## How a child dispatch gets the mapping
 
 A runbook step body runs `cloudify ...` as a separate process.
-The engine exports the resolved application input values under their declared names (so step bodies see inputs by contract) plus the names-only `CLOUDIFY_APP_MAP` (`PACKAGE_VAR=APPLICATION_INPUT,...`) and `CLOUDIFY_APPLICATION` / `CLOUDIFY_FLAVOR`.
-The child dispatch reads `CLOUDIFY_APP_MAP` and resolves each mapped package variable from the input value already in its environment, recording the `application` source.
+The engine exports resolved input values under their declared names, the names-only `CLOUDIFY_APP_MAP` (`PACKAGE_VAR=APPLICATION_INPUT,...`), and `CLOUDIFY_APPLICATION` / `CLOUDIFY_FLAVOR`.
+`CLOUDIFY_APP_SECRET_INPUTS` separately carries explicitly secret input names, including names protected through a package-side marker; each spec export resets it.
+The child resolves each declared package alias from the input already in its environment, recording the `application` source, and propagates marker/suffix classification through all connected aliases.
+Classification metadata never claims a value, adds a payload export, or changes the map format.
 The map carries names only: no value is added to the environment beyond the input values the contract already provides, and no value travels on a command line.
 
 ## Policy rules (ivps / Tailscale ACL)

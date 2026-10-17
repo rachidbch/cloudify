@@ -227,15 +227,16 @@ aborts the run — an empty value is never forwarded. Backends are shell files i
 `lib/secrets/` (the built-in one is `base64`).
 Base64 contains a recoverable value, not a safe secret location; do not publish such references through inventory sync.
 Its removal or explicit insecure handling, including replacement of its multiline-storage role, is tracked in ROADMAP.md.
-The accepted classification rule is explicit `secret NAME` markers plus exact uppercase endings `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD` (Secret markers with suffixes, ADR-042).
-The implementation sweep still adds markers to every shipped secret; substring guessing is replaced, while complete removal of name-based recognition is deferred in ROADMAP.md.
+Classification uses explicit `secret NAME` markers plus exact uppercase endings `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD` (Secret markers with suffixes, ADR-042).
+Shipped secrets have explicit markers; substring guessing is replaced, while complete removal of name-based recognition is deferred in ROADMAP.md.
+`vars declared` shows secret annotations and masks marked default mirrors; `vars show/list` also masks marked package variables and active runbook aliases across stores unless `--reveal` is used.
 The revised MVP design is Secrets enter through the environment (ADR-037): an external wrapper supplies secrets; Cloudify records names, not secret values or provider addresses.
-The reference syntax above describes current code, not a planned secretspec integration; implementation changes wait for the remaining specification decisions.
+The reference syntax and its legacy classification describe current code, not a planned secretspec integration; Environment-only secret plumbing (S3) removes that path later.
 
 **Reserved names.** `CLOUDIFY_REMOTE_USER`, `CLOUDIFY_REMOTE_PWD`, `DEBUG`,
 `CLOUDIFY_BOOTSTRAP_URL`, `CLOUDIFY_UPDATE_DELAY`, `CLOUDIFY_FORCE`,
-`CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE` and
-`CLOUDIFY_INSTANCE` are framework-owned: a file store that tries to set one is
+`CLOUDIFY_NO_VERIFY`, `CLOUDIFY_DEPLOYMENT`, `CLOUDIFY_NODE`,
+`CLOUDIFY_INSTANCE`, `CLOUDIFY_APP_MAP`, and `CLOUDIFY_APP_SECRET_INPUTS` are framework-owned: a file store that tries to set one is
 warned about and skipped.
 
 **Deployment-wide vars (ADR-011):** the deployment is the application instance,
@@ -640,8 +641,13 @@ the repo; the caller supplies the VALUES via environment at install time.
 
 ```
 # pkg/k3s-server/.remote-vars
+secret K3S_TOKEN
 K3S_TOKEN
 ```
+
+A `secret NAME` line annotates the normal declaration; it does not declare or supply the value.
+Keep the ordinary required/defaulted/optional declaration beside it.
+The shared suffix safety net covers conventional names, but markers remain required on shipped secrets.
 
 ```bash
 K3S_TOKEN=abc123 cloudify --on host install k3s-server

@@ -724,22 +724,22 @@ candidate_file() {
 @test "every value carries a declaration field surfacing the classification origin" {
     declare_pkg foo \
         "SPEC=value" \
-        "TOKEN=abc" \
+        "API_TOKEN=abc" \
         "secret MARKERED" \
         "MARKERED=x"
     reset_stores
     set_deployment SPEC deployment-value
-    set_deployment TOKEN heuristic-supplied
+    set_deployment API_TOKEN heuristic-supplied
     set_deployment MARKERED marker-supplied
     set_deployment REF '@base64:YWRtaW4tc2VjcmV0'
-    unset SPEC TOKEN MARKERED REF
+    unset SPEC API_TOKEN MARKERED REF
     local cand
     cand=$(candidate_file foo)
 
     cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
 
     [ "$(cloudify_context_read "$CTX" value.SPEC.declaration)" = "none" ]
-    [ "$(cloudify_context_read "$CTX" value.TOKEN.declaration)" = "heuristic" ]
+    [ "$(cloudify_context_read "$CTX" value.API_TOKEN.declaration)" = "heuristic" ]
     [ "$(cloudify_context_read "$CTX" value.MARKERED.declaration)" = "explicit" ]
     subrubric "a reference is explicit"
     [ "$(cloudify_context_read "$CTX" value.REF.form)" = "reference" ]
@@ -747,16 +747,16 @@ candidate_file() {
 }
 
 @test "an explicit marker wins over the name heuristic" {
-    declare_pkg foo "secret TOKEN" "TOKEN=abc"
+    declare_pkg foo "secret API_TOKEN" "API_TOKEN=abc"
     reset_stores
-    export TOKEN=abc-supplied
+    export API_TOKEN=abc-supplied
     local cand
     cand=$(candidate_file foo)
 
     cloudify_context_build install "$DEP" install "$cand" foo > /dev/null
 
-    [ "$(cloudify_context_read "$CTX" value.TOKEN.declaration)" = "explicit" ]
-    [ "$(cloudify_context_read "$CTX" value.TOKEN.secret)" = "true" ]
+    [ "$(cloudify_context_read "$CTX" value.API_TOKEN.declaration)" = "explicit" ]
+    [ "$(cloudify_context_read "$CTX" value.API_TOKEN.secret)" = "true" ]
 }
 
 @test "context records one sorted package.<PACKAGE>.instance field per precomputed package" {
@@ -881,4 +881,88 @@ candidate_file() {
     run cloudify_context_value_json AFFINE_PORT
     [ "$status" -eq 0 ]
     jq -e '.source == "applied" and .source_form == "8787" and .secret == false' <<<"$output"
+}
+
+@test "secret-mapping-input: explicit input marker protects an ordinary package alias" {
+    rubric "classification crosses a mapping without adding payload exports"
+    declare_pkg foo SPEC
+    reset_stores
+    export LICENSE=fixture-private
+    export CLOUDIFY_APP_MAP='SPEC=LICENSE' CLOUDIFY_APP_SECRET_INPUTS=LICENSE
+    unset SPEC
+    cloudify_context_build install "$DEP" install "$(candidate_file foo)" foo
+    [ "$SPEC" = fixture-private ]
+    [ "$(cloudify_context_read "$CTX" value.SPEC.source)" = application ]
+    [ "$(cloudify_context_read "$CTX" value.SPEC.secret)" = true ]
+    [ "$(cloudify_context_read "$CTX" value.SPEC.declaration)" = explicit ]
+    [ "$(cloudify_context_read "$CTX" value.SPEC.raw)" = t:fixture-private ]
+    ! grep -q '^value\.LICENSE\.source:' "$CTX"
+}
+
+@test "secret-mapping-fanout: dependency marker protects aliases despite a caller override" {
+    rubric "one marked destination protects the input and its other aliases"
+    declare_pkg top SPEC PEER
+    declare_pkg dep 'secret SPEC' 'SPEC='
+    recipe_for top dep
+    recipe_for dep
+    reset_stores
+    export LICENSE=fixture-private SPEC=caller-override
+    export CLOUDIFY_APP_MAP='SPEC=LICENSE,PEER=LICENSE' CLOUDIFY_APP_SECRET_INPUTS=''
+    unset PEER
+    cloudify_context_build install "$DEP" install "$(candidate_file top)" top
+    [ "$SPEC" = caller-override ]
+    [ "$PEER" = fixture-private ]
+    [ "$(cloudify_context_read "$CTX" value.SPEC.source)" = environment ]
+    [ "$(cloudify_context_read "$CTX" value.PEER.source)" = application ]
+    local name
+    for name in SPEC PEER; do
+        [ "$(cloudify_context_read "$CTX" "value.$name.secret")" = true ]
+        [ "$(cloudify_context_read "$CTX" "value.$name.declaration")" = explicit ]
+    done
+}
+
+@test "secret-mapping-suffixes: either side protects fanout and ordinary names stay ordinary" {
+    rubric "suffix-only mappings retain heuristic origin, without substring guessing"
+    local variant primary input expected origin
+    for variant in input destination neither; do
+        reset_stores
+        unset SPEC PEER API_TOKEN LICENSE APP_TOKEN
+        case "$variant" in
+            input) primary=SPEC; input=APP_TOKEN; expected=true; origin=heuristic ;;
+            destination) primary=API_TOKEN; input=LICENSE; expected=true; origin=heuristic ;;
+            neither) primary=SPEC; input=LICENSE; expected=false; origin=none ;;
+        esac
+        declare_pkg foo "$primary" PEER
+        export "$input=fixture-value"
+        export CLOUDIFY_APP_MAP="$primary=$input,PEER=$input" CLOUDIFY_APP_SECRET_INPUTS=''
+        cloudify_context_build install "$DEP" install "$(candidate_file foo)" foo
+        [ "${!primary}" = fixture-value ]
+        [ "$PEER" = fixture-value ]
+        [ "$(cloudify_context_read "$CTX" "value.$primary.secret")" = "$expected" ]
+        [ "$(cloudify_context_read "$CTX" value.PEER.secret)" = "$expected" ]
+        [ "$(cloudify_context_read "$CTX" value.PEER.declaration)" = "$origin" ]
+    done
+}
+
+@test "secret-mapping-instance: inherited markers suffixes and references cannot become paths" {
+    rubric "instance-key rejection uses the same effective classification as records"
+    local variant
+    for variant in marker suffix reference; do
+        reset_stores
+        unset SPEC LICENSE APP_TOKEN
+        declare_pkg foo SPEC
+        printf 'SPEC\n' > "$CLOUDIFY_DIR/pkg/foo/.package-instance"
+        export CLOUDIFY_APP_MAP='' CLOUDIFY_APP_SECRET_INPUTS=''
+        case "$variant" in
+            marker)
+                export LICENSE=eu-west-1 CLOUDIFY_APP_MAP='SPEC=LICENSE' CLOUDIFY_APP_SECRET_INPUTS=LICENSE ;;
+            suffix)
+                export APP_TOKEN=eu-west-1 CLOUDIFY_APP_MAP='SPEC=APP_TOKEN' ;;
+            reference)
+                set_pkg foo SPEC '@base64:ZXUtd2VzdC0x' ;;
+        esac
+        run cloudify_context_build install "$DEP" install "$(candidate_file foo)" foo
+        [ "$status" -ne 0 ]
+        [[ "$output" == *secret-classified* ]]
+    done
 }

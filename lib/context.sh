@@ -59,37 +59,21 @@
 # Secret classification is the explicit `secret <NAME>` declaration marker in
 # `.remote-vars` (a shape every existing declaration reader already ignores, so
 # it is backward compatible), the explicit `@<backend>:<locator>` reference form,
-# plus the name heuristic as defense in depth.
+# plus the shared anchored suffix safety net (ADR-042).
 
 [[ -n "${_CLOUDIFY_CONTEXT_LOADED:-}" ]] && return 0
 _CLOUDIFY_CONTEXT_LOADED=1
 
-# _cloudify_context_name_is_secret <name> - the masking name heuristic
-# (lib/vars.sh:_cloudify_vars_is_secret_name) plus PWD, which the remote payload
-# masks too.
+# Context and display share the same end-of-name suffix rule.
 _cloudify_context_name_is_secret() {
-    case "${1:-}" in
-        *PWD* | *PASSWORD* | *SECRET* | *TOKEN* | *KEY*) return 0 ;;
-    esac
-    return 1
+    _cloudify_vars_is_secret_name "${1:-}"
 }
 
 # _cloudify_context_secret_names <pkg> - explicit secret-marked names from a
 # package's .remote-vars, one per line. The marker is a `secret NAME` line.
 _cloudify_context_secret_names() {
-    local pkg="${1:-}" decl line name
-    [[ -n "$pkg" && -n "${CLOUDIFY_DIR:-}" ]] || return 0
-    decl="$CLOUDIFY_DIR/pkg/$pkg/.remote-vars"
-    [[ -f "$decl" ]] || return 0
-    while IFS= read -r line; do
-        line="$(_cloudify_vars_trim "$line")"
-        line="${line%%#*}"
-        line="$(_cloudify_vars_trim "$line")"
-        [[ "$line" == secret\ * ]] || continue
-        name="$(_cloudify_vars_trim "${line#secret }")"
-        [[ "$name" =~ ^[A-Z_][A-Z0-9_]*$ ]] || continue
-        printf '%s\n' "$name"
-    done < "$decl"
+    [[ -n "${1:-}" ]] || return 0
+    _cloudify_vars_secret_names "$1"
 }
 
 # _cloudify_context_emit_declared <pkg> - the declaration mirror of a package,
@@ -413,6 +397,30 @@ function cloudify_context_build() {
         done < "$sources"
     fi
 
+    # Classification-only metadata never claims a value or adds an export name.
+    local explicit_names="" secret_name mapped_secrets origin
+    local -a marked_inputs=()
+    local -A _ctx_suffix_secret=()
+    for secret_name in "${!_ctx_secret[@]}"; do
+        explicit_names+="$secret_name"$'\n'
+    done
+    for secret_name in "${!_ctx_ref[@]}"; do
+        [[ -n "${_ctx_ref[$secret_name]}" ]] && explicit_names+="$secret_name"$'\n'
+    done
+    IFS=',' read -ra marked_inputs <<< "${CLOUDIFY_APP_SECRET_INPUTS:-}" || true
+    for secret_name in ${marked_inputs[@]+"${marked_inputs[@]}"}; do
+        [[ -n "$secret_name" ]] && explicit_names+="$secret_name"$'\n'
+    done
+    mapped_secrets=$(_cloudify_vars_mapping_secrets "${CLOUDIFY_APP_MAP:-}" "$explicit_names") || return 1
+    while IFS=$'\x1f' read -r secret_name origin; do
+        [[ -n "$secret_name" ]] || continue
+        if [[ "$origin" == explicit ]]; then
+            _ctx_secret[$secret_name]=1
+        else
+            _ctx_suffix_secret[$secret_name]=1
+        fi
+    done <<< "$mapped_secrets"
+
     local name label form ref is_secret digest
     local -a resolved=()
     if [[ -s "$ledger" ]]; then
@@ -439,7 +447,7 @@ function cloudify_context_build() {
                 || [[ -n "${_ctx_secret[$name]:-}" ]]; then
                 is_secret=true
                 declaration="explicit"
-            elif _cloudify_context_name_is_secret "$name"; then
+            elif [[ -n "${_ctx_suffix_secret[$name]:-}" ]] || _cloudify_context_name_is_secret "$name"; then
                 is_secret=true
                 declaration="heuristic"
             fi
@@ -484,7 +492,7 @@ function cloudify_context_build() {
                 # Explicit `secret` declarations and the masking name
                 # heuristic both refuse: whatever the walker would mask
                 # anywhere else must not become a path component here.
-                if [[ -n "${_ctx_secret[$_inst_var]:-}" ]] \
+                if [[ -n "${_ctx_secret[$_inst_var]:-}" || -n "${_ctx_suffix_secret[$_inst_var]:-}" ]] \
                     || _cloudify_context_name_is_secret "$_inst_var"; then
                     die "package '$_pkg': instance variable '$_inst_var' is secret-classified - a secret value can never be the instance key (it would land in paths and result lines)."
                 fi

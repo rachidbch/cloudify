@@ -492,3 +492,62 @@ EOF
     [ "$(cat "$CLOUDIFY_TMP/local-var-out")" = "fromyaml" ]
     rm -rf "$home"
 }
+
+@test "secret-suffixes: context and display share exact uppercase endings" {
+    rubric "markers keep exceptions safe; name fallback matches endings, not substrings"
+    local suffix name
+    for suffix in PASSWORD SECRET TOKEN KEY PWD; do
+        name="APP_$suffix"
+        step "secret ending: $name"
+        _cloudify_vars_is_secret_name "$name"
+        _cloudify_context_name_is_secret "$name"
+    done
+    for name in PASSWORD SECRET TOKEN KEY PWD MONKEY TOKEN_FILE MY_PASSWORD_FILE APIKEY app_password CLOUDIFY_REMOTE_PWD_HINT; do
+        step "ordinary name: $name"
+        ! _cloudify_vars_is_secret_name "$name"
+        ! _cloudify_context_name_is_secret "$name"
+    done
+}
+
+@test "secret-metadata: file defaults cannot overwrite mapping controls" {
+    rubric "classification metadata is framework-owned, not a file-supplied value"
+    export CLOUDIFY_APP_MAP='PLAIN=LICENSE' CLOUDIFY_APP_SECRET_INPUTS=LICENSE
+    printf 'CLOUDIFY_APP_MAP: PLAIN=OTHER\nCLOUDIFY_APP_SECRET_INPUTS: OTHER\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
+    cloudify_vars_global_read > "$CLOUDIFY_TMP/names"
+    [ "$CLOUDIFY_APP_MAP" = 'PLAIN=LICENSE' ]
+    [ "$CLOUDIFY_APP_SECRET_INPUTS" = LICENSE ]
+    ! grep -qx CLOUDIFY_APP_MAP "$CLOUDIFY_TMP/names"
+    ! grep -qx CLOUDIFY_APP_SECRET_INPUTS "$CLOUDIFY_TMP/names"
+}
+
+@test "secret-map-closure: cycles terminate and explicit origin dominates suffix origin" {
+    rubric "all connected aliases stay secret, once each, even with a mapping cycle"
+    run _cloudify_vars_mapping_secrets 'EDGE=INPUT,B=EDGE,INPUT=B,PEER=INPUT,API_TOKEN=PEER' EDGE
+    [ "$status" -eq 0 ]
+    [ "${#lines[@]}" -eq 5 ]
+    local name
+    for name in EDGE INPUT B PEER API_TOKEN; do
+        [[ $'\n'"$output"$'\n' == *$'\n'"$name"$'\x1fexplicit\n'* ]]
+    done
+}
+
+@test "secret-declarations: every audited shipped secret has an explicit marker" {
+    rubric "suffix fallback does not replace declaration ownership"
+    local CLOUDIFY_DIR="$CLOUDIFY_SCRIPT_DIR" entry pkg name markers
+    for entry in \
+        affine:AFFINE_LINEAR_API_KEY \
+        k3s-server:K3S_TOKEN k3s-agent:K3S_TOKEN fixture-split:K3S_TOKEN \
+        guacamole:CLOUDIFY_GUACAMOLE_DB_PASSWORD \
+        guacamole:CLOUDIFY_GUACAMOLE_ADMIN_PASSWORD \
+        guacamole:CLOUDIFY_GUACAMOLE_RDP_PASSWORD \
+        xfce:CLOUDIFY_XFCE_USER_PASSWORD \
+        youtube-mcp:YT_GOOGLE_CLIENT_SECRET \
+        zitadel:CLOUDIFY_ZITADEL_MASTERKEY \
+        zitadel:CLOUDIFY_ZITADEL_SESSION_COOKIE_SECRET \
+        zitadel:CLOUDIFY_ZITADEL_POSTGRES_PASSWORD; do
+        pkg="${entry%%:*}"; name="${entry#*:}"
+        step "$pkg: $name"
+        markers=$(_cloudify_vars_secret_names "$pkg")
+        [[ $'\n'"$markers"$'\n' == *$'\n'"$name"$'\n'* ]]
+    done
+}

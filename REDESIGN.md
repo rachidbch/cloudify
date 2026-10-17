@@ -1,6 +1,6 @@
 # Cloudify state model redesign v2
 
-Status: accepted design, not implemented.
+Status: accepted design; convergence implementation is in progress through PLAN.md.
 
 This design supersedes the implementation contract in ADR-021.
 

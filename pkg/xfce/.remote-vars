@@ -4,6 +4,7 @@
 # set -> used at user creation (preserved, never printed); unset -> generated
 # and printed once. No single quotes or control chars in passwords.
 CLOUDIFY_XFCE_USER=gui
+secret CLOUDIFY_XFCE_USER_PASSWORD
 CLOUDIFY_XFCE_USER_PASSWORD=
 CLOUDIFY_XFCE_SESSION=startxfce4
 CLOUDIFY_XFCE_RDP_PORT=3389

@@ -361,3 +361,73 @@ run_router() {
     [ "$status" -eq 0 ]
     [ "$output" = "s3cr3t" ]
 }
+
+@test "secret-markers: declared display masks explicit exceptions and keeps declaration kinds" {
+    rubric "an explicit marker protects a name with no recognized suffix"
+    mkdir -p "$CLOUDIFY_DIR/pkg/marked"
+    printf 'secret LICENSE\nLICENSE=private-mirror\nSECRET_LABEL=public-label\nOPTIONAL=\n' > "$CLOUDIFY_DIR/pkg/marked/.remote-vars"
+    run cloudify_vars_declared marked
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'secret LICENSE'* ]]
+    [[ "$output" == *'LICENSE=***'* ]]
+    [[ "$output" != *private-mirror* ]]
+    [[ "$output" == *'SECRET_LABEL=public-label'* ]]
+    [[ "$output" == *'OPTIONAL='* ]]
+    run cloudify_vars_declared marked --sources --reveal
+    [ "$status" -eq 0 ]
+    [[ "$output" == *$'LICENSE=private-mirror\trecipe-default'* ]]
+    run cloudify_vars_declared_names marked
+    [ "$status" -eq 0 ]
+    [ "${#lines[@]}" -eq 3 ]
+    [[ "$output" == *$'LICENSE\tdefaulted\tprivate-mirror'* ]]
+}
+
+@test "secret-scoped: show and list mask marked non-suffix names across stores" {
+    rubric "changing display scope cannot expose an explicitly marked secret"
+    mkdir -p "$CLOUDIFY_DIR/pkg/marked"
+    printf 'secret LICENSE\nLICENSE=\nSECRET_LABEL=\n' > "$CLOUDIFY_DIR/pkg/marked/.remote-vars"
+    run_router vars set LICENSE private-value --global
+    [ "$status" -eq 0 ]
+    run_router vars set SECRET_LABEL public-label --global
+    [ "$status" -eq 0 ]
+    run_router vars show LICENSE --global
+    [ "$status" -eq 0 ]
+    [ "$output" = '***' ]
+    run_router vars list --global
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'LICENSE: ***'* ]]
+    [[ "$output" == *'SECRET_LABEL: public-label'* ]]
+    [[ "$output" != *private-value* ]]
+    run_router vars list --json --global
+    [ "$status" -eq 0 ]
+    jq -e '.LICENSE == "***" and .SECRET_LABEL == "public-label"' <<< "$output"
+    run_router vars show LICENSE --global --reveal
+    [ "$status" -eq 0 ]
+    [ "$output" = private-value ]
+}
+
+@test "secret-active-map: display honors inherited input classification for an ordinary alias" {
+    rubric "a mapped secret cannot become visible through a separate vars command"
+    run_router vars set ALIAS private-value --global
+    [ "$status" -eq 0 ]
+    export CLOUDIFY_APP_MAP='ALIAS=LICENSE' CLOUDIFY_APP_SECRET_INPUTS=LICENSE
+    run_router vars show ALIAS --global
+    [ "$status" -eq 0 ]
+    [ "$output" = '***' ]
+    run_router vars list --json --global
+    [ "$status" -eq 0 ]
+    jq -e '.ALIAS == "***"' <<< "$output"
+}
+
+@test "version-contract: CLI reads VERSION and event writer honors its test override" {
+    rubric "the behavior release version stays single-sourced"
+    run_router --version
+    [ "$status" -eq 0 ]
+    [ "$output" = "cloudify $(< "$CLOUDIFY_SCRIPT_DIR/VERSION")" ]
+    source lib/state.sh
+    _CLOUDIFY_STATE_WRITER=''
+    export CLOUDIFY_VERSION=9.8.7
+    run cloudify_state_writer_identity
+    [ "$status" -eq 0 ]
+    jq -e '.tool_version == "9.8.7"' <<< "$output"
+}

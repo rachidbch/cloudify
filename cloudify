@@ -738,7 +738,7 @@ function main() {
                     if [[ $_CV_RESOLVE -eq 1 && -n "$var_val" ]]; then
                         var_val=$(_cloudify_resolve_var_value "$var_key" "$var_val") || die "Var $var_key: cannot resolve its reference."
                     fi
-                    if [[ $_CV_REVEAL -eq 0 ]] && _cloudify_vars_is_secret_name "$var_key"; then
+                    if [[ $_CV_REVEAL -eq 0 ]] && _cloudify_vars_is_secret "$var_key"; then
                         var_val="***"
                     fi
                     [[ -n "$var_val" ]] && printf '%s\n' "$var_val"

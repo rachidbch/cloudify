@@ -269,24 +269,55 @@ function _cloudify_runbook_fm_value() {
     return 0
 }
 
-# cloudify_runbook_inputs <path> - one declared application input name per line,
-# deduplicated, declaration order. Every name is validated against the identity
-# component rules and the variable-name shape.
-function cloudify_runbook_inputs() {
-    local path="${1:-}" raw name seen=""
+# One parser for names and explicit annotations; its private rows use 0x1f.
+_cloudify_runbook_input_entries() {
+    local path="${1:-}" raw group name marked=0
     [[ -n "$path" ]] || return 0
     raw=$(_cloudify_runbook_fm_value "$path" inputs)
-    local -a parts=()
-    IFS=', ' read -ra parts <<< "$raw" || true
-    for name in ${parts[@]+"${parts[@]}"}; do
-        name="$(_cloudify_vars_trim "$name")"
-        [[ -n "$name" ]] || continue
-        [[ ",$seen," == *",$name,"* ]] && continue
-        _cloudify_identity_check_component "application input" "$name"
-        _cloudify_identity_check_name "application input" "$name"
-        seen="${seen:+$seen,}$name"
-        printf '%s\n' "$name"
+    local -a groups=() parts=() order=()
+    local -A flags=()
+    IFS=',' read -ra groups <<< "$raw" || true
+    for group in ${groups[@]+"${groups[@]}"}; do
+        IFS=' ' read -ra parts <<< "$group" || true
+        for name in ${parts[@]+"${parts[@]}"}; do
+            [[ -n "$name" ]] || continue
+            if [[ "$name" == secret ]]; then
+                (( marked == 0 )) || die "Runbook '$path': secret marker needs an input name."
+                marked=1
+                continue
+            fi
+            _cloudify_identity_check_component "application input" "$name"
+            _cloudify_identity_check_name "application input" "$name"
+            if [[ -z "${flags[$name]+set}" ]]; then
+                order+=("$name")
+                flags[$name]=0
+            fi
+            (( marked == 0 )) || flags[$name]=1
+            marked=0
+        done
+        (( marked == 0 )) || die "Runbook '$path': secret marker needs an input name."
     done
+    for name in ${order[@]+"${order[@]}"}; do
+        printf '%s\x1f%s\n' "$name" "${flags[$name]}"
+    done
+}
+
+# Public names API stays bare, deduplicated, and in declaration order.
+function cloudify_runbook_inputs() {
+    local entries name marked
+    entries=$(_cloudify_runbook_input_entries "${1:-}") || return 1
+    while IFS=$'\x1f' read -r name marked; do
+        [[ -n "$name" ]] && printf '%s\n' "$name"
+    done <<< "$entries"
+    return 0
+}
+
+function cloudify_runbook_secret_inputs() {
+    local entries name marked
+    entries=$(_cloudify_runbook_input_entries "${1:-}") || return 1
+    while IFS=$'\x1f' read -r name marked; do
+        [[ -n "$name" && "$marked" == 1 ]] && printf '%s\n' "$name"
+    done <<< "$entries"
     return 0
 }
 
@@ -315,6 +346,25 @@ function cloudify_runbook_map() {
         printf '%s\t%s\n' "$pkg" "$input"
     done
     return 0
+}
+
+# Pure classification runs in a subshell so its locals cannot shadow input values.
+_cloudify_runbook_secret_input_names() {
+    local path="${1:-}" map="${2:-}" input_names="${3:-}"
+    local explicit_inputs package_markers mapped_secrets origin name secret_inputs=""
+    local -A marked_inputs=()
+    explicit_inputs=$(cloudify_runbook_secret_inputs "$path") || return 1
+    package_markers=$(_cloudify_vars_secret_names)
+    mapped_secrets=$(_cloudify_vars_mapping_secrets "$map" "$package_markers"$'\n'"$explicit_inputs") || return 1
+    while IFS=$'\x1f' read -r name origin; do
+        [[ -n "$name" && "$origin" == explicit ]] && marked_inputs[$name]=1
+    done <<< "$mapped_secrets"
+    while IFS= read -r name; do
+        if [[ -n "$name" && -n "${marked_inputs[$name]:-}" ]]; then
+            secret_inputs="${secret_inputs:+$secret_inputs,}$name"
+        fi
+    done <<< "$input_names"
+    printf '%s' "$secret_inputs"
 }
 
 # _cloudify_runbook_export_app_spec <path> <deployment>
@@ -370,7 +420,11 @@ function _cloudify_runbook_export_app_spec() {
     done
     export CLOUDIFY_APP_MAP="$map"
 
+    # Reuse the existing raw temporary; introduce no new value-binding locals.
     local raw src dep def value
+    raw=$(_cloudify_runbook_secret_input_names "$path" "$map" "$inputs_out") || return 1
+    export CLOUDIFY_APP_SECRET_INPUTS="$raw"
+
     for name in ${inputs[@]+"${inputs[@]}"}; do
         raw=""; src=""
         if [[ -n "${!name:-}" ]]; then

@@ -110,11 +110,11 @@ run_worker() {
 
 events_root() { printf '%s' "$HOME/.local/state/cloudify/events"; }
 
-# newest_event <pkg> [inst] - the newest event file naming that package.
+# newest_event <pkg> [inst] - the newest event file naming that package
+# (sorted by event id: the id's UTC second plus counter recovers write order).
 newest_event() {
-    local p="${1:?}" inst="${2:-default}" f=""
-    local newest=""
-    for f in $(find "$(events_root)" -name '*.json' 2>/dev/null); do
+    local p="${1:?}" inst="${2:-default}" f="" newest=""
+    for f in $(find "$(events_root)" -name '*.json' 2>/dev/null | sort); do
         [[ "$(jq -r '.subject.package // ""' "$f" 2>/dev/null)" == "$p" ]] || continue
         [[ "$(jq -r '.subject.package_instance // ""' "$f" 2>/dev/null)" == "$inst" ]] || continue
         newest="$f"

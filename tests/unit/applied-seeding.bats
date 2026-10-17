@@ -71,11 +71,11 @@ _seed_record() {
         > "$dir/state.json"
 }
 
-# _store <key> <value> - an application-flavor defaults entry (the strongest
-# file rung): the ladder's stores supply what the seed does not.
+# _store <key> <value> - a deployment-rank store entry (above the seed at
+# verify/teardown; superseded by user-forced seeds at reconfigure).
 _store() {
     local f
-    f=$(cloudify_vars_app_file web default)
+    f=$(cloudify_deployment_values_file web default main)
     mkdir -p "$(dirname "$f")"
     printf '%s: %s\n' "$1" "$2" >> "$f"
 }
@@ -134,7 +134,7 @@ _build() {
     [ "$(cloudify_context_read "$CLOUDIFY_CONTEXT_FILE" value.MODE.source)" = "deployment" ]
 
     subrubric "defaults entry deleted - the name is absent (recipe default on the host)"
-    rm -f "$(cloudify_vars_app_file web default)"
+    rm -f "$(cloudify_deployment_values_file web default main)"
     rm -f "$CLOUDIFY_CONTEXT_FILE"
     unset MODE
     _build reconfigure

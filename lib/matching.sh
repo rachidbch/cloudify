@@ -158,7 +158,7 @@ function cloudify_state_match_deployment() {
             rec_values=$(jq -c 'del(.schema_version, .target, .revision, .version,
                                  .user_forced, .failed)' "$rec" 2>/dev/null) || { match=false; break; }
             [[ -n "$rec_values" ]] || { match=false; break; }
-            jq -e --argjson a "$run_values" --argjson b "$rec_values" '
+            jq -ne --argjson a "$run_values" --argjson b "$rec_values" '
                 ($a | keys | sort) == ($b | keys | sort)
                 and all ($a | keys[]; . as $k |
                      ($a[$k] == "****" or $b[$k] == "****" or $a[$k] == $b[$k]))' >/dev/null 2>&1 \

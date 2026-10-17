@@ -1519,3 +1519,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - `cloudify deployment migrate-registry <id> --application <app> [--flavor <f>] [--name <n>] [--write]` landed (lib/migrate-registry.sh): investigate (default, read-only) resolves each old record's target and runs the ad-hoc unnamed verify with the record's non-secret values as caller env; `--write` re-investigates fresh, refuses failed probes and unresolved facts by name, backs up restricted, and converts through the one inventory transition with a `migrate-registry` event per record; idempotent; old records kept until the sweep (per-application live conversion, ADR-043; Rachid's ruling that every record follows an investigation of what is actually deployed).
 - Fixed `cloudify_is_package` to return a real exit status alongside its output contract; three exit-code call sites (adoption guard, recipe printer, install preflight) were silently dead guards and now work as written.
 - Router route + README/schemas-README/PLAN updated in the same commit; acceptance gates follow on pushed HEAD.
+
+## 2026-10-17 - S2 closed: converter verified by the acceptance batch
+
+- Acceptance batch green on pushed HEAD `18472e6` (receipt `results/acceptance/20261017-221425/`): unit 827/827, fragile gate 152/152, canary 7/7, lint exit 0; schema fixture matrix green; payload goldens byte-identical.
+- Schema and lean records (S2) complete. Live conversion campaign is next, gated per application by Live-state approval (G4, ADR-043); two acceptance interruptions were laptop sleep, not host faults (evidence in LOGS).

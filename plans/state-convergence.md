@@ -127,7 +127,10 @@ The detached batch finished independently; historical PID 17044 is gone, and abs
 ### Schema and lean records (S2)
 
 - [ ] Cross Schema approval (G2), then update schemas, bounded validator, valid/invalid fixtures, record goldens, and documentation together.
+  Progress note (2026-10-17): schemas + validator + fixtures + schema README landed (`1c959de`); the record goldens re-capture is still open and waits for a green unit suite.
 - [ ] Cut over every producer and consumer, including worker, state apply, adoption, matching, deployment rendering, and replay/seeding readers; do not land a schema-only incompatible writer state.
+  Progress note (2026-10-17): the writer/reader cutover is code-complete and lint-green (`04bf366`, `118f42b`, plus fix commits through `e3845df`); last complete unit run 814/821 with 7 red, all seven old-shape or fixed-bug assertions whose fixes are committed but unverified (the verification run died on an unreachable test host; see LOGS).
+  A stale deployment-store expectation in the seeding tests was updated to the deployment-rank values file (ADR-038's surviving rung); the recorded-secret demand now fires for every recorded secret on every write phase (the lean record carries no digest, so the equality check is structurally gone - S3 then removes the demand itself).
 - [ ] Preserve revision monotonicity, host locks, atomic validated replacement, event identity fields, failure preservation, and the target association.
 - [ ] Implement an explicit, idempotent old-record conversion with a restricted backup, value-free reports, unresolved-fact refusals, and Git-revert-plus-backup rollback, built for the per-application live sequence (per-application live conversion, ADR-043).
   Derive targets only from proven facts; never invent adopted bindings or success.

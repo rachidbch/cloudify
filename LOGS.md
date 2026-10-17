@@ -1149,3 +1149,10 @@
 - The one-case transport prototype in the S0 scratch was fully subsumed by `tests/unit/remote-bats.bats` case 1; nothing unique to port.
 - Both scratch roots copied byte-identical (cmp-verified, 32 files) into `results/evidence/s{0,1}/`; `results/evidence/MAPPING.md` is the original-to-new map and records what deliberately stayed (delegation session logs, handoff, loop log, rejected trash drafts).
 - Originals removed via recoverable trash only after byte verification; `tests/red/README.md` example now uses the approved plain-ssh transport instead of the prohibited ivps-exec form; `task lint` exit 0 with the extended glob.
+
+## 2026-10-17 - S2 record cutover: unit laps and a red test host (STOP)
+
+- Lean schema + fixtures + README landed (`1c959de`); writer/reader cutover landed (`04bf366`) with test cutover (`118f42b`) and four fix commits (`6615a13`, `9610af8`, `e3845df`, this one).
+- Unit run 4 (last COMPLETE): 821 tests, 814 ok, 7 not-ok - all old-shape assertions or real cutover bugs, each with a committed fix: seed-reader jq scoping (`.key` binding), recorded-secret demand lines on every write phase, matcher compare null-input (`jq -ne`) with the `****` wildcard, adoption's retired `vfile_ev`, the show user-count array wrap, deterministic `newest_event` ordering, and the seeding tests' store moved to the deployment-rank values file.
+- Unit run 5 never started testing: plain ssh to `root@cloudify` timed out at connection, ping to `100.123.125.109` 100% loss, tailscale lists the node but the host is unreachable. Per the fail-fast constitution: no retry, no healing; STOP and ping Rachid.
+- Runtime-behavior decisions recorded en route: a first-operation verify failure records `failed: true` with no settings and null version (nothing was ever confirmed); an off-graph dependency's succeeded line still reports its own version while the RUN degrades; the record slot travels beside the other dispatch globals (`CLOUDIFY_RECORD_SLOT`), never positionally (arg 12 collided with the requested words).

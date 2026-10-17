@@ -41,10 +41,11 @@ _CLOUDIFY_WORKER_LOADED=1
 declare -gA _WORKER_LINE=()
 _WORKER_LINE_CLASS=""
 _WORKER_PROJECTION=""
-_WORKER_EVENT_PROJECTION=""
+_WORKER_USER_FORCED="[]"
 _WORKER_APP="" _WORKER_FLAVOR="" _WORKER_NAME=""
 _WORKER_STEP=""
 _WORKER_NODE="" _WORKER_INST="" _WORKER_SSH="" _WORKER_HOST_KEY=""
+_WORKER_SLOT="direct"
 _WORKER_EXPECTED=""
 _WORKER_DEV=false
 
@@ -99,10 +100,9 @@ _cloudify_worker_summary() {
 # a context instance key takes the instance from the line's own report (the
 # child resolved it; the worker never guesses) with the global projection.
 _cloudify_worker_commit_line() {
-    local pkg="${_WORKER_LINE[package]:-}" inst_key values event_values
+    local pkg="${_WORKER_LINE[package]:-}" inst_key values
     [[ -n "$pkg" ]] || { printf 'worker: a result line without a package\n' >&2; return 1; }
     values="$_WORKER_PROJECTION"
-    event_values="$_WORKER_EVENT_PROJECTION"
     if [[ -n "${_CLOUDIFY_CONTEXT[package.$pkg.instance]+x}" ]]; then
         inst_key="${_CLOUDIFY_CONTEXT[package.$pkg.instance]}"
     else
@@ -114,7 +114,6 @@ _cloudify_worker_commit_line() {
             # True off-graph: the parent IS covered by this dispatch's context,
             # the child never was - fail closed (empty values, degraded run).
             values="{}"
-            event_values="{}"
             _WORKER_DEGRADED_RUN=true
         fi
         # A dependency under an UNCOVERED parent (framework-descended: the host
@@ -130,54 +129,39 @@ _cloudify_worker_commit_line() {
     step_id=$(_cloudify_worker_step_of "$_WORKER_LINE_CLASS") || return 1
     phase=$(_cloudify_worker_phase_of "${_WORKER_LINE[action]:-install}") || return 1
 
-    local now outcome="${_WORKER_LINE[outcome]:-failed}"
-    now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    local outcome="${_WORKER_LINE[outcome]:-failed}"
 
-    # Current applied/health pass through unchanged unless this line replaces
-    # them (a failed attempt never overwrites applied; verification not-run
-    # leaves health as it was).
-    local cur_applied cur_health
+    # The lean transition (REDESIGN: no applied wrapper, no last_attempt, no
+    # health object): a successful install or reconfigure replaces confirmed
+    # settings, version and the user-forced list and clears the failure
+    # marker; a passing verify changes nothing; ANY failed operation -
+    # including a first failure with no settings and a failed verify -
+    # preserves confirmed settings and sets failed: true.
+    local cur='null'
     if [[ -f "$record" ]]; then
-        cur_applied=$(jq -c '.applied' "$record" 2>/dev/null) || cur_applied=null
-        cur_health=$(jq -c '.health' "$record" 2>/dev/null) || cur_health=null
-    else
-        cur_applied=null
-        cur_health=null
+        cur=$(jq -c . "$record" 2>/dev/null) || cur='null'
     fi
-
-    local applied
-    if [[ "$outcome" == succeeded ]]; then
-        applied=$(jq -cn --arg ver "${_WORKER_LINE[version]:-unknown}" --arg now "$now" \
-            --argjson values "$values" \
-            '{version: (if $ver == "none" then null else $ver end), at: $now, values: $values, event_id: null}')
-    else
-        applied="$cur_applied"
-    fi
-
-    local health
-    case "${_WORKER_LINE[verification]:-not-run}" in
-        ok) health=$(jq -cn --arg now "$now" '{status: "ok", checked_at: $now, event_id: null}') ;;
-        failed) health=$(jq -cn --arg now "$now" '{status: "degraded", checked_at: $now, event_id: null}') ;;
-        *) health="$cur_health" ;;
-    esac
-    [[ "$health" != "null" ]] || health=$(jq -cn '{status: "unknown", checked_at: null, event_id: null}')
-
     next=$(jq -cn \
-        --arg host "${_WORKER_NODE}${_WORKER_INST:+:$_WORKER_INST}" \
-        --arg host_key "$_WORKER_HOST_KEY" \
-        --arg pkg "$pkg" --arg inst "$inst_key" \
-        --arg app "$_WORKER_APP" --arg flavor "$_WORKER_FLAVOR" --arg name "$_WORKER_NAME" \
-        --arg step "$step_id" \
-        --argjson applied "$applied" --argjson health "$health" \
-        --arg phase "$phase" --arg outcome "$outcome" --arg now "$now" \
-        --argjson requested "$values" \
-        '{schema_version: 1, host: $host, host_key: $host_key,
-          package: $pkg, package_instance: $inst,
-          application: $app, flavor: $flavor, deployment: $name, step_id: $step,
-          revision: 1, applied: $applied,
-          last_attempt: {phase: $phase, outcome: $outcome, at: $now,
-                         event_id: null, requested: $requested},
-          health: $health}') || return 1
+        --argjson cur "$cur" \
+        --arg slot "$_WORKER_SLOT" \
+        --arg ver "${_WORKER_LINE[version]:-unknown}" \
+        --arg phase "$phase" --arg outcome "$outcome" \
+        --argjson values "$values" --argjson forced "$_WORKER_USER_FORCED" '
+        (if $cur == null then {} else $cur end) as $cur
+        | ($phase == "install" or $phase == "reconfigure") as $replaces
+        | (if $outcome == "succeeded" and $replaces
+           then $values
+           else ($cur | del(.schema_version, .target, .revision, .version,
+                             .user_forced, .failed)) end) as $settings
+        | (if $outcome == "succeeded" and $replaces
+           then (if $ver == "none" then null else $ver end)
+           else ($cur.version // null) end) as $version
+        | (if $outcome == "succeeded" and $replaces
+           then $forced else ($cur.user_forced // []) end) as $forced_now
+        | (if $outcome == "failed" then {failed: true} else {} end) as $failmark
+        | ({schema_version: 1, target: $slot, revision: 1,
+            version: $version, user_forced: $forced_now}
+           + $failmark + $settings)') || return 1
 
     ev_body=$(jq -cn \
         --arg tool "cloudify" --arg tool_version "$(cloudify_state_writer_identity | jq -r .tool_version)" --argjson writer "$(cloudify_state_writer_identity | jq -c 'del(.tool_version)')" \
@@ -189,7 +173,7 @@ _cloudify_worker_commit_line() {
         --arg pkg "$pkg" --arg inst "$inst_key" \
         --arg phase "$phase" \
         --arg action "${_WORKER_LINE[action]:-install}" \
-        --argjson values "$event_values" \
+        --argjson values "$values" \
         --argjson exit "${_WORKER_LINE[exit]:-0}" \
         --arg summary "$(_cloudify_worker_summary "$_WORKER_LINE_CLASS")" \
         --arg now "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
@@ -246,7 +230,7 @@ _cloudify_worker_degraded_event() {
     esac
     # Early failures parse no context: the event still carries a values
     # object (empty), never a malformed one.
-    local values="${_WORKER_EVENT_PROJECTION:-}"
+    local values="${_WORKER_PROJECTION:-}"
     [[ -n "$values" ]] || values='{}'
     local body id
     body=$(jq -cn \
@@ -291,6 +275,21 @@ _cloudify_worker_value_names() {
             value.*.source) p="${key#value.}"; printf '%s\n' "${p%.source}" ;;
         esac
     done | sort
+}
+
+# _cloudify_worker_user_forced_json - the JSON array of resolved names whose
+# source is the caller environment (Defaults ladder, ADR-038): the names the
+# environment supplied, recorded in user_forced when the apply succeeds.
+_cloudify_worker_user_forced_json() {
+    local key p
+    for key in "${!_CLOUDIFY_CONTEXT[@]}"; do
+        case "$key" in
+            value.*.source)
+                [[ "${_CLOUDIFY_CONTEXT[$key]}" == "environment" ]] &&
+                    { p="${key#value.}"; printf '%s\n' "${p%.source}"; }
+                ;;
+        esac
+    done | sort | jq -Rsc 'split("\n") | map(select(length > 0))'
 }
 
 # cloudify_worker_process <action> <step-id> <app> <flavor> <name>
@@ -364,7 +363,7 @@ function _cloudify_dispatch_worker() {
     cloudify_state_bindings_render "$app" "$flavor" "$name" "$bindings"
 
     cloudify_worker_process "$action" "$step" "$app" "$flavor" "$name" \
-        "$node" "$inst" "$ssh" "$collection" "$ctx" "$bindings" ${words[@]+"${words[@]}"}
+        "$node" "$inst" "$ssh" "$collection" "$ctx" "$bindings" "$slot" ${words[@]+"${words[@]}"}
     local rc=$?
     rm -f "$bindings"
     return "$rc"
@@ -374,6 +373,7 @@ function cloudify_worker_process() {
     local action="${1:?}" step="${2:?}" app="${3:?}" flavor="${4:?}" name="${5:?}"
     local node="${6:-}" inst="${7:-}" ssh_host="${8:-}"
     local collection="${9:?}" ctx_file="${10:?}" bindings="${11:?}"
+    _WORKER_SLOT="${12:-direct}"
     shift 11 || true
     local -a words=("$@")
 
@@ -415,7 +415,7 @@ function cloudify_worker_process() {
     if [[ -z "$failed" ]]; then
         mapfile -t vnames < <(_cloudify_worker_value_names)
         _WORKER_PROJECTION=$(cloudify_context_values_json "${vnames[@]}")
-        _WORKER_EVENT_PROJECTION=$(cloudify_context_event_values_json "${vnames[@]}")
+        _WORKER_USER_FORCED=$(_cloudify_worker_user_forced_json)
     fi
 
     # 3. The executed-code verdict.

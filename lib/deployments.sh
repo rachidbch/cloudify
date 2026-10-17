@@ -122,7 +122,7 @@ cloudify_deployment_list() {
                     pkgs=$((pkgs + 1))
                     while IFS= read -r n; do
                         [[ -n "$n" ]] && seen_uv["$n"]=1
-                    done < <(jq -r '.applied.values // {} | to_entries[] | select(.value.source == "caller") | .key' "$rec" 2>/dev/null)
+                    done < <(jq -r '.user_forced // [] | .[]' "$rec" 2>/dev/null)
                 done < <(find "$root/$app/$flavor/$dep/packages" -mindepth 3 -maxdepth 3 -name state.json 2>/dev/null | sort)
             done < "$bf"
             rm -f "$bf"
@@ -391,29 +391,22 @@ function cloudify_deployment_migrate() {
 
 #== Applied-state read surface and the unset escape (4.4, ADR-030) ==
 
-# _cloudify_deployment_value_line <name> <value-json> - one screen line of an
-# applied value: secrets as dots plus a short purple fingerprint (never the
-# text), secret references as the reference, literals as their capped source
-# form. The USER marker column prints only for caller-sourced values - the
-# yellow stripe against blank is the screen's staple.
+# _cloudify_deployment_value_line <name> <recorded-form> <forced> - one screen
+# line of a recorded setting: a "****" marker renders as the purple secret
+# marker, an ordinary value as its capped text. The USER marker column prints
+# only for user-forced names - the yellow stripe against blank is the
+# screen's staple.
 _cloudify_deployment_value_line() {
-    local name="$1" v="$2"
-    local source secret redacted digest form display usercol
-    source=$(jq -r .source <<<"$v")
-    secret=$(jq -r .secret <<<"$v")
-    redacted=$(jq -r .redacted <<<"$v")
-    if [[ "$secret" == true && "$redacted" == true ]]; then
-        digest=$(jq -r .digest <<<"$v")          # sha256:<64hex>
-        display="${PURPLE}********  ${digest:7:8}${RESET}"
-    elif [[ "$secret" == true ]]; then
-        display=$(jq -r .reference <<<"$v")
+    local name="$1" v="$2" forced="${3:-}"
+    local display usercol
+    if [[ "$v" == "****" ]]; then
+        display="${PURPLE}********${RESET}"
     else
-        form=$(jq -r .source_form <<<"$v")
-        (( ${#form} > 24 )) && form="${form:0:24}…"
-        display="$form"
+        (( ${#v} > 24 )) && v="${v:0:24}…"
+        display="$v"
     fi
     usercol=""
-    [[ "$source" == caller ]] && usercol="${YELLOW}USER${RESET}"
+    [[ "$forced" == "1" ]] && usercol="${YELLOW}USER${RESET}"
     printf '      %-18s %-32s %b\n' "$name" "$display" "$usercol"
 }
 
@@ -447,7 +440,7 @@ cloudify_deployment_applied_screen() {
         else
             printf '  %s\n' "$display"
         fi
-        local root rec pkg inst version status at line v
+        local root rec pkg inst version status line v
         root=$(cloudify_state_inventory_root "$node" "$instance")
         local -a recs=()
         while IFS= read -r rec; do
@@ -464,33 +457,29 @@ cloudify_deployment_applied_screen() {
             # user-only mode: a package with no pinned values drops out whole.
             if [[ -n "$user_only" ]]; then
                 local caller_count
-                caller_count=$(jq -r '[.applied.values // {} | to_entries[] | select(.value.source == "caller")] | length' "$rec" 2>/dev/null) || caller_count=0
+                caller_count=$(jq -r '[.user_forced // []] | length' "$rec" 2>/dev/null) || caller_count=0
                 (( ${caller_count:-0} > 0 )) || continue
             fi
-            version=$(jq -r '.applied.version // "-"' "$rec" 2>/dev/null)
-            status=$(jq -r '.health.status // "unknown"' "$rec" 2>/dev/null)
-            at=$(jq -r '.applied.at // ""' "$rec" 2>/dev/null)
+            version=$(jq -r '.version // "-"' "$rec" 2>/dev/null)
+            status=$(jq -r 'if .failed == true then "failed" else "recorded" end' "$rec" 2>/dev/null)
+            local rev
+            rev=$(jq -r '.revision // ""' "$rec" 2>/dev/null)
             local sdisp="$status" failinfo=""
-            [[ "$status" == ok ]] && sdisp="${GREEN}ok${RESET}"
-            [[ "$status" == degraded ]] && sdisp="${RED}degraded${RESET}"
-            if [[ "$(jq -r '.last_attempt.outcome // ""' "$rec" 2>/dev/null)" == failed ]]; then
-                local lat
-                lat=$(jq -r '.last_attempt.at // ""' "$rec" 2>/dev/null)
-                failinfo=" ${RED}last try failed ${lat:5:5} ${lat:11:5}${RESET}"
-            fi
-            printf '    %-14s %-10s %-9s %s %s%s\n' "$pkg" "$version" "$sdisp" "${at:5:5}" "${at:11:5}" "$failinfo"
+            [[ "$status" == recorded ]] && sdisp="${GREEN}recorded${RESET}"
+            [[ "$status" == failed ]] && sdisp="${RED}failed${RESET}"
+            printf '    %-14s %-10s %-9s rev %s%s\n' "$pkg" "$version" "$sdisp" "$rev" "$failinfo"
             while IFS= read -r line; do
                 [[ -n "$line" ]] || continue
-                v=$(jq -c --arg k "${line%%$'\t'*}" '.[$k]' <<<"$(jq -c '.applied.values // {}' "$rec")")
-                local vname="${line%%$'\t'*}" vsource
-                vsource=$(jq -r .source <<<"$v")
-                [[ -n "$user_only" && "$vsource" != caller ]] && continue
-                _cloudify_deployment_value_line "$vname" "$v"
-                if [[ "$vsource" == caller ]]; then
+                local vname="${line%%$'\t'*}" vval forced=0
+                vval=$(jq -r --arg k "${line%%$'\t'*}" '.[$k] // empty' "$rec" 2>/dev/null)
+                jq -e --arg k "$vname" '(.user_forced // [] | index($k)) != null' "$rec" >/dev/null 2>&1 && forced=1
+                [[ -n "$user_only" && "$forced" == 0 ]] && continue
+                _cloudify_deployment_value_line "$vname" "$vval" "$forced"
+                if (( forced )); then
                     user_seen[$vname]=1
                     user_pkg[$vname]="$pkg"
                 fi
-            done < <(jq -r '(.applied.values // {}) | to_entries | sort_by(.key)[] | "\(.key)\t\(.value.source)"' "$rec" 2>/dev/null)
+            done < <(jq -r 'to_entries | map(select(.key | test("^[A-Z_]"))) | sort_by(.key)[] | "\(.key)\t\(.value)"' "$rec" 2>/dev/null)
         done
     done < "$bf"
     rm -f "$bf"
@@ -551,11 +540,10 @@ cloudify_deployment_unset() {
         while IFS= read -r rec; do
             [[ -f "$rec" ]] || continue
             local -a hits=()
-            local v vname
+            local vname
             for vname in "${vars[@]}"; do
-                v=$(jq -c --arg k "$vname" '.applied.values[$k] // empty' "$rec" 2>/dev/null) || continue
-                [[ -n "$v" ]] || continue
-                [[ "$(jq -r .source <<<"$v")" == caller ]] && hits+=("$vname")
+                jq -e --arg k "$vname" '(.user_forced // [] | index($k)) != null' "$rec" >/dev/null 2>&1 \
+                    && hits+=("$vname")
             done
             (( ${#hits[@]} > 0 )) || continue
             local pkgname instname
@@ -600,13 +588,13 @@ _cloudify_deployment_unset_record() {
 
     local names_json next values
     names_json=$(printf '%s\n' "${names[@]}" | jq -R . | jq -s .)
+    # The unset removes the forced bit only: the recorded value text stays
+    # exactly what the machine holds.
     next=$(jq --argjson names "$names_json" '
-        reduce $names[] as $k (. ; .applied.values[$k].source = "applied")' "$rec") || return 1
+        .user_forced = ((.user_forced // []) - $names)' "$rec") || return 1
     values=$(jq --argjson names "$names_json" '
-        .applied.values as $vs
-        | reduce $names[] as $k ({} ; .[$k] = ($vs[$k]
-            | {source: "applied", secret, declaration, reference, digest}
-            | . + (if .secret then {} else {source_form: $vs[$k].source_form} end)))' "$rec") || return 1
+        with_entries(select(.key as $k | $names | index($k) != null))' \
+        <(jq -c 'del(.schema_version, .target, .revision, .version, .user_forced, .failed)' "$rec")) || return 1
 
     local ev ev_file next_file
     ev=$(jq -cn \

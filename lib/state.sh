@@ -648,37 +648,25 @@ function cloudify_state_event_create() {
     done
 }
 
-# _cloudify_state_event_refs <record> - the event ids one record links to
-# (applied, last attempt, health; absent when the object is null). One jq read.
-function _cloudify_state_event_refs() {
-    jq -r '.applied.event_id // empty, (.last_attempt | if . then .event_id else empty end), .health.event_id // empty' "$1"
-}
-
-# cloudify_state_inventory_check <record> - subject-level gap check: rc 0 when
-# the record is schema-valid and every referenced event is committed; rc 2
-# names the first gap; rc 1 when the record is missing or invalid. Read-only.
+# cloudify_state_inventory_check <record> - subject-level gap check: rc 0
+# when the record is schema-valid; rc 1 when the record is missing or
+# invalid. Read-only. (Record-to-event linkage lives in the event stream's
+# revisions, not in the lean record; a state-check command compares them.)
 function cloudify_state_inventory_check() {
-    local record="${1:?}" eid
+    local record="${1:?}"
     [[ -f "$record" ]] || { printf 'inventory check: no record at %s\n' "$record"; return 1; }
     cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$record" >/dev/null \
         || { printf 'inventory check: %s is not a valid record\n' "$record"; return 1; }
-    while IFS= read -r eid; do
-        [[ -n "$eid" ]] || continue
-        if [[ ! -f "$(cloudify_state_events_root)/${eid:0:4}-${eid:4:2}/$eid.json" ]]; then
-            printf 'inventory check: %s references missing event %s\n' "$record" "$eid"
-            return 2
-        fi
-    done < <(_cloudify_state_event_refs "$record")
     return 0
 }
 
 # cloudify_state_inventory_apply <record-path> <event-body> <next-capture> -
-# the event-first inventory transition. Reads and validates the current record
-# (conceptual revision 0 when absent), refuses a record pointing at a missing
-# event, stamps the next capture (revision +1; the new event id on every object
-# the transition changed), validates event and capture, hard-links the event,
-# then atomically replaces the record and re-reads it before reporting
-# success. Prints the committed event id.
+# the event-first inventory transition. Validates the current record
+# (conceptual revision 0 when absent), stamps the next capture (revision +1),
+# validates event and capture, hard-links the event, then atomically replaces
+# the record and re-reads it before reporting success. Prints the committed
+# event id. The lean record carries no event ids: the event stream's
+# previous/resulting revisions tie events to records.
 function cloudify_state_inventory_apply() {
     local record="${1:?}" event_body="${2:?}" next="${3:?}"
     command -v jq >/dev/null 2>&1 ||
@@ -687,19 +675,11 @@ function cloudify_state_inventory_apply() {
         die "inventory: the schema tree is missing under '$CLOUDIFY_SCHEMA_DIR'."
     [[ -f "$event_body" && -f "$next" ]] || die "inventory: event body or next capture missing."
 
-    local cur_rev=0 cur_empty=true
+    local cur_rev=0
     if [[ -f "$record" ]]; then
         cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$record" >/dev/null \
             || die "inventory: '$record' is not a valid record; refusing to mutate."
         cur_rev=$(jq -r '.revision' "$record")
-        cur_empty=false
-        local eid
-        while IFS= read -r eid; do
-            [[ -n "$eid" ]] || continue
-            if [[ ! -f "$(cloudify_state_events_root)/${eid:0:4}-${eid:4:2}/$eid.json" ]]; then
-                die "inventory: '$record' references missing event '$eid'; verify before mutating."
-            fi
-        done < <(_cloudify_state_event_refs "$record")
     fi
     local next_rev=$((cur_rev + 1))
 
@@ -713,17 +693,7 @@ function cloudify_state_inventory_apply() {
     mkdir -p "$ev_dir"
     ev_tmp=$(mktemp "$ev_dir/.event-XXXXXX.json")
 
-    jq --slurpfile cur <(if [[ "$cur_empty" == true ]]; then echo '{}'; else cat "$record"; fi) \
-        --argjson rev "$next_rev" --arg eid "$id" '
-        . as $next | $cur[0] as $cur
-        | .revision = $rev
-        | .applied = (if $next.applied == $cur.applied then $next.applied
-                      else (if $next.applied == null then null else ($next.applied | .event_id = $eid) end) end)
-        | .last_attempt = (if $next.last_attempt == $cur.last_attempt then $next.last_attempt
-                      else (if $next.last_attempt == null then null else ($next.last_attempt | .event_id = $eid) end) end)
-        | .health = (if $next.health == $cur.health then $next.health
-                      else (if $next.health == null then null else ($next.health | .event_id = $eid) end) end)
-    ' "$next" > "$cap_tmp" \
+    jq --argjson rev "$next_rev" '.revision = $rev' "$next" > "$cap_tmp" \
         || { rm -f "$cap_tmp" "$ev_tmp"; die "inventory: the next capture is not valid JSON."; }
     if ! cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$cap_tmp" >/dev/null; then
         rm -f "$cap_tmp" "$ev_tmp"
@@ -752,10 +722,9 @@ function cloudify_state_inventory_apply() {
     fi
     sync -d "$workdir" 2>/dev/null || true
 
-    local got_rev got_id
+    local got_rev
     got_rev=$(jq -r '.revision' "$record")
-    got_id=$(jq -r '.applied.event_id // .last_attempt.event_id // .health.event_id' "$record")
-    [[ "$got_rev" == "$next_rev" && ("$got_id" == "$id" || -f "$(cloudify_state_events_root)/${id:0:4}-${id:4:2}/$id.json") ]] \
+    [[ "$got_rev" == "$next_rev" && -f "$(cloudify_state_events_root)/${id:0:4}-${id:4:2}/$id.json" ]] \
         || die "inventory: the committed record does not read back revision $next_rev with event $id."
     printf '%s\n' "$id"
 }

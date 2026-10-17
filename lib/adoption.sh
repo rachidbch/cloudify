@@ -8,8 +8,8 @@
 #   1. one adoption event per package (writer: operator, command_kind: adopt,
 #      no commit - adoption pins no commit) through the one inventory
 #      transition (cloudify_state_inventory_apply);
-#   2. the package record beside it (applied values with provenance,
-#      last_attempt preserved-or-null, health unknown);
+#   2. the package record beside it (lean: inferred settings as root scalars,
+#      observed version, no user_forced, no failure marker);
 #   3. the manifest: created unproved when absent (null commit beside the
 #      development override), its status derived from the events -> adopted;
 #   4. the seeded verify per package - a read-only dispatch under the
@@ -54,8 +54,7 @@ EOF
 
 # _cloudify_adoption_facts <pkg>... - read the stdin facts into per-package
 # state: _ADOPT_VERSION[pkg], and one JSON object per value fact appended to
-# per-package accumulator files (record shape and event shape differ only in
-# the redacted field, so both are emitted here).
+# per-package accumulator files (one lean flat value map per package).
 _cloudify_adoption_facts() {
     local -a pkgs=("$@")
     local kind pkg rest a b c line
@@ -94,26 +93,21 @@ _cloudify_adoption_facts() {
                     *) die "adoption: source '$c' for '$a' is not a provenance label (caller, deployment, application, package, global, recipe)." ;;
                 esac
                 value_files[$pkg]="${value_files[$pkg]:-$(mktemp "$_ADOPT_VALUES_DIR/v-XXXXXX")}"
-                jq -cn --arg n "$a" --arg f "$b" --arg s "$c" \
-                    '{($n): {source: $s, secret: false, declaration: "none",
-                             source_form: $f, reference: null, digest: null, redacted: false}}' \
+                jq -cn --arg n "$a" --arg f "$b" '{($n): $f}' \
                     >> "${value_files[$pkg]}" ||
                     die "adoption: cannot record the fact for '$a'."
                 ;;
             *) die "adoption: unknown fact kind '$kind' (version | value)." ;;
         esac
     done
-    local p vfile_rec vfile_ev
+    local p vfile_rec
     for p in ${pkgs[@]+"${pkgs[@]}"}; do
         [[ -n "${have_version[$p]+x}" ]] ||
             die "adoption: package '$p' has no version fact."
         value_files[$p]="${value_files[$p]:-$(mktemp "$_ADOPT_VALUES_DIR/v-XXXXXX")}"
         vfile_rec="${value_files[$p]}.record"
-        vfile_ev="${value_files[$p]}.event"
-        # Both shapes per package: the record's applied values (with redacted)
-        # and the event's value metadata (the schema allows no redacted there).
+        # One lean flat map per package: name -> recorded source form.
         jq -s 'add' "${value_files[$p]}" > "$vfile_rec"
-        jq -s 'add | map_values(del(.redacted))' "${value_files[$p]}" > "$vfile_ev"
         _ADOPT_VALUE_FILES+=("$p|$vfile_rec|$vfile_ev")
     done
 }
@@ -232,7 +226,7 @@ function cloudify_adoption_record() {
             --argjson writer "$writer_json" \
             --arg app "$app" --arg flavor "$flavor" --arg name "$name" \
             --arg host "$host" --arg host_key "$host_key" \
-            --arg pkg "$p" --argjson values "$(cat "$vfile_ev")" \
+            --arg pkg "$p" --argjson values "$(cat "$vfile_rec")" \
             --arg summary "$notes" \
             '{schema_version: 1, at: $at, tool: "cloudify", tool_version: $tool, writer: $writer,
               run_id: null, step_id: "adopt",
@@ -243,26 +237,18 @@ function cloudify_adoption_record() {
               phase: null, command_kind: "adopt", values: $values,
               outcome: {exit_status: 0, summary: $summary}}' > "$ev_file" ||
             die "adoption: cannot render the event body for '$p'."
-        # The next capture: applied values carry the operator's inference;
-        # last_attempt is preserved on re-adoption and null on a fresh record;
-        # health resets to unknown - the seeded verify re-observes it.
+        # The next capture is the lean record: the operator's inferred settings
+        # as root scalars, the observed version, no user_forced (adoption
+        # recorded no environment supply) and no failure marker - the seeded
+        # verify re-observes and a later failed operation marks the record.
         rec_dir=$(cloudify_state_record_dir "$node" "$inst" "$app" "$flavor" "$name" "$p" default)
         rec="$rec_dir/state.json"
-        local last_attempt='null'
-        [[ -f "$rec" ]] && last_attempt=$(jq -c '.last_attempt' "$rec")
         local version_json='null'
         [[ "${_ADOPT_VERSION[$p]}" != "unknown" ]] && version_json="\"${_ADOPT_VERSION[$p]}\""
-        jq -cn --arg host "$host" --arg host_key "$host_key" \
-            --arg pkg "$p" --arg app "$app" --arg flavor "$flavor" --arg name "$name" \
-            --arg at "$now" --argjson version "$version_json" \
-            --argjson last_attempt "$last_attempt" \
-            --argjson values "$(cat "$vfile_rec")" \
-            '{schema_version: 1, host: $host, host_key: $host_key,
-              package: $pkg, package_instance: "default",
-              application: $app, flavor: $flavor, deployment: $name, step_id: "adopt",
-              applied: {version: $version, at: $at, values: $values},
-              last_attempt: $last_attempt,
-              health: {status: "unknown", checked_at: null, event_id: null}}' > "$next_file" ||
+        jq -cn --argjson version "$version_json" --argjson values "$(cat "$vfile_rec")" \
+            '{schema_version: 1, target: "direct", revision: 1,
+              version: $version,
+              user_forced: []} + $values' > "$next_file" ||
             die "adoption: cannot render the record for '$p'."
         eid=$(cloudify_state_inventory_apply "$rec" "$ev_file" "$next_file") ||
             die "adoption: the inventory transition for '$p' failed; nothing half-landed."

@@ -10,7 +10,8 @@
 #     flavor (never the `_direct` namespace);
 #   - a candidate matches when its recorded bindings equal the run's resolved
 #     bindings, its recorded (package, instance) inventory set equals the
-#     run's covered set, and every record's `last_attempt.requested` values
+#     run's covered set, and every record's recorded settings compared by
+#     name set, non-secret scalars, and secret-name markers
 #     equal the run's resolved value source forms (requested values are
 #     recorded even when `applied` is null, so a failed first install still
 #     matches);
@@ -128,7 +129,7 @@ function cloudify_state_match_deployment() {
         candidates+=("$cname")
     done < <(cloudify_state_list_manifests)
 
-    local name rec_req pkg_root cand_bindings_sorted rel rec match
+    local name rec_values pkg_root cand_bindings_sorted rel rec match
     for name in ${candidates[@]+"${candidates[@]}"}; do
         # Bindings are part of the match: same values, different hosts, no match.
         cand_bindings_sorted=$(cloudify_manifest_bindings "$app" "$flavor" "$name" | sort) || continue
@@ -146,15 +147,21 @@ function cloudify_state_match_deployment() {
         [[ "$(printf '%s\n' ${recorded[@]+"${recorded[@]}"} | sort)" \
             == "$(printf '%s\n' "${covered[@]}" | sort)" ]] || continue
 
-        # Every recorded requested value must equal the run's projection.
+        # Every recorded setting must equal the run's projection: same name
+        # set; non-secret scalars equal; a "****" on either side proves only
+        # the name (two secret markers are unrelated facts, never compared).
         match=true
         for rel in "${covered[@]}"; do
             pkg="${rel%%$'\t'*}"
             cinst="${rel##*$'\t'}"
             rec="$pkg_root/$pkg/$cinst/state.json"
-            rec_req=$(jq -c '.last_attempt.requested // empty' "$rec" 2>/dev/null) || { match=false; break; }
-            [[ -n "$rec_req" ]] || { match=false; break; }
-            jq -e --argjson a "$run_values" --argjson b "$rec_req" '$a == $b' >/dev/null 2>&1 <<< "$rec_req" \
+            rec_values=$(jq -c 'del(.schema_version, .target, .revision, .version,
+                                 .user_forced, .failed)' "$rec" 2>/dev/null) || { match=false; break; }
+            [[ -n "$rec_values" ]] || { match=false; break; }
+            jq -e --argjson a "$run_values" --argjson b "$rec_values" '
+                ($a | keys | sort) == ($b | keys | sort)
+                and all ($a | keys[];
+                     $a[$.] == "****" or $b[$.] == "****" or $a[$.] == $b[$.])' >/dev/null 2>&1 \
                 || { match=false; break; }
         done
         [[ "$match" == true ]] || continue

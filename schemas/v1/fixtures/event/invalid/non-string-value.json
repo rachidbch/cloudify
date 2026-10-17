@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "event_id": "20260923T190001Z-0000000c",
+  "at": "2026-09-23T19:00:01Z",
+  "tool": "cloudify",
+  "tool_version": "t",
+  "writer": { "kind": "machine", "pid": 4242, "boot_id": "b", "pid_start": 1 },
+  "run_id": null,
+  "step_id": null,
+  "application": null,
+  "flavor": null,
+  "deployment": null,
+  "application_commit": null,
+  "subject": { "kind": "package", "host": "cloudai:affine", "host_key": "ivps:cloudai", "package": "affine", "package_instance": "default" },
+  "phase": "install",
+  "command_kind": "install",
+  "values": { "AFFINE_PORT": 8080 },
+  "outcome": { "exit_status": 0, "summary": "ok" },
+  "state": { "previous_revision": 0, "resulting_revision": 1 }
+}

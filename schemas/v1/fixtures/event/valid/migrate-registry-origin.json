@@ -25,14 +25,7 @@
   "phase": null,
   "command_kind": "migrate-registry",
   "values": {
-    "CLOUDIFY_DOCKER_DRIVER": {
-      "source": "migration",
-      "secret": false,
-      "declaration": "none",
-      "source_form": "overlay2",
-      "reference": null,
-      "digest": null
-    }
+    "CLOUDIFY_DOCKER_DRIVER": "overlay2"
   },
   "outcome": {
     "exit_status": null,

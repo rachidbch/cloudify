@@ -24,14 +24,7 @@
   "phase": null,
   "command_kind": "adopt",
   "values": {
-    "AFFINE_PORT": {
-      "source": "recipe",
-      "secret": false,
-      "declaration": "none",
-      "reference": null,
-      "digest": null,
-      "source_form": "8787"
-    }
+    "AFFINE_PORT": "8787"
   },
   "outcome": {
     "exit_status": 0,

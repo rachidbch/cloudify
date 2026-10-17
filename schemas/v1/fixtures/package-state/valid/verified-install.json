@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "target": "web",
+  "revision": 3,
+  "version": "1.2.3",
+  "user_forced": ["DB_USER"],
+  "DB_USER": "guacamole",
+  "DB_PASSWORD": "****",
+  "LISTEN_PORT": "8080"
+}

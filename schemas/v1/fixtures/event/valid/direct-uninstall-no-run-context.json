@@ -25,14 +25,7 @@
   "phase": "teardown",
   "command_kind": "uninstall",
   "values": {
-    "CLOUDIFY_DOCKER_DRIVER": {
-      "source": "package",
-      "secret": false,
-      "declaration": "none",
-      "reference": null,
-      "digest": null,
-      "source_form": "value-of-none"
-    }
+    "CLOUDIFY_DOCKER_DRIVER": "value-of-none"
   },
   "outcome": {
     "exit_status": 0,

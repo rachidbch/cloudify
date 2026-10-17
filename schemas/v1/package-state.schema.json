@@ -1,115 +1,61 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cloudify.invalid/schemas/v1/package-state.schema.json",
-  "title": "Cloudify physical package state (schema_version 1)",
-  "description": "The last confirmed observation of one package instance on one host. One record exists per host, package, and package instance even when several deployments use that installation; active deployment claims live inside it.",
+  "title": "Cloudify physical package state (schema_version 1, lean record)",
+  "description": "The last confirmed observation of one package instance for one deployment on one host. The inventory path carries the application, flavor, deployment, package, package-instance, and host identities, so the record duplicates none of them. Applied settings are root scalars; classified secret names hold exactly '****' and never a value, digest, provider location, or redacted flag. A failed operation preserves confirmed settings and sets failed: true; a successful install or reconfigure replaces settings and clears it; a passing verify changes neither.",
   "type": "object",
   "required": [
     "schema_version",
-    "host",
-    "host_key",
-    "package",
-    "package_instance",
-    "application",
-    "flavor",
-    "deployment",
-    "step_id",
+    "target",
     "revision",
-    "applied",
-    "last_attempt",
-    "health"
+    "version",
+    "user_forced"
   ],
-  "additionalProperties": false,
   "properties": {
     "schema_version": {
       "description": "Artifact schema version.",
       "type": "integer",
       "const": 1
     },
-    "host": {
-      "description": "Operator-facing host address in --on grammar: node, node:instance, or the ssh host.",
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^[^/\\x00-\\x1f\\x7f]+$"
-    },
-    "host_key": {
-      "description": "Durable host identity: ivps:<node-id> or ivps:<node-id>:<instance-id>. External ssh-sha256 keys arrive in Phase 5.",
-      "type": "string",
-      "pattern": "^ivps:[^/\\x00-\\x1f\\x7f]+(:[^/\\x00-\\x1f\\x7f]+)?$"
-    },
-    "package": {
-      "description": "Package name as it appears under pkg/.",
-      "type": "string",
-      "maxLength": 255,
-      "pattern": "^[a-z0-9][a-z0-9._-]*$"
-    },
-    "package_instance": {
-      "description": "Package instance key: default, or the value of the recipe-declared instance variable. Restricted to the space-free result-line charset.",
-      "allOf": [
-        {
-          "$ref": "#/$defs/component"
-        },
-        {
-          "pattern": "^[A-Za-z0-9._+~:-]+$"
-        }
-      ]
+    "target": {
+      "description": "Runbook slot that owns this record; an _direct record uses 'direct'.",
+      "$ref": "#/$defs/component"
     },
     "revision": {
       "description": "Monotonically increasing subject revision; conceptual revision 0 is the absence of the record. It changes only under the host mutation lock and only together with an event.",
       "type": "integer",
       "minimum": 1
     },
-    "applied": {
-      "description": "The last successful install or reconfigure result this deployment applied. A failed attempt never overwrites it.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/applied"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "last_attempt": {
-      "description": "The most recent package operation this deployment tried, successful or not. Null only for a migrated record.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/attempt"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "health": {
-      "description": "The last verification observation for this deployment and package instance. It never changes applied values.",
-      "$ref": "#/$defs/health"
-    },
-    "application": {
-      "description": "Deployment identity: application of the deployment that owns this record.",
-      "$ref": "#/$defs/component"
-    },
-    "flavor": {
-      "description": "Deployment identity: flavor of the deployment that owns this record.",
-      "$ref": "#/$defs/component"
-    },
-    "deployment": {
-      "description": "Deployment identity: deployment of the deployment that owns this record.",
-      "$ref": "#/$defs/component"
-    },
-    "step_id": {
-      "description": "Stable runbook step ID that owns the work, or null only for a migrated record.",
+    "version": {
+      "description": "Installed package version reported by the recipe, or null when the recipe reports none or a migration proves none.",
       "anyOf": [
         {
           "type": "string",
-          "maxLength": 255,
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          "pattern": "^[A-Za-z0-9._+~:-]+$"
         },
         {
           "type": "null"
         }
       ]
+    },
+    "failed": {
+      "description": "Present only when the last operation failed; a failed operation preserves confirmed settings. Cleared by a successful install or reconfigure, never by a passing verify.",
+      "const": true
+    },
+    "user_forced": {
+      "description": "Names supplied by the environment when last successfully applied; a name here re-supplies from the environment and outranks defaults at reconfigure until 'deployment unset' releases it.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/value_name"
+      },
+      "uniqueItems": true
     }
+  },
+  "propertyNames": {
+    "pattern": "^(schema_version|target|revision|version|failed|user_forced)$|^[A-Z_][A-Z0-9_]*$"
+  },
+  "additionalProperties": {
+    "type": "string"
   },
   "$defs": {
     "component": {
@@ -139,328 +85,10 @@
         }
       ]
     },
-    "utc": {
-      "description": "UTC timestamp, second precision and trailing Z.",
+    "value_name": {
+      "description": "One declared value name; the uppercase namespace that separates settings from lowercase metadata keys.",
       "type": "string",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
-    },
-    "value": {
-      "description": "One declared value held in its comparable source form. A non-secret value keeps its source form, a secret reference keeps the reference, and a literal secret keeps only redaction plus a digest so the plaintext never reaches persisted state.",
-      "type": "object",
-      "required": [
-        "source",
-        "secret",
-        "declaration",
-        "source_form",
-        "reference",
-        "digest",
-        "redacted"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "secret": {
-          "description": "Explicit secret declaration for this value name.",
-          "type": "boolean"
-        },
-        "declaration": {
-          "description": "How the secret classification was obtained. heuristic marks a value classified only by the defense-in-depth name heuristic.",
-          "enum": [
-            "explicit",
-            "heuristic",
-            "none"
-          ]
-        },
-        "source_form": {
-          "description": "The source-form value: a literal, an @@ escaped literal, or a @base64: encoded literal. Null when the plaintext is deliberately not persisted.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "reference": {
-          "description": "The @<backend>:<locator> secret reference. Secret references compare by this field.",
-          "type": [
-            "string",
-            "null"
-          ],
-          "pattern": "^@[A-Za-z0-9_-]+:.+$"
-        },
-        "digest": {
-          "description": "sha256 digest of a literal secret. Literal secrets compare by this field because the plaintext is absent.",
-          "type": [
-            "string",
-            "null"
-          ],
-          "pattern": "^sha256:[0-9a-f]{64}$"
-        },
-        "redacted": {
-          "description": "True when only a digest of the value is held.",
-          "type": "boolean"
-        },
-        "source": {
-          "description": "Resolution source of the value at apply time (ADR-030). caller marks a set value - one the operator supplied directly; it outranks the stores at reconfigure until unset. applied marks a value whose caller pin was released by `deployment unset`: it stays in effect on the machine, but the ladder (store, then recipe default) governs the next reconfigure.",
-          "enum": [
-            "caller",
-            "deployment",
-            "application",
-            "package",
-            "global",
-            "recipe",
-            "migration",
-            "applied"
-          ]
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "declaration": {
-                "const": "none"
-              }
-            },
-            "required": [
-              "declaration"
-            ]
-          },
-          "then": {
-            "properties": {
-              "secret": {
-                "const": false
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "declaration": {
-                "const": "heuristic"
-              }
-            },
-            "required": [
-              "declaration"
-            ]
-          },
-          "then": {
-            "properties": {
-              "secret": {
-                "const": true
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "secret": {
-                "const": false
-              }
-            },
-            "required": [
-              "secret"
-            ]
-          },
-          "then": {
-            "properties": {
-              "redacted": {
-                "const": false
-              },
-              "reference": {
-                "type": "null"
-              },
-              "digest": {
-                "type": "null"
-              },
-              "source_form": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "secret": {
-                "const": true
-              },
-              "redacted": {
-                "const": false
-              }
-            },
-            "required": [
-              "secret",
-              "redacted"
-            ]
-          },
-          "then": {
-            "properties": {
-              "reference": {
-                "type": "string"
-              },
-              "digest": {
-                "type": "null"
-              },
-              "source_form": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "secret": {
-                "const": true
-              },
-              "redacted": {
-                "const": true
-              }
-            },
-            "required": [
-              "secret",
-              "redacted"
-            ]
-          },
-          "then": {
-            "properties": {
-              "reference": {
-                "type": "null"
-              },
-              "digest": {
-                "type": "string"
-              },
-              "source_form": {
-                "type": "null"
-              }
-            }
-          }
-        }
-      ]
-    },
-    "values": {
-      "description": "Declared value names mapped to their comparable forms.",
-      "type": "object",
-      "propertyNames": {
-        "pattern": "^[A-Z_][A-Z0-9_]*$"
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/value"
-      }
-    },
-    "applied": {
-      "description": "The last successful result.",
-      "type": "object",
-      "required": [
-        "version",
-        "at",
-        "event_id",
-        "values"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "at": {
-          "description": "UTC time of the successful operation.",
-          "$ref": "#/$defs/utc"
-        },
-        "event_id": {
-          "description": "Event that recorded this applied state.",
-          "type": "string",
-          "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
-        },
-        "values": {
-          "description": "Source-form values that were successfully applied.",
-          "$ref": "#/$defs/values"
-        },
-        "version": {
-          "description": "Installed package version reported by the recipe, or null when the recipe reports none or a migration proves none.",
-          "anyOf": [
-            {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9._+~:-]+$"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
-    "attempt": {
-      "description": "The most recent attempt, recorded whether it succeeded or failed.",
-      "type": "object",
-      "required": [
-        "phase",
-        "outcome",
-        "at",
-        "event_id",
-        "requested"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "phase": {
-          "description": "Selected application phase that produced this attempt.",
-          "enum": [
-            "install",
-            "reconfigure",
-            "verify",
-            "teardown"
-          ]
-        },
-        "outcome": {
-          "description": "Attempt outcome. An abandoned attempt is classified as interrupted in its run record.",
-          "enum": [
-            "succeeded",
-            "failed"
-          ]
-        },
-        "at": {
-          "description": "UTC time of the attempt.",
-          "$ref": "#/$defs/utc"
-        },
-        "event_id": {
-          "description": "Event that recorded this attempt.",
-          "type": "string",
-          "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
-        },
-        "requested": {
-          "description": "Metadata for the values the attempt requested. Literal secrets appear only as digests.",
-          "$ref": "#/$defs/values"
-        }
-      }
-    },
-    "health": {
-      "description": "The last verification observation for this package instance.",
-      "type": "object",
-      "required": [
-        "status",
-        "checked_at",
-        "event_id"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "status": {
-          "description": "Verification result. unknown means no reliable observation is available.",
-          "enum": [
-            "ok",
-            "degraded",
-            "unknown"
-          ]
-        },
-        "checked_at": {
-          "description": "UTC time of the verification, or null when never verified.",
-          "type": [
-            "string",
-            "null"
-          ],
-          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
-        },
-        "event_id": {
-          "description": "Event that recorded this verification observation.",
-          "type": "string",
-          "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
-        }
-      }
+      "pattern": "^[A-Z_][A-Z0-9_]*$"
     }
   }
 }

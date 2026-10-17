@@ -1,16 +1,1 @@
-{
-  "schema_version": 1,
-  "host": "cloudai:cloudify",
-  "host_key": "ivps:cloudai:cloudify",
-  "package": "docker",
-  "package_instance": "default",
-  "revision": -1,
-  "applied": null,
-  "last_attempt": null,
-  "health": {
-    "status": "unknown",
-    "checked_at": null,
-    "event_id": null
-  },
-  "claims": []
-}
+{ "schema_version": 1, "target": "web", "revision": -2, "version": null, "user_forced": [] }

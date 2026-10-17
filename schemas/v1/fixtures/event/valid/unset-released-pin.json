@@ -26,13 +26,7 @@
   "phase": null,
   "command_kind": "unset",
   "values": {
-    "TOKEN": {
-      "source": "applied",
-      "secret": true,
-      "declaration": "explicit",
-      "reference": null,
-      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    }
+    "TOKEN": "****"
   },
   "outcome": {
     "exit_status": 0,

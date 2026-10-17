@@ -4,7 +4,7 @@ Status: Phase 1 freeze from `plans/archived/state-model-v2-attempt1.md` tasks 1.
 Design authority: `REDESIGN.md`.
 Decisions: `ADR.md` ADR-022 and ADR-023.
 These files are the contract for the v2 machine-owned artifacts.
-`lib/state.sh` writes and validates `deployment-manifest.schema.json`; package-state, run and event writers do not exist yet.
+`lib/state.sh` writes and validates the deployment manifest, package state, runs, and events.
 
 ## Files
 
@@ -29,12 +29,12 @@ The field is required, not optional, so a reader never has to guess an unversion
 `deployment-manifest.schema.json`: `schema_version`, `application`, `flavor`, `deployment`, `application_commit` (40-hex or null), `development_override` (true whenever the commit is null), `status` (null, or `adopted`, `installed`, `reconfigured`, `verified`, `degraded` - the kind of the last successful state-relevant event), `created_at`, `bindings` (per slot: `address`, `node`, `instance`, `ssh_host`), `last_run_id`, `last_event_id`.
 Applied package values are deliberately absent, and `additionalProperties: false` makes an accidental `applied_values` field a validation failure.
 
-`package-state.schema.json`: `schema_version`, `host`, `host_key` (`ivps:<node-id>` or `ivps:<node-id>:<instance-id>`; `ssh-sha256:` arrives in Phase 5), `package`, `package_instance` (space-free result-line charset), `application`, `flavor`, `deployment`, `step_id` (null only for a migrated record), `revision` (minimum 1; conceptual revision 0 is absence), `applied`, `last_attempt`, `health`.
-`applied` holds `version` (the installed version in the result-line charset, or null when the recipe reports none or a migration proves none), `at`, `event_id` (non-null), and `values`. It holds no commit: recipe provenance lives at the deployment level.
-`last_attempt` holds `phase`, `outcome`, `at`, `event_id` (non-null), and `requested`; the whole field is null only for a migrated record.
-`health` holds `status`, `checked_at`, and `event_id` (non-null).
+`package-state.schema.json` (lean record): `schema_version`, `target` (the runbook slot; `direct` for an `_direct` record), `revision` (minimum 1; conceptual revision 0 is absence), `version` (result-line charset or null), `user_forced` (array of declared value names), and optional `failed` (present only as `true`).
+Every other root key is one declared value name (`^[A-Z_][A-Z0-9_]*$`) holding its recorded form as a native JSON string; multiline and empty strings are ordinary values.
+A classified secret name holds exactly `****`, never a value, digest, provider location, or `redacted` flag.
+The inventory path carries the application, flavor, deployment, package, package-instance, and host identities, so the record duplicates none of them: there are no `host`, `host_key`, `package`, `package_instance`, `application`, `flavor`, `deployment`, or `step_id` fields.
+There is no `applied` wrapper, `last_attempt`, or `health` object: a failed operation preserves confirmed settings and sets `failed: true`, including a first failure with no applied settings; a successful install or reconfigure replaces confirmed settings and clears the marker; a passing verify changes neither applied values nor an existing marker.
 There is no claims array: the guard derives reliance by scanning the node's inventory tree.
-Each value entry holds `source` (the resolution source at apply time; `caller` marks a set value, ADR-030), `secret` (the explicit declaration), `declaration` (`explicit`, `heuristic`, `none`), `source_form`, `reference`, `digest`, and `redacted`.
 
 `run.schema.json`: `schema_version`, `run_id`, `application`, `flavor`, `deployment`, `application_commit` (40-hex or null), `development_override` (true whenever the commit is null), `phases`, `status`, `started_at`, `ended_at`, `writer`, `interrupted`.
 No resolved value and no automatic step output exists in a run record.
@@ -45,7 +45,7 @@ No resolved value and no automatic step output exists in a run record.
 `application_commit` null with an application tuple present requires `development_override: true`; `phase` is null only for `migrate-registry`, whose `origin` is `old-registry`.
 `writer` is `host`, `boot_id`, `pid`, `process_start_ticks` (machine, optional `kind: "machine"`; absence of kind means machine) or `kind: "operator"` + `name` (adoption: names who inferred, never which process ran).
 `subject` holds `kind` (`package` or `deployment`), `host`, `host_key`, `package`, and `package_instance`.
-`values` maps a value name to `source`, `secret`, `declaration`, `reference`, and `digest` and carries no plaintext form at all.
+`values` maps a value name to its recorded form: a non-secret value carries its recorded source form as a native string, and a classified secret name holds exactly `****`; no value, digest, or provider location exists in an event.
 `outcome` holds `exit_status` and a `summary` bounded to 512 characters without a newline.
 `state` holds `previous_revision` and `resulting_revision`.
 No `stdout`, `stderr`, rendered payload, or literal secret field exists, and `additionalProperties: false` makes one a validation failure.
@@ -71,17 +71,17 @@ A `var.<NAME>` field is observation data for migration, never intent and never a
 
 ## Migration mapping rules for one stored value
 
-A raw stored value that begins with `@<backend>:` is a secret reference: `secret: true`, `declaration: explicit`, `reference` and `source_form` both hold the reference string, `redacted: false`, `digest: null`.
+A raw stored value that begins with `@<backend>:` is a secret reference: the provider location is never persisted, so the conversion records the name with `****`.
 
-A raw stored value whose name matches the heuristic (`TOKEN`, `KEY`, `PASSWORD`, `SECRET`) and that is not a reference is a literal secret: migration computes `digest: sha256(<plaintext>)`, drops the plaintext, and writes `secret: true`, `declaration: heuristic`, `source_form: null`, `redacted: true`.
+A raw stored value classified secret by an explicit `secret NAME` marker or by an exact uppercase name ending (`_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD`; Secret markers with suffixes, ADR-042) is recorded as `****`; the plaintext is dropped and no digest is computed.
 
-A raw stored value that begins with `@@` is an escaped literal and keeps its source form with `secret: false` unless the name heuristic applies.
+A raw stored value that begins with `@@` is an escaped literal; its unescaped form is classified by the same marker-and-suffix rules: a secret becomes `****`, a non-secret keeps its source form.
 
-Any other raw stored value is a non-secret literal: `secret: false`, `declaration: none`, `source_form: <raw>`, `redacted: false`.
+Any other raw stored value is a non-secret literal recorded as-is.
 
 The package instance is `default` for every existing record, because the current format has no instance key.
 
-`installed_at` becomes `applied.at`, `version` becomes `applied.version`, and the single-string deployment ID is resolved only through the operator-supplied application and flavor mapping; the old record never fabricates a reliance by itself.
+`installed_at` has no slot in the lean record and is not carried; the conversion itself is recorded by its `migrate-registry` event. `version` becomes `version`, and the single-string deployment ID is resolved only through the operator-supplied application and flavor mapping; the old record never fabricates a reliance by itself.
 
 ## What cannot be derived from the current formats
 
@@ -90,7 +90,7 @@ The package instance is `default` for every existing record, because the current
 3. Target bindings for a deployment whose runs left no snapshot, because the newest snapshot is the only recorded source of `target.*`.
 4. Writer identity, selected phases, run IDs, and event IDs of a past execution, because a snapshot has none of them and a missing record must not be invented.
 5. The durable `host_key` of an external host, because the fallback bucket is keyed by the mutable SSH alias and the accepted host-key fingerprint is not recorded anywhere yet.
-6. The secret classification of a stored value, because current declaration files carry no secret marker; the heuristic rule above is the only available signal.
+6. The secret classification of a stored value whose name carries no marker or listed ending and whose declaration file lacks a `secret NAME` marker: the classification is then `none` and the value is recorded as an ordinary literal.
 7. Event history, because current logs carry raw output and are not event records.
 8. `output.*` lines, because they were never replay inputs and `REDESIGN.md` forbids copying them into runs or events.
 
@@ -119,7 +119,7 @@ The report is read-only and writes no file, so it is safe to run against the liv
 `bash schemas/v1/validate.sh` from the repository root.
 It requires only `jq`, creates no file, needs no container and no network, and exits 0 only when every valid fixture is accepted and every invalid fixture is rejected.
 The four schema files are the only validity definition: `lib/schema-check.jq` evaluates a bounded JSON Schema subset against them, so a fixture cannot silently disagree with its schema.
-The invalid fixtures cover failures that must happen before any mutation: a missing `schema_version`, an applied value inside a manifest, a plaintext literal secret in package state and in an event, a secret reference and a digest on the same value, a negative revision, a missing host key, a traversal component, an unbound target slot, a partial deployment tuple, a package subject without a host, teardown selected beside install, an interrupted run without classification, a writer without boot identity, a multi-line outcome summary, and a raw `stdout` field.
+The invalid fixtures cover failures that must happen before any mutation: a wrong `schema_version`, a missing `target` or `user_forced`, `failed: false`, a zero or negative revision, a lowercase or non-string setting, an unknown metadata key, a bad or duplicated `user_forced` entry, a version with a space, a target with a slash, an applied value inside a manifest, a traversal component, an unbound target slot, a partial deployment tuple, a package subject without a host, teardown selected beside install, an interrupted run without classification, a writer without boot identity, a multi-line outcome summary, and a raw `stdout` field.
 The default mode then runs the migration report over `migration-fixtures/` and fails when any committed placeholder value appears in its output.
 The `jq` interpreter evaluates `$ref` alone and ignores sibling keywords, so every schema uses `$ref` without siblings.
 
@@ -135,14 +135,14 @@ Points where `REDESIGN.md` implies a field but does not specify it, with the lea
 1. No `kind` discriminator field exists in any artifact; the artifact is identified by its path and its required-field set, so no writer must invent an extra field.
 2. Reliance is not stored at all: the guard derives it by scanning the node's inventory tree, so there is no claim object to shape; duplicate-record and revision-monotonicity checks are state-check concerns, not JSON Schema constraints.
 3. The durable host key spelling is `ivps:<node-id>`, `ivps:<node-id>:<instance-id>`, or (Phase 5) `ssh-sha256:<fingerprint>`; `REDESIGN.md` requires fingerprint-keyed external state but names no string form. Phase 4 admits only `ivps:` keys.
-4. Source labels are fixed to `caller`, `deployment`, `applied`, `application`, `package`, `global`, and `recipe`; `REDESIGN.md` calls the strongest source "step or caller environment", so `caller` covers both.
+4. Superseded by the lean record: per-value source labels are execution-time context only and exist in no persisted artifact.
 5. The manifest status enum is null (no state-relevant event yet) or `adopted`, `installed`, `reconfigured`, `verified`, `degraded`; `REDESIGN.md` says an interrupted run is classified from process identity on the next read without naming a manifest status, so the classification lives in the run record.
 6. The run `interrupted` object with `at` and `reason` is chosen because `REDESIGN.md` requires an interrupted classification and a distinction between a live writer, a gone process, and a reboot, while naming no record.
 7. Writer identity is `host`, `boot_id`, `pid`, and `process_start_ticks` (the machine shape; the operator shape - `kind: "operator"` + `name` - exists for adoption events, which record an inference, not a dispatch); `REDESIGN.md` asks for "enough local process and boot information" without naming fields, and the boot ID plus the process start tick are what actually distinguish a reused PID from a live writer.
 8. `phases` is capped at one entry when `teardown` is selected; this encodes the success criterion that a normal run cannot execute teardown steps, while `REDESIGN.md` does not say whether other phases may accompany teardown.
 9. Event `tool` is const `cloudify`; `REDESIGN.md` permits a shared envelope version with ivps but defines neither the shared field set nor the ivps payload, so this schema fixes the Cloudify side only.
 10. Event subject kinds are `package` and `deployment`; a runbook action event that touches no package uses the deployment subject and names its step in the top-level `step_id`.
-11. Event value metadata has no source-form field at all, which makes a plaintext value structurally impossible in an event; `REDESIGN.md` lists names, sources, references or digests, and secret flags only.
+11. Event values carry the recorded source form of every non-secret and `****` for every classified secret; classification (Secret markers with suffixes, ADR-042) plus the writers keep plaintext secrets out of the `****` positions, because a schema alone cannot tell a secret name from an ordinary uppercase name.
 12. The optional `log_reference` with `path` and `sha256` is the leanest shape for "referenced by path and digest where useful"; `REDESIGN.md` defines no such record.
 13. `application_commit` is a 40-hex git commit or null when no clean commit can be proved, and `development_override` is a separate boolean that must be true whenever `application_commit` is null; `REDESIGN.md` requires an explicit development override that marks a deployment unreproducible but names neither the field nor the marker.
 14. The manifest has no `updated_at`; `REDESIGN.md` states only a creation time, and `last_run_id` plus `last_event_id` already order later changes.

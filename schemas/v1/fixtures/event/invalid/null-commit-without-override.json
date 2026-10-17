@@ -25,21 +25,8 @@
   "phase": "install",
   "command_kind": "install",
   "values": {
-    "CLOUDIFY_GUACAMOLE_RDP_HOST": {
-      "source": "deployment",
-      "secret": false,
-      "declaration": "none",
-      "reference": null,
-      "digest": null,
-      "source_form": "value-of-none"
-    },
-    "CLOUDIFY_GUACAMOLE_RDP_PASSWORD": {
-      "source": "caller",
-      "secret": true,
-      "declaration": "explicit",
-      "reference": "@vault:kv/cloudify/guacamole/rdp-password",
-      "digest": null
-    }
+    "CLOUDIFY_GUACAMOLE_RDP_HOST": "value-of-none",
+    "CLOUDIFY_GUACAMOLE_RDP_PASSWORD": "****"
   },
   "outcome": {
     "exit_status": 0,

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "target": "cache",
+  "revision": 2,
+  "version": "0.1.0",
+  "user_forced": [],
+  "CONFIG": "line one\nline two\n",
+  "EMPTY": "",
+  "LOG_FORMAT": "plain"
+}

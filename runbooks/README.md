@@ -75,10 +75,12 @@ The manifest holds identity, application commit, development override, lifecycle
 It never holds applied package values.
 Status is derived from observed events: `adopted`, `installed`, `reconfigured`, `verified`, or `degraded`; an unproved manifest starts with null status.
 An install whose verification stage fails can remain `installed`, with the failed check recorded in health.
-The required recovery behavior is to use a valid cache or rebuild it from inventory without requiring history.
-Current code instead provides an explicit event-based rebuild and does not fully meet that requirement; see inventory-only recovery in ROADMAP.md.
+Inventory owns current state (ADR-036) requires using a valid cache or rebuilding it from inventory without requiring history.
+Current code instead provides an explicit event-based rebuild and does not fully meet that requirement; this is a recorded compliance bug, with implementation queued after specification convergence.
 
-Target bindings are recorded in the manifest and reused: a later reconfigure, verify or teardown reuses them instead of re-prompting.
+Current code records target bindings in the manifest and reuses them rather than re-prompting.
+Inventory owns current state (ADR-036) also requires those bindings to be recoverable from inventory; a missing manifest must not lose them.
+The implementation still needs that repair.
 A caller-supplied `--target` that differs is a rebinding and needs `--migrate-targets`, because rebinding is a migration, not a rerun. Once a deployment has active claims (Phase 4) a rebinding fails closed.
 
 The manifest records the Cloudify commit of the runbook and recipes in use.
@@ -163,6 +165,9 @@ Each run writes a 0600 snapshot in the deployment's state-tree runs dir (`~/.loc
 Mode 0600 restricts readers but does not encrypt the file.
 Keep snapshots out of Git, shared directories, and unencrypted backups; current snapshots are not safe publication artifacts.
 `cloudify deployment replay <application>[/<flavor>] --name <name> [--at <run>]` seeds bindings and values from the selected snapshot and executes the same engine.
-Safe snapshots and honest historical replay are tracked in ROADMAP.md: record each run's secret mode/key at that time, fetch the current value at that recorded address, and fail before mutation if it no longer resolves.
-Do not substitute today's inventory address for a historical run's address.
+Secrets enter through the environment (ADR-037) replaces the provider-aware replay proposal: future safe snapshots record secret names only and replay requires the caller to supply their values again.
+Validate after application mappings so an input such as `RDP_PASSWORD` can supply both package aliases.
+Do not overwrite those environment values with historical literals or load secret values from current inventory.
+Missing required supply must fail before mutation; the optional-secret rule and exact marker format remain to be settled.
+Safe snapshots and environment-only replay are tracked in ROADMAP.md; current code still needs the repair.
 Values never appear in the runbook or on the Cloudify command line.

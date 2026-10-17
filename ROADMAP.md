@@ -25,7 +25,8 @@ Policy: compose-ability. Fix at the root (CRITICAL GATE where lib/router touches
 ### Vars internals + security (decided 2026-09-07)
 
 - [X] Five-source naming refactor (URGENT): one read/write helper per source, one scheme - `cloudify_vars_{global,pkg,deployment,env}_read|write`, `cloudify_vars_state_read` (replay, read-only). The collector becomes a thin precedence walker over them, replacing `_try_claim`, `_try_claim_env`, `_cloudify_deployment_read_vars`.
-- [ ] Vault integration, two supported models (a reference resolves at either end): operator-side (default; cloudify resolves and ships plaintext; hosts stay vault-free) and host-side (only the reference ships; host needs vault credentials + reachability). No vault configured -> the vault reader is never consulted (zero cost, zero pkg-dev work; the resolver has an identity default).
+- [ ] Optional post-MVP aware-consumer integration: compare controller-side and target-side resolution only if external environment injection proves insufficient.
+  Secrets enter through the environment (ADR-037) supersedes the earlier planned Cloudify-owned vault lookup; see Optional secretspec-aware UX below.
 - [X] Exposure inventory + rules: transit = SSH-encrypted; operator argv + config files hold plaintext in the operator-side model (host-side removes argv); host argv holds plaintext today -> harden by sending the payload via stdin, not argv; recipe state files 0600; cloudify's own config/state files hold references or hashes, never plaintext; software config files a recipe writes (compose .env) may hold secrets, 0600, unavoidable. Fundamental limit: the host must hold the plaintext; no vault removes that.
 - [X] Cloudify skill: add a Security section (stars: payload via stdin not argv; references in cloudify state; masking PASSWORD/TOKEN/SECRET/KEY; 0600; no secrets in logs; the two vault models + the fundamental limit).
 
@@ -452,7 +453,10 @@ Decide later: host-scoped credentials (e.g. per-node in the ivps tree, or a host
 section in the credentials file) vs relying on per-host SSH keys/MagicSSH.
 No urgent driver.
 
-## Secrets: resolver seam (design, 2026-09-07)
+## Secrets: resolver seam (historical implementation, 2026-09-07)
+
+The entry below describes existing reference-resolver code, not the revised MVP boundary.
+Secrets enter through the environment (ADR-037) supersedes Cloudify-owned secret resolution for the new design; optional awareness is post-MVP.
 
 - [X] Goal: a vault-like backend later, without changing packages or the collector.
 Seam, grounded in current code: one helper `_cloudify_resolve_var_value <name>
@@ -640,28 +644,28 @@ migrates only after Rachid's go.
 
 ## secretspec generate=true: first-boot secrets minted into the store, not transcribed (Rachid, 2026-10-13)
 
+Environment-only secrets (ADR-037) leaves generation to the external wrapper for the MVP; the end-user workflow and guest-generated secret handling remain deferred.
 Some packages mint first-boot secrets on the guest: k3s can generate a join token, octop writes a one-time wizard password, and affine prints a master token.
-Secret capture (ADR-034) is not implemented, and current snapshots do not provide a general protected channel for returning those guest-generated secrets to a provider.
+Cloudify-owned secret capture is superseded by Secrets enter through the environment (ADR-037); current snapshots do not provide a general protected channel for returning guest-generated secrets to a provider.
 Distinguish capturing a supplied value from retrieving a value created on the guest.
 
 secretspec's per-secret `generate = true` + `type` (password, hex, uuid) can invert the flow: create a missing value in the provider before supplying it to an installation.
 That removes manual invention and transcription of first-boot secrets, but does not make an existing installation accept a replacement.
 Also distinguish read-only retrieval from `secretspec check`, which can prompt for or store missing values; do not treat it as a harmless presence-only check.
 
-Shape when picked up: recipes that mint first-boot secrets need an accept-supplied-value path; resolve generation into the provider before dispatch and supply the result to the guest.
+Shape when picked up: recipes that mint first-boot secrets need an accept-supplied-value path; the external supplier resolves generation before invoking Cloudify and supplies the result through the environment.
 The value's name, creator, and destination must be known before execution, but a declaration is not proof of storage or successful application.
 Import existing installations' current secrets rather than generating replacements during adoption.
 Deleting a provider entry and generating a new value does not rotate a running application; rotation needs an explicit package operation that updates the application and provider consistently.
 Preconditions: validate each recipe's supply and rotation behavior and the selected secretspec generation command.
-Independent of Secret capture (ADR-034).
-The generation/capture UX is deferred until first-install selection, classification, and recorded secret locations are settled.
+External generation needs no Cloudify secret-manager integration under Secrets enter through the environment (ADR-037).
+The generation and optional guest-secret-return UX stays deferred until classification, required-secret preflight, and wrapper replay are settled; recording provider locations is not an MVP requirement.
 
 ## secretspec serve: replay resolves secrets on the target machine, values never leave it (Rachid, 2026-10-13)
 
-ADR-034 capture=secretspec resolves on the CONTROLLER: dispatch payloads
-carry secret values from the controller's store to the target, and a replay
-from machine B needs B's store synced or re-seeded. The fleet end-state is
-N machines each owning their secretspec substrate - which breaks.
+Environment-only secrets (ADR-037) receives values from an external wrapper on the controller and forwards them to the target.
+A replay from another machine needs an external supplier there, but Cloudify does not synchronize or select its store.
+Target-side resolution is optional aware-consumer research outside the MVP, not a prerequisite of the wrapper model.
 
 `secretspec serve` is secretspec's aware-consumer protocol (versioned
 message exchange over stdio): a program pins one manifest/profile/scope
@@ -673,30 +677,47 @@ asks the TARGET machine's resolver so values never leave the target.
 Caveat from the field guide: no coding agent speaks this protocol today;
 it is plumbing for tools that embed secretspec.
 
-Shape when picked up: cloudify (Go - the protocol is stdio messages) gains
-a second resolution backend beside the CLI verbs; dispatch of serve-backed
-deployments sends secret NAMES, not values, and the guest resolves at
-recipe time; pairs with require_reason + SECRETSPEC_AGENT=1 so every
-machine-side handout is purpose-logged (AI-driven tool, self-declared).
-Preconditions (real, not thematic): serve protocol stable across a
-secretspec release; target machines run secretspec. Orthogonal to ADR-034
-capture - target-side resolution reduces controller capture's relevance
-over time, it does not queue behind it. Revisit when any second
-cloudify host needs replay.
+Shape when picked up: compare a target-side aware consumer with the external wrapper contract before adding protocol support to Cloudify.
+An aware deployment could send names rather than values and resolve them at recipe time, with reason/audit handling.
+This would change the environment-only boundary and needs its own decision; there is no existing Cloudify CLI resolution backend to extend in the MVP.
+Preconditions: validate serve protocol stability and the target-side secretspec installation.
+This optional aware-consumer work is outside the environment-only MVP (Secrets enter through the environment, ADR-037).
+A second controller does not require it if its external wrapper can already supply the required environment.
 
-## Inventory-only recovery and lean package records (2026-10-16)
+## Simpler uppercase target variables (2026-10-17, discussion)
 
-- [ ] **What:** honor the agreed ability to reconstruct current cloud state from the ivps inventory alone, with secret values supplied separately.
+- [ ] Compare the proposed convention `targets: GUEST, GATEWAY`, invocation `--target GATEWAY=cloudstation:`, and direct runbook variable `$GATEWAY` with today's prefixed `TARGET_GATEWAY` convention.
+- **Why:** the same uppercase name at declaration, binding, and use removes case conversion and a redundant prefix from the user's mental model.
+- **How:** require uppercase target names and test parsing, environment export, snapshots, replay, and migration of shipped runbooks together.
+  Check collisions with runbook inputs and shell/framework variables such as `PATH` before choosing the safety rule; do not overwrite the command environment accidentally.
+  Keep current syntax until an explicit contract change is approved.
+
+## Lower-ceremony single-target and targetless runbooks (2026-10-17, discussion)
+
+- [ ] Revisit whether a single-target runbook needs an explicit target name/binding, and whether controller-only runbooks may have no targets.
+- **Why:** require names and bindings only when they resolve real ambiguity, not by ceremony.
+- **How:** compare the current explicit-target convention with possible single-target shorthand.
+  Decide where a genuinely targetless application's current record belongs, how inventory-only recovery works, and how the manifest's required bindings change before enabling it.
+  No implicit localhost or target fallback is introduced by this entry.
+
+## Inventory recovery compliance bugs and lean package records (ADR-036, 2026-10-17)
+
+- [ ] **Required repair, not a new feature:** implement Inventory owns current state (ADR-036) after remaining specification gaps close.
+  Current cloud state must be reconstructible from ivps inventory with required secrets supplied through the new invocation's environment.
   History is not required for current-state recovery.
 - **Why:** current manifest rebuilding and some inventory updates require local events; target bindings live outside the package records; adopted records and reserved step ids cannot reliably recover targets from a runbook step.
   The manifest is a cache, not the only home of a binding.
 - **How:** preserve the target-to-host association and every required applied setting in inventory.
   Use a valid manifest when present; rebuild it from inventory when missing, corrupt, or out of date.
-  Test a fresh controller holding only runbooks/recipes plus synced inventory and access to the secret provider, with no local manifests, runs, events, or desired-input files.
+  Test a fresh controller holding only runbooks/recipes, synced inventory, and externally supplied secret environment variables, with no local manifests, runs, events, desired-input files, or secret-manager dependency in Cloudify.
   Include adopted deployments, dependencies, single-target and multi-target runbooks, and incomplete operations.
 - **Record shape:** review path-derived identity fields duplicated inside package records.
   Prefer reading identities from the inventory path and parent identity records rather than storing independent copies; preserve the target name because the path does not encode it.
   Events still need identities in their bodies because their filenames do not encode deployment or package identity.
+  Scalar ordinary values and null/name-only secret markers are the candidate simplification, not an agreed encoding yet.
+  Replace detailed health/last-attempt data only after defining a minimal failed-attempt marker that leaves last confirmed settings intact, including a failed first installation.
+  Removing per-value source information also requires settling the set/store pinning behavior from Reconfigure seeds from applied set values (ADR-030).
+  Secret-name-only records cannot prove equal credentials for shared installations; decide a conservative sharing rule instead of silently removing the guard.
   Schema changes, event reconstruction, and moved-directory behavior need an explicit design before implementation.
 - **Related drift:** unnamed `app run` currently selects `default`, while Named second deployments (ADR-031) requires proven matching or first-deployment name generation.
   Reconcile this deliberately; use explicit semantic deployment names while the mismatch remains.
@@ -707,44 +728,43 @@ cloudify host needs replay.
   Simple MVP package classification (ADR-035) keeps existing name recognition and optional explicit markers; no recipe migration is required now.
 - **Why:** name matching can miss a secret such as `LICENSE` or classify a public key as secret, while mandatory parallel declarations can create clerical drift.
   Cloudify must know secret status before resolving, forwarding, capturing, or snapshotting a value.
-- **How:** compare one classification rule shared by package variables and runbook inputs with classification supplied by secretspec.
+- **How:** settle a simple naming rule shared by package variables and runbook inputs, preserving classification through mappings.
+  The proposed uppercase `_PASSWORD`/`_SECRET` suffix rule misses existing `K3S_TOKEN`; discuss `_TOKEN`/`_KEY` suffixes, explicit exceptions, or a deliberate package-interface rename before narrowing classification.
+  Secretspec declarations are external to the environment-only MVP, not a runtime classification source for Cloudify.
   A runbook input has no implemented secret marker today; classification is not carried through its mappings.
   Cover one secret mapped to differently named package variables, optional inputs, unmarked names, explicit references, and applications with no packages.
   Preserve secret status and original input identity through mappings.
   Treat unknown-content detection as a limit, not a promise to discover arbitrary mislabeled secrets.
-- **Boundary:** runbook naming-convention parity is a proposal to settle, not an implemented feature or a reason to introduce mandatory syntax now.
+- **Boundary:** exact suffixes, optional-secret behavior, and runbook propagation remain to be settled; do not silently drop the protection retained by Simple package secret classification (ADR-035).
+  More elaborate explicit syntax or metadata belongs to later discussion, not a prerequisite of the environment-only MVP.
 
-## Secret locations before the first installation (2026-10-16, design open)
+## Optional secretspec-aware UX (post-MVP, 2026-10-17)
 
-- [ ] **What:** settle canonical first-run UX before further generation/capture design.
-  A first run has no applied inventory from which to read a secret location.
-- **How:** compare Cloudify selecting secretspec by default and deriving a deployment-specific selection from the application, flavor, deployment name, and original application input name, against wrapping Cloudify with secretspec.
-  A wrapper resolves from the spec, not the ivps inventory, so it is not circular; it repeats selection when the user must also name the Cloudify deployment.
-  Per-name retrieval can avoid injecting unrelated secrets without requiring a wrapper to load a whole profile.
-- **Decisions still open:** deployment-to-project/profile/key mapping, how declarations reach the spec with minimal manual work, same-name secrets on different targets, flat persisted mode/key fields, value precedence, capture-off behavior, and how identity survives application mappings.
-  Do not infer these from later inventory or silently add a new policy file.
-  Secretspec-first resolution would expand the capture-only scope and optional runtime dependency in Secret capture (ADR-034), so amend that decision only after informed approval.
+- [ ] **What:** revisit a launcher or Cloudify integration only if the normal external wrapper proves too cumbersome.
+  Secrets enter through the environment (ADR-037) deliberately keeps Cloudify unaware of secretspec for the MVP.
+- **Why:** the wrapper's profile selection and Cloudify's deployment selection may repeat related information; users may later want one entry point, per-name retrieval, or simpler declaration setup.
+  This is a UX improvement, not a requirement for first install, replay, inventory recovery, or changing external providers.
+- **How:** first compare a thin external launcher with a built-in aware consumer.
+  If awareness is justified, discuss defaults and any Cloudify-wide/runbook override hierarchy then, not as speculative MVP settings.
+  Keep ordinary environment injection working without secretspec.
+  Explicitly decide whether awareness introduces stored manager addresses and how historical replay would interpret them; do not silently revive the superseded capture design.
+- **Boundary:** no automatic store/fetch interface, manager-selection config, capture policy file, mode/key persistence, or file-provider allowlist belongs to the environment-only MVP.
 
-## Secret-manager selection settings (2026-10-16, discussion only)
+## Safe run snapshots and environment-only replay (revised 2026-10-17)
 
-- [ ] Discuss whether Cloudify should default to secretspec, with an optional Cloudify-wide selection and a runbook-specific override.
-  Separate selecting a secret manager from selecting a secretspec provider; moving from files to a network vault may require only a provider change.
-  Do not add settings or precedence levels without a demonstrated use case.
-  The MVP default and any future override hierarchy need agreement after canonical first-run UX is settled.
-
-## Safe run snapshots and honest historical replay (2026-10-16)
-
-- [ ] **What:** stop storing literal secret values in local run snapshots and persist the secret mode/key selected at the time of each run, using the same secret-location representation as inventory.
+- [ ] **What:** implement Secrets enter through the environment (ADR-037): snapshot ordinary settings and secret names, never secret values, digests, or provider locations.
 - **Why:** current snapshots can contain plaintext input values and step outputs.
-  They remain local and unsafe for now; document the warning and keep them out of Git and unencrypted/shared backup.
-- **How:** capture each run's complete secret address at execution time, including the manager and the context needed to interpret its key.
-  Historical replay reads that recorded address, never today's deployment inventory or today's default manager to guess what the old run meant.
-  It retrieves the current value at the recorded address, not a historical secret value.
-  If the address no longer resolves, fail before mutation with the secret name, recorded mode/key, and an actionable explanation; never silently fall back to a different current address or recipe default.
-  Prevent automatic persisted step outputs from bypassing secret handling.
-- **Tests:** rotate a value at an unchanged address; change a deployment's address; change its manager; remove the old secret; remove local current-state caches; map one input to several packages; fail midway through a run.
-  Snapshot history must retain its own addressing metadata even when current inventory changes.
-- **Boundary:** retaining unsafe snapshots temporarily is not permission to publish them, and this work does not require historical-secret versioning or historical-leak cleanup.
+  They remain local and unsafe for now; warnings and the ban on Git/shared or unencrypted backup still apply.
+- **How:** retain secret-name markers so replay does not confuse an omitted value with an ordinary default.
+  Replay restores ordinary settings and validates required secrets from the current environment after application mappings.
+  It must not overwrite wrapper-supplied values with snapshot literals, empty placeholders, or values from current inventory.
+  Persist the application-input name where needed, so a wrapper supplying `RDP_PASSWORD` is not incorrectly required to export every mapped package alias.
+  Missing required supply fails before mutation and names the missing variables; Cloudify does not call a backend or know why an external provider failed.
+  Prevent automatic step-output persistence from bypassing secret handling.
+- **Tests:** caller omits a required secret; wrapper supplies a rotated value; provider changes outside Cloudify; one input maps to several package names; ordinary recorded settings differ from today's defaults; a run fails before its first successful apply.
+- **Boundary:** this supersedes the earlier provider-aware snapshot proposal.
+  Historical execution uses newly supplied secrets, not proof that the old credential still exists or has the same identity.
+  No historical-secret versioning or historical-leak cleanup is required.
 
 ## Value-containing base64 references and insecure capture (2026-10-16)
 
@@ -752,6 +772,7 @@ cloudify host needs replay.
   Encoding a value does not make it a secret location.
 - The current backend also implements multiline file-store values, so design a distinct literal transport and migrate its callers before removing it.
   Preserve exact multiline bytes and escaping; do not conflate this backend with private dispatch-context encoding.
-- Cover literal-secret capture and explicit plaintext capture as well as base64 references.
-  An insecure local capture choice must not silently authorize publishing the value through inventory sync.
+- Under the environment-only MVP, classified secrets are not captured as literals or references at all.
+  The current multiline encoding must not bypass that rule or be mistaken for a publishable backend location.
+  Optional future insecure capture would require a separate explicit decision; it is not a normal MVP mode.
   No runtime change or historical-leak cleanup is authorized by this entry.

@@ -1409,3 +1409,11 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - **Authorized follow-ups recorded:** shared mutation permission from whole deployments toward tested finer-grained changes; historical snapshot mode/key preservation with current-value resolution and honest missing-secret failure; classification alternatives; first-install secret selection; optional manager settings; unsafe base64/plaintext capture; human-readable ivps paths and rename safety; ivps XDG homes.
 - **Docs corrected:** warn that current local snapshots can contain plaintext secrets and step outputs; distinguish runbook flavors from deployment names; record the current unnamed-run/default-name and manifest-recovery gaps rather than presenting the intended behavior as implemented.
 - **Scope:** documentation only; no runtime, inventory, credentials, harness, or application changes; secret generation/capture UX remains open until the earlier design questions are settled.
+
+## 2026-10-17 - inventory authority reaffirmed; wrapper-only secret MVP chosen
+
+- **Inventory owns current state (ADR-036):** record the standing inventory-only recovery rule, target persistence, and manifest-as-read-cache contract; event-dependent recovery is a compliance bug to repair after specification convergence.
+- **Secrets enter through the environment (ADR-037):** external wrapper supplies values; Cloudify records secret names only and replay requires fresh environment supply; supersedes provider-aware capture, mode/key persistence, and manager configuration for the MVP, with REDESIGN and GLOSSARY synchronized.
+- **Roadmap adjusted:** uppercase bare target variables and lower-ceremony single/no-target runbooks added; provider-aware first-run/settings work folded into optional post-MVP UX; safe snapshots now target name-only environment replay, with unsafe current files still warned about.
+- **Open, not silently decided:** suffixes that cover existing `K3S_TOKEN`; optional-secret preflight; scalar settings versus the earlier set/store pinning rule; minimal failure markers; compatibility of secrets in shared installations; generation UX remains deferred.
+- **Scope:** documentation only; no code, schemas, captured records, application state, credentials, or harness files changed.

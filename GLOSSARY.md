@@ -100,7 +100,10 @@ The ivps-owned record of one instance (engine, base image fingerprint, created-a
 
 ## deployment record
 
-The cloudify-owned record of one deployment. It spans two trees: desired inputs under `~/.config/cloudify/deployments/<app>/<flavor>/<name>/` (the operator's declared values), and the state half - the deployment manifest and the run snapshots - under `~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/`.
+The cloudify-owned record of one deployment spans desired inputs, current inventory, and local convenience/history files.
+Desired non-secret inputs live under Cloudify configuration; current package facts and target names live under the ivps inventory.
+The local deployment directory under Cloudify state holds the manifest read cache and run snapshots, not irreplaceable current facts (Inventory owns current state, ADR-036).
+Secret values come from the caller environment and are not persisted in normal records (Secrets enter through the environment, ADR-037).
 
 ## package record
 
@@ -108,7 +111,9 @@ The cloudify-owned inventory entry for one package instance under one deployment
 
 Its home is the node's inventory tree: `$(ivps node path <node>[:<instance>])/deployments/<app>/<flavor>/<deployment>/packages/<package>/<package instance>/`.
 
-It contains a revision, the applied values, the last attempt, and verification health.
+The current schema contains a revision, applied values, the last attempt, and verification health.
+The revised lean shape is under discussion: target persistence is agreed, while per-value metadata, health, and the detailed attempt object are not newly approved fields.
+A minimal failure marker must preserve previously confirmed settings.
 
 ## physical package state
 
@@ -150,7 +155,8 @@ It may uninstall a package only after the last reliance is released and the pinn
 
 A string consumed by a package or application step and addressed by name.
 
-Its source form is a literal, an escaped literal, or a secret reference.
+Ordinary values may have literal or escaped source forms.
+For secrets, the revised MVP accepts runtime values from the caller environment and persists names only (Secrets enter through the environment, ADR-037).
 
 Its runtime form is the resolved plaintext made available only for execution.
 
@@ -174,27 +180,26 @@ They do not claim that an operation succeeded.
 
 ## secret
 
-A value explicitly classified as sensitive by a package or application declaration.
+A value classified as sensitive before recording or execution.
 
-Name-based detection is defense in depth, not the primary classification for canonical declarations, and it never produces a separate legacy class.
+Current package classification retains explicit markers, reference classification, and name recognition (Simple package secret classification, ADR-035).
+The narrower suffix rule and its runbook-input handling remain open until existing token/key names and optional secrets are accounted for.
 
-Events and runs never store a literal secret.
+Normal inventory, events, and future safe snapshots retain secret names, never their values, digests, or provider locations (Secrets enter through the environment, ADR-037).
+Existing unsafe snapshots still need the agreed implementation repair.
 
 ## secret reference
 
-A source-form value that names a backend and locator without containing the secret plaintext.
+A value that names a backend and locator without containing the secret plaintext.
 
-The reference stays a reference in persistent state.
-
-The resolved plaintext exists only in the private dispatch context and target configuration that needs it.
+Secret references are outside the environment-only MVP: an external supplier resolves secrets before invoking Cloudify (Secrets enter through the environment, ADR-037).
+Cloudify records names only, not those supplier-specific references.
 
 ## secret backend
 
-A resolver that converts a secret reference into plaintext at dispatch time.
+The external storage or resolver from which a caller obtains a secret before invoking Cloudify.
 
-Backends own secret storage while Cloudify stores the reference.
-
-No configured backend means no lookup through that backend.
+For the MVP, Cloudify neither selects nor calls that backend; its contract is the supplied environment, not a backend reference (Secrets enter through the environment, ADR-037).
 
 ## application
 
@@ -224,9 +229,11 @@ Applied package facts remain in the package records rather than being copied int
 
 The small current-state rollup of one deployment, in the state half of the deployment record: `~/.local/state/cloudify/deployments/<app>/<flavor>/<name>/manifest.json`.
 
-A rebuildable cache outside the projection path: the event log is what it abbreviates, and a lost or corrupt manifest is rebuilt from events - never fatal, never a source.
-
-Its fields split by honesty. Declared, from deployment inputs: identity, target bindings, creation time. Derived, from the event log: lifecycle status, last run and event IDs, and the application commit cached from the latest dispatch that proved one (adoption pins no commit).
+A read cache of current facts that live in the ivps inventory (Inventory owns current state, ADR-036).
+Use it when valid and current; rebuild it from inventory when missing, corrupt, or stale.
+Local history is not required for reconstructing or continuing current state.
+Target bindings and every other indispensable current fact must therefore survive in inventory rather than only in this cache.
+Adoption pins no application commit that no dispatch proved.
 
 It does not contain package applied values.
 
@@ -332,7 +339,8 @@ An immutable audit record for one observed attempt or state transition.
 
 An event links a tool, tool version, writer, run, step, deployment, subject, phase, outcome, and state revisions.
 
-It stores value names, sources, references or digests, the source form of non-secret values, and secret flags, without raw output or literal secrets.
+It records operations and non-secret values, retaining secret names without values, digests, or provider locations (Secrets enter through the environment, ADR-037).
+The exact lean metadata shape remains to be settled.
 
 Events help detect interrupted state commits but are not executable commands.
 

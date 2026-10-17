@@ -105,6 +105,7 @@ A target is a runbook slot such as `server`, `agent`, `guest`, or `gateway`.
 A binding maps one target slot to one resolved host.
 
 Bindings are current deployment state because reconfigure, verify, and teardown need them.
+The target name belongs in the inventory record; host identity comes from its inventory location and parent identity records (Inventory owns current state, ADR-036).
 
 Changing a binding while the deployment relies on installations is a migration, not a normal rerun.
 
@@ -222,7 +223,8 @@ A context written incrementally while resolution is still running is the last-wr
 Precedence is first source wins. The first source to provide a name claims it and records where it came from; every later source is refused without looking.
 The visit order is not the precedence order: the caller's environment is visited last yet wins, because a source refuses to overwrite a name that is already set.
 
-Records and events use a value's source form. Only the payload uses the resolved runtime form.
+Records and events retain ordinary values; classified secrets retain names only (Secrets enter through the environment, ADR-037).
+Only the private execution context and payload carry supplied secret values.
 
 Before execution, Cloudify expands the static dependency graph and builds one private dispatch context.
 
@@ -241,14 +243,19 @@ The context contains:
 - each declared value's resolved runtime form
 - each value's source and secret classification
 
-The source form is a literal, an escaped literal, or a secret reference.
+A non-secret source form is a literal or an escaped literal.
+Secret runtime values come from the caller environment; only their names survive in records (Secrets enter through the environment, ADR-037).
 
 Each declared value carries: its declaration kind, its source label, its source form, its **raw source form**, its resolved runtime form, and its secret classification.
 
-The raw source form is the exact text the registry record and the run snapshot must contain. It is why no consumer reopens a source: whoever resolves a value records its raw text at the same moment, so the recorded text cannot drift from the forwarded value, and an absent value stays distinguishable from a present-but-empty one.
+For non-secret values, the raw source form is the text a record may retain.
+Secret values are excluded from records and future safe snapshots even when supplied as literals (Secrets enter through the environment, ADR-037).
+The single resolution still prevents consumers from reopening sources and disagreeing about what executed.
 A raw form that cannot be carried on one line is transported in an explicit, unambiguous encoding, so a raw text that itself looks encoded is never mistaken for the transport.
 
-A value's raw form and its resolved runtime form both live in the context, and the context is removed when the dispatch ends. That removal is what bounds the resolved runtime form; it may never appear in a log, a manifest, package state, a run record or an event. The raw source form is by design the text the registry record and the run snapshot store, so those two are where it belongs - and nowhere else.
+A value's raw and runtime forms may live in the private context, which is removed when the dispatch ends.
+Secret plaintext must not enter a log, manifest, package record, run snapshot, or event.
+Record only its name; do not persist a literal, digest, or provider address (Secrets enter through the environment, ADR-037).
 
 The context is validated before payload construction and before any mutation. A malformed or partial context fails loudly, because a silently empty context stops payload forwarding without an error.
 
@@ -295,17 +302,21 @@ Reconfigure resolves values in this order, strongest first:
 A set value outranks the store until it is explicitly unset (`cloudify deployment unset`): a value the operator supplied directly never moves because a default under it shifted.
 Applied values that were store-supplied never seed: the store re-supplies them when present, and a deleted store entry lets the recipe default return - the deletion is honored, not buffered.
 
-The applied record carries each value's resolution source, and `cloudify deployment show` renders the applied inputs with their set/store provenance, secrets masked to reference or digest.
+The existing applied record carries each value's resolution source for the set/store rule (Reconfigure seeds from applied set values, ADR-030).
+Whether scalar non-secret records replace that rule is an open decision, not an implicit consequence of the secret boundary change.
+Secret values are represented by their names only under Secrets enter through the environment (ADR-037).
 
 Verify uses the previously applied source values by default.
 
-When an applied secret stores only redaction and a digest, verify requires the caller or deployment desired inputs to resupply the plaintext and rejects it unless the digest matches.
+Under the environment-only secret boundary (Secrets enter through the environment, ADR-037), verify obtains required secret values from the current caller environment after application mappings.
+Inventory records secret names, not values, digests, or provider locations; no historical-secret digest check is implied.
 
 A verify-only override is explicit and does not rewrite applied state.
 
 Teardown uses the previously applied source values so it removes what was actually configured.
 
-When teardown needs a literal secret represented only by a digest, the caller or deployment desired inputs must resupply the matching plaintext or teardown fails before mutation.
+When teardown requires a secret, the caller must supply it through the environment after application mappings or teardown fails before mutation.
+The required-versus-optional secret rule remains to be settled against package phase contracts before implementation.
 
 Current defaults never silently change verification or teardown behavior.
 
@@ -341,13 +352,17 @@ Name recognition is not confined to debug masking; it also protects persisted pa
 
 Application-input secret classification and its propagation through mappings are not fully specified or implemented; settle them before enabling application-wide automatic secret handling.
 
-A persisted secret should be a backend reference.
+For the MVP, secret values come from the caller's environment; secretspec or another external supplier may populate it (Secrets enter through the environment, ADR-037).
 
-A literal secret may remain in the 0600 deployment input file under the existing local trust model, but events never copy it.
+Cloudify does not select a secret manager, resolve a provider address, or write a secret store.
 
-Package applied state stores a secret reference when one exists.
+Normal inventory and future safe snapshots retain secret names only, not values, digests, or provider locations.
 
-When a secret arrived only as a literal, package state stores redaction plus a digest and relies on deployment inputs or the caller to supply it again.
+Replay takes required secret values from the current invocation after application mappings and must not overwrite them with historical snapshot literals.
+
+The external secretspec convention is one profile per named deployment; Cloudify neither derives nor validates that profile.
+
+Exact suffix matching, optional-secret handling, scalar non-secret records, and compatibility of secrets in shared installations remain open specification questions.
 
 The dispatch context may contain resolved plaintext because the target process needs it.
 
@@ -359,15 +374,21 @@ The in-run `CLOUDIFY_OUTPUTS_FILE` channel remains ephemeral and mode 0600.
 
 Step outputs are not persisted automatically in runs or events.
 
-A value needed by a later run must be written deliberately as a deployment input, preferably as a secret reference.
+A non-secret value needed by a later run may be recorded as a deployment input.
 
-A generated secret that must survive the run is deliberately stored in a deployment input or secret backend and is never persisted as an automatic step output.
+A secret needed by a later run must be supplied again through its environment, usually by the external wrapper.
+
+Generation and storage belong to that external supplier for the MVP; guest-generated secret handling is deferred and is never an automatic persisted step output.
 
 ## Deployment inventory and the shared-installation guard
 
 Each deployment records what it did on a node in its own directory under that node's tree, human-readable, one directory per deployment per node.
 
-The deployment inventory contains, per package the deployment covers:
+The lean inventory shape is being reconsidered; only target persistence and current-state recoverability are reaffirmed by Inventory owns current state (ADR-036).
+The prior field list below describes the existing contract, not a newly approved revised-MVP record.
+Health, the detailed last-attempt object, and per-value metadata are under review; a minimal failure marker must preserve previously confirmed settings on failure.
+
+The prior deployment inventory contains, per package the deployment covers:
 
 - the package and package-instance identity;
 - `applied`, the last successful result: package version (required - every package reports its installed version), source-form values, and time;
@@ -390,7 +411,10 @@ Compatible means the package and package-instance identity and every configurati
 
 A package's configuration-affecting declared values are the values it declares itself; a value declared only by another package in the dispatch is recorded by that package's own inventory (ADR-025).
 
-Non-secret values compare by source value, secret references compare by reference, and literal secrets compare by digest.
+Non-secret values compare by their recorded values.
+
+Secret-name-only recording cannot prove that two deployments supplied equal secret values (Secrets enter through the environment, ADR-037).
+A conservative shared-installation rule must be agreed before implementation; do not silently treat matching secret names as compatible credentials.
 
 A conflict fails before mutation and names the deployments in conflict.
 
@@ -467,7 +491,12 @@ Every phase must be safe to rerun after interruption.
 
 ## Deployment manifests and bindings
 
-The manifest is a rebuildable cache outside the projection path: the cloudify inventory is the self-sufficient projection of cloudify events, and the manifest only saves navigating it to reconcile. Its fields split by honesty - declared (identity, bindings, creation) from deployment inputs, derived (lifecycle status, last event id) from the event log. A lost or corrupt manifest is rebuilt from events, never fatal, never a source. It pins no application commit at adoption; a commit is recorded only by dispatch events.
+The manifest is a read cache of current deployment facts held in the ivps inventory (Inventory owns current state, ADR-036).
+Use it when valid and current; recreate it from inventory when missing, corrupt, or stale.
+Inventory must retain each target-to-host association and every other fact required to reconstruct current state.
+Local events and runs may speed inspection or answer history questions, but are not required for current-state recovery or continuation.
+Adoption pins no application commit that no dispatch proved.
+The current event-dependent rebuild and inventory checks are compliance bugs to fix after specification convergence, not alternative authorities.
 
 The manifest is created before the first mutating step.
 
@@ -519,8 +548,8 @@ Events contain:
 - deployment identity
 - subject identity
 - phase and command kind
-- value names, source labels, references or digests, and secret flags
-- the source form of every non-secret value; secrets never carry a source form (ADR-027)
+- value names and classification, with the exact lean metadata shape still to be settled; secret values, digests, and provider locations are excluded (Secrets enter through the environment, ADR-037)
+- the recorded form of every non-secret value; secret names are retained without their values
 - the writing cloudify tool version
 - exit status and bounded non-secret summary
 - previous and resulting subject revision when state changes
@@ -684,50 +713,31 @@ The redesign is complete only when all of these are true:
 - Every old artifact is migrated explicitly or reported, and final runtime code contains no migration bridge or old-format reader.
 - The scoped unit, integration, and disposable E2E gates pass.
 
-## Secret capture (ADR-034, amended by ADR-035; design only, implementation gated)
+## Environment-only secrets for the MVP (ADR-037; implementation waits for specification convergence)
 
-Three layers, one concern each:
+Secretspec stays outside Cloudify and supplies environment variables through its normal wrapper.
+Cloudify may receive the same variables from another caller; it has no secretspec dependency or provider allowlist.
+The wrapper chooses the spec, profile, provider, and any generation or prompting.
+One secretspec profile per named deployment remains the external setup convention, not a Cloudify selection algorithm.
 
-- **Classification** (package behavior retained for the MVP): explicit `secret NAME` markers, references, and name recognition all classify package values.
-  No mandatory package declaration migration is required (Simple package secret classification, ADR-035).
-  The runbook-input rule and propagation through mappings remain open; do not assume either explicit application metadata or secretspec-derived classification already exists.
-- **Policy** (new): per-deployment, default `off`. Stored beside the
-  deployment's desired inputs (`capture: off|plaintext|secretspec`).
-  Surface: `cloudify deployment capture <mode>`.
-- **Target** (new): implements exactly two operations - `store(deployment,
-  name, value)` and `fetch(deployment, name) -> value`. Registry snapshot
-  semantics per policy: `off` -> nothing recorded; `plaintext` -> value in
-  the snapshot (today's behavior); `secretspec` -> `mode: secretspec` +
-  key name in the snapshot, value only inside secretspec.
+Before mutation, Cloudify identifies the declared secret inputs needed by the selected operation and applies the runbook's names-only mappings.
+Required secret values must then be available in the environment.
+Cloudify records the secret names but not their values, digests, project/profile/provider addresses, or mode/key selectors.
+A safe replay preserves ordinary recorded settings and takes secrets from the new invocation's environment, after mappings.
+It never restores a historical secret literal or calls a secret backend.
 
-MVP target: secretspec **file provider**, per-product layout (production-style
-discovery - this is a machine substrate, not a repo): a self-contained
-`~/.config/secretspec/cloudify/` holding the spec (`secretspec.toml`,
-`[project] name = "cloudify"`, chain pinned to the file provider - never
-env-headed: writes must land) and the store root (`file:~/.config/
-secretspec/cloudify/secrets`). Cloudify resolves the spec file in this
-order: operator's `SECRETSPEC_FILE` (override wins), else the product spec
-above - never the working directory (no walking up; cloudify runs from
-anywhere and will one day be a binary without a checkout). All access
-through the `secretspec` CLI verbs (`set`/`get`, and `check` as the
-capture-mode preflight), never direct store writes. Cloudify resolves the
-active provider from the pinned spec; anything outside the MVP allowlist
-(`file`) fails capture with a job-to-be-done error naming the var, the
-current provider, and both fixes (re-point the spec's chain, or keep
-capture off and supply by env). The audit log (`~/.local/state/secretspec/
-audit.log`, values never written) comes free and is the capture trail.
+This removes the earlier capture modes, `store`/`fetch` interface, new policy file, file-only provider restriction, and provider-aware snapshot design from the MVP.
+The older Secret capture decision (ADR-034) remains history, superseded by Secrets enter through the environment (ADR-037).
+Optional secretspec-aware UX is future work, not a prerequisite of deployment or replay.
 
-Replay resolution, fail closed: a snapshot value line that is a secret
-resolves by policy - `plaintext` reads the snapshot, `secretspec` fetches
-via CLI, `off` aborts the replay before any dispatch with the var name,
-the supply commands (env prefix or `secretspec set`), and the capture
-enable command. No literal placeholder ever reaches a payload.
+The following specification gaps remain open before implementation:
 
-Extension path: a new backend = allowlist entry + target implementation
-behind the same two operations (keyring first - zero new concepts; the CLI
-is provider-agnostic). `@backend:locator` references in stores remain a
-separate future extension and are not implied by this design.
+- exact name suffixes, accounting for existing token/key variables;
+- required versus optional secrets and operation-specific needs;
+- a flat record representation and failure marker that preserve last confirmed settings on failure;
+- whether removing per-value source metadata also removes the earlier set/store pinning rule;
+- how shared-installation protection behaves when secret equality cannot be proved from names alone;
+- which runbook/input identity must survive replay when application names map to package names.
 
-Open point for the plan: the capture write sits on the dispatch path
-(post-install snapshot) and fetch on the replay seed - both touch the
-value channel (`lib/vars.sh` / `lib/registry.sh`); gate applies.
+Generated-secret UX and any guest-to-provider return channel stay deferred until these decisions are settled.
+Existing plaintext local snapshots are still unsafe until the implementation is changed; do not publish them.

@@ -225,7 +225,9 @@ aborts the run — an empty value is never forwarded. Backends are shell files i
 `lib/secrets/` (the built-in one is `base64`).
 Base64 contains a recoverable value, not a safe secret location; do not publish such references through inventory sync.
 Its removal or explicit insecure handling, including replacement of its multiline-storage role, is tracked in ROADMAP.md.
-For the MVP, package secret classification retains existing name recognition (`PWD|PASSWORD|SECRET|TOKEN|KEY`), optional explicit markers, and reference classification without mandatory new package syntax (Simple package secret classification, ADR-035).
+Current package classification retains name recognition (`PWD|PASSWORD|SECRET|TOKEN|KEY`), optional explicit markers, and reference classification without mandatory new package syntax (Simple package secret classification, ADR-035).
+The revised MVP design is Secrets enter through the environment (ADR-037): an external wrapper supplies secrets; Cloudify records names, not secret values or provider addresses.
+The reference syntax above describes current code, not a planned secretspec integration; implementation changes wait for the remaining specification decisions.
 
 **Reserved names.** `CLOUDIFY_REMOTE_USER`, `CLOUDIFY_REMOTE_PWD`, `DEBUG`,
 `CLOUDIFY_BOOTSTRAP_URL`, `CLOUDIFY_UPDATE_DELAY`, `CLOUDIFY_FORCE`,
@@ -299,8 +301,9 @@ command line, and the replay's own snapshot records the values it replayed.
 **Snapshot security warning:** current run snapshots can contain literal secret values and unclassified step outputs.
 They are local files under Cloudify state, not part of an ivps-inventory-only commit, but mode 0600 is not encryption.
 Keep them out of Git, shared directories, and unencrypted backups.
-Safe snapshots and honest historical replay are tracked in ROADMAP.md: each snapshot must retain the secret mode/key selected for that run, retrieve the current value at that address, and fail before mutation if it no longer resolves.
-Historical replay must not use today's inventory or default secret manager to replace a missing historical address.
+Safe snapshots and environment-only replay are tracked in ROADMAP.md: future snapshots retain ordinary values and secret names only.
+Replay must use the new invocation's required secret environment variables after runbook mappings, never overwrite them with historical literals, and fail before mutation when required supply is missing.
+Cloudify does not select or call a secret manager (Secrets enter through the environment, ADR-037).
 
 ### Environment Variables
 

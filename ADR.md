@@ -529,3 +529,50 @@ This decision changes neither capture policy nor the default-off rule.
 **Consequences:** Current package classification remains unchanged, including its possible false positives and missed names.
 Compare explicit markers, name conventions, and secretspec declarations before replacing it.
 The design in REDESIGN.md distinguishes this accepted package rule from the still-unsettled application-input rule.
+
+## ADR-036: Inventory owns current state; the manifest is a read cache
+
+**Status:** Accepted 2026-10-17; records the standing inventory self-sufficiency agreement and the confirmed target-field requirement.
+
+**Context:** Local manifest and event requirements made the current implementation unable to continue reliably from a synchronized inventory alone.
+That is a departure from the agreed model, not a new feature to postpone indefinitely.
+A target name cannot generally be recovered from directory identity or a reserved adoption step.
+
+**Decision:** Cloudify current state must be reconstructible from the ivps inventory, with runbooks/recipes available and required secret values supplied separately.
+History is not required for current-state reconstruction.
+Persist the target name in inventory beside the applied package facts.
+Treat the manifest solely as a read cache: use it when valid and current, otherwise recreate it from inventory.
+Do not make missing local events a prerequisite for reading or continuing current state.
+Derive identities already carried by inventory paths and parent identity records instead of keeping independent copies without a demonstrated need.
+The exact lean package-record shape remains to be settled.
+
+**Consequences:** Current recovery behavior, record schemas, and captured records must be brought into compliance during implementation after the remaining specification gaps are closed.
+A fresh-controller proof must recover target bindings and applied settings without local manifests or history.
+History may still answer audit questions and support explicit repair; losing it does not erase current state.
+REDESIGN.md carries this contract.
+
+## ADR-037: Secrets enter Cloudify through the environment; secret providers stay outside the MVP
+
+**Status:** Accepted 2026-10-17; supersedes Secret capture (ADR-034)'s Cloudify-managed storage/retrieval, capture modes, provider allowlist, and backend-location recording for the MVP.
+It also replaces the secret reference/digest persistence requirement from One dispatch context (ADR-022) and Inventory event content (ADR-027) with secret-name-only recording.
+
+**Context:** Making Cloudify select, write, fetch, and remember secret-provider addresses expanded a provisioning tool into a secret-manager client.
+Secretspec already provides a wrapper that supplies environment variables to otherwise unaware commands.
+Rachid chose that separation for the MVP; optional aware-consumer UX belongs to later discussion.
+
+**Decision:** Secret values reach Cloudify through the caller's environment.
+Cloudify does not invoke secretspec, select its project/profile/provider, write its store, or depend on it being installed.
+Secretspec is the recommended external wrapper, not a required supplier; another caller may provide the same environment contract.
+Use one secretspec profile per named deployment as the external setup convention, without encoding that convention in Cloudify runtime or inventory.
+Persist secret names, never their values, digests, or provider addresses, in normal inventory and future safe snapshots.
+Replay retains ordinary recorded settings but takes required secret values from the new invocation's environment, after runbook mappings, never from snapshot literals or provider metadata.
+Missing required secret supply must fail before mutation.
+The exact classification suffixes, optional-secret behavior, flat record encoding, non-secret set/store behavior, and secret compatibility for shared installations remain open; this decision does not silently replace those contracts.
+
+**Consequences:** Cloudify needs no secret-location policy file, manager-selection hierarchy, provider adapter, or automatic secret capture for the MVP.
+Changing an external provider does not change Cloudify records.
+Historical replay is replay with newly supplied secrets, not proof of the historical credential identity.
+Safe snapshots still need implementation; existing unsafe snapshots are not made safe by this decision.
+Cloudify cannot prove secret equality between deployments from secret names alone, so shared-installation behavior needs an explicit conservative rule before implementation.
+The classification retained by Simple package secret classification (ADR-035) remains in force until a replacement rule accounts for existing token/key variables.
+REDESIGN.md records the new boundary; implementation waits for the remaining specification decisions.

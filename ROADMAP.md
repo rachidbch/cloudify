@@ -722,6 +722,7 @@ A second controller does not require it if its external wrapper can already supp
   The stored "desired inputs" concept disappears.
 - **Bonus:** add application-level defaults beside flavor-level defaults; the app-level file is weaker, the flavor-level file wins on collision (more specific wins).
 - **Migration:** the only live per-deployment file is octop's `values.yaml`, already mirrored in its inventory record.
+- **Secretspec profile convention (settled 2026-10-17):** one profile per named deployment, spelled `app:flavor:name` (identity rules forbid colons inside components, so the spelling is unambiguous; colons are legal in filenames and quoted TOML keys). Slash or hyphen spellings are rejected (nesting/ambiguity). `_direct` buckets get no profile convention.
 - Drafted as Defaults ladder, the user-forced bit, and one failure word (ADR-038): retires the input-store clause of One dispatch context (ADR-022) point 2 and the desired-inputs half of Deployment-first inventory (ADR-026) point 8, narrows ADR-030's source labels to the forced bit, and sets `failed` as the one failure word; implementation after specification convergence.
 
 ## Inventory recovery compliance bugs and lean package records (ADR-036, 2026-10-17)
@@ -733,6 +734,7 @@ A second controller does not require it if its external wrapper can already supp
   The manifest is a cache, not the only home of a binding.
 - **How:** preserve the target-to-host association and every required applied setting in inventory.
   Use a valid manifest when present; rebuild it from inventory when missing, corrupt, or out of date.
+  **Trigger (settled 2026-10-17):** rebuild on read when the manifest is missing or corrupt, or when any record's `revision` exceeds the manifest's cached high-water mark; keep the explicit rebuild command for force.
   Test a fresh controller holding only runbooks/recipes, synced inventory, and externally supplied secret environment variables, with no local manifests, runs, events, desired-input files, or secret-manager dependency in Cloudify.
   Include adopted deployments, dependencies, single-target and multi-target runbooks, and incomplete operations.
 - **Record shape:** review path-derived identity fields duplicated inside package records.
@@ -749,13 +751,15 @@ A second controller does not require it if its external wrapper can already supp
 - **Replay default (agreed 2026-10-17):** `deployment replay` without `--at` converges current state from ivps inventory; `--at <run>` time-travels that snapshot's ordinary settings.
   Secrets always come from the current environment (Secrets enter through the environment, ADR-037).
   The current newest-snapshot default is a compliance item to fix with this repair.
-- **Related drift:** unnamed `app run` currently selects `default`, while Named second deployments (ADR-031) requires proven matching or first-deployment name generation.
-  Reconcile this deliberately; use explicit semantic deployment names while the mismatch remains.
+- **Related drift (settled 2026-10-17, implement ADR-031):** unnamed `app run` matches a proven-identical deployment (bindings + non-secret scalars + `****` names), creates the first with a generated name, and refuses ambiguity naming the candidates; the current literal-`default` selection is the compliance bug.
+  Use explicit semantic names anyway while the mismatch remains.
 
-## Secret classification without mandatory new package syntax (2026-10-16)
+## Secret classification without mandatory new package syntax (settled 2026-10-17)
 
-- [ ] **What:** compare explicit package/application markers, name conventions, and secretspec declarations as sources of secret classification.
-  Simple MVP package classification (ADR-035) keeps existing name recognition and optional explicit markers; no recipe migration is required now.
+**Settled (Rachid):** classification = uppercase suffix (`_PASSWORD|_SECRET|_TOKEN|_KEY`, end of name) OR the existing explicit `secret NAME` marker (already parsed by the current code, used by pkg/affine). Mappings are secret when either side matches. Sweep every `pkg/*/.remote-vars` and runbook `inputs:` at implementation; rename outliers deliberately. Never preflight-demand secrets: a recipe/verify hook failing for a missing secret fails loudly, naming it and pointing at the wrapper (graceful, option c).
+
+- [ ] **What:** implement the settled rule above.
+  Simple MVP package classification (ADR-035) is superseded at implementation by this settlement; its body stays as history.
 - **Why:** name matching can miss a secret such as `LICENSE` or classify a public key as secret, while mandatory parallel declarations can create clerical drift.
   Cloudify must know secret status before resolving, forwarding, capturing, or snapshotting a value.
 - **How:** settle a simple naming rule shared by package variables and runbook inputs, preserving classification through mappings.
@@ -783,6 +787,7 @@ A second controller does not require it if its external wrapper can already supp
 ## Safe run snapshots and environment-only replay (revised 2026-10-17)
 
 - [ ] **What:** implement Secrets enter through the environment (ADR-037): snapshot ordinary settings and secret names, never secret values, digests, or provider locations.
+  **Record shape (settled 2026-10-17):** root scalars; `****` for classified secret names; root `user_forced` array; `failed: true` (cleared only by a successful install or reconfigure; a passing verify never clears it); version; revision; target. Multiline values are native JSON strings. Demanded replay names derive from the runbook's `inputs:`/`map:`; a bare package dispatch demands its own variable name.
 - **Why:** current snapshots can contain plaintext input values and step outputs.
   They remain local and unsafe for now; warnings and the ban on Git/shared or unencrypted backup still apply.
 - **How:** retain secret-name markers so replay does not confuse an omitted value with an ordinary default.
@@ -800,6 +805,7 @@ A second controller does not require it if its external wrapper can already supp
 
 - [ ] Remove value-containing `@base64:` secret references or require explicit insecure consent before recording them as publishable references.
   Encoding a value does not make it a secret location.
+  **Settled (2026-10-17):** base64 stays strictly as a file-store multiline transport, never classified as a secret reference; inventory records the decoded scalar as an ordinary value.
 - The current backend also implements multiline file-store values, so design a distinct literal transport and migrate its callers before removing it.
   Preserve exact multiline bytes and escaping; do not conflate this backend with private dispatch-context encoding.
 - Under the environment-only MVP, classified secrets are not captured as literals or references at all.

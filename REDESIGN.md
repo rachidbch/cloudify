@@ -298,7 +298,8 @@ Reconfigure resolves values in this order, strongest first:
 A user-forced value outranks every default until explicitly unset (`cloudify deployment unset` removes the bit): a value the operator supplied directly never moves because a default shifted.
 Non-forced applied values never seed: their default re-supplies them each reconfigure, and a deleted default entry lets the next wider default or the recipe default return - the deletion is honored, not buffered.
 
-The applied record carries one user-forced bit per value (Defaults ladder, ADR-038) in the lean record shape (root scalars, `****` for secret names, `failed: <phase>`, version, revision, target).
+The applied record carries one user-forced bit per value (Defaults ladder, ADR-038) in the lean record shape (root scalars; `****` for secret names; a root `user_forced` array; `failed: true`; version; revision; target).
+`failed` is set by any failed operation and cleared only by a successful install or reconfigure; a passing read-only verify never clears it.
 Secret values are represented by their names only under Secrets enter through the environment (ADR-037).
 
 Verify uses the previously applied source values by default.
@@ -341,11 +342,12 @@ The mapping syntax is fixed and tested before existing package names change.
 
 ## Secrets
 
-For the MVP, package secret classification keeps explicit markers, reference classification, and name recognition for `PWD|PASSWORD|SECRET|TOKEN|KEY` without requiring new package syntax (Simple package secret classification, ADR-035).
+Secret classification (settled 2026-10-17, Rachid): a name is secret when it ends in an uppercase `_PASSWORD`, `_SECRET`, `_TOKEN`, or `_KEY` suffix, or when its package declaration carries the existing explicit `secret NAME` marker (already parsed by the current code and used by `pkg/affine`).
+The older substring heuristic is replaced by this rule at implementation; the shipped declarations are swept in the same pass.
 
-Name recognition is not confined to debug masking; it also protects persisted package values.
+A runbook mapping is secret when either side matches the rule, so `RDP_PASSWORD` stays secret through its package aliases.
 
-Application-input secret classification and its propagation through mappings are not fully specified or implemented; settle them before enabling application-wide automatic secret handling.
+Application-input classification and propagation through mappings are settled as above; the sweep and pinning tests land with implementation.
 
 For the MVP, secret values come from the caller's environment; secretspec or another external supplier may populate it (Secrets enter through the environment, ADR-037).
 
@@ -409,7 +411,7 @@ A package's configuration-affecting declared values are the values it declares i
 Non-secret values compare by their recorded values.
 
 Secret-name-only recording cannot prove that two deployments supplied equal secret values (Secrets enter through the environment, ADR-037).
-A conservative shared-installation rule must be agreed before implementation; do not silently treat matching secret names as compatible credentials.
+Settled rule (2026-10-17): when a package's own declared values include a classified secret, a second deployment may not rely on that installation - the guard refuses before mutation and names both deployments and both escapes: a distinct package instance (a genuinely separate installation, ADR-026), or genuinely sharing one identical secret supplied by the wrapper.
 
 A conflict fails before mutation and names the deployments in conflict.
 
@@ -726,14 +728,14 @@ This removes the earlier capture modes, `store`/`fetch` interface, new policy fi
 The older Secret capture decision (ADR-034) remains history, superseded by Secrets enter through the environment (ADR-037).
 Optional secretspec-aware UX is future work, not a prerequisite of deployment or replay.
 
-The following specification gaps remain open before implementation:
+The specification gaps named when this section landed are settled (2026-10-17):
 
-- exact name suffixes, accounting for existing token/key variables;
-- required versus optional secrets and operation-specific needs;
-- a flat record representation and failure marker that preserve last confirmed settings on failure;
-- whether removing per-value source metadata also removes the earlier set/store pinning rule;
-- how shared-installation protection behaves when secret equality cannot be proved from names alone;
-- which runbook/input identity must survive replay when application names map to package names.
+- classification: uppercase `_PASSWORD|_SECRET|_TOKEN|_KEY` suffixes plus the explicit `secret NAME` marker, swept across packages and runbooks;
+- demands: Cloudify never preflight-demands secrets; a recipe or verify hook failing for a missing secret fails loudly and names it (graceful, Secrets enter through the environment, ADR-037);
+- record: root scalars, `****` names, root `user_forced` array, `failed: true`, version, revision, target;
+- provenance: the user-forced bit replaces the earlier set/store labels (Defaults ladder, ADR-038);
+- sharing: conservative refusal with the package-instance escape (the guard paragraph above);
+- input identity: replay derives demanded environment names from the runbook's `inputs:`/`map:`; a bare package dispatch demands the package variable name itself.
 
 Generated-secret UX and any guest-to-provider return channel stay deferred until these decisions are settled.
 Existing plaintext local snapshots are still unsafe until the implementation is changed; do not publish them.

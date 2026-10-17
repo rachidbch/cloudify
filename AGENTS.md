@@ -60,7 +60,7 @@ Review passes are bounded: a SPEC review gets one review pass, one fixing pass, 
 TDD cycle. All tests run inside an Incus container (`cloudai:cloudify`), never on localhost.
 
 **Two products, two test scopes** (ruled 2026-10-01): cloudify is the tool AND a pkg registry; never pay both costs for one change.
-- cloudify code change (`cloudify`, `lib/`, `schemas/`, tool tests): full unit + gate + `task test-canary` (guacamole, the complex pkg). Full pkg sweep only at milestones.
+- cloudify code change (`cloudify`, `lib/`, `schemas/`, tool tests): focused runs while iterating; full unit + gate + `task test-canary` (guacamole, the complex pkg) at the feature-batch exit gate. Full pkg sweep only at milestones.
 - pkg change: `task test-integration:<pkg>` only, plus that pkg's unit tests if it has any.
 
 **Skills:** before editing cloudify or a package, read the `cloudify-dev` skill (framework) or the `cloudify-pkg-dev` skill (recipes); the bats harness is the completion gate, never the debugger.
@@ -76,14 +76,14 @@ task lint              # shellcheck on this host
 
 **Testing:** tests run in `cloudai:cloudify` only; `task sync` rsyncs the tree (prunes deletions), integration tests also need the branch pushed.
 Background + poll, never redirect or grep: `mkdir -p results/<suite>`; `setsid <cmd> --report-formatter tap13 -o results/<suite> </dev/null >/dev/null 2>&1 &`; then `tail results/<suite>/report.tap`. bats always names it `report.tap`, and stdout must be discarded or SIGPIPE kills it when the ssh channel closes. tap13 carries each failure's assertion and output, so the tap suffices; give a large tap to a subagent for the failures only.
-Full suite at phase and milestone boundaries; E2E is an exit gate, never a debugger.
+Scope every run by code radius and feature radius; a focused red→green that reproduces the bug is that bug's exit gate. Full suite at phase and milestone boundaries; E2E is an exit gate, never a debugger. All authored test/runner code lives in `tests/` (`tests/red/` for explicit-invocation reproducers), transient tests included; `~/tmp` holds run data only.
 
 **Implementation:** the lead agent writes the code and shows the moves; subagents review, research, and read large taps.
 
 **Logs and observability:** LOGS section below. Native logs only, raw; never redirect, filter or discard.
 **Test transport:** plain `ssh root@X` (Tailscale SSH, no options, no incus daemon) is the only test transport: one ssh session streams the tree to the test target (`X` = `CLOUDIFY_TEST_TARGET`, default `cloudify`), runs bats there, streams the TAP back live, and the ssh exit is the run's exit. Never `ivps exec`, never the incus API, never per-command round trips, never backgrounded remote runs. A repeat of the improvisation trap escalates to Rachid immediately.
 
-**Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues.
+**Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues. Canonical docs (`PLAN.md`/`HISTORY.md`/`LOGS.md`) own progress and evidence; scratch files never become the tracking authority.
 
 **Versioning:** strict SemVer. The `VERSION` file at the repo root is the single source; `cloudify --version` prints it; `CLOUDIFY_VERSION` overrides it in tests. Bump per semver whenever the tool meaningfully changes (breaking: MAJOR, behavior/features: MINOR, fixes: PATCH).
 

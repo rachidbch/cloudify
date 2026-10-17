@@ -90,6 +90,11 @@ tasks:
       - ivps exec {{.CONTAINER}} -- bash -c 'cd {{.REPO_DIR}} && bats tests/unit/ tests/integration/recipe-discovery.bats'
       - bash tests/run-integration.sh
 
+  acceptance:
+    desc: Serial acceptance batch (unit -> gate -> canary, or suites as args); receipts in results/acceptance/<run-id>/
+    cmds:
+      - bash tests/run-acceptance.sh {{.CLI_ARGS}}
+
   lint:
     desc: Run shellcheck locally (installs shellcheck if missing)
     cmds:
@@ -113,7 +118,7 @@ tasks:
               ;;
           esac
         fi
-      - shellcheck -x lib/*.sh lib/shadows/*.sh lib/secrets/*.sh cloudify pkg/*/init.sh pkg/*/install.sh pkg/*/configure.sh pkg/*/uninstall.sh pkg/*/verify.sh
+      - shellcheck -x lib/*.sh lib/shadows/*.sh lib/secrets/*.sh cloudify pkg/*/init.sh pkg/*/install.sh pkg/*/configure.sh pkg/*/uninstall.sh pkg/*/verify.sh tests/*.sh
 
   itest-base:
     desc: Create clean test snapshot (Ubuntu + bats + rsync + envsubst, no codebase)

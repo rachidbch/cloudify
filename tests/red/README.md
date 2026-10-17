@@ -3,10 +3,11 @@
 This directory holds tests that state a contract, in a shape the default suite
 does not run: neither `task test-unit` (`bats --recursive tests/unit/`) nor
 `task test` (`bats tests/unit/ tests/integration/recipe-discovery.bats`) globs
-this directory, so a contract gap can never break the suite. Run one explicitly
-inside the container:
+this directory, so a contract gap can never break the suite. Run one explicitly on the test
+target over the approved plain-ssh transport (refresh the tree first with
+`task sync`):
 
-    ivps exec cloudai:cloudify -- bash -c 'cd /root/cloudify && bats -T --show-output-of-passing-tests tests/red/state-v2-duplicate-resolution.bats'
+    ssh root@"${CLOUDIFY_TEST_TARGET:-cloudify}" 'cd /root/cloudify && bats tests/red/state-v2-duplicate-resolution.bats'
 
 `tests/red/state-v2-duplicate-resolution.bats` states two contracts and both are
 green today. Its first case started red: one dispatch resolved a declared value

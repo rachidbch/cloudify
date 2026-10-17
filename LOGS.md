@@ -1156,3 +1156,11 @@
 - Unit run 4 (last COMPLETE): 821 tests, 814 ok, 7 not-ok - all old-shape assertions or real cutover bugs, each with a committed fix: seed-reader jq scoping (`.key` binding), recorded-secret demand lines on every write phase, matcher compare null-input (`jq -ne`) with the `****` wildcard, adoption's retired `vfile_ev`, the show user-count array wrap, deterministic `newest_event` ordering, and the seeding tests' store moved to the deployment-rank values file.
 - Unit run 5 never started testing: plain ssh to `root@cloudify` timed out at connection, ping to `100.123.125.109` 100% loss, tailscale lists the node but the host is unreachable. Per the fail-fast constitution: no retry, no healing; STOP and ping Rachid.
 - Runtime-behavior decisions recorded en route: a first-operation verify failure records `failed: true` with no settings and null version (nothing was ever confirmed); an off-graph dependency's succeeded line still reports its own version while the RUN degrades; the record slot travels beside the other dispatch globals (`CLOUDIFY_RECORD_SLOT`), never positionally (arg 12 collided with the requested words).
+
+## 2026-10-17 - S2 cutover verified by the three tool gates
+
+- Rachid confirmed the red test host was a network fluke; plain ssh answered again and unit run 6 completed.
+- Verified on code through `e3845df` + doc commit `6199e2d`: unit 821/821, fragile gate 152/152, canary 7/7 - every suite and batch exit 0.
+- Exact evidence: `results/unit.DqdqFWL2/report.tap`, `results/gate.GNvUq6W0/report.tap`, `results/canary.VQt4GqtP/report.tap`.
+- Payload goldens stayed byte-identical through the record cutover (no golden re-capture needed); the record-contract pins are the schema fixtures - no separate record golden set exists (tests/fixtures/golden holds payload only).
+- Remaining in Schema and lean records (S2): the explicit old-record conversion (backup, rollback, value-free report, per-application sequence per ADR-043) and the closing gates at slice end.

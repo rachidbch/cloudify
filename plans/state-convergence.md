@@ -126,16 +126,19 @@ The detached batch finished independently; historical PID 17044 is gone, and abs
 
 ### Schema and lean records (S2)
 
-- [ ] Cross Schema approval (G2), then update schemas, bounded validator, valid/invalid fixtures, record goldens, and documentation together.
-  Progress note (2026-10-17): schemas + validator + fixtures + schema README landed (`1c959de`); the record goldens re-capture is still open and waits for a green unit suite.
-- [ ] Cut over every producer and consumer, including worker, state apply, adoption, matching, deployment rendering, and replay/seeding readers; do not land a schema-only incompatible writer state.
-  Progress note (2026-10-17): the writer/reader cutover is code-complete and lint-green (`04bf366`, `118f42b`, plus fix commits through `e3845df`); last complete unit run 814/821 with 7 red, all seven old-shape or fixed-bug assertions whose fixes are committed but unverified (the verification run died on an unreachable test host; see LOGS).
-  A stale deployment-store expectation in the seeding tests was updated to the deployment-rank values file (ADR-038's surviving rung); the recorded-secret demand now fires for every recorded secret on every write phase (the lean record carries no digest, so the equality check is structurally gone - S3 then removes the demand itself).
-- [ ] Preserve revision monotonicity, host locks, atomic validated replacement, event identity fields, failure preservation, and the target association.
+- [x] Cross Schema approval (G2), then update schemas, bounded validator, valid/invalid fixtures, record goldens, and documentation together.
+  Landed in `1c959de`: schemas evolved in place (lean package-state record, event values as recorded forms), 5+13 and 9+14 fixture matrices green, schema README rewritten.
+  The record-contract pins are the schema fixtures; the only byte-exact goldens are the payload ones (tests/fixtures/golden/payload), which stayed byte-identical through the cutover (gate 152/152).
+- [x] Cut over every producer and consumer, including worker, state apply, adoption, matching, deployment rendering, and replay/seeding readers; do not land a schema-only incompatible writer state.
+  Landed in `04bf366` through `e3845df` plus `9610af8`: writers emit the lean shape, readers (seed, show/unset, matching, adoption, describe) consume it; unit 821/821, gate 152/152, canary 7/7 (runs of 2026-10-17; exact TAP paths in LOGS).
+  A first-operation verify failure records `failed: true` with no settings and null version; an off-graph dependency's succeeded line reports its own version while the run degrades; the record slot travels via `CLOUDIFY_RECORD_SLOT`.
+- [x] Preserve revision monotonicity, host locks, atomic validated replacement, event identity fields, failure preservation, and the target association.
+  The transition still validates before atomic replacement and bumps the revision under the host lock; the lean record keeps target/version/revision/user_forced/failed and drops the per-object event ids (events carry previous/resulting revisions instead); `inventory_check` is schema-validity only.
 - [ ] Implement an explicit, idempotent old-record conversion with a restricted backup, value-free reports, unresolved-fact refusals, and Git-revert-plus-backup rollback, built for the per-application live sequence (per-application live conversion, ADR-043).
   Derive targets only from proven facts; never invent adopted bindings or success.
   Test on copied synthetic records first; live conversion waits for Live-state approval (G4).
-- [ ] Prove native multiline/empty settings, secret-name-only records/events, first-operation failure, failed reconfigure preserving settings, successful verify retaining failure, and successful install/reconfigure clearing failure.
+- [x] Prove native multiline/empty settings, secret-name-only records/events, first-operation failure, failed reconfigure preserving settings, successful verify retaining failure, and successful install/reconfigure clearing failure.
+  Pinned by the rewritten suites: worker.bats (verify-failure first op, settings preservation, failed clear on reconfigure-success paths), applied-seeding.bats (**** demand lines, forced filter), schema fixtures (multiline/empty, first-failure, failed-preserves-settings), matching.bats (marker-only secret compare).
 - [ ] Close the tool gates and record-golden review.
 
 ### Environment-only secret plumbing (S3)

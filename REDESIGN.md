@@ -345,7 +345,7 @@ The mapping syntax is fixed and tested before existing package names change.
 
 ## Secrets
 
-Secret classification uses explicit markers plus an anchored suffix safety net (Secret markers with suffixes, ADR-042, superseding ADR-039's marker-only clauses).
+Secret classification uses explicit markers plus an anchored suffix safety net (Secret markers with suffixes, ADR-042, superseding ADR-039's marker-only clauses). An explicit marker outranks a suffix origin on the same name, and a suffix-only classification keeps the v1 `declaration: heuristic` value; full removal of name-based recognition stays deferred to the roadmap.
 A name is secret when marked with `secret NAME`, or when it ends exactly with `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, or `_PWD` (case-sensitive, including the underscore).
 Substring matches and bare names do not qualify; explicit markers cover exceptions such as `CLOUDIFY_ZITADEL_MASTERKEY`.
 The implementation sweep still marks every shipped secret declaration and runbook input.

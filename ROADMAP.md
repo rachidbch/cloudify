@@ -1,5 +1,11 @@
 # Cloudify Roadmap
 
+## State convergence (proposed plan, 2026-10-17)
+
+- [ ] Implement Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Marker-only classification (ADR-039), and Unnamed matching (ADR-031) through [the active plan](PLAN.md), tracked in [issue #17](https://github.com/rachidbch/cloudify/issues/17).
+  Plan, schema, and fragile-contract approvals are pending; production migration requires separate approval.
+  The plan includes stale-prose reconciliation, explicit existing-record conversion, and correction of the legacy canary transport before its acceptance gate.
+
 ## URGENT - clean the surface before anything else (2026-09-07 E2E traps)
 
 Policy: compose-ability. Fix at the root (CRITICAL GATE where lib/router touches code), then revisit the deployment-runbook section below.

@@ -1443,3 +1443,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - **ADR-039 drafted (Rachid go):** classification is `secret NAME` marker-only (supersedes ADR-035's interim keep-rule; heuristic retired); runbook inputs carry `secret NAME` entries in the list; failure marker is `"failed": true` (corrects ADR-038's `<phase>` illustration).
 - **Harness docs synced:** README and runbooks/README classification notes moved to marker-only; AGENTS.md Configuration bullet updated to the defaults ladder, inventory-owned applied values, environment-only secrets (Rachid consent).
 - Docs only; implementation still queued.
+
+## 2026-10-17 - state-convergence plan proposed
+
+- Recorded the ten-slice implementation proposal for Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Marker-only classification (ADR-039), and Unnamed matching (ADR-031) in `plans/state-convergence.md`, restored `PLAN.md`, and opened tracking issue #17.
+- Added explicit schema/fragile-contract approvals, existing-record conversion and separate live-state consent, plus a canary transport prerequisite after confirming direct Incus, host-key rewrites, and localhost Bats in the legacy runner.
+- One SPEC review passed; approvals, fresh baseline, and implementation remain pending; no runtime, harness, inventory, or production changes.

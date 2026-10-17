@@ -6,7 +6,8 @@ This design supersedes the implementation contract in ADR-021.
 
 Concept definitions live in `GLOSSARY.md`.
 
-Implementation lives in `plans/state-model-v2-recovery.md` through the `PLAN.md` pointer and remains behind the project fragile-surface rule (`AGENTS.md`, `docs/FRAGILE.md`).
+Queued convergence work lives in `plans/state-convergence.md` through the `PLAN.md` pointer, pending Rachid's approval; prior recovery work is archived under `plans/archived/`.
+Implementation remains behind the project fragile-surface rule (`AGENTS.md`, `docs/FRAGILE.md`).
 
 ## Decision in one breath
 

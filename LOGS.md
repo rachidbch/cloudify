@@ -1024,3 +1024,13 @@
     03:40ish D Rachid approved; wait-connect + verify legs: RUNBOOK SUCCEEDED, manifest verified; cloudflared tunnel registered
     04:0x D Rachid rejected T3 Connect surface: t3 connect logout, cloudflared gone; ivps expose-service svc:t3 LIVE (renamed from t3code-app); pairing URL handed (tailnet route)
     (2026-10-09) D Rachid drove an in-guest agent migration: server now hand-started from fork checkout (~/.local/share/t3-source/prod-home) on 3773; systemd unit disabled; second listener 3774 + agent-added t3code:8443 serve mapping. Not touched (Rachid's call); fresh pair tokens minted on demand.
+
+## 2026-10-17 - state-convergence planning evidence
+
+- Session fetch succeeded; `master` matched `origin/master` at `1f46d5f`, with a clean tree and no `PLAN.md` before planning.
+- Read the handoff, accepted decisions, design, fragile invariants, schema, Taskfile, and both test runners; no runtime baseline attempted before plan approval.
+- Confirmed `tests/remote-bats.sh` runs unit/gate over one plain SSH session and writes `results/<suite>.tap`.
+- Confirmed `tests/run-integration.sh` uses direct Incus snapshot operations, host-key removal/reacceptance, result deletion, and localhost Bats; queued transport correction before canary rather than invoking this runner.
+- Confirmed current package schema has a closed nested field set; queued explicit conversion and complete producer/consumer cutover behind schema approval.
+- Proposed plan received one SPEC review: PASS, no must-fix findings; tracking issue https://github.com/rachidbch/cloudify/issues/17.
+- No tests, SSH, container operations, harness edits, secrets access, or production mutations performed.

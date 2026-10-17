@@ -172,9 +172,11 @@ function cloudify_context_applied_seed() {
             | to_entries[]
             | select(.key | test("^[A-Z_][A-Z0-9_]*$"))
             | .key as $k
-            | select(if $mode == "reconfigure" then ($forced | index($k) != null) else true end)
-            | (if .value == "****" then "secret" else "value" end) as $kind
-            | [.key, $kind, "",
+            | (if .value == "****" then "secret"
+               elif $mode == "reconfigure" and ($forced | index($k) == null) then empty
+               else "value" end) as $kind
+            | select($kind != "")
+            | [$k, $kind, "",
                (if $kind == "secret" then ""
                 elif (.value | contains("\n") or contains("\t") or contains("\u0001")) then "b:" + (.value | @base64)
                 else "t:" + .value end)]
@@ -224,8 +226,6 @@ _cloudify_context_seed_walk() {
     done < "$seed"
 }
 
-# _cloudify_context_seed_check - after the walk, every literal-secret demand
-# marker must be resupplied (caller env or a store) with a plaintext whose
 # _cloudify_context_seed_check - after the walk, every recorded secret-name
 # marker must be resupplied (caller env or a store). The lean record carries
 # no digest, so there is no equality check to fail: the name must simply be
@@ -377,7 +377,7 @@ function cloudify_context_build() {
         cloudify_vars_env_read "${candidates[@]}" > /dev/null
     fi
 
-    # Literal-secret demand markers: resupplied and digest-checked, or the
+    # Recorded secret-name markers: resupplied by name, or the
     # dispatch dies named before any payload is built.
     _cloudify_context_seed_check
 

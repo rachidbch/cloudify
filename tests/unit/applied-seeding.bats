@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
-# Applied seeding freeze (state-model-v2 4.4, ADR-030): reconfigure seeds the
-# deployment's applied SET values between the caller environment and the
-# deployment store (a value you set outranks the store until you unset it);
-# non-set values never seed (the store re-supplies them, a deleted entry lets
-# the recipe default return). Verify and teardown seed ALL applied values,
-# below the store, so inputs resupply over them. A set literal secret is
-# digest-only and demands resupply; a mismatch dies named.
+# Applied seeding on the lean record (state convergence S2; ADR-030 as
+# amended): reconfigure seeds the deployment's user-forced values between the
+# caller environment and the defaults files (a value you set outranks the
+# stores until you unset it); non-forced values never seed (the store
+# re-supplies them, a deleted entry lets the recipe default return). Verify
+# and teardown seed ALL recorded values, below the stores, so inputs resupply
+# over them. A "****" entry is a secret-name marker: it never seeds a value
+# and demands resupply by name - the lean record carries no digest, so there
+# is no equality check (environment-only secrets, ADR-037).
 
 source tests/helpers/common.bash
 
@@ -57,43 +59,23 @@ teardown() {
     teardown_test_env
 }
 
-_v() { # _v <source> <source_form|-> <reference|-> <digest|->
-    local form="null" ref="null" dig="null" red="false"
-    [[ "$2" != "-" ]] && form="\"$2\""
-    [[ "$3" != "-" ]] && { ref="\"$3\""; form="\"$3\""; }
-    [[ "$4" != "-" ]] && { dig="\"$4\""; form="null"; red="true"; }
-    printf '{"source":"%s","secret":%s,"declaration":"explicit","source_form":%s,"reference":%s,"digest":%s,"redacted":%s}' \
-        "$1" "$([[ "$3" != "-" || "$4" != "-" ]] && printf true || printf false)" "$form" "$ref" "$dig" "$red"
-}
-
-_nv() { # _nv <form> - a plain non-secret value object
-    printf '{"source":"%s","secret":false,"declaration":"none","source_form":"%s","reference":null,"digest":null,"redacted":false}' "$1" "$2"
-}
-
-# _seed_record <applied-values-json> - one valid applied record on the host
-# tree for web/default/main, package nginx, instance default.
+# _seed_record <user-forced-json-array> <settings-json-object> - one valid
+# lean record on the host tree for web/default/main, package nginx.
 _seed_record() {
-    local applied="$1" dir
+    local forced="$1" settings="$2" dir
     dir=$(cloudify_state_record_dir web1 "" web default main nginx default)
     mkdir -p "$dir"
-    jq -n --argjson values "$applied" \
-        '{schema_version: 1, host: "web1", host_key: "ivps:n1",
-          package: "nginx", package_instance: "default",
-          application: "web", flavor: "default", deployment: "main",
-          step_id: "direct", revision: 1,
-          applied: {version: "1.24.0", at: "2026-09-21T00:00:00Z",
-                    event_id: "20260101T000000Z-00000002", values: $values},
-          last_attempt: {phase: "install", outcome: "succeeded",
-                         at: "2026-09-21T00:00:00Z",
-                         event_id: "20260101T000000Z-00000000", requested: {}},
-          health: {status: "unknown", checked_at: null,
-                   event_id: "20260101T000000Z-00000001"}}' > "$dir/state.json"
+    jq -n --argjson forced "$forced" --argjson settings "$settings" \
+        '{schema_version: 1, target: "direct", revision: 1,
+          version: "1.24.0", user_forced: $forced} + $settings' \
+        > "$dir/state.json"
 }
 
-# _store <key> <value> - the deployment desired-inputs store.
+# _store <key> <value> - an application-flavor defaults entry (the strongest
+# file rung): the ladder's stores supply what the seed does not.
 _store() {
     local f
-    f=$(cloudify_deployment_values_file web default main)
+    f=$(cloudify_vars_app_file web default)
     mkdir -p "$(dirname "$f")"
     printf '%s: %s\n' "$1" "$2" >> "$f"
 }
@@ -107,29 +89,29 @@ _build() {
     cloudify_context_build configure deployment "$phase" "$declared" nginx > /dev/null
 }
 
-@test "seed producer: set filter for reconfigure, full set for verify and teardown" {
-    local d
-    d="sha256:$(printf 'plain' | sha256sum | cut -d' ' -f1)"
-    _seed_record "{\"PORT\": $(_nv caller 4000), \"MODE\": $(_nv deployment store), \"TOKREF\": $(_v caller - @vault:kv/t -), \"TOKEN\": $(_v caller - - "$d")}"
+@test "seed producer: user_forced filter for reconfigure, full set for verify and teardown" {
+    _seed_record '["PORT"]' '{"PORT": "4000", "MODE": "8080", "TOKEN": "****", "TOKREF": "****"}'
 
     local f names
     f=$(cloudify_context_applied_seed reconfigure web1 "" web default main)
     [ -f "$f" ]
     names=$(cut -d$'\x1f' -f1 "$f" | sort | paste -sd,)
     [ "$names" = "PORT,TOKEN,TOKREF" ]
-    grep -aq $'^TOKREF\x1fvalue\x1f\x1ft:@vault:kv/t$' "$f"
-    grep -aq $'^TOKEN\x1fsecret\x1fsha256:' "$f"
+    subrubric "the user-forced value seeds; the recorded secrets are demand markers only"
+    grep -aq $'^PORT\x1fvalue\x1f\x1ft:4000$' "$f"
+    grep -aq $'^TOKEN\x1fsecret\x1f\x1f$' "$f"
+    grep -aq $'^TOKREF\x1fsecret\x1f\x1f$' "$f"
 
     f=$(cloudify_context_applied_seed verify web1 "" web default main)
     names=$(cut -d$'\x1f' -f1 "$f" | sort | paste -sd,)
     [ "$names" = "MODE,PORT,TOKEN,TOKREF" ]
 }
 
-@test "reconfigure: a set value outranks the store; caller env outranks the seed" {
-    _seed_record "{\"PORT\": $(_nv caller 4000)}"
+@test "reconfigure: a user-forced value outranks the defaults file; caller env outranks the seed" {
+    _seed_record '["PORT"]' '{"PORT": "4000"}'
     _store PORT 8080
 
-    subrubric "seed beats the store"
+    subrubric "seed beats the defaults file"
     unset PORT
     _build reconfigure
     [ "${PORT:-}" = "4000" ]
@@ -142,17 +124,17 @@ _build() {
     [ "$(cloudify_context_read "$CLOUDIFY_CONTEXT_FILE" value.PORT.raw)" = "t:5000" ]
 }
 
-@test "reconfigure: non-set values never seed - the store supplies, a deleted entry falls to the recipe default" {
-    _seed_record "{\"MODE\": $(_nv deployment 8080)}"
+@test "reconfigure: non-forced values never seed - the defaults file supplies, a deleted entry falls to the recipe default" {
+    _seed_record '[]' '{"MODE": "8080"}'
 
-    subrubric "store value lands, provenance deployment"
+    subrubric "defaults-file value lands, provenance defaults"
     _store MODE 9090
     _build reconfigure
     [ "${MODE:-}" = "9090" ]
     [ "$(cloudify_context_read "$CLOUDIFY_CONTEXT_FILE" value.MODE.source)" = "deployment" ]
 
-    subrubric "store entry deleted - the name is absent (recipe default on the host)"
-    rm -f "$(cloudify_deployment_values_file web default main)"
+    subrubric "defaults entry deleted - the name is absent (recipe default on the host)"
+    rm -f "$(cloudify_vars_app_file web default)"
     rm -f "$CLOUDIFY_CONTEXT_FILE"
     unset MODE
     _build reconfigure
@@ -161,10 +143,8 @@ _build() {
     [ "$status" -ne 0 ]
 }
 
-@test "reconfigure: a set literal secret demands resupply; digest must match" {
-    local d
-    d="sha256:$(printf 'plain' | sha256sum | cut -d' ' -f1)"
-    _seed_record "{\"TOKEN\": $(_v caller - - "$d")}"
+@test "reconfigure: a recorded secret name demands resupply by name, never by value equality" {
+    _seed_record '[]' '{"TOKEN": "****"}'
 
     subrubric "unsupplied: dies named before any dispatch"
     unset TOKEN
@@ -172,20 +152,14 @@ _build() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"TOKEN"* ]]
 
-    subrubric "resupplied with the matching plaintext: passes and forwards"
-    export TOKEN=plain
+    subrubric "resupplied: passes and forwards (no digest comparison exists)"
+    export TOKEN=whatever-current
     _build reconfigure
-    [ "$TOKEN" = "plain" ]
-
-    subrubric "resupplied with a mismatching plaintext: dies named"
-    export TOKEN=wrong
-    run _build reconfigure
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"TOKEN"* ]]
+    [ "$TOKEN" = "whatever-current" ]
 }
 
-@test "verify and teardown: all applied values seed below the store; inputs resupply over them" {
-    _seed_record "{\"ASET\": $(_nv caller 4000), \"BSTORE\": $(_nv deployment 8080)}"
+@test "verify and teardown: all recorded values seed below the defaults files; inputs resupply over them" {
+    _seed_record '["ASET"]' '{"ASET": "4000", "BSTORE": "8080"}'
     _store BSTORE 9090
 
     local phase
@@ -193,10 +167,10 @@ _build() {
         rm -f "$CLOUDIFY_CONTEXT_FILE"
         unset ASET BSTORE
         _build "$phase"
-        # ASET: no store entry, the seed supplies it (label `applied`).
+        # ASET: no defaults entry, the seed supplies it (label `applied`).
         [ "${ASET:-}" = "4000" ]
         [ "$(cloudify_context_read "$CLOUDIFY_CONTEXT_FILE" value.ASET.source)" = "applied" ]
-        # BSTORE: the store outranks the seed at verify/teardown.
+        # BSTORE: the defaults file outranks the seed at verify/teardown.
         [ "${BSTORE:-}" = "9090" ]
         [ "$(cloudify_context_read "$CLOUDIFY_CONTEXT_FILE" value.BSTORE.source)" = "deployment" ]
     done

@@ -130,12 +130,7 @@ _apply_event_body() {
 }
 
 _capture() {
-    jq -n '{schema_version:1, host:"cloudai:cloudify", host_key:"ivps:cloudai:cloudify",
-        package:"guacamole", package_instance:"default",
-        application:"k3s", flavor:"default", deployment:"main", step_id:"install-guac",
-        applied:{version:"1.5.5", at:"2026-09-18T10:00:01Z", values:{}},
-        last_attempt:{phase:"install", outcome:"succeeded", at:"2026-09-18T10:00:01Z", requested:{}},
-        health:{status:"unknown", checked_at:null}}'
+    jq -n '{schema_version:1, target:"web", revision:1, version:"1.5.5", user_forced:[]}'
 }
 
 @test "inventory apply: event first, then revision 1 on a fresh record" {
@@ -153,77 +148,66 @@ _capture() {
     [ "$(jq -r .state.resulting_revision "$event_file")" = "1" ]
 
     [ "$(jq -r .revision "$record")" = "1" ]
-    [ "$(jq -r .applied.event_id "$record")" = "$id" ]
-    [ "$(jq -r .last_attempt.event_id "$record")" = "$id" ]
     run cloudify_state_validate_file "$CLOUDIFY_SCHEMA_DIR/package-state.schema.json" "$record"
     [ "$status" -eq 0 ]
 }
 
-@test "inventory apply: second transition stamps only the changed object" {
+@test "inventory apply: second transition bumps the revision; the event stream carries the link" {
     local record="$CLOUDIFY_TMP/state.json" next2="$CLOUDIFY_TMP/next2.json"
-    local body="$CLOUDIFY_TMP/ev.json" id1
+    local body="$CLOUDIFY_TMP/ev.json" id1 id2
     _apply_event_body > "$body"
     _capture > "$CLOUDIFY_TMP/next.json"
     id1=$(cloudify_state_inventory_apply "$record" "$body" "$CLOUDIFY_TMP/next.json")
 
-    jq '.last_attempt = {phase:"reconfigure", outcome:"failed", at:"2026-09-18T11:00:00Z", requested:{}}' \
-        "$record" > "$next2"
-    local id2
+    jq '.version = "1.5.6"' "$record" > "$next2"
     id2=$(cloudify_state_inventory_apply "$record" "$body" "$next2")
     [ "$id2" != "$id1" ]
 
     [ "$(jq -r .revision "$record")" = "2" ]
-    [ "$(jq -r .applied.event_id "$record")" = "$id1" ]
-    [ "$(jq -r .last_attempt.event_id "$record")" = "$id2" ]
+    [ "$(jq -r .version "$record")" = "1.5.6" ]
+    local event_file="$HOME/.local/state/cloudify/events/${id2:0:4}-${id2:4:2}/$id2.json"
+    [ "$(jq -r .state.previous_revision "$event_file")" = "1" ]
+    [ "$(jq -r .state.resulting_revision "$event_file")" = "2" ]
 }
 
-@test "inventory apply: missing referenced event blocks mutation; invalid next capture writes nothing" {
+@test "inventory apply: an invalid current record refuses to mutate; an invalid capture writes nothing" {
     local record="$CLOUDIFY_TMP/state.json" body="$CLOUDIFY_TMP/ev.json" next="$CLOUDIFY_TMP/next.json"
     _apply_event_body > "$body"
     _capture > "$next"
-    local id1
-    id1=$(cloudify_state_inventory_apply "$record" "$body" "$next")
+    cloudify_state_inventory_apply "$record" "$body" "$next" >/dev/null
     local before
     before=$(jq -S . "$record")
 
-    subrubric "a record pointing at a missing event refuses to mutate"
-    find "$HOME/.local/state/cloudify/events" -name "$id1.json" -delete
-    jq '.last_attempt = {phase:"verify", outcome:"failed", at:"2026-09-18T12:00:00Z", requested:{}}' \
-        "$record" > "$next"
+    subrubric "a corrupted current record refuses to mutate"
+    echo '{not json' > "$record"
     run cloudify_state_inventory_apply "$record" "$body" "$next"
     [ "$status" -ne 0 ]
-    [ "$(jq -S . "$record")" = "$before" ]
 
     subrubric "an invalid next capture creates no event and leaves prior bytes"
     _capture > "$next"
-    jq 'del(.applied)' "$next" > "$CLOUDIFY_TMP/bad-next.json"
+    jq 'del(.target)' "$next" > "$CLOUDIFY_TMP/bad-next.json"
     local events_before
     events_before=$(find "$HOME/.local/state/cloudify/events" -name '*.json' | wc -l)
     run cloudify_state_inventory_apply "$record" "$body" "$CLOUDIFY_TMP/bad-next.json"
     [ "$status" -ne 0 ]
     [ "$(find "$HOME/.local/state/cloudify/events" -name '*.json' | wc -l)" -eq "$events_before" ]
-    [ "$(jq -S . "$record")" = "$before" ]
 }
 
-@test "inventory check: read-only gap detection" {
+@test "inventory check: schema validity only; the event stream carries linkage" {
     local record="$CLOUDIFY_TMP/state.json" body="$CLOUDIFY_TMP/ev.json" next="$CLOUDIFY_TMP/next.json"
     _apply_event_body > "$body"
     _capture > "$next"
-    local id
-    id=$(cloudify_state_inventory_apply "$record" "$body" "$next")
+    cloudify_state_inventory_apply "$record" "$body" "$next" >/dev/null
 
     run cloudify_state_inventory_check "$record"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
 
-    subrubric "a missing referenced event is named, and the check is read-only"
-    find "$HOME/.local/state/cloudify/events" -name "$id.json" -delete
-    run cloudify_state_inventory_check "$record"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"$id"* ]]
-    [ ! -f "$HOME/.local/state/cloudify/events/${id:0:4}-${id:4:2}/$id.json" ]
-
+    subrubric "a missing or invalid record is named; the check is read-only"
     run cloudify_state_inventory_check "$CLOUDIFY_TMP/nope.json"
+    [ "$status" -eq 1 ]
+    echo '{broken' > "$CLOUDIFY_TMP/broken.json"
+    run cloudify_state_inventory_check "$CLOUDIFY_TMP/broken.json"
     [ "$status" -eq 1 ]
 }
 

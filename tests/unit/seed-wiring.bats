@@ -60,25 +60,16 @@ teardown() {
 }
 
 _nv() {
-    printf '{"source":"%s","secret":false,"declaration":"none","source_form":"%s","reference":null,"digest":null,"redacted":false}' "$1" "$2"
+    jq -Rn --arg v "$2" '$v'
 }
 
 _seed_record() {
-    local applied="$1" dir
+    local settings="$1" dir
     dir=$(cloudify_state_record_dir web1 "" web default main nginx default)
     mkdir -p "$dir"
-    jq -n --argjson values "$applied" \
-        '{schema_version: 1, host: "web1", host_key: "ivps:n1",
-          package: "nginx", package_instance: "default",
-          application: "web", flavor: "default", deployment: "main",
-          step_id: "direct", revision: 1,
-          applied: {version: "1.24.0", at: "2026-09-21T00:00:00Z",
-                    event_id: "20260101T000000Z-00000002", values: $values},
-          last_attempt: {phase: "install", outcome: "succeeded",
-                         at: "2026-09-21T00:00:00Z",
-                         event_id: "20260101T000000Z-00000000", requested: {}},
-          health: {status: "unknown", checked_at: null,
-                   event_id: "20260101T000000Z-00000001"}}' > "$dir/state.json"
+    jq -n --argjson settings "$settings" \
+        '{schema_version: 1, target: "direct", revision: 1,
+          version: "1.24.0", user_forced: ["PORT"]} + $settings' > "$dir/state.json"
 }
 
 @test "configure dispatch: an active application reference seeds the applied set values" {

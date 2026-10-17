@@ -225,20 +225,23 @@ _cloudify_context_seed_walk() {
 
 # _cloudify_context_seed_check - after the walk, every literal-secret demand
 # marker must be resupplied (caller env or a store) with a plaintext whose
-# digest matches the recorded one. Unsupplied or mismatching dies named
-# before any dispatch - a set secret never falls back to a recipe default.
+# _cloudify_context_seed_check - after the walk, every recorded secret-name
+# marker must be resupplied (caller env or a store). The lean record carries
+# no digest, so there is no equality check to fail: the name must simply be
+# present before any dispatch - a recorded secret never falls back to a
+# recipe default. (The demand check itself is removed in the environment-only
+# secret plumbing slice.)
 _cloudify_context_seed_check() {
-    local seed="${CLOUDIFY_APPLIED_SEED:-}" line n kind digest got
+    local seed="${CLOUDIFY_APPLIED_SEED:-}" line n kind raw
     [[ -n "$seed" && -f "$seed" ]] || return 0
-    while IFS=$'\x1f' read -r n kind digest raw; do
+    while IFS=$'\x1f' read -r n kind _ raw; do
         [[ "$kind" == "secret" ]] || continue
         [[ -n "${_ctx_candidate[$n]:-}" ]] || continue
         if [[ -z "${!n:-}" ]]; then
-            die "applied seed: value '$n' is a literal secret in the applied state (digest only); resupply it in the caller environment or the deployment store."
+            die "applied seed: value '$n' is recorded as a secret name; resupply it in the caller environment or the deployment store."
         fi
-        got=$(_cloudify_context_sha256 "${!n}")
-        [[ "sha256:$got" == "$digest" ]] ||
-            die "applied seed: resupplied value '$n' does not match the applied digest; refusing to forward it."
+        # No digest comparison: the lean record carries no digest - a recorded
+        # secret name is a demand marker, never an equality claim.
     done < "$seed"
 }
 

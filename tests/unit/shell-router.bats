@@ -366,16 +366,19 @@ ENV
 
     [ "$status" -eq 0 ]
     # The worker's state record under the resolved instance dir (the registry
-    # this test pinned is retired; the inventory record replaced it). Both the
-    # controller-side and the payload-side worker write one _direct deployment
-    # each - at least one record with the honest shape is the pin.
+    # this test pinned is retired; the lean inventory record replaced it). Both
+    # the controller-side and the payload-side worker write one _direct
+    # deployment each - at least one record with the honest lean shape is the
+    # pin: identities live in the path, settings are root scalars, secrets are
+    # "****" markers, and the metadata is target/version/revision/user_forced.
     local -a recs mfs m
     recs=("$STUB_DIR"/nodes/cloudai/instances/cloudify/deployments/_direct/direct/*/packages/bats-test/default/state.json)
     [ "${#recs[@]}" -ge 1 ]
-    [ "$(jq -r .package "${recs[0]}")" = "bats-test" ]
-    [ "$(jq -r .host "${recs[0]}")" = "cloudai:cloudify" ]
-    [ "$(jq -r .application "${recs[0]}")" = "_direct" ]
-    [ "$(jq -r .applied.version "${recs[0]}")" = "1.0.0" ]
+    [ "$(jq -r .target "${recs[0]}")" = "direct" ]
+    [ "$(jq -r .version "${recs[0]}")" = "1.0.0" ]
+    [ "$(jq -r .revision "${recs[0]}")" = "1" ]
+    jq -e 'has("host") | not' "${recs[0]}" >/dev/null
+    jq -e 'has("applied") | not' "${recs[0]}" >/dev/null
     # And each synthesized manifest derives its word from its events.
     mfs=("$STUB_DIR"/home/.local/state/cloudify/deployments/_direct/direct/*/manifest.json)
     [ "${#mfs[@]}" -ge 1 ]

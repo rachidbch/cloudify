@@ -110,6 +110,18 @@ run_worker() {
 
 events_root() { printf '%s' "$HOME/.local/state/cloudify/events"; }
 
+# newest_event <pkg> [inst] - the newest event file naming that package.
+newest_event() {
+    local p="${1:?}" inst="${2:-default}" f=""
+    local newest=""
+    for f in $(find "$(events_root)" -name '*.json' 2>/dev/null); do
+        [[ "$(jq -r '.subject.package // ""' "$f" 2>/dev/null)" == "$p" ]] || continue
+        [[ "$(jq -r '.subject.package_instance // ""' "$f" 2>/dev/null)" == "$inst" ]] || continue
+        newest="$f"
+    done
+    printf '%s' "$newest"
+}
+
 record() { # record <pkg> [inst]
     printf '%s' "$(cloudify_state_record_dir web1 "" _direct direct "$DEP_NAME" "$1" "${2:-default}")/state.json"
 }
@@ -129,7 +141,7 @@ record() { # record <pkg> [inst]
     [[ "$output" == *"native-tool"* ]]   # the native subject is reported
 
     # Five records, one per committed line; per-record revisions are 1 (the
-    # ordering guarantee is per record, proven by test 4's repeat run).
+    # ordering guarantee is per record, proven by the repeat run below).
     local i rev
     for i in nginx openssl curl rsync wezterm; do
         [ -f "$(record "$i")" ] || { echo "missing record: $i"; false; }
@@ -138,30 +150,29 @@ record() { # record <pkg> [inst]
         [ "$rev" = "1" ]
     done
 
-    # Attribution: framework work carries the reserved step ids.
-    [ "$(jq -r .step_id "$(record curl)")" = "defaults" ]
-    [ "$(jq -r .step_id "$(record rsync)")" = "init" ]
-    [ "$(jq -r .step_id "$(record nginx)")" = "direct" ]
-    [ "$(jq -r .step_id "$(record wezterm)")" = "direct" ]
+    # Attribution: framework work carries the reserved step ids - on the
+    # events, never duplicated in the lean record.
+    [ "$(jq -r .step_id "$(newest_event curl)")" = "defaults" ]
+    [ "$(jq -r .step_id "$(newest_event rsync)")" = "init" ]
+    [ "$(jq -r .step_id "$(newest_event nginx)")" = "direct" ]
 
-    # Applied facts: version on the successful requested line.
-    [ "$(jq -r .applied.version "$(record nginx)")" = "1.24.0" ]
+    # Lean facts: version on the successful requested line; PORT recorded as
+    # a root scalar and user-forced (the caller environment supplied it).
+    [ "$(jq -r .version "$(record nginx)")" = "1.24.0" ]
+    [ "$(jq -r .PORT "$(record nginx)")" = "8080" ]
+    [ "$(jq -r '.user_forced | index("PORT") != null' "$(record nginx)")" = "true" ]
     # The native subject wrote no inventory and no event.
     [ ! -e "$(cloudify_state_record_dir web1 "" _direct direct "$DEP_NAME" native-tool default)" ]
-    # Every record's requested values carry the full resolved projection,
-    # provenance included: PORT came from the caller env, so it is a set value.
-    [ "$(jq -r '.last_attempt.requested.PORT.source_form' "$(record nginx)")" = "8080" ]
-    [ "$(jq -r '.last_attempt.requested.PORT.source' "$(record nginx)")" = "caller" ]
-    [ "$(jq -r '.applied.values.PORT.source' "$(record nginx)")" = "caller" ]
 
-    # Manifest: success ends installed with the last committed event id.
+    # Manifest: success ends installed with the last committed event id, and
+    # that event is the last record's commit (wezterm).
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "installed" ]
     local last_ev
-    last_ev=$(jq -r '.applied.event_id' "$(record wezterm)")
-    [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" last_event_id)" = "$last_ev" ]
+    last_ev=$(cloudify_manifest_field _direct direct "$DEP_NAME" last_event_id)
+    [ "$(jq -r .subject.package "$(events_root)/${last_ev:0:4}-${last_ev:4:2}/$last_ev.json")" = "wezterm" ]
 }
 
-@test "worker: an install whose verify stage fails stays installed with failing health" {
+@test "worker: an install whose verify stage fails keeps its settings and marks the record failed" {
     rubric "written-but-unverified is information, not a downgrade"
     collect "$(checkout 0123456789abcdef0123456789abcdef01234567)" \
         "$(res - nginx failed 0 failed 1.24.0)"
@@ -169,9 +180,11 @@ record() { # record <pkg> [inst]
     run run_worker nginx
     [ "$status" -eq 0 ]
 
-    # The attempt stood, the verify stage observed failure: health records it,
-    # the status stays installed.
-    [ "$(jq -r .health.status "$(record nginx)")" = "degraded" ]
+    # The attempt stood; the verify stage observed failure: the lean record
+    # marks failed (any failed operation does), settings stand, and the
+    # manifest status stays installed.
+    [ "$(jq -r .failed "$(record nginx)")" = "true" ]
+    [ "$(jq -r .version "$(record nginx)")" = "1.24.0" ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "installed" ]
 }
 
@@ -184,7 +197,8 @@ record() { # record <pkg> [inst]
     [ "$status" -eq 0 ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "installed" ]
 
-    # The verify dispatch passes: verified, as of that moment.
+    # The verify dispatch passes: verified, as of that moment; the lean
+    # record gains a revision and keeps every confirmed fact.
     collect "$(checkout 0123456789abcdef0123456789abcdef01234567)" \
         'result v1: parent=- package=nginx instance=default phase=verify action=verify outcome=succeeded exit=0 verification=ok version=-'
     run_worker_verify() {
@@ -195,16 +209,21 @@ record() { # record <pkg> [inst]
     run run_worker_verify nginx
     [ "$status" -eq 0 ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "verified" ]
+    [ "$(jq -r .revision "$(record nginx)")" = "2" ]
+    [ "$(jq -r .version "$(record nginx)")" = "1.24.0" ]
+    [ "$(jq -r '.failed // empty' "$(record nginx)")" = "" ]
 
     # The next verify fails - the REAL line shape the router emits for a
     # failing verify dispatch (exit 1, verification failed): drift observed,
-    # a failed attempt. The dispatch fails its purpose (rc 1), health records
-    # it, and the word degrades - the check exists to catch drift.
+    # a failed attempt. The dispatch fails its purpose (rc 1), the record
+    # marks failed but keeps its settings, and the word degrades - the check
+    # exists to catch drift.
     collect "$(checkout 0123456789abcdef0123456789abcdef01234567)" \
         'result v1: parent=- package=nginx instance=default phase=verify action=verify outcome=failed exit=1 verification=failed version=-'
     run run_worker_verify nginx
     [ "$status" -eq 1 ]
-    [ "$(jq -r .health.status "$(record nginx)")" = "degraded" ]
+    [ "$(jq -r .failed "$(record nginx)")" = "true" ]
+    [ "$(jq -r .version "$(record nginx)")" = "1.24.0" ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "degraded" ]
 
     subrubric "rebuild agrees with the maintained manifest on the failure path"
@@ -265,7 +284,7 @@ record() { # record <pkg> [inst]
     [ -f "$(record nginx)" ]
 }
 
-@test "worker: repeated membership commits in order; a failed attempt preserves applied" {
+@test "worker: repeated membership commits in order; a failed attempt preserves settings and marks failed" {
     collect "$(checkout 0123456789abcdef0123456789abcdef01234567)" \
         "$(res - nginx succeeded 0 ok 1.24.0)" \
         "$(res - nginx failed 1 not-run 1.24.0)"
@@ -275,10 +294,12 @@ record() { # record <pkg> [inst]
     # ordered commits stand and the manifest projects degraded.
     [ "$status" -ne 0 ]
     [ "$(jq -r .revision "$(record nginx)")" = "2" ]
-    [ "$(jq -r .applied.version "$(record nginx)")" = "1.24.0" ]
-    [ "$(jq -r .last_attempt.outcome "$(record nginx)")" = "failed" ]
-    # Applied keeps the FIRST event (success); the failed attempt carries its own.
-    [ "$(jq -r .applied.event_id "$(record nginx)")" != "$(jq -r .last_attempt.event_id "$(record nginx)")" ]
+    [ "$(jq -r .version "$(record nginx)")" = "1.24.0" ]
+    [ "$(jq -r .failed "$(record nginx)")" = "true" ]
+    # The event stream proves the order: success to revision 1, then the
+    # failure to revision 2.
+    [ "$(jq -r .outcome.exit_status "$(newest_event nginx)")" = "1" ]
+    [ "$(jq -r .state.previous_revision "$(newest_event nginx)")" = "1" ]
 }
 
 @test "worker: the host lock is held through the commits and released before the manifest lock" {
@@ -331,11 +352,13 @@ record() { # record <pkg> [inst]
     [ "$status" -ne 0 ]
 
     # The earlier pair stays valid; the off-graph dependency records its own
-    # fail-closed inventory (no values invented after execution).
+    # fail-closed inventory (no values invented after execution): no settings,
+    # version null, failed marked.
     [ -f "$(record nginx)" ]
     [ "$(jq -r .revision "$(record nginx)")" = "1" ]
-    [ "$(jq -r '.last_attempt.requested | length' "$(record wezterm)")" -eq 0 ]
-    [ "$(jq -r '.applied.values | length' "$(record wezterm)")" -eq 0 ]
+    [ "$(jq -r '[to_entries[] | select(.key | test("^[A-Z_][A-Z0-9_]*$"))] | length' "$(record wezterm)")" -eq 0 ]
+    [ "$(jq -r '.version' "$(record wezterm)")" = "null" ]
+    [ "$(jq -r .failed "$(record wezterm)")" = "true" ]
     [ "$(cloudify_manifest_field _direct direct "$DEP_NAME" status)" = "degraded" ]
     # The degraded-run event lands after the line commits: it is the newest,
     # and the word degrades on it (derivable, not asserted from the worker).

@@ -1,13 +1,14 @@
 #!/usr/bin/env bats
-# Deployment matching freeze (state-model-v2 4.3; design "Deployment identity
-# and matching"): a run with no name converges the deployment of the same
-# application and flavor whose recorded requested values (last_attempt.requested,
-# recorded even when applied is null) and bindings equal the run's resolved
-# value source forms and resolved bindings. No match creates a generated
-# `<application>-<flavor>-<UTC-timestamp>[-suffix]` deployment and prints the
-# name. Explicit --name never reaches the matcher (identity by resolve); bare
-# `_direct` installs never match (synthesize-always); matching never crosses
-# the `_direct` namespace.
+# Deployment matching on the lean record (state convergence S2; design
+# "Deployment identity and matching"): a run with no name converges the
+# deployment of the same application and flavor whose recorded settings
+# (root scalars, "****" for secret names) and bindings equal the run's
+# resolved value source forms and resolved bindings - non-secret scalars
+# compare by value, secret names by presence only. No match creates a
+# generated `<application>-<flavor>-<UTC-timestamp>[-suffix]` deployment and
+# prints the name. Explicit --name never reaches the matcher (identity by
+# resolve); bare `_direct` installs never match (synthesize-always); matching
+# never crosses the `_direct` namespace.
 
 source tests/helpers/common.bash
 
@@ -89,20 +90,14 @@ _run_bindings() {
     printf '%s\n' "$f"
 }
 
-# _literal <text> - the comparable value object of a non-secret literal.
+# _literal <text> - the lean recorded form of a non-secret literal: the text.
 _literal() {
-    printf '{"source":"caller","secret":false,"declaration":"none","source_form":%s,"reference":null,"digest":null,"redacted":false}' \
-        "$(jq -Rn --arg v "$1" '$v')"
+    jq -Rn --arg v "$1" '$v'
 }
 
-# _refsec <reference> - the comparable value object of a secret reference.
-_refsec() {
-    printf '{"source":"caller","secret":true,"declaration":"explicit","source_form":"%s","reference":"%s","digest":null,"redacted":false}' "$1" "$1"
-}
-
-# _litsec <sha256:hex> - the comparable value object of a literal secret.
-_litsec() {
-    printf '{"source":"caller","secret":true,"declaration":"explicit","source_form":null,"reference":null,"digest":"%s","redacted":true}' "$1"
+# _secret - the lean recorded form of any classified secret: the marker.
+_secret() {
+    printf '"****"'
 }
 
 # _seed_manifest <app> <flavor> <name> <binding-line...> - a candidate's
@@ -116,29 +111,17 @@ _seed_manifest() {
         0123456789abcdef0123456789abcdef01234567 false "$bf"
 }
 
-# _seed_record <app> <flavor> <name> <pkg> <inst> <requested-json>
-#              [outcome] [applied-json|none] - one valid inventory record on
-# the host tree, event ids well-formed (the matcher reads requested values
-# only; event existence is the writer's gap check).
+# _seed_record <app> <flavor> <name> <pkg> <inst> <settings-json>
+#              [failed] - one valid lean inventory record on the host tree.
 _seed_record() {
-    local app="$1" flavor="$2" name="$3" pkg="$4" inst="$5" requested="$6"
-    local outcome="${7:-succeeded}" applied="${8:-none}" dir
-    [[ "$applied" == "none" ]] && applied=null
+    local app="$1" flavor="$2" name="$3" pkg="$4" inst="$5" settings="$6"
+    local failed="${7:-}" dir
     dir=$(cloudify_state_record_dir web1 "" "$app" "$flavor" "$name" "$pkg" "$inst")
     mkdir -p "$dir"
-    jq -n --arg app "$app" --arg flavor "$flavor" --arg name "$name" \
-        --arg pkg "$pkg" --arg inst "$inst" --argjson requested "$requested" \
-        --arg outcome "$outcome" --argjson applied "$applied" \
-        '{schema_version: 1, host: "web1", host_key: "ivps:n1",
-          package: $pkg, package_instance: $inst,
-          application: $app, flavor: $flavor, deployment: $name,
-          step_id: "direct", revision: 1, applied: $applied,
-          last_attempt: {phase: "install", outcome: $outcome,
-                         at: "2026-09-21T00:00:00Z",
-                         event_id: "20260101T000000Z-00000000",
-                         requested: $requested},
-          health: {status: "unknown", checked_at: null,
-                   event_id: "20260101T000000Z-00000001"}}' > "$dir/state.json"
+    jq -n --argjson settings "$settings" --arg failed "$failed" \
+        '{schema_version: 1, target: "direct", revision: 1,
+          version: "1.24.0", user_forced: []} + $settings
+        | if $failed == "failed" then . + {failed: true} else . end' > "$dir/state.json"
 }
 
 # _record_count <app> <flavor> - manifests of one application/flavor.
@@ -198,7 +181,7 @@ EOF
     [ "$(_record_count web default)" -eq 1 ]
 }
 
-@test "match: a failed first install still matches (requested recorded, applied null)" {
+@test "match: a failed first install still matches (settings recorded, failed marked)" {
     _seed_manifest web default main $'primary\tlocalhost\tweb1\t\tlocalhost'
     _seed_record web default main nginx default "{\"PORT\":$(_literal 8080)}" failed
 
@@ -251,12 +234,12 @@ EOF
     [ "$(_record_count web default)" -eq 1 ]
 }
 
-@test "match: secrets compare by reference for references and by digest for literal secrets" {
+@test "match: secret names compare as markers - never by value, digest, or provider location" {
     local ctx bf got
 
-    subrubric "reference secrets converge on the same reference"
+    subrubric "a recorded secret reference converges on the name marker alone"
     _seed_manifest web default main $'primary\tlocalhost\tweb1\t\tlocalhost'
-    _seed_record web default main nginx default "{\"TOKEN\":$(_refsec '@vault:prod/token')}"
+    _seed_record web default main nginx default "{\"TOKEN\":$(_secret)}"
     ctx=$(_write_context <<EOF
 $( _ctx_value TOKEN reference true explicit '@vault:prod/token' '' 't:@vault:prod/token' )
 package.nginx.instance: default
@@ -266,10 +249,10 @@ EOF
     got=$(cloudify_state_match_deployment web default "$ctx" "$bf")
     [ "$got" = "main" ]
 
-    subrubric "literal secrets converge on the same digest, never plaintext"
+    subrubric "a recorded literal secret also converges on the name marker alone"
     rm -rf "$(cloudify_state_deployment_dir web default main)"
     _seed_manifest web default main $'primary\tlocalhost\tweb1\t\tlocalhost'
-    _seed_record web default main nginx default "{\"TOKEN\":$(_litsec 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')}"
+    _seed_record web default main nginx default "{\"TOKEN\":$(_secret)}"
     ctx=$(_write_context <<EOF
 $( _ctx_value TOKEN literal true explicit '' 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' 't:redacted' )
 package.nginx.instance: default

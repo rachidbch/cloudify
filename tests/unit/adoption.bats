@@ -100,17 +100,20 @@ affine_facts() {
     [ "$(cloudify_manifest_field affine default main development_override)" = "true" ]
     [ "$(cloudify_manifest_field affine default main last_event_id)" != "null" ]
 
-    # The record: revision 1, applied values with provenance, no attempt, health unknown.
+    # The record: revision 1, the lean shape - inferred settings as root
+    # scalars, observed version, no user_forced, no failure marker, and no
+    # duplicated identity (the path carries it).
     local rec
     rec=$(cloudify_state_record_dir cloudai affine affine default main affine default)/state.json
     [ -f "$rec" ]
     [ "$(jq -r .revision "$rec")" = "1" ]
-    [ "$(jq -r .applied.version "$rec")" = "1.1.0" ]
-    [ "$(jq -r .applied.values.AFFINE_PORT.source_form "$rec")" = "8787" ]
-    [ "$(jq -r .applied.values.AFFINE_PORT.source "$rec")" = "recipe" ]
-    [ "$(jq -r .applied.values.AFFINE_PORT.secret "$rec")" = "false" ]
-    [ "$(jq -r .last_attempt "$rec")" = "null" ]
-    [ "$(jq -r .health.status "$rec")" = "unknown" ]
+    [ "$(jq -r .version "$rec")" = "1.1.0" ]
+    [ "$(jq -r .AFFINE_PORT "$rec")" = "8787" ]
+    [ "$(jq -r '.user_forced | length' "$rec")" = "0" ]
+    [ "$(jq -r '.failed // empty' "$rec")" = "" ]
+    jq -e 'has("last_attempt") | not' "$rec" >/dev/null
+    jq -e 'has("health") | not' "$rec" >/dev/null
+    jq -e 'has("host") | not' "$rec" >/dev/null
 
     # The event: writer is the operator (a name, not a process), kind adopt.
     local eid ev
@@ -122,7 +125,7 @@ affine_facts() {
     [ "$(jq -r .command_kind "$ev")" = "adopt" ]
     [ "$(jq -r .application_commit "$ev")" = "null" ]
     [ "$(jq -r .outcome.summary "$ev")" = "adopted from observation: server verified on :8787" ]
-    [ "$(jq -r .values.AFFINE_PORT.source_form "$ev")" = "8787" ]
+    [ "$(jq -r .values.AFFINE_PORT "$ev")" = "8787" ]
 }
 
 @test "adoption record: the seeded verify dispatches read-only under the deployment identity" {
@@ -152,7 +155,7 @@ affine_facts() {
     local rec
     rec=$(cloudify_state_record_dir cloudai affine affine default main affine default)/state.json
     [ -f "$rec" ]
-    [ "$(jq -r .applied.version "$rec")" = "1.1.0" ]
+    [ "$(jq -r .version "$rec")" = "1.1.0" ]
     [ "$(cloudify_manifest_field affine default main status)" = "adopted" ]
 }
 

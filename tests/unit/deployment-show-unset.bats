@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
-# The applied-state screen and the unset escape (state-model-v2 4.4, ADR-030):
-# show renders hosts (from the manifest bindings) -> packages -> values, the
-# USER column marks caller-sourced values only, secrets show dots plus a short
-# fingerprint, and the footer names the exact release command. --user-values
-# filters to pinned values. unset releases caller pins event-first (source ->
-# applied, revision bump under the host lock); a var that is not a user value
-# dies named; the released pin stops seeding the next reconfigure.
+# The recorded-state screen and the unset escape (state convergence S2;
+# ADR-030 as amended): show renders hosts (from the manifest bindings) ->
+# packages -> settings, the USER column marks user-forced names only, secrets
+# show the **** marker (never a value, digest, or provider location), and the
+# footer names the exact release command. --user-values filters to forced
+# names. unset removes the forced bit event-first (revision bump under the
+# host lock); the recorded value text stays exactly what the machine holds; a
+# var that is not user-forced dies named; the released name stops seeding the
+# next reconfigure.
 
 source tests/helpers/common.bash
 
@@ -55,59 +57,15 @@ teardown() {
     teardown_test_env
 }
 
-_nv() { # _nv <source> <form>
-    printf '{"source":"%s","secret":false,"declaration":"none","source_form":"%s","reference":null,"digest":null,"redacted":false}' "$1" "$2"
-}
-
-_sec() { # _sec <source> <digest>
-    printf '{"source":"%s","secret":true,"declaration":"explicit","source_form":null,"reference":null,"digest":"%s","redacted":true}' "$1" "$2"
-}
-
-# _ensure_event <id> - the gap check refuses records pointing at missing
-# events, so the seeds reference three real (pinned-id) events.
-_ensure_event() {
-    local id="$1" root f
-    root="$HOME/.local/state/cloudify/events/${1:0:4}-${1:4:2}"
-    [[ -f "$root/$1.json" ]] && return 0
-    local body
-    body=$(jq -cn --argjson writer '{"host":"c","boot_id":"3f2a1b0c-4d5e-6f70-8192-a3b4c5d6e7f8","pid":1,"process_start_ticks":1}' \
-        '{schema_version: 1, tool: "cloudify", tool_version: "t", writer: $writer,
-          run_id: null, step_id: "direct",
-          application: "web", flavor: "default", deployment: "main",
-          application_commit: "0123456789abcdef0123456789abcdef01234567",
-          subject: {kind: "package", host: "web1", host_key: "ivps:n1",
-                    package: "nginx", package_instance: "default"},
-          phase: "install", command_kind: "install", values: {},
-          outcome: {exit_status: 0, summary: "seed"},
-          state: {previous_revision: 0, resulting_revision: 1}}')
-    local bf
-    bf=$(mktemp)
-    printf '%s\n' "$body" > "$bf"
-    cloudify_state_event_create "$bf" "$id" >/dev/null
-    rm -f "$bf"
-}
-
-# _seed_record <node> <pkg> <applied-json>
+# _seed_record <node> <pkg> <settings-json> [user-forced-json] - one valid
+# lean record on the host tree for web/default/main, instance default.
 _seed_record() {
-    local node="$1" pkg="$2" applied="$3" dir host
-    [[ "$node" == web1 ]] && host=web1 || host=db1
+    local node="$1" pkg="$2" settings="$3" forced="${4:-[]}" dir
     dir=$(cloudify_state_record_dir "$node" "" web default main "$pkg" default)
     mkdir -p "$dir"
-    _ensure_event 20260101T000000Z-00000000
-    _ensure_event 20260101T000000Z-00000001
-    _ensure_event 20260101T000000Z-00000002
-    jq -n --arg host "$host" --arg pkg "$pkg" --argjson values "$applied" \
-        '{schema_version: 1, host: $host, host_key: "ivps:n1",
-          package: $pkg, package_instance: "default",
-          application: "web", flavor: "default", deployment: "main",
-          step_id: "direct", revision: 1,
-          applied: {version: "1.24.0", at: "2026-09-21T16:08:31Z",
-                    event_id: "20260101T000000Z-00000002", values: $values},
-          last_attempt: {phase: "install", outcome: "succeeded",
-                         at: "2026-09-21T16:08:31Z",
-                         event_id: "20260101T000000Z-00000000", requested: {}},
-          health: {status: "ok", checked_at: null,
-                   event_id: "20260101T000000Z-00000001"}}' > "$dir/state.json"
+    jq -n --argjson settings "$settings" --argjson forced "$forced" \
+        '{schema_version: 1, target: "direct", revision: 1,
+          version: "1.24.0", user_forced: $forced} + $settings' > "$dir/state.json"
 }
 
 _manifest() { # _manifest <binding-line...>
@@ -117,23 +75,23 @@ _manifest() { # _manifest <binding-line...>
         0123456789abcdef0123456789abcdef01234567 false "$bf"
 }
 
-@test "show: hosts -> packages -> values; USER marks caller values only; footer names the release command" {
+@test "show: hosts -> packages -> settings; USER marks user-forced names only; secrets are markers" {
     _manifest $'primary\tlocalhost\tweb1\t\tweb1'
-    _seed_record web1 nginx "{\"PORT\": $(_nv deployment 8080), \"TOKEN\": $(_sec caller "sha256:$(printf plain | sha256sum | cut -d' ' -f1)")}"
-    _seed_record web1 openssl "{\"MODE\": $(_nv caller fast)}"
+    _seed_record web1 nginx '{"PORT": "8080", "TOKEN": "****"}' '["TOKEN"]'
+    _seed_record web1 openssl '{"MODE": "fast"}' '["MODE"]'
 
     run cloudify_deployment_show main
     [ "$status" -eq 0 ]
 
     # Host section for the single binding: plain host line.
     printf '%s\n' "$output" | grep -qx "  web1"
-    # Package headers with version and health.
-    printf '%s\n' "$output" | grep -q "nginx.*1.24.0.*ok"
-    printf '%s\n' "$output" | grep -q "openssl.*1.24.0.*ok"
-    # Values under their packages; USER only on caller-sourced ones.
+    # Package headers with version and the lean state word.
+    printf '%s\n' "$output" | grep -q "nginx.*1.24.0.*recorded"
+    printf '%s\n' "$output" | grep -q "openssl.*1.24.0.*recorded"
+    # Settings under their packages; USER only on user-forced ones.
     printf '%s\n' "$output" | grep -q "PORT.*8080"
     printf '%s\n' "$output" | grep -q "MODE.*fast.*USER"
-    # The secret: dots plus a short fingerprint, never the plaintext.
+    # The secret: the marker, never a value or a digest fragment.
     [[ "$output" == *"********"* ]]
     [[ "$output" != *"plain"* ]]
     # Header count and the release command with the full signature.
@@ -148,8 +106,8 @@ _manifest() { # _manifest <binding-line...>
 
 @test "list: one rich line per deployment - status, pkgs, hosts, user values" {
     _manifest $'primary\tlocalhost\tweb1\t\tweb1'
-    _seed_record web1 nginx "{\"PORT\": $(_nv deployment 8080), \"TOKEN\": $(_nv caller abc)}"
-    _seed_record web1 openssl "{}"
+    _seed_record web1 nginx '{"PORT": "8080", "TOKEN": "abc"}' '["TOKEN"]'
+    _seed_record web1 openssl '{}'
 
     run cloudify_deployment_list
     [ "$status" -eq 0 ]
@@ -158,8 +116,8 @@ _manifest() { # _manifest <binding-line...>
 
 @test "show: multiple bindings render slot -> host; per-host values stay nested" {
     _manifest $'primary\tlocalhost\tweb1\t\tweb1' $'db\tlocalhost\tdb1\t\tdb1'
-    _seed_record web1 nginx "{\"PORT\": $(_nv deployment 8080)}"
-    _seed_record db1 nginx "{\"PORT\": $(_nv deployment 5432)}"
+    _seed_record web1 nginx '{"PORT": "8080"}'
+    _seed_record db1 nginx '{"PORT": "5432"}'
 
     run cloudify_deployment_show main
     [ "$status" -eq 0 ]
@@ -169,10 +127,10 @@ _manifest() { # _manifest <binding-line...>
     [[ "$output" == *"5432"* ]]
 }
 
-@test "show --user-values: only pinned values and their packages" {
+@test "show --user-values: only user-forced values and their packages" {
     _manifest $'primary\tlocalhost\tweb1\t\tweb1'
-    _seed_record web1 nginx "{\"PORT\": $(_nv deployment 8080), \"TOKEN\": $(_nv caller abc)}"
-    _seed_record web1 openssl "{\"MODE\": $(_nv deployment fast)}"
+    _seed_record web1 nginx '{"PORT": "8080", "TOKEN": "abc"}' '["TOKEN"]'
+    _seed_record web1 openssl '{"MODE": "fast"}'
 
     run cloudify_deployment_show main 1
     [ "$status" -eq 0 ]
@@ -185,9 +143,9 @@ _manifest() { # _manifest <binding-line...>
     [[ "$output" != *"openssl"* ]]
 }
 
-@test "unset: releases the pin event-first; the value stays applied and stops seeding" {
+@test "unset: removes the forced bit event-first; the recorded value text stays" {
     _manifest $'primary\tlocalhost\tweb1\t\tweb1'
-    _seed_record web1 nginx "{\"PORT\": $(_nv caller 4000), \"TOKEN\": $(_nv deployment 8080)}"
+    _seed_record web1 nginx '{"PORT": "4000", "TOKEN": "8080"}' '["PORT"]'
     local rec
     rec=$(cloudify_state_record_dir web1 "" web default main nginx default)/state.json
 
@@ -195,9 +153,8 @@ _manifest() { # _manifest <binding-line...>
     [ "$status" -eq 0 ]
 
     [ "$(jq -r .revision "$rec")" = "2" ]
-    [ "$(jq -r .applied.values.PORT.source "$rec")" = "applied" ]
-    [ "$(jq -r .applied.values.PORT.source_form "$rec")" = "4000" ]
-    [ "$(jq -r .applied.values.TOKEN.source "$rec")" = "deployment" ]
+    [ "$(jq -r '.user_forced | index("PORT") == null' "$rec")" = "true" ]
+    [ "$(jq -r .PORT "$rec")" = "4000" ]
 
     # One unset event exists, command_kind unset, phase null.
     local ev
@@ -206,16 +163,17 @@ _manifest() { # _manifest <binding-line...>
     [ "$(jq -r .phase "$ev")" = "null" ]
     [ "$(jq -r .step_id "$ev")" = "unset" ]
 
-    # The behavioral payoff: the released pin no longer seeds a reconfigure.
+    # The behavioral payoff: the released name no longer seeds a reconfigure,
+    # and the secret marker never seeded at all.
     local seed
     seed=$(cloudify_context_applied_seed reconfigure web1 "" web default main)
     if grep -q "^PORT" "$seed"; then false; fi
-    if grep -q "^TOKEN" "$seed"; then false; fi   # store-sourced: excluded from the set filter
+    if grep -q "^TOKEN" "$seed"; then false; fi
 }
 
-@test "unset: a var that is not a user value dies named, nothing changes" {
+@test "unset: a var that is not user-forced dies named, nothing changes" {
     _manifest $'primary\tlocalhost\tweb1\t\tweb1'
-    _seed_record web1 nginx "{\"PORT\": $(_nv deployment 8080)}"
+    _seed_record web1 nginx '{"PORT": "8080"}'
     local rec
     rec=$(cloudify_state_record_dir web1 "" web default main nginx default)/state.json
     local before
@@ -229,7 +187,7 @@ _manifest() { # _manifest <binding-line...>
 
 @test "unset: unknown deployment or package dies named" {
     _manifest $'primary\tlocalhost\tweb1\t\tweb1'
-    _seed_record web1 nginx "{\"PORT\": $(_nv caller 4000)}"
+    _seed_record web1 nginx '{"PORT": "4000"}' '["PORT"]'
 
     # An id resolves only outside an active application reference (the
     # reference wins otherwise) - the operator-shell case.

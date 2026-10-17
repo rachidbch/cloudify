@@ -489,7 +489,7 @@ _reference_check() {
 }
 
 @test "cloudify_state_validate_file is the one generic schema validator" {
-    local good="$CLOUDIFY_SCHEMA_DIR/fixtures/event/valid/install-succeeded-reference-secret.json"
+    local good="$CLOUDIFY_SCHEMA_DIR/fixtures/event/valid/direct-uninstall-no-run-context.json"
     local bad="$CLOUDIFY_SCHEMA_DIR/fixtures/event/invalid/raw-stdout.json"
 
     rubric "accepts a valid fixture against its own schema"

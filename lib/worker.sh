@@ -362,8 +362,8 @@ function _cloudify_dispatch_worker() {
     bindings=$(mktemp "${CLOUDIFY_TMP:-/tmp}/worker-bindings-XXXXXX") || die "worker hook: cannot create a bindings file."
     cloudify_state_bindings_render "$app" "$flavor" "$name" "$bindings"
 
-    cloudify_worker_process "$action" "$step" "$app" "$flavor" "$name" \
-        "$node" "$inst" "$ssh" "$collection" "$ctx" "$bindings" "$slot" ${words[@]+"${words[@]}"}
+    CLOUDIFY_RECORD_SLOT="$slot" cloudify_worker_process "$action" "$step" "$app" "$flavor" "$name" \
+        "$node" "$inst" "$ssh" "$collection" "$ctx" "$bindings" ${words[@]+"${words[@]}"}
     local rc=$?
     rm -f "$bindings"
     return "$rc"
@@ -373,7 +373,10 @@ function cloudify_worker_process() {
     local action="${1:?}" step="${2:?}" app="${3:?}" flavor="${4:?}" name="${5:?}"
     local node="${6:-}" inst="${7:-}" ssh_host="${8:-}"
     local collection="${9:?}" ctx_file="${10:?}" bindings="${11:?}"
-    _WORKER_SLOT="${12:-direct}"
+    # The record's runbook slot travels beside the other dispatch globals
+    # (CLOUDIFY_VERIFY_ONLY and friends); positional would collide with the
+    # requested words. A bare dispatch records under `direct`.
+    _WORKER_SLOT="${CLOUDIFY_RECORD_SLOT:-direct}"
     shift 11 || true
     local -a words=("$@")
 

@@ -1179,3 +1179,8 @@
 
 - Rachid scrapped the converter command after review: for a handful of short files, a script is ceremony and risk. Reverted module, router route, README/schemas-README lines and the 6 tests (`git revert` of `18472e6`, conflicts resolved by keeping the later docs); `cloudify_is_package` keeps its real exit status.
 - Surviving converter evidence remains historical only: the acceptance batch of `results/acceptance/20261017-221425/` validated `18472e6`, not the reverted tree; the re-gate below is the authority for the reverted HEAD.
+
+## 2026-10-17 - Re-gate on the reverted tree (converter removed)
+
+- Acceptance batch on pushed HEAD `93f5fd3` (receipt `results/acceptance/20261017-232056/`): unit 821/821 (`results/unit.IWlDvz5V/report.tap`, plan `1..821`), fragile gate 152/152 (`results/gate.5y9NZ5qP/report.tap`), canary 7/7 (`results/canary.ns08oZ11/report.tap`); every suite and batch exit 0, no skips, no bailouts, no duplicate ids; `task lint` exit 0.
+- The 6 converter tests are gone with the module; `cloudify_is_package` keeps its real exit status.

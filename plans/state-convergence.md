@@ -117,15 +117,11 @@ The detached batch finished independently; historical PID 17044 is gone, and abs
 
 - [x] Verified S1's completed command exits and complete native TAP; recorded the facts above rather than trusting stale scratch progress.
 - [x] Inventoried session-authored non-canonical files and their roles; discovery map: `/home/rbc/.pi/handoffs/2026-10-17-cloudify-canonical-restoration.md`, with a durable root/source index in LOGS.md under "Canonical restoration handoff".
-- [ ] Compare every authored scratch test/runner with tracked code before moving or deleting anything.
-  Preserve any unique test logic under `tests/`, including transient reproducers; the old `~/tmp/cloudify-s0/remote-bats.bats` must not overwrite the newer six-case `tests/unit/remote-bats.bats`.
-- [ ] Consolidate reusable supervision from `~/tmp/cloudify-s{0,1}/run-acceptance.sh` into tracked test tooling and a named Taskfile command; remove hard-coded personal paths and define safe observer/batch lifecycle semantics.
-  Never restart the completed batch merely to reconstruct its records.
-- [ ] Put generated receipts/captures in a project-local results/evidence location, preserving original-to-new path mappings and bytes; keep raw/private artifacts out of Git.
-  Merge important progress into PLAN.md and conclusions/evidence into HISTORY.md/LOGS.md; scratch progress files must not remain authoritative.
+- [x] Compared every authored scratch test/runner with tracked code: the one-case transport prototype was fully subsumed by `tests/unit/remote-bats.bats` case 1 (six cases); nothing unique to port.
+- [x] Consolidated supervision into tracked `tests/run-acceptance.sh` + `task acceptance` (commit `e47996a`): selectable suites, repo-relative receipts in `results/acceptance/<run-id>/`, lifecycle semantics in the script header (batch.current is last-started, never liveness); shimmed-`task` smoke passed for success and early-stop paths.
+- [x] Migrated both scratch roots byte-identical (cmp-verified, 32 files) into `results/evidence/s{0,1}/` with the original-to-new map in `results/evidence/MAPPING.md`; scratch progress files are superseded records, no longer authoritative.
 - [x] SDLC consent obtained; harness updated: radius-scoped gates and canonical test/progress placement landed in `c4424f2`, classification citation now cites Secret markers with suffixes (ADR-042).
-- [ ] Validate restoration with the cheapest relevant checks, retain original files until useful information is accounted for, then remove redundant artifacts only with recoverable trash.
-  Do not rerun accepted full suites solely to rebuild bookkeeping; reconcile the existing broad testing rule with Rachid before changing required gates.
+- [x] Validated with the cheapest checks only (bash -n, shellcheck, shimmed smoke; no accepted suite rerun); originals removed through recoverable trash only after byte verification.
 - [ ] Leave this one plan and the tracked tree clean, commit/push the recovery, then continue the remaining implementation from Schema and lean records (S2), with live-state approval (G4) still pending.
 
 ### Schema and lean records (S2)

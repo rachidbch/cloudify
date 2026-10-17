@@ -1140,3 +1140,12 @@
 - Proposed harness work still needs explicit consent: canonical tracking/test-placement rules, scope-by-code-and-feature-radius/debugging/feature-batch-exit wording, and the architecture sentence still citing marker-only ADR-039 instead of marker-plus-suffix ADR-042.
 - Stopping an observer did not stop its detached queue; canonical supervision needs explicit lifecycle semantics rather than another undiscoverable scratch script.
 - Do not infer a gate waiver or resume S2 while that SDLC discussion and Restore canonical SDLC state (R1) remain open.
+
+## 2026-10-17 - Canonical restoration (R1) executed
+
+- `tests/run-acceptance.sh` + `task acceptance` replace both scratch supervisors (commit `e47996a`): serial unit/gate/canary, repo-relative receipts under `results/acceptance/<run-id>/`, header documents receipt semantics (batch.current is last-started, never liveness; exits are written only on completion; the caller owns detaching).
+- Validated without rerunning accepted suites: `bash -n`, shellcheck clean, and a shimmed-`task` smoke proving the success path (rc 0, full receipts, real report pointer) and the early-stop path (rc 3, later suites never started).
+- Lint glob extended to `tests/*.sh`; `tests/remote-bats.sh` and `tests/run-integration.sh` were already clean.
+- The one-case transport prototype in the S0 scratch was fully subsumed by `tests/unit/remote-bats.bats` case 1; nothing unique to port.
+- Both scratch roots copied byte-identical (cmp-verified, 32 files) into `results/evidence/s{0,1}/`; `results/evidence/MAPPING.md` is the original-to-new map and records what deliberately stayed (delegation session logs, handoff, loop log, rejected trash drafts).
+- Originals removed via recoverable trash only after byte verification; `tests/red/README.md` example now uses the approved plain-ssh transport instead of the prohibited ivps-exec form; `task lint` exit 0 with the extended glob.

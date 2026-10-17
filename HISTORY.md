@@ -1501,3 +1501,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Session-end mission is Restore canonical SDLC state (R1) in the existing PLAN.md, with a full non-canonical artifact map in the handoff; no files moved/deleted and no AGENTS.md changes made during handoff.
 - Schema and lean records (S2) remains unstarted; harness-rule wording still needs explicit approval and live-state approval remains pending.
 - Rachid consented; AGENTS.md now scopes test gates by code and feature radius, pins canonical test/progress placement, and cites Secret markers with suffixes (ADR-042) for classification; only Restore canonical SDLC state (R1) recovery tasks remain before Schema and lean records (S2).
+
+## 2026-10-17 - Canonical SDLC state restored (R1)
+
+- Tracked `tests/run-acceptance.sh` + `task acceptance` now own serial acceptance batches and their receipts (commit `e47996a`); both scratch supervisors retired; lint glob extended to `tests/*.sh`; red-test example fixed to plain ssh.
+- All session scratch evidence migrated byte-identical to `results/evidence/` under a written path map; originals trashed recoverably after cmp verification; no accepted suite was rerun.
+- Restore canonical SDLC state (R1) complete; Schema and lean records (S2) is next, live-state approval (G4) still pending.

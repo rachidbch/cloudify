@@ -14,7 +14,7 @@ An application is a versioned runbook.
 
 A deployment is one named application instance, identified by `(application, flavor, deployment name)`.
 
-Deployment inputs record what the operator wants, package state records what Cloudify last applied successfully, and events record what happened.
+Defaults and the caller environment record what the operator wants (files hold defaults, the environment supplies values; Defaults ladder, ADR-038), package state records what Cloudify last applied successfully, and events record what happened.
 
 Cloudify resolves a dispatch's values once and uses that same dispatch context for preflight, remote forwarding, state, and event metadata.
 
@@ -34,12 +34,12 @@ The registry writer separately computes `var.*` from caller environment, deploym
 
 Those results are never compared and may disagree.
 
-The fix is one resolution per dispatch, not deleting the deployment input scope.
+The fix is one resolution per dispatch.
 
 ## Boundaries
 
 - Plans and recipes live in git.
-- Operator-authored defaults and deployment inputs live under Cloudify configuration.
+- Operator-authored defaults live under Cloudify configuration.
 - Cloudify observations, deployment manifests, runs, and events live under Cloudify state.
 - Host-bound package state may live inside the ivps node directory because it must die with that node.
 - ivps owns node inventory and lifecycle.
@@ -121,23 +121,19 @@ Cloudify exposes one state-root helper using `${XDG_STATE_HOME:-$HOME/.local/sta
 
 Configuration continues to use the existing Cloudify XDG configuration helper.
 
-### Defaults and desired inputs
+### Defaults
 
 ```text
 ${XDG_CONFIG_HOME:-~/.config}/cloudify/
   remote-vars.yaml
   pkgs/<package>.yaml
+  apps/<application>/defaults.yaml
   apps/<application>/<flavor>/defaults.yaml
-  deployments/<application>/<flavor>/<deployment>/values.yaml
 ```
 
-Global, package, and application files contain defaults.
+Every file rung holds defaults, weakest to strongest: recipe default < global < package < application < application-flavor. The environment supplies values for one invocation and beats every standing default.
 
-The deployment file contains explicit desired inputs for that application instance.
-
-A deployment input is not applied state and does not claim that a command succeeded.
-
-The deployment file replaces the ambiguous single-component deployment directory without removing the proven cross-host value scope.
+There is no per-deployment values file and no stored desired inputs (Defaults ladder, ADR-038). First installs are fed by the environment or defaults files; persistence across invocations comes from applied values recorded in inventory, marked user-forced where the environment supplied them.
 
 ### Per-node deployment inventory
 
@@ -279,7 +275,7 @@ Install starts a reliance and, when needed, creates the missing package instance
 Install resolves values in this order, strongest first:
 
 1. Step or caller environment.
-2. Deployment desired inputs.
+2. Application-flavor defaults.
 3. Application defaults.
 4. Package defaults.
 5. Global defaults.
@@ -292,18 +288,17 @@ Reconfigure requires an existing reliance and a successful applied record.
 Reconfigure resolves values in this order, strongest first:
 
 1. Step or caller environment.
-2. Previously applied values that were set (caller-sourced at apply time; ADR-030).
-3. Deployment desired inputs.
+2. Previously applied values carrying the user-forced bit (the environment supplied them at apply time; Defaults ladder, ADR-038, simplifying ADR-030's source labels to this one bit).
+3. Application-flavor defaults.
 4. Application defaults.
 5. Package defaults.
 6. Global defaults.
 7. Recipe defaults.
 
-A set value outranks the store until it is explicitly unset (`cloudify deployment unset`): a value the operator supplied directly never moves because a default under it shifted.
-Applied values that were store-supplied never seed: the store re-supplies them when present, and a deleted store entry lets the recipe default return - the deletion is honored, not buffered.
+A user-forced value outranks every default until explicitly unset (`cloudify deployment unset` removes the bit): a value the operator supplied directly never moves because a default shifted.
+Non-forced applied values never seed: their default re-supplies them each reconfigure, and a deleted default entry lets the next wider default or the recipe default return - the deletion is honored, not buffered.
 
-The existing applied record carries each value's resolution source for the set/store rule (Reconfigure seeds from applied set values, ADR-030).
-Whether scalar non-secret records replace that rule is an open decision, not an implicit consequence of the secret boundary change.
+The applied record carries one user-forced bit per value (Defaults ladder, ADR-038) in the lean record shape (root scalars, `****` for secret names, `failed: <phase>`, version, revision, target).
 Secret values are represented by their names only under Secrets enter through the environment (ADR-037).
 
 Verify uses the previously applied source values by default.
@@ -324,7 +319,7 @@ Re-running install converges: an existing reliance means the recipe no-ops when 
 
 It does not resolve changed defaults again.
 
-If the caller environment or deployment desired inputs explicitly differ from applied state, install fails and directs the operator to reconfigure or upgrade.
+If the caller environment or a defaults file explicitly differs from applied state, install fails and directs the operator to reconfigure or upgrade.
 
 Install is the converge: recipes are idempotent, so re-running install on the same installation is safe.
 
@@ -374,7 +369,7 @@ The in-run `CLOUDIFY_OUTPUTS_FILE` channel remains ephemeral and mode 0600.
 
 Step outputs are not persisted automatically in runs or events.
 
-A non-secret value needed by a later run may be recorded as a deployment input.
+A non-secret value needed by a later run comes from a defaults-file entry or the environment (Defaults ladder, ADR-038).
 
 A secret needed by a later run must be supplied again through its environment, usually by the external wrapper.
 
@@ -434,7 +429,7 @@ The remote result channel reports package identity, parent, instance, and outcom
 
 The parent looks up that package's values in the precomputed dispatch context and never walks sources again.
 
-A runtime dependency absent from the precomputed graph fails its state commit and marks the run degraded rather than inventing values after execution.
+A runtime dependency absent from the precomputed graph fails its state commit and marks the run failed rather than inventing values after execution.
 
 A result naming a package the graph does not know is a graph error: the dispatch fails in full before any inventory write (ADR-026).
 
@@ -500,7 +495,8 @@ The current event-dependent rebuild and inventory checks are compliance bugs to 
 
 The manifest is created before the first mutating step.
 
-Its lifecycle status names the kind of the last successful state-relevant event (ruling 2026-09-29, GLOSSARY `manifest status`): `adopted` (an operator inferred the state from the observed machine - GLOSSARY `deployment adoption`), `installed`, `reconfigured`, `verified` (a passing verify observed the host against the applied values, as of that moment), or `degraded` (an attempt or the worker failed; records stand). An install whose verify stage fails stays `installed` - written but unverified is information, not a downgrade.
+Its lifecycle status names the kind of the last successful state-relevant event (GLOSSARY `manifest status`): `adopted` (an operator inferred the state from the observed machine - GLOSSARY `deployment adoption`), `installed`, `reconfigured`, `verified` (a passing verify observed the host against the applied values, as of that moment), or `failed` (the last operation did not succeed; records stand). `failed` replaces the retired word `degraded` (Defaults ladder, ADR-038). An install whose verify stage fails stays `installed` - written but unverified is information, not a downgrade.
+A rebuilt manifest derives only: applied settings present -> `installed`; failure marker -> `failed`; neither -> no word (Inventory owns current state, ADR-036).
 
 It records the exact target bindings used by the run.
 
@@ -699,7 +695,7 @@ The redesign is complete only when all of these are true:
 
 - One dispatch performs one value resolution.
 - The exact resolved context drives forwarding and all records.
-- A first install has a durable deployment input source.
+- A first install can be fed from the environment or defaults files; durable current state lives in inventory (Defaults ladder, ADR-038).
 - Reconfigure uses the last successful applied state without overwriting it on failure.
 - Two deployments cannot silently break or remove each other's installations.
 - Teardown cannot remove an installation another deployment still relies on.

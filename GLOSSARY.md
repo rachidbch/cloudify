@@ -100,8 +100,8 @@ The ivps-owned record of one instance (engine, base image fingerprint, created-a
 
 ## deployment record
 
-The cloudify-owned record of one deployment spans desired inputs, current inventory, and local convenience/history files.
-Desired non-secret inputs live under Cloudify configuration; current package facts and target names live under the ivps inventory.
+The cloudify-owned record of one deployment spans current inventory and local convenience/history files.
+Defaults files under Cloudify configuration hold standing preferences by scope, never per deployment (Defaults ladder, ADR-038); current package facts and target names live in the ivps inventory.
 The local deployment directory under Cloudify state holds the manifest read cache and run snapshots, not irreplaceable current facts (Inventory owns current state, ADR-036).
 Secret values come from the caller environment and are not persisted in normal records (Secrets enter through the environment, ADR-037).
 
@@ -164,19 +164,17 @@ Value precedence depends on the selected lifecycle phase and is defined in `REDE
 
 ## default
 
-A weak value source used when no explicit deployment input or phase-specific applied value supplies the name.
+A weak value source used when nothing stronger supplies the name.
 
-Defaults may live at recipe, global, package, or application scope.
+Defaults live at recipe, global, package, application, or application-flavor scope, in that strength order (Defaults ladder, ADR-038).
 
 A default is intent, not evidence that the value reached a host.
 
 ## deployment input
 
-An explicit value the operator supplies for one named application instance.
+Retired: stored per-deployment desired inputs no longer exist (Defaults ladder, ADR-038).
 
-Deployment inputs are desired configuration and remain available for first install, cross-host wiring, and later reconfigure.
-
-They do not claim that an operation succeeded.
+First installs are fed by the environment or defaults files; persistence across invocations is applied values in inventory, marked user-forced where the environment supplied them.
 
 ## secret
 
@@ -215,13 +213,13 @@ An application is a plan in git, not current state.
 
 ## deployment
 
-One named instance of an application - the long-lived thing that exists between runs, holds the desired inputs, the manifest, and the run history.
+One named instance of an application - the long-lived thing that exists between runs, holds the manifest cache and the run history.
 
 Its identity is `(application name, flavor, deployment name)`, materialized as the path `deployments/<application>/<flavor>/<deployment name>` under the state root.
 
 A deployment id is human-set through `--name`, or generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed; the same name is the same deployment (ADR-026).
 
-A deployment has desired inputs under Cloudify configuration and a current manifest under Cloudify state.
+A deployment has defaults files by scope under Cloudify configuration and a manifest read cache under Cloudify state; its current facts live in the ivps inventory.
 
 Applied package facts remain in the package records rather than being copied into the manifest.
 
@@ -247,7 +245,7 @@ The deployment manifest's lifecycle status names the kind of the last successful
 - `installed` - an install completed. An install whose verify stage fails stays `installed`: written but unverified - a distinction worth keeping.
 - `reconfigured` - a reconfigure completed through cloudify.
 - `verified` - a passing verify observed the host against the applied values, as of that moment.
-- `degraded` - an attempt or the dispatch worker failed; records stand, status names the failure.
+- `failed` - the last operation did not succeed; records stand, status names the failure. Replaces the retired word `degraded` (Defaults ladder, ADR-038).
 
 ## deployment adoption
 

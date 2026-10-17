@@ -576,3 +576,19 @@ Safe snapshots still need implementation; existing unsafe snapshots are not made
 Cloudify cannot prove secret equality between deployments from secret names alone, so shared-installation behavior needs an explicit conservative rule before implementation.
 The classification retained by Simple package secret classification (ADR-035) remains in force until a replacement rule accounts for existing token/key variables.
 REDESIGN.md records the new boundary; implementation waits for the remaining specification decisions.
+
+## ADR-038: Defaults ladder, the user-forced bit, and one failure word
+
+**Status:** Accepted 2026-10-17 (Rachid go). Retires the stored desired-inputs clause of One dispatch context (ADR-022) point 2 and the desired-inputs half of Deployment-first inventory (ADR-026) point 8; simplifies Reconfigure seeds from applied set values (ADR-030) to one provenance bit; amends the manifest status vocabulary. Implementation waits for specification convergence.
+
+**Context:** the per-deployment desired-input file duplicated persistence that applied values in inventory already provide once a value can be marked user-forced. The vocabulary called file entries "values" when they are defaults at different scopes. `degraded` and the failure marker used two words for one fact, and a rebuilt manifest inherited an unbounded status enum.
+
+**Decision:**
+
+1. Defaults ladder, weakest to strongest: recipe default < global defaults (`~/.config/cloudify/remote-vars.yaml`) < package defaults (`pkgs/<pkg>.yaml`) < application defaults (`apps/<app>/defaults.yaml`) < application-flavor defaults (`apps/<app>/<flavor>/defaults.yaml`) < environment. Files hold defaults; the environment supplies values; inventory records applied values. The per-deployment values file and the stored "desired inputs" concept are retired; more specific scope wins, and the environment is "right now".
+2. User-forced bit: an environment-supplied value that is applied is recorded in the ivps inventory record with a user-forced mark beside the value. Reconfigure resolves environment > applied user-forced values > file defaults > recipe default. Non-forced applied values never seed; their default re-supplies each reconfigure, and a deleted default entry is honored. `deployment unset` removes the bit so defaults govern again. ADR-030's rule survives with one bit instead of six source labels.
+3. Application-level defaults hold preferences across all flavors of an application; the flavor file wins on collision (more specific wins).
+4. One failure word: `failed` replaces `degraded` in every status surface. Inventory stores no status; it stores the `failed: <phase>` marker, cleared only by a successful install or reconfigure, never by a passing read-only verify. A rebuilt manifest derives exactly: applied settings present -> `installed`; marker -> `failed`; neither -> no word. Local observations keep `adopted`/`installed`/`reconfigured`/`verified`/`failed`. Adopted deployments rebuild to `installed`.
+5. Command-surface consequences: the per-deployment `vars` scope is retired; target bindings come from `--target` and recorded bindings in the manifest cache (fed by the inventory target field, Inventory owns current state, ADR-036), never from stored `TARGET_*` entries. Migration: the only live per-deployment values file is octop's, already mirrored in its inventory record.
+
+**Consequences:** first installs are fed by the environment or defaults files; persistence across invocations is inventory state. Docs, schemas, CLI surface and captured records realign during the queued implementation; until then current behavior stands and this ADR is the target contract. Secrets remain environment-only (Secrets enter through the environment, ADR-037) with `****` name markers.

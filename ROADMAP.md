@@ -700,6 +700,30 @@ A second controller does not require it if its external wrapper can already supp
   Decide where a genuinely targetless application's current record belongs, how inventory-only recovery works, and how the manifest's required bindings change before enabling it.
   No implicit localhost or target fallback is introduced by this entry.
 
+## Declaration semantics flip (proposed 2026-10-17, needs a pkg sweep)
+
+- [ ] Reorder `.remote-vars` kinds: `NAME=value` optional with default `value`; `NAME=` required with no default; bare `NAME` optional.
+  Intuition: `=` demands a value; a bare mention is informational.
+- **Why:** today bare `NAME` is required and `NAME=` optional; the two `=` shapes feel inverted.
+- **Cost:** a sweep of every pkg declaration plus preflight, masking and tests; a contract change on the declaration enumerator (fragile-surface gate, Rachid's go).
+- **Runbooks:** `inputs:` is a bare comma list with no `=` form; required-vs-optional inputs need their own syntax decision (suffix, marker, or keep bare-required for runbooks only) before the flip lands.
+- Nothing changes until the sweep plan exists.
+
+## Value ladder: retire per-deployment values; defaults vocabulary (agreed 2026-10-17, ADR draft on go)
+
+- [ ] **Retire** the per-deployment desired-input file and its ladder rung (`~/.config/cloudify/deployments/<app>/<flavor>/<name>/values.yaml`).
+  Remaining rungs are all defaults, weakest first: recipe default < global defaults (`remote-vars.yaml`) < package defaults (`pkgs/<pkg>.yaml`) < application defaults (`apps/<app>/defaults.yaml`) < application-flavor defaults (`apps/<app>/<flavor>/defaults.yaml`) < environment.
+- **User-forced mark:** when the environment supplies a value at apply time, the ivps inventory record marks that applied value user-forced (Rachid: the mark lives in ivps inventory state, not cloudify side).
+  Reconfigure resolves: environment > applied user-forced values > file defaults > recipe default.
+  Non-forced applied values never seed; their default re-supplies, and a deleted default entry is honored (the rule of Reconfigure seeds from applied set values, ADR-030, with one bit instead of full source labels).
+  `deployment unset` removes the mark so defaults govern again.
+- **Vocabulary:** files hold defaults; the environment supplies values; inventory records applied values.
+  Except the environment and the forced bit, every source is a default with a priority, not a value.
+  The stored "desired inputs" concept disappears.
+- **Bonus:** add application-level defaults beside flavor-level defaults; the app-level file is weaker, the flavor-level file wins on collision (more specific wins).
+- **Migration:** the only live per-deployment file is octop's `values.yaml`, already mirrored in its inventory record.
+- Drafted as Defaults ladder, the user-forced bit, and one failure word (ADR-038): retires the input-store clause of One dispatch context (ADR-022) point 2 and the desired-inputs half of Deployment-first inventory (ADR-026) point 8, narrows ADR-030's source labels to the forced bit, and sets `failed` as the one failure word; implementation after specification convergence.
+
 ## Inventory recovery compliance bugs and lean package records (ADR-036, 2026-10-17)
 
 - [ ] **Required repair, not a new feature:** implement Inventory owns current state (ADR-036) after remaining specification gaps close.
@@ -714,11 +738,17 @@ A second controller does not require it if its external wrapper can already supp
 - **Record shape:** review path-derived identity fields duplicated inside package records.
   Prefer reading identities from the inventory path and parent identity records rather than storing independent copies; preserve the target name because the path does not encode it.
   Events still need identities in their bodies because their filenames do not encode deployment or package identity.
-  Scalar ordinary values and null/name-only secret markers are the candidate simplification, not an agreed encoding yet.
-  Replace detailed health/last-attempt data only after defining a minimal failed-attempt marker that leaves last confirmed settings intact, including a failed first installation.
-  Removing per-value source information also requires settling the set/store pinning behavior from Reconfigure seeds from applied set values (ADR-030).
+  Candidate lean shape (not agreed yet): root-level scalar settings; `****` marking a remembered secret name (never a value, and only on classified secret names); `failed: <phase>` naming the phase of the last failed operation, cleared only by a successful install or reconfigure, so a passing read-only verify cannot clear it; keep both `version` and `revision` (Rachid, 2026-10-17).
+  A rebuilt manifest derives its word from inventory alone and stores none of its own: settings present -> `installed`; failure marker -> `failed`; neither -> no word.
+  Inventory therefore records no status beyond the failure marker; `installed`/`failed` on a rebuild are derivations, not stored facts.
+  `failed` is the one failure word everywhere, replacing `degraded` (Rachid, 2026-10-17); adopted deployments rebuild to `installed`.
+  Replace detailed health/last-attempt data only after that minimal marker is agreed, covering a failed first installation (marker present, no settings).
+  Per-value provenance shrinks to the one user-forced bit living beside the applied value in the inventory record (Value ladder entry above); Reconfigure seeds from applied set values (ADR-030) keeps its rule with that bit instead of full source labels.
   Secret-name-only records cannot prove equal credentials for shared installations; decide a conservative sharing rule instead of silently removing the guard.
   Schema changes, event reconstruction, and moved-directory behavior need an explicit design before implementation.
+- **Replay default (agreed 2026-10-17):** `deployment replay` without `--at` converges current state from ivps inventory; `--at <run>` time-travels that snapshot's ordinary settings.
+  Secrets always come from the current environment (Secrets enter through the environment, ADR-037).
+  The current newest-snapshot default is a compliance item to fix with this repair.
 - **Related drift:** unnamed `app run` currently selects `default`, while Named second deployments (ADR-031) requires proven matching or first-deployment name generation.
   Reconcile this deliberately; use explicit semantic deployment names while the mismatch remains.
 

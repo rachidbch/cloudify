@@ -1417,3 +1417,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - **Roadmap adjusted:** uppercase bare target variables and lower-ceremony single/no-target runbooks added; provider-aware first-run/settings work folded into optional post-MVP UX; safe snapshots now target name-only environment replay, with unsafe current files still warned about.
 - **Open, not silently decided:** suffixes that cover existing `K3S_TOKEN`; optional-secret preflight; scalar settings versus the earlier set/store pinning rule; minimal failure markers; compatibility of secrets in shared installations; generation UX remains deferred.
 - **Scope:** documentation only; no code, schemas, captured records, application state, credentials, or harness files changed.
+
+## 2026-10-17 - ADR-038: defaults ladder, user-forced bit, one failure word
+
+- Rachid's go: per-deployment values file retired. Files hold defaults (recipe < global < package < application < application-flavor), the environment supplies values, and inventory records applied values with a user-forced bit; `deployment unset` clears the bit; application-level defaults file added (flavor file wins on collision); `failed` replaces `degraded`; rebuilt manifest derives nothing/installed/failed.
+- REDESIGN and GLOSSARY synced (data homes, ladders, manifest status, deployment/deployment-input/default entries); roadmap entry points at the ADR.
+- README, CLI surface, schemas and captured records realign at implementation, queued until specification convergence per the standing process.

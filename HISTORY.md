@@ -1449,3 +1449,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Recorded the ten-slice implementation proposal for Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Marker-only classification (ADR-039), and Unnamed matching (ADR-031) in `plans/state-convergence.md`, restored `PLAN.md`, and opened tracking issue #17.
 - Added explicit schema/fragile-contract approvals, existing-record conversion and separate live-state consent, plus a canary transport prerequisite after confirming direct Incus, host-key rewrites, and localhost Bats in the legacy runner.
 - One SPEC review passed; approvals, fresh baseline, and implementation remain pending; no runtime, harness, inventory, or production changes.
+
+## 2026-10-17 - state convergence approved on a feature branch; baseline incomplete
+
+- Rachid approved the plan, in-place schema v1 changes (ADR-040), and explained fragile-contract/golden changes; required a feature branch before implementation, so `feat/state-convergence` was created before edits; live migration approval remains pending.
+- Reconciled stale design/roadmap clauses to Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), and Marker-only classification (ADR-039); no historical ADR body was rewritten.
+- Baseline reader was cancelled after unit test 426 of 797, with no complete verdict; read-only follow-up found no surviving tests, missing container-side ivps/inventory, and an existing guacd container; test execution stopped without repairs or cleanup, pending explicit canary environment preparation.
+- Runtime, schemas, recipes, test runners, inventory, credentials, and production remain unchanged.

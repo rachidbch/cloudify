@@ -1034,3 +1034,14 @@
 - Confirmed current package schema has a closed nested field set; queued explicit conversion and complete producer/consumer cutover behind schema approval.
 - Proposed plan received one SPEC review: PASS, no must-fix findings; tracking issue https://github.com/rachidbch/cloudify/issues/17.
 - No tests, SSH, container operations, harness edits, secrets access, or production mutations performed.
+
+## 2026-10-17 - approved feature branch and incomplete baseline
+
+- Fetch succeeded and `feat/state-convergence` was created from clean master before implementation edits; plan/schema/fragile approvals recorded, with live-state consent still pending.
+- Baseline `task test-unit` streamed through one plain SSH session to cloudify; TAP declared `1..797` and ended at `ok 426 version declaration: well-formed file reads verbatim`.
+- The background reader's native delegation stream ended in `session/cancel`; no final SSH/Bats exit verdict, gate run, or lint run was produced, so the baseline is incomplete, not passing.
+- Preserved its raw TAP at `~/tmp/cloudify-s0/interrupted-unit.tap`; no baseline retry performed.
+- One read-only `ssh root@cloudify` check reported hostname cloudify and no surviving Bats/runner process; bats, jq, envsubst, ssh, and docker were present, but ivps and `/root/.config/ivps` were absent.
+- The same raw process list showed containerd shim e26a4ba5915cfdfcb564b70cd28d5a0d40cfb3ec6b059c9a5e214dc1afe4c217 running guacd for seven days; `/root/guacamole` was absent; ownership was not inferred and nothing was removed.
+- Stopped test execution on the missing canary prerequisites; proposed isolated controller inventory plus a separate disposable workload target to preserve real remote-dispatch coverage.
+- No environment healing, host-key edits, snapshot restores, runtime/test-runner changes, or production mutations performed; draft transport regression saved outside the checkout at `~/tmp/cloudify-s0/remote-bats.bats`.

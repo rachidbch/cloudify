@@ -6,7 +6,7 @@ This design supersedes the implementation contract in ADR-021.
 
 Concept definitions live in `GLOSSARY.md`.
 
-Queued convergence work lives in `plans/state-convergence.md` through the `PLAN.md` pointer, pending Rachid's approval; prior recovery work is archived under `plans/archived/`.
+Approved convergence work lives in `plans/state-convergence.md` through the `PLAN.md` pointer, on feature branch `feat/state-convergence`; prior recovery work is archived under `plans/archived/`.
 Implementation remains behind the project fragile-surface rule (`AGENTS.md`, `docs/FRAGILE.md`).
 
 ## Decision in one breath
@@ -153,7 +153,9 @@ Host origin and continuity (ADR-028): ivps and the engine can restore, recreate,
 The deployment id is the deployment name: human-set through `--name`, else generated as `<application>-<flavor>-<UTC-timestamp>` with a short suffix when needed.
 The same name is the same deployment; it is chosen at first run, recorded in the manifest, and reused unchanged on every host the deployment touches.
 
-A run with no name matches an existing deployment of the same runbook by resolved value source forms and bindings; a match converges that deployment. A run that matches nothing while deployments already exist refuses, naming them: deploying the same application twice requires naming at least one (ADR-031). A run with no name and no existing deployment creates the first one with a generated id, printed clearly.
+A run with no name matches a proven-identical deployment of the same runbook by bindings, non-secret scalars, and secret-name markers; a unique match converges that deployment.
+If deployments exist but no unique match is proved, refuse and name the candidates (ADR-031).
+With no existing deployment, generate the first name and print it clearly.
 
 Package instances follow the same principles: the key is `default`, or the value of a recipe-declared instance variable; the same configuration is the same installation, and a different configuration is a different installation.
 
@@ -187,15 +189,15 @@ The manifest contains the deployment identity, application commit, target bindin
 
 The manifest does not duplicate package applied values.
 
-Runs and events use schema-versioned JSON.
+Events use schema-versioned JSON; run snapshots remain replay-seed YAML.
 
-## Desired inputs, applied state, and history
+## Defaults, applied state, and history
 
 These are separate facts.
 
-- Desired inputs say what the operator supplied for future work.
-- Applied state says what the last successful dispatch applied to one physical package instance.
-- Last attempt says what Cloudify most recently tried and how it ended.
+- Defaults files supply standing preferences; the environment supplies values for one invocation.
+- Applied state says what the last successful dispatch applied to one physical package instance, including which values the environment forced.
+- The failure marker says an operation failed without replacing previously confirmed settings.
 - A reliance record says which deployment and runbook step currently uses an installation.
 - Events say what commands Cloudify observed and in which order per subject.
 
@@ -312,8 +314,8 @@ A verify-only override is explicit and does not rewrite applied state.
 
 Teardown uses the previously applied source values so it removes what was actually configured.
 
-When teardown requires a secret, the caller must supply it through the environment after application mappings or teardown fails before mutation.
-The required-versus-optional secret rule remains to be settled against package phase contracts before implementation.
+Teardown takes any secret values from the caller's environment after application mappings.
+Cloudify never demands or preflights secrets; a hook failing for a missing variable names the original input through the mapping, or the package variable for a bare dispatch.
 
 Current defaults never silently change verification or teardown behavior.
 
@@ -358,7 +360,7 @@ Replay takes required secret values from the current invocation after applicatio
 
 The external secretspec convention is one profile per named deployment; Cloudify neither derives nor validates that profile.
 
-Exact suffix matching, optional-secret handling, scalar non-secret records, and compatibility of secrets in shared installations remain open specification questions.
+These rules are settled: marker-only classification, no secret-demand preflight, root ordinary scalars, and operator-owned sharing of secret-bearing installations.
 
 The dispatch context may contain resolved plaintext because the target process needs it.
 
@@ -380,24 +382,19 @@ Generation and storage belong to that external supplier for the MVP; guest-gener
 
 Each deployment records what it did on a node in its own directory under that node's tree, human-readable, one directory per deployment per node.
 
-The lean inventory shape is being reconsidered; only target persistence and current-state recoverability are reaffirmed by Inventory owns current state (ADR-036).
-The prior field list below describes the existing contract, not a newly approved revised-MVP record.
-Health, the detailed last-attempt object, and per-value metadata are under review; a minimal failure marker must preserve previously confirmed settings on failure.
+The approved lean package record holds applied values as root scalars, with native JSON strings for multiline settings.
+Classified secret names hold `****`, never secret values, digests, provider locations, or `redacted` flags.
+Root metadata comprises `schema_version`, `target`, `user_forced`, optional `failed: true`, `version`, and `revision`.
+Evolve the version-1 schemas in place with `schema_version: 1`, explicit old-record conversion, and coordinated reader/writer cutover (Schema v1 evolution, ADR-040).
+Derive package, instance, deployment, and host identities from the inventory path and parent identity records rather than duplicating them.
+`target` records the runbook slot; an `_direct` record uses `direct`.
+`user_forced` lists names supplied by the environment when successfully applied.
+Every package reports its installed version, and revision increases under the host lock together with an event.
+There is no `applied` wrapper, detailed `last_attempt`, health object, or per-value source metadata.
 
-The prior deployment inventory contains, per package the deployment covers:
-
-- the package and package-instance identity;
-- `applied`, the last successful result: package version (required - every package reports its installed version), source-form values, and time;
-- the last attempt: phase, requested value metadata, outcome, and time;
-- health: the last verification result;
-- the runbook step that owns the work;
-- a monotonically increasing revision, changed only together with an event.
-
-A failed attempt updates the last attempt and health but never overwrites `applied`.
-
-A successful install or reconfigure updates `applied`.
-
-A verify updates health but not applied values.
+A failed operation preserves confirmed settings and sets `failed: true`, including a first failure with no applied settings.
+A successful install or reconfigure replaces confirmed settings and clears the failure marker.
+A passing verify changes neither applied values nor an existing failure marker.
 
 The node's deployment inventories show which deployments rely on an installation: the guard scans them, so two deployments relying on one installation cannot silently break or remove each other's.
 
@@ -496,8 +493,11 @@ The current event-dependent rebuild and inventory checks are compliance bugs to 
 
 The manifest is created before the first mutating step.
 
-Its lifecycle status names the kind of the last successful state-relevant event (GLOSSARY `manifest status`): `adopted` (an operator inferred the state from the observed machine - GLOSSARY `deployment adoption`), `installed`, `reconfigured`, `verified` (a passing verify observed the host against the applied values, as of that moment), or `failed` (the last operation did not succeed; records stand). `failed` replaces the retired word `degraded` (Defaults ladder, ADR-038). An install whose verify stage fails stays `installed` - written but unverified is information, not a downgrade.
-A rebuilt manifest derives only: applied settings present -> `installed`; failure marker -> `failed`; neither -> no word (Inventory owns current state, ADR-036).
+Local observation words are `adopted`, `installed`, `reconfigured`, `verified`, and `failed` (Defaults ladder, ADR-038).
+Any failed operation sets `failed`; a passing verify cannot clear the inventory failure marker (Marker-only classification, ADR-039).
+A rebuilt manifest derives `failed` when a failure marker exists, otherwise `installed` when applied settings exist, otherwise no word (Inventory owns current state, ADR-036).
+Adopted deployments rebuild to `installed`.
+Rebuild on read when the cache is missing or corrupt, or any package revision exceeds its cached high-water mark; keep explicit rebuild.
 
 It records the exact target bindings used by the run.
 
@@ -507,7 +507,7 @@ Teardown uses the recorded bindings.
 
 A deployment that relies on installations cannot be silently rebound to other hosts.
 
-A successful teardown removes the current manifest and desired-input directory only after every reliance and application-owned external resource has been released.
+A successful teardown removes the current manifest only after every reliance and application-owned external resource has been released.
 
 Its runs and events remain history.
 
@@ -516,6 +516,10 @@ Its runs and events remain history.
 Historical executions belong under a separate runs surface.
 
 ## Runs and events
+
+`cloudify deployment replay` without `--at` converges current state from inventory, never the newest snapshot.
+`--at <run>` restores that YAML snapshot's ordinary settings.
+Both paths take secrets only from the new invocation's environment after names-only mappings; snapshot literals and inventory markers never overwrite them.
 
 A run record is written atomically before the first selected step.
 
@@ -545,14 +549,14 @@ Events contain:
 - deployment identity
 - subject identity
 - phase and command kind
-- value names and classification, with the exact lean metadata shape still to be settled; secret values, digests, and provider locations are excluded (Secrets enter through the environment, ADR-037)
+- ordinary recorded settings and secret-name markers `****`; secret values, digests, and provider locations are excluded (Secrets enter through the environment, ADR-037)
 - the recorded form of every non-secret value; secret names are retained without their values
 - the writing cloudify tool version
 - exit status and bounded non-secret summary
 - previous and resulting subject revision when state changes
 
 Events never contain raw stdout, stderr, rendered payloads, or literal secrets.
-With non-secret source forms recorded, the inventory is derivable from the event log; reproduction of historical values rests on these forms, never on the availability of a git commit - the commit pins provenance only (ADR-027).
+Events retain ordinary settings for audit and explicit historical repair; current inventory recovery and continuation never require them (Inventory owns current state, ADR-036).
 
 Detailed command output remains in the existing protected Cloudify log and is referenced by path and digest where useful.
 
@@ -575,7 +579,7 @@ For each top-level or dependency package result, it performs this protocol under
 1. Read the package subject's current state and revision.
 2. Build the result event and next state from the already-resolved dispatch context and remote result.
 3. Atomically create the immutable event with a collision-resistant ID.
-4. Atomically replace the package state with revision plus one and the event ID.
+4. Atomically replace the package state with revision plus one; the event records the previous and resulting revisions.
 
 The parent then releases the host mutation lock, acquires the deployment manifest lock, updates the manifest from all collected results, and releases it.
 
@@ -666,7 +670,8 @@ Every new JSON artifact carries `schema_version` from its first write and valida
 
 The current registry remains observation-only and never enters the generic value ladder.
 
-Only the v2 physical package state's last successful `applied` section may seed reconfigure, verify and teardown.
+Only confirmed inventory settings may seed addressed deployments: reconfigure uses user-forced ordinary values, while verify and teardown use recorded ordinary settings.
+Secrets always come from the new invocation's environment after mappings.
 
 Persisted `output.*` lines are never migrated into run records or events.
 
@@ -710,7 +715,7 @@ The redesign is complete only when all of these are true:
 - Every old artifact is migrated explicitly or reported, and final runtime code contains no migration bridge or old-format reader.
 - The scoped unit, integration, and disposable E2E gates pass.
 
-## Environment-only secrets for the MVP (ADR-037; implementation waits for specification convergence)
+## Environment-only secrets for the MVP (ADR-037; approved implementation queued)
 
 Secretspec stays outside Cloudify and supplies environment variables through its normal wrapper.
 Cloudify may receive the same variables from another caller; it has no secretspec dependency or provider allowlist.
@@ -735,8 +740,8 @@ The specification gaps named when this section landed are settled (2026-10-17):
 - demands: none - a recipe or verify hook failing for a missing secret fails loudly and names it (graceful, Secrets enter through the environment, ADR-037);
 - record: root scalars, `****` names, root `user_forced` array, `failed: true`, version, revision, target;
 - provenance: the user-forced bit replaces the earlier set/store labels (Defaults ladder, ADR-038);
-- sharing: conservative refusal with the package-instance escape (the guard paragraph above);
+- sharing: the operator owns secret-bearing installation sharing; the guard compares only declared non-secret values and never compares `****` entries;
 - input identity: replay failure reporting derives the missing-variable names from the runbook's `inputs:`/`map:` (bare dispatches: the variable name); current-state replay reads which names are secret from the record's `****` entries.
 
-Generated-secret UX and any guest-to-provider return channel stay deferred until these decisions are settled.
+Generated-secret UX and any guest-to-provider return channel stay deferred outside this implementation.
 Existing plaintext local snapshots are still unsafe until the implementation is changed; do not publish them.

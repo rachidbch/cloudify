@@ -1,9 +1,9 @@
 # Cloudify Roadmap
 
-## State convergence (proposed plan, 2026-10-17)
+## State convergence (approved implementation plan, 2026-10-17)
 
 - [ ] Implement Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Marker-only classification (ADR-039), and Unnamed matching (ADR-031) through [the active plan](PLAN.md), tracked in [issue #17](https://github.com/rachidbch/cloudify/issues/17).
-  Plan, schema, and fragile-contract approvals are pending; production migration requires separate approval.
+  Plan, in-place schema v1, and explained fragile-contract/golden changes are approved on `feat/state-convergence`; production migration requires separate approval.
   The plan includes stale-prose reconciliation, explicit existing-record conversion, and correction of the legacy canary transport before its acceptance gate.
 
 ## URGENT - clean the surface before anything else (2026-09-07 E2E traps)
@@ -715,7 +715,7 @@ A second controller does not require it if its external wrapper can already supp
 - **Runbooks:** `inputs:` is a bare comma list with no `=` form; required-vs-optional inputs need their own syntax decision (suffix, marker, or keep bare-required for runbooks only) before the flip lands.
 - Nothing changes until the sweep plan exists.
 
-## Value ladder: retire per-deployment values; defaults vocabulary (agreed 2026-10-17, ADR draft on go)
+## Value ladder: retire per-deployment values; defaults vocabulary (ADR-038, approved 2026-10-17)
 
 - [ ] **Retire** the per-deployment desired-input file and its ladder rung (`~/.config/cloudify/deployments/<app>/<flavor>/<name>/values.yaml`).
   Remaining rungs are all defaults, weakest first: recipe default < global defaults (`remote-vars.yaml`) < package defaults (`pkgs/<pkg>.yaml`) < application defaults (`apps/<app>/defaults.yaml`) < application-flavor defaults (`apps/<app>/<flavor>/defaults.yaml`) < environment.
@@ -729,11 +729,12 @@ A second controller does not require it if its external wrapper can already supp
 - **Bonus:** add application-level defaults beside flavor-level defaults; the app-level file is weaker, the flavor-level file wins on collision (more specific wins).
 - **Migration:** the only live per-deployment file is octop's `values.yaml`, already mirrored in its inventory record.
 - **Secretspec profile convention (settled 2026-10-17):** one profile per named deployment, spelled `app:flavor:name` (identity rules forbid colons inside components, so the spelling is unambiguous; colons are legal in filenames and quoted TOML keys). Slash or hyphen spellings are rejected (nesting/ambiguity). `_direct` buckets get no profile convention.
-- Drafted as Defaults ladder, the user-forced bit, and one failure word (ADR-038): retires the input-store clause of One dispatch context (ADR-022) point 2 and the desired-inputs half of Deployment-first inventory (ADR-026) point 8, narrows ADR-030's source labels to the forced bit, and sets `failed` as the one failure word; implementation after specification convergence.
+- Accepted as Defaults ladder, the user-forced bit, and one failure word (ADR-038): retires the input-store clause of One dispatch context (ADR-022) point 2 and the desired-inputs half of Deployment-first inventory (ADR-026) point 8, narrows ADR-030's source labels to the forced bit, and sets `failed` as the one failure word.
+  Implementation follows the approved State convergence plan in `PLAN.md`.
 
 ## Inventory recovery compliance bugs and lean package records (ADR-036, 2026-10-17)
 
-- [ ] **Required repair, not a new feature:** implement Inventory owns current state (ADR-036) after remaining specification gaps close.
+- [ ] **Required repair, not a new feature:** implement Inventory owns current state (ADR-036) through the approved State convergence plan; specification gaps are settled.
   Current cloud state must be reconstructible from ivps inventory with required secrets supplied through the new invocation's environment.
   History is not required for current-state recovery.
 - **Why:** current manifest rebuilding and some inventory updates require local events; target bindings live outside the package records; adopted records and reserved step ids cannot reliably recover targets from a runbook step.
@@ -746,37 +747,38 @@ A second controller does not require it if its external wrapper can already supp
 - **Record shape:** review path-derived identity fields duplicated inside package records.
   Prefer reading identities from the inventory path and parent identity records rather than storing independent copies; preserve the target name because the path does not encode it.
   Events still need identities in their bodies because their filenames do not encode deployment or package identity.
-  Candidate lean shape (not agreed yet): root-level scalar settings; `****` marking a remembered secret name (never a value, and only on classified secret names); `failed: <phase>` naming the phase of the last failed operation, cleared only by a successful install or reconfigure, so a passing read-only verify cannot clear it; keep both `version` and `revision` (Rachid, 2026-10-17).
+  Settled lean shape: root-level scalar settings; `****` for classified secret names; root `target`, `user_forced`, optional `failed: true`, `version`, `revision`, and `schema_version`.
+  Any failed operation sets the marker; only successful install/reconfigure clears it, never passing verify (Marker-only classification, ADR-039).
   A rebuilt manifest derives its word from inventory alone and stores none of its own: settings present -> `installed`; failure marker -> `failed`; neither -> no word.
   Inventory therefore records no status beyond the failure marker; `installed`/`failed` on a rebuild are derivations, not stored facts.
   `failed` is the one failure word everywhere, replacing `degraded` (Rachid, 2026-10-17); adopted deployments rebuild to `installed`.
-  Replace detailed health/last-attempt data only after that minimal marker is agreed, covering a failed first installation (marker present, no settings).
+  Replace detailed health/last-attempt data with the agreed marker, covering a failed first installation (marker present, no settings).
   Per-value provenance shrinks to the one user-forced bit living beside the applied value in the inventory record (Value ladder entry above); Reconfigure seeds from applied set values (ADR-030) keeps its rule with that bit instead of full source labels.
-  Secret-name-only records cannot prove equal credentials for shared installations; decide a conservative sharing rule instead of silently removing the guard.
-  Schema changes, event reconstruction, and moved-directory behavior need an explicit design before implementation.
+  Secret-bearing installation sharing is the operator's domain; the guard compares declared non-secret values only, never `****` entries.
+  Schema v1 evolution (ADR-040) approves in-place schema changes and explicit conversion through the State convergence plan; live conversion still needs a reviewed dry-run approval.
 - **Replay default (agreed 2026-10-17):** `deployment replay` without `--at` converges current state from ivps inventory; `--at <run>` time-travels that snapshot's ordinary settings.
   Secrets always come from the current environment (Secrets enter through the environment, ADR-037).
   The current newest-snapshot default is a compliance item to fix with this repair.
 - **Related drift (settled 2026-10-17, implement ADR-031):** unnamed `app run` matches a proven-identical deployment (bindings + non-secret scalars + `****` names), creates the first with a generated name, and refuses ambiguity naming the candidates; the current literal-`default` selection is the compliance bug.
   Use explicit semantic names anyway while the mismatch remains.
 
-## Secret classification without mandatory new package syntax (settled 2026-10-17)
+## Marker-only secret classification (ADR-039, settled 2026-10-17)
 
 **Settled (Rachid, revised same day):** marker-only. Classification = the existing explicit `secret NAME` marker (already parsed by the current code, used by pkg/affine); no suffix rule, and the name heuristic is retired. Sweep every `pkg/*/.remote-vars` and runbook `inputs:` at implementation. Mappings are secret when either side is marked. Runbook marker spelling is settled: `secret NAME` entries in the `inputs:` list. Never preflight-demand secrets: a recipe/verify hook failing for a missing secret fails loudly, naming it and pointing at the wrapper. Secrets in shared installations: operator's domain - the guard compares non-secret recorded values only and never compares `****` entries; replay reads which names are secret from the record's `****` entries.
 
 - [ ] **What:** implement the settled rule above.
-  Simple MVP package classification (ADR-035) is superseded at implementation by this settlement; its body stays as history.
+  Marker-only classification (ADR-039) supersedes Simple MVP package classification (ADR-035); historical ADR bodies remain unchanged.
 - **Why:** name matching can miss a secret such as `LICENSE` or classify a public key as secret, while mandatory parallel declarations can create clerical drift.
   Cloudify must know secret status before resolving, forwarding, capturing, or snapshotting a value.
-- **How:** settle a simple naming rule shared by package variables and runbook inputs, preserving classification through mappings.
-  The proposed uppercase `_PASSWORD`/`_SECRET` suffix rule misses existing `K3S_TOKEN`; discuss `_TOKEN`/`_KEY` suffixes, explicit exceptions, or a deliberate package-interface rename before narrowing classification.
+- **How:** sweep package declarations and runbook `inputs:` with the existing `secret NAME` marker and preserve classification through mappings.
+  Retire all name-based classification rather than adding suffix rules.
   Secretspec declarations are external to the environment-only MVP, not a runtime classification source for Cloudify.
   A runbook input has no implemented secret marker today; classification is not carried through its mappings.
   Cover one secret mapped to differently named package variables, optional inputs, unmarked names, explicit references, and applications with no packages.
   Preserve secret status and original input identity through mappings.
   Treat unknown-content detection as a limit, not a promise to discover arbitrary mislabeled secrets.
-- **Boundary:** exact suffixes, optional-secret behavior, and runbook propagation remain to be settled; do not silently drop the protection retained by Simple package secret classification (ADR-035).
-  More elaborate explicit syntax or metadata belongs to later discussion, not a prerequisite of the environment-only MVP.
+- **Boundary:** marker-only classification, no secret-demand preflight, and propagation through either marked mapping side are settled.
+  Secret-manager metadata and more elaborate declaration syntax remain outside this implementation.
 
 ## Optional secretspec-aware UX (post-MVP, 2026-10-17)
 
@@ -793,14 +795,16 @@ A second controller does not require it if its external wrapper can already supp
 ## Safe run snapshots and environment-only replay (revised 2026-10-17)
 
 - [ ] **What:** implement Secrets enter through the environment (ADR-037): snapshot ordinary settings and secret names, never secret values, digests, or provider locations.
-  **Record shape (settled 2026-10-17):** root scalars; `****` for classified secret names; root `user_forced` array; `failed: true` (cleared only by a successful install or reconfigure; a passing verify never clears it); version; revision; target. Multiline values are native JSON strings. Demanded replay names derive from the runbook's `inputs:`/`map:`; a bare package dispatch demands its own variable name.
+  **Inventory record shape (settled 2026-10-17):** root scalars; `****` for classified secret names; root `user_forced` array; `failed: true` (cleared only by a successful install or reconfigure; a passing verify never clears it); version; revision; target; schema version.
+  Multiline values are native JSON strings; run snapshots remain YAML.
+  Missing-variable hook diagnostics use the runbook's `inputs:`/`map:`, or the variable name for a bare dispatch; Cloudify never demands secrets.
 - **Why:** current snapshots can contain plaintext input values and step outputs.
   They remain local and unsafe for now; warnings and the ban on Git/shared or unencrypted backup still apply.
 - **How:** retain secret-name markers so replay does not confuse an omitted value with an ordinary default.
-  Replay restores ordinary settings and validates required secrets from the current environment after application mappings.
+  Replay restores ordinary settings and uses secrets from the current environment after application mappings, without secret preflight.
   It must not overwrite wrapper-supplied values with snapshot literals, empty placeholders, or values from current inventory.
   Persist the application-input name where needed, so a wrapper supplying `RDP_PASSWORD` is not incorrectly required to export every mapped package alias.
-  Missing required supply fails before mutation and names the missing variables; Cloudify does not call a backend or know why an external provider failed.
+  A hook failing for missing secret supply names the mapped input; Cloudify neither calls a backend nor preflights secret presence.
   Prevent automatic step-output persistence from bypassing secret handling.
 - **Tests:** caller omits a required secret; wrapper supplies a rotated value; provider changes outside Cloudify; one input maps to several package names; ordinary recorded settings differ from today's defaults; a run fails before its first successful apply.
 - **Boundary:** this supersedes the earlier provider-aware snapshot proposal.
@@ -809,10 +813,9 @@ A second controller does not require it if its external wrapper can already supp
 
 ## Value-containing base64 references and insecure capture (2026-10-16)
 
-- [ ] Remove value-containing `@base64:` secret references or require explicit insecure consent before recording them as publishable references.
+- [ ] Restrict `@base64:` to file-store multiline transport, never secret-reference classification; inventory records decoded ordinary scalars.
   Encoding a value does not make it a secret location.
-  **Settled (2026-10-17):** base64 stays strictly as a file-store multiline transport, never classified as a secret reference; inventory records the decoded scalar as an ordinary value.
-- The current backend also implements multiline file-store values, so design a distinct literal transport and migrate its callers before removing it.
+- Preserve the file-store multiline transport while removing its secret-reference classification.
   Preserve exact multiline bytes and escaping; do not conflate this backend with private dispatch-context encoding.
 - Under the environment-only MVP, classified secrets are not captured as literals or references at all.
   The current multiline encoding must not bypass that rule or be mistaken for a publishable backend location.

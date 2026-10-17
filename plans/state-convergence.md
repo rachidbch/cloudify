@@ -1,6 +1,6 @@
 # State convergence
 
-Status: proposed, awaiting Rachid's go; no implementation authorized.
+Status: approved for feature-branch implementation; live-state mutation remains gated.
 Date: 2026-10-17.
 Tracking: [State convergence (#17)](https://github.com/rachidbch/cloudify/issues/17).
 
@@ -15,11 +15,11 @@ Files hold defaults; the environment supplies values; inventory records applied 
 
 ## Approval gates
 
-- [ ] Plan approval (G1): approve this plan, including the test-transport prerequisite and explicit existing-record conversion.
-- [ ] Schema approval (G2): approve changing `schemas/v1/` in place, retaining `schema_version: 1`, and updating its validator and fixtures rather than introducing v2.
+- [x] Plan approval (G1): Rachid approved this plan, including the test-transport prerequisite and explicit existing-record conversion.
+- [x] Schema approval (G2): Rachid approved changing `schemas/v1/` in place, retaining `schema_version: 1`, and updating its validator and fixtures rather than introducing v2 (Schema v1 evolution, ADR-040).
   Recommendation: in-place v1 because no external consumers are reported; confirm that assumption before changing schemas.
   This is an incompatible record change even with the same schema version; back up and explicitly convert existing records, never silently accept both shapes at runtime.
-- [ ] Fragile-contract approval (G3): authorize the named declaration, ladder, classification, and seeding changes plus their pinning tests.
+- [x] Fragile-contract approval (G3): Rachid authorized the named declaration, ladder, classification, and seeding changes plus their pinning tests.
   Authorize payload-golden regeneration only for explained export differences caused by these approved changes, not blanket acceptance of arbitrary byte changes.
   All unrelated payload and shadow goldens must stay byte-identical.
 - [ ] Live-state approval (G4): approve a reviewed dry-run conversion before touching production inventory or deleting octop's deployment defaults file.
@@ -75,8 +75,8 @@ Run `task gate` before and after fragile edits and inspect golden diffs individu
 
 ### Baseline and prerequisites (S0)
 
-- [ ] After approvals, create one implementation branch and link its GitHub tracking issue here.
-- [ ] Reconcile stale `REDESIGN.md` clauses to the settled contract: secret preflight/open questions, sharing refusal, old record fields, failure semantics, replay source, and obsolete deployment-input wording.
+- [x] Created `feat/state-convergence` before implementation; tracking issue is State convergence (#17).
+- [x] Reconciled stale `REDESIGN.md` clauses to the settled contract: secret preflight/open questions, sharing refusal, old record fields, failure semantics, replay source, and obsolete deployment-input wording.
   Synchronize relevant roadmap entries; never rewrite historical ADR bodies or harness instructions without consent.
 - [ ] Resolve the canary transport mismatch before invoking it: `Taskfile.yml` points to `tests/run-integration.sh`, which uses direct Incus, host-key rewrites, and localhost Bats.
   Preserve the integration coverage while moving execution to the approved single-SSH remote transport, with explicit clean-test prerequisites outside the ladder.
@@ -170,5 +170,13 @@ Existing unsafe historical snapshots remain private and unchanged.
 
 - Planning only: fetched `origin`; `master` matched `origin/master` at `1f46d5f`, clean before planning.
 - One SPEC review passed with no must-fix findings; no runtime tests or production operations performed.
-- Approval gates (G1)-(G4): pending.
-- Baseline and implementation slices (S0)-(S9): not started.
+- Rachid approved Plan (G1), Schema (G2), and Fragile contracts (G3), then explicitly required a feature branch before implementation; `feat/state-convergence` was created with no implementation edits on master.
+- Live-state approval (G4): pending; no production mutation authorized.
+- Baseline and prerequisites (S0): blocked on test preparation; implementation slices (S1)-(S9): not started.
+- Baseline attempt planned 797 unit tests and passed through test 426 before its reader received harness cancellation; no complete exit verdict, gate, or lint result was produced.
+  Preserved partial TAP at `~/tmp/cloudify-s0/interrupted-unit.tap`; do not count it as a baseline pass.
+- A subsequent plain-SSH read-only check confirmed no surviving test process, no target-side `ivps` executable or `/root/.config/ivps`, and an existing `guacd` container despite `/root/guacamole` being absent.
+  No repairs, restarts, host-key changes, or cleanup were performed.
+- Canary transport repair must first settle explicit controller/target preparation: retain real `--on` coverage with isolated inventory and a disposable workload target, not a local-install substitute or unproved self-dispatch.
+  Recommendation: prepare a separate disposable canary target and isolated controller inventory outside the test ladder, after Rachid approves the preparation.
+- A draft transport regression is saved at `~/tmp/cloudify-s0/remote-bats.bats`, not committed or run; runtime and test files remain unchanged.

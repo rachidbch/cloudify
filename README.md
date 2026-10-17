@@ -2,7 +2,7 @@
 
 Bash-based host provisioning and package management for Ubuntu/Debian. Install and manage 60+ software packages on local and remote machines through a single CLI.
 
-The proposed [state-convergence plan](PLAN.md) tracks the accepted inventory, secrets, and defaults redesign in [issue #17](https://github.com/rachidbch/cloudify/issues/17); implementation awaits approval.
+The approved [state-convergence plan](PLAN.md) tracks feature-branch implementation of the inventory, secrets, and defaults redesign in [issue #17](https://github.com/rachidbch/cloudify/issues/17); live migration requires separate approval.
 
 ## What It Does
 

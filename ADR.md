@@ -606,3 +606,20 @@ REDESIGN.md records the new boundary; implementation waits for the remaining spe
 4. The failure marker is `"failed": true`, set by any failed operation and cleared only by a successful install or reconfigure (correcting ADR-038's `<phase>` illustration).
 
 **Consequences:** classification needs no name rules; secret status is visible in one place per package and one list per runbook. Misclassification surfaces during the sweep audit or as failed hooks, not silently. Schemas and records land with implementation.
+
+## ADR-040: Evolve schema v1 in place for state convergence
+
+**Status:** Accepted 2026-10-17 (Rachid's approval of the State convergence plan).
+
+**Context:** Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), and Marker-only classification (ADR-039) replace nested package records with root settings and minimal metadata.
+The existing closed version-1 schemas reject that shape.
+The implementation proposal reported no external consumers; the prerequisite audit must check that assumption before schema edits.
+
+**Decision:** Change the existing version-1 schemas, validator, and fixtures in place, retaining `schema_version: 1`, rather than creating schema v2.
+Cut over all readers and writers together and explicitly convert existing records with a dry run, restricted backup, validated atomic writes, and rollback by Git revert plus backup restoration.
+Keep this work on feature branch `feat/state-convergence`; any live inventory conversion requires separate approval of its dry run.
+If the consumer audit finds an external compatibility obligation, surface it before changing schemas rather than silently breaking it.
+
+**Consequences:** The package record contract is incompatible despite the retained schema-version number; version alone cannot distinguish old and new records.
+The pre-1.0 tool release moves to `0.4.0`, and runtime must not retain a permanent dual reader.
+REDESIGN.md and PLAN.md carry the approved implementation and migration gates.

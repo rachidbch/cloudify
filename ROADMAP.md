@@ -756,7 +756,7 @@ A second controller does not require it if its external wrapper can already supp
 
 ## Secret classification without mandatory new package syntax (settled 2026-10-17)
 
-**Settled (Rachid):** classification = uppercase suffix (`_PASSWORD|_SECRET|_TOKEN|_KEY`, end of name) OR the existing explicit `secret NAME` marker (already parsed by the current code, used by pkg/affine). Mappings are secret when either side matches. Sweep every `pkg/*/.remote-vars` and runbook `inputs:` at implementation; rename outliers deliberately. Never preflight-demand secrets: a recipe/verify hook failing for a missing secret fails loudly, naming it and pointing at the wrapper (graceful, option c).
+**Settled (Rachid, revised same day):** marker-only. Classification = the existing explicit `secret NAME` marker (already parsed by the current code, used by pkg/affine); no suffix rule, and the name heuristic is retired. Sweep every `pkg/*/.remote-vars` and runbook `inputs:` at implementation. Mappings are secret when either side is marked. Runbook marker spelling is the one open bit (proposal: `secret NAME` entries in the `inputs:` list). Never preflight-demand secrets: a recipe/verify hook failing for a missing secret fails loudly, naming it and pointing at the wrapper. Secrets in shared installations: operator's domain - the guard compares non-secret recorded values only and never compares `****` entries; replay reads which names are secret from the record's `****` entries.
 
 - [ ] **What:** implement the settled rule above.
   Simple MVP package classification (ADR-035) is superseded at implementation by this settlement; its body stays as history.

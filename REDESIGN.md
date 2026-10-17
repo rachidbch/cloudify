@@ -342,12 +342,10 @@ The mapping syntax is fixed and tested before existing package names change.
 
 ## Secrets
 
-Secret classification (settled 2026-10-17, Rachid): a name is secret when it ends in an uppercase `_PASSWORD`, `_SECRET`, `_TOKEN`, or `_KEY` suffix, or when its package declaration carries the existing explicit `secret NAME` marker (already parsed by the current code and used by `pkg/affine`).
-The older substring heuristic is replaced by this rule at implementation; the shipped declarations are swept in the same pass.
-
-A runbook mapping is secret when either side matches the rule, so `RDP_PASSWORD` stays secret through its package aliases.
-
-Application-input classification and propagation through mappings are settled as above; the sweep and pinning tests land with implementation.
+Secret classification (revised 2026-10-17, Rachid): marker-only. A name is secret when its declaration marks it - `secret NAME` in the package's `.remote-vars`, the existing mechanism already parsed by the current code and used by `pkg/affine`.
+No suffix rule and no name heuristic: the implementation sweep adds markers to every shipped package declaration and runbook input, and retires the substring heuristic with them.
+A runbook mapping is secret when either side is marked, so `RDP_PASSWORD` stays secret through its package aliases.
+Open bit: the marker spelling for runbook `inputs:` entries (proposal: `secret NAME` entries in the same list); settles with the sweep.
 
 For the MVP, secret values come from the caller's environment; secretspec or another external supplier may populate it (Secrets enter through the environment, ADR-037).
 
@@ -410,8 +408,8 @@ A package's configuration-affecting declared values are the values it declares i
 
 Non-secret values compare by their recorded values.
 
-Secret-name-only recording cannot prove that two deployments supplied equal secret values (Secrets enter through the environment, ADR-037).
-Settled rule (2026-10-17): when a package's own declared values include a classified secret, a second deployment may not rely on that installation - the guard refuses before mutation and names both deployments and both escapes: a distinct package instance (a genuinely separate installation, ADR-026), or genuinely sharing one identical secret supplied by the wrapper.
+Secret values are never compared (Secrets enter through the environment, ADR-037): the operator knows how each package reacts to its environment and owns sharing decisions for secret-bearing installations.
+The guard compares non-secret recorded values only; two `****` entries are unrelated facts, never conflicting or matching credentials.
 
 A conflict fails before mutation and names the deployments in conflict.
 
@@ -718,8 +716,10 @@ Cloudify may receive the same variables from another caller; it has no secretspe
 The wrapper chooses the spec, profile, provider, and any generation or prompting.
 One secretspec profile per named deployment remains the external setup convention, not a Cloudify selection algorithm.
 
-Before mutation, Cloudify identifies the declared secret inputs needed by the selected operation and applies the runbook's names-only mappings.
-Required secret values must then be available in the environment.
+Before mutation, Cloudify applies the runbook's names-only mappings and records which environment names are secrets - the `****` entries in inventory.
+It never demands or preflights secrets.
+When a recipe or verify hook fails because an environment variable is missing, the failure names that variable and points at the external supplier; the runbook's `inputs:`/`map:` (or, for a bare dispatch, the variable name) tells it which name that is.
+On replay from current inventory, the record's `****` entries are how Cloudify knows which names are secret; the runbook `map:` says which input name feeds them.
 Cloudify records the secret names but not their values, digests, project/profile/provider addresses, or mode/key selectors.
 A safe replay preserves ordinary recorded settings and takes secrets from the new invocation's environment, after mappings.
 It never restores a historical secret literal or calls a secret backend.
@@ -730,12 +730,12 @@ Optional secretspec-aware UX is future work, not a prerequisite of deployment or
 
 The specification gaps named when this section landed are settled (2026-10-17):
 
-- classification: uppercase `_PASSWORD|_SECRET|_TOKEN|_KEY` suffixes plus the explicit `secret NAME` marker, swept across packages and runbooks;
-- demands: Cloudify never preflight-demands secrets; a recipe or verify hook failing for a missing secret fails loudly and names it (graceful, Secrets enter through the environment, ADR-037);
+- classification: the explicit `secret NAME` marker only, swept across packages and runbooks; the name heuristic is retired;
+- demands: none - a recipe or verify hook failing for a missing secret fails loudly and names it (graceful, Secrets enter through the environment, ADR-037);
 - record: root scalars, `****` names, root `user_forced` array, `failed: true`, version, revision, target;
 - provenance: the user-forced bit replaces the earlier set/store labels (Defaults ladder, ADR-038);
 - sharing: conservative refusal with the package-instance escape (the guard paragraph above);
-- input identity: replay derives demanded environment names from the runbook's `inputs:`/`map:`; a bare package dispatch demands the package variable name itself.
+- input identity: replay failure reporting derives the missing-variable names from the runbook's `inputs:`/`map:` (bare dispatches: the variable name); current-state replay reads which names are secret from the record's `****` entries.
 
 Generated-secret UX and any guest-to-provider return channel stay deferred until these decisions are settled.
 Existing plaintext local snapshots are still unsafe until the implementation is changed; do not publish them.

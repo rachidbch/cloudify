@@ -227,7 +227,8 @@ aborts the run — an empty value is never forwarded. Backends are shell files i
 `lib/secrets/` (the built-in one is `base64`).
 Base64 contains a recoverable value, not a safe secret location; do not publish such references through inventory sync.
 Its removal or explicit insecure handling, including replacement of its multiline-storage role, is tracked in ROADMAP.md.
-Classification is marker-only (Marker-only secret classification, ADR-039): a name is secret when its package declaration marks it with `secret NAME`. The implementation sweep adds markers to every shipped package and retires the old name-matching heuristic; the current code still classifies by name until then.
+The accepted classification rule is explicit `secret NAME` markers plus exact uppercase endings `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD` (Secret markers with suffixes, ADR-042).
+The implementation sweep still adds markers to every shipped secret; substring guessing is replaced, while complete removal of name-based recognition is deferred in ROADMAP.md.
 The revised MVP design is Secrets enter through the environment (ADR-037): an external wrapper supplies secrets; Cloudify records names, not secret values or provider addresses.
 The reference syntax above describes current code, not a planned secretspec integration; implementation changes wait for the remaining specification decisions.
 

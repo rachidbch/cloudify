@@ -6,7 +6,7 @@ Tracking: [State convergence (#17)](https://github.com/rachidbch/cloudify/issues
 
 ## Outcome and authority
 
-Implement Inventory owns current state (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Marker-only classification (ADR-039), and Unnamed deployment matching (ADR-031).
+Implement Inventory owns current state (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Boolean failure marker (ADR-039), Secret markers with suffixes (ADR-042), and Unnamed deployment matching (ADR-031).
 The settled contract is in `REDESIGN.md`; this plan applies the final 2026-10-17 decisions, not superseded clauses in earlier ADRs or stale design paragraphs.
 Do not reopen the settled design or implement Host origin and continuity (ADR-028).
 
@@ -30,7 +30,8 @@ Any newly discovered contract change needs a new explicit go.
 
 ## Contract to prove
 
-- Classification comes only from `secret NAME` package declarations and runbook `inputs:` entries; either marked side makes a mapping secret.
+- Classification comes from `secret NAME` markers or exact uppercase suffixes `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD` (ADR-042); either qualifying mapping side protects the shared input and all aliases.
+- Complete removal of name-based recognition is a deferred roadmap item, not part of this implementation.
 - Secret values come only from this invocation's environment after names-only mappings; no provider lookup, digest demand, secret preflight, or snapshot-secret restoration.
 - Missing secrets may fail recipe/verify hooks; diagnostics name the original runbook input through `map:`, or the package variable for a bare dispatch.
 - Inventory, events, and safe snapshots record secret names as `****`, never values, digests, provider locations, or `redacted` flags.
@@ -93,12 +94,16 @@ Run `task gate` before and after fragile edits and inspect golden diffs individu
   No schema filename/URL references were found in selected code paths of ivps, its provider/skeleton, cfy, or clibash; this is bounded evidence, not proof of no external consumers.
   The current active-claim guard hook is reserved and matching is not wired; the approved guard and matching behavior must land during Unnamed matching (S7).
 
-### Marker sweep (S1)
+### Marker sweep and suffix fallback (S1)
 
 - [ ] Audit every `pkg/*/.remote-vars` and shipped runbook input; add explicit markers for actual secrets, including k3s tokens, guacamole passwords, xfce password, and mapped `RDP_PASSWORD`.
 - [ ] Teach runbook parsing/display the settled `secret NAME` input syntax and preserve original input identity through mappings.
-- [ ] Retire the context name heuristic and any persistence-affecting classification heuristic; update `vars declared` display.
-- [ ] Prove an unmarked misleading name stays ordinary, a marked non-obvious name is secret, either marked mapping side propagates classification, and declared defaults/optional inputs remain valid.
+- [ ] Replace broad substring guessing with one shared exact-suffix predicate for context and display; keep explicit markers and mask marked non-obvious names in scoped vars display.
+- [ ] Prove suffix boundaries, marked non-obvious names, either-side mapping classification and fan-out, mapped-secret instance-key refusal, and unchanged declaration/default/optional-input contracts.
+- [ ] Bump VERSION to 0.4.0 at this first tool-behavior change; final release verification retains that planned pre-1.0 version.
+- [ ] Run one focused red test at a time and cheap target-side drivers; full unit/gate/canary are slice-exit gates, never debugging loops.
+  Fragile invariants: one resolution; unchanged three-field candidate and four-field raw/provenance records; declared-destination gate; caller precedence; 0600 context ownership/cleanup; payload export names/order/bytes and stdin transport unchanged.
+  S0's final gate is the fresh before-edit baseline; run the gate again at S1 exit without regenerating payload goldens.
 - [ ] Close the tool gates, affected declaration tests, and approved fragile pins without unrelated golden changes.
 
 ### Schema and lean records (S2)
@@ -163,7 +168,7 @@ Run `task gate` before and after fragile edits and inspect golden diffs individu
 - [ ] Prove any failed operation marks failure, passing verify cannot clear it, and successful install/reconfigure can.
 - [ ] Re-run full unit, fragile gate, lint, guacamole canary, and the scoped disposable multi-host/recovery E2E on final pushed HEAD.
   Agree any full registry sweep scope before executing it; production deployments are never test fixtures.
-- [ ] Bump `VERSION` from `0.3.0` to `0.4.0` for the incompatible pre-1.0 contract release and verify CLI/version override behavior.
+- [ ] Verify the planned `0.4.0` pre-1.0 contract release version, bumped at Marker sweep and suffix fallback (S1), including CLI/version override behavior.
 - [ ] Close README, runbook/package documentation, schema README, REDESIGN, roadmap, HISTORY, and LOGS; do not edit CHANGELOG or harness files without consent.
 - [ ] Remove temporary conversion readers/fixtures only after the approved migration reports zero old artifacts; no permanent runtime dual reader.
 - [ ] Finish bounded spec/technical reviews under the project review budgets, address findings, and record final evidence before PR/merge.
@@ -181,7 +186,8 @@ Existing unsafe historical snapshots remain private and unchanged.
 - Rachid approved Plan (G1), Schema (G2), and Fragile contracts (G3), then explicitly required a feature branch before implementation; `feat/state-convergence` was created with no implementation edits on master.
 - Live-state approval (G4): pending; no production mutation authorized.
 - Baseline and prerequisites (S0): COMPLETE; focused checks 7/7, producer/consumer audit complete, Technical verification PASS, unit 804/0, before/after gate 144/0 each, canary 7/0, full lint exit 0.
-  Stopped at the S0 boundary; Marker sweep (S1) and later implementation slices have not started.
+  S0 closed before implementation; Rachid then authorized Marker sweep and suffix fallback (S1) under the revised classification decision (ADR-042).
+- Marker sweep and suffix fallback (S1): in progress; later slices remain unstarted.
 - Full lint found SC2046 on the existing numeric `date +%s` expansion in the remote template; added one localized explanatory shellcheck comment, with no executable change.
   Before-edit fragile gate passed 144/144 with actual task exit 0; before/after `declare -f` payload text is byte-identical by cmp; full task lint now exits 0.
   No golden regeneration occurred; payload body, explicit allow-list, exports, stdin transport, and shadow bytes remain unchanged.

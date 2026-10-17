@@ -48,7 +48,9 @@ Application defaults live at `apps/<application>/<flavor>/defaults.yaml` under t
 The `application` source label covers both the application defaults file and the mapped input.
 The value is captured once, at emit time; no store is read twice.
 The private dispatch context may hold resolved plaintext for execution and is removed after the dispatch.
-Classification is marker-only (Marker-only secret classification, ADR-039): `secret NAME` markers in package `.remote-vars`, and `secret NAME` entries in the runbook `inputs:` list (settled spelling; added by the implementation sweep). A mapping is secret when either side is marked. Until the sweep lands, the current code classifies by name recognition.
+The accepted classification rule uses `secret NAME` markers in package `.remote-vars` and runbook `inputs:`, plus exact uppercase endings `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD` (Secret markers with suffixes, ADR-042).
+Either qualifying mapping side makes the input and its aliases secret; the sweep replaces substring guessing but does not remove the suffix safety net.
+Complete removal of name-based recognition is deferred to ROADMAP.md.
 Runbook `inputs:` currently declares names only; it has no implemented secret marker or secret-classification propagation through mappings.
 Do not assume an input's origin in secretspec supplies Cloudify with classification or a persistent secret location.
 

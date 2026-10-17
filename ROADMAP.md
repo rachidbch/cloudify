@@ -2,11 +2,12 @@
 
 ## State convergence (approved implementation plan, 2026-10-17)
 
-- [ ] Implement Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Marker-only classification (ADR-039), and Unnamed matching (ADR-031) through [the active plan](PLAN.md), tracked in [issue #17](https://github.com/rachidbch/cloudify/issues/17).
+- [ ] Implement Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Boolean failure marker (ADR-039), Secret markers with suffixes (ADR-042), and Unnamed matching (ADR-031) through [the active plan](PLAN.md), tracked in [issue #17](https://github.com/rachidbch/cloudify/issues/17).
   Plan, in-place schema v1, and explained fragile-contract/golden changes are approved on `feat/state-convergence`; production migration requires separate approval.
   The plan includes stale-prose reconciliation, explicit existing-record conversion, and correction of the legacy canary transport before its acceptance gate.
   Dedicated-host canary (ADR-041) moves all seven stack lifecycle checks into cloudify; transport/state/batch-exit E2E claims remain separate.
-  Baseline and prerequisites (S0) closed on 2026-10-17: unit 804/0, before/after gate 144/0 each, canary 7/0, lint green; Marker sweep (S1) has not started.
+  Baseline and prerequisites (S0) closed on 2026-10-17: unit 804/0, before/after gate 144/0 each, canary 7/0, lint green.
+  Marker sweep and suffix fallback (S1) is now in progress under Secret markers with suffixes (ADR-042).
   Remaining legacy package integration/snapshot tasks require conversion before any milestone sweep; do not invoke their old Incus/localhost path.
 
 ## URGENT - clean the surface before anything else (2026-09-07 E2E traps)
@@ -765,23 +766,25 @@ A second controller does not require it if its external wrapper can already supp
 - **Related drift (settled 2026-10-17, implement ADR-031):** unnamed `app run` matches a proven-identical deployment (bindings + non-secret scalars + `****` names), creates the first with a generated name, and refuses ambiguity naming the candidates; the current literal-`default` selection is the compliance bug.
   Use explicit semantic names anyway while the mismatch remains.
 
-## Marker-only secret classification (ADR-039, settled 2026-10-17)
+## Secret markers and suffix fallback (ADR-042, revised 2026-10-17)
 
-**Settled (Rachid, revised same day):** marker-only. Classification = the existing explicit `secret NAME` marker (already parsed by the current code, used by pkg/affine); no suffix rule, and the name heuristic is retired. Sweep every `pkg/*/.remote-vars` and runbook `inputs:` at implementation. Mappings are secret when either side is marked. Runbook marker spelling is settled: `secret NAME` entries in the `inputs:` list. Never preflight-demand secrets: a recipe/verify hook failing for a missing secret fails loudly, naming it and pointing at the wrapper. Secrets in shared installations: operator's domain - the guard compares non-secret recorded values only and never compares `****` entries; replay reads which names are secret from the record's `****` entries.
+- [ ] Implement explicit `secret NAME` markers plus the exact uppercase suffix list `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD` during Marker sweep and suffix fallback (S1).
+  Match the literal underscore and end of name, never a substring or bare name.
+  Sweep every package declaration and shipped runbook input; markers cover exceptions such as `CLOUDIFY_ZITADEL_MASTERKEY`.
+  Propagate classification from either mapping side to the shared input and all aliases.
+  Keep context and display on the same suffix predicate; explicit markers remain sufficient independently of naming.
+- Secret markers with suffixes (ADR-042) supersedes ADR-039's marker-only clauses; its boolean failure decision remains unchanged.
+  This reduces immediate missed-marker risk without retaining broad substring false positives.
+  The fallback remains conservative for public names ending in `_KEY` and cannot infer arbitrary content.
+- No secret-demand preflight and operator-owned secret sharing remain the target contract; their separate implementation slices do not move into S1.
+  Secretspec declarations remain external, not a runtime classification source.
 
-- [ ] **What:** implement the settled rule above.
-  Marker-only classification (ADR-039) supersedes Simple MVP package classification (ADR-035); historical ADR bodies remain unchanged.
-- **Why:** name matching can miss a secret such as `LICENSE` or classify a public key as secret, while mandatory parallel declarations can create clerical drift.
-  Cloudify must know secret status before resolving, forwarding, capturing, or snapshotting a value.
-- **How:** sweep package declarations and runbook `inputs:` with the existing `secret NAME` marker and preserve classification through mappings.
-  Retire all name-based classification rather than adding suffix rules.
-  Secretspec declarations are external to the environment-only MVP, not a runtime classification source for Cloudify.
-  A runbook input has no implemented secret marker today; classification is not carried through its mappings.
-  Cover one secret mapped to differently named package variables, optional inputs, unmarked names, explicit references, and applications with no packages.
-  Preserve secret status and original input identity through mappings.
-  Treat unknown-content detection as a limit, not a promise to discover arbitrary mislabeled secrets.
-- **Boundary:** marker-only classification, no secret-demand preflight, and propagation through either marked mapping side are settled.
-  Secret-manager metadata and more elaborate declaration syntax remain outside this implementation.
+## Remove name-based secret identification completely (deferred, 2026-10-17)
+
+- [ ] Replace suffix recognition with marker-only classification after an explicit follow-up decision.
+  Audit package/runbook markers and upgrade handling first, so a missed marker cannot silently expose a secret when the fallback disappears.
+  Cover scoped display, mapped inputs and fan-out, snapshots/events/inventory, and instance-key rejection with focused checks before removing the safety net.
+- This is deliberately outside State convergence's Marker sweep and suffix fallback (S1); do not remove suffix recognition during that slice.
 
 ## Optional secretspec-aware UX (post-MVP, 2026-10-17)
 

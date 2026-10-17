@@ -641,3 +641,25 @@ Prepare or discard old test workloads explicitly before the ladder; do not add a
 Those claims need their separate tests; a passing canary cannot substitute for them.
 Retain complete reports across reruns, include VERSION in the streamed tree, preserve argument boundaries and failure exits, and stop on staging failure.
 PLAN.md records this testing split and the remaining acceptance gates.
+
+## ADR-042: Secret markers with an anchored suffix safety net
+
+**Status:** Accepted 2026-10-17 (Rachid's design change and go for Marker sweep, S1).
+Supersedes the marker-only classification clauses of ADR-039; its `failed: true` decision remains unchanged.
+
+**Context:** Removing name recognition immediately risks exposing a secret whose explicit marker was missed.
+Substring matching is too broad: names such as `TOKEN_FILE` or `MONKEY` are not credentials merely because they contain a matching word.
+
+**Decision:** Keep explicit `secret NAME` markers in package declarations and runbook inputs, and replace substring matching with the fixed suffix list `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD`.
+Match the literal underscore and end of name, case-sensitively; no substring or bare-name match, and no automatic expansion of the list.
+A marker remains sufficient for non-obvious names such as `CLOUDIFY_ZITADEL_MASTERKEY`.
+Either a marker or a suffix match on either mapping side makes that mapped input secret; fan-out must not expose the same input through another alias.
+Use the same suffix rule for context classification and display masking.
+Keep the planned explicit-marker sweep; suffix recognition is a safety net, not a replacement for declarations.
+Put complete removal of name-based secret recognition on the roadmap, requiring a later explicit decision after marker coverage and migration risks are checked.
+
+**Consequences:** Fewer ordinary names are misclassified, while conventional secret endings remain protected if their markers are missing.
+A public name ending in `_KEY` can still be conservatively masked; this rule does not infer whether key material is public or private.
+Marker-only classification is deferred, not implemented in S1.
+This changes classification only; secret-source, record, preflight, snapshot, and replay changes keep their existing implementation slices.
+REDESIGN.md and PLAN.md carry the revised contract.

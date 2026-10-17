@@ -1474,3 +1474,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - On `feat/state-convergence` at `a53cf76`, full unit passed 804/804, fragile gate passed 144/144 before and after the comment-only lint annotation, full lint passed, and Dedicated-host canary (ADR-041) passed 7/7; all task/batch exits were 0, with complete TAP and no skips.
 - Retained native reports, confirmed unchanged payload bytes and successful canary teardown, and closed the prerequisite audit; no acceptance rerun, environment healing, golden regeneration, or production mutation.
 - Stopped at Baseline and prerequisites (S0); Marker sweep (S1) has not started and live-state approval remains pending.
+
+## 2026-10-17 - suffix fallback retained; Marker sweep and suffix fallback (S1) authorized
+
+- Rachid replaced ADR-039's marker-only classification with explicit markers plus a fixed end-of-name suffix list (ADR-042), retaining the marker sweep while reducing missed-marker risk; complete removal of name-based detection is a deferred roadmap entry.
+- The chosen exact uppercase endings are `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD`; non-obvious secrets retain explicit markers, and either mapping side protects all aliases of the shared input.
+- Design, plan, glossary, README/runbook notes, and roadmap synchronized before implementation; record/preflight/replay changes remain in later slices, and live-state consent remains pending.

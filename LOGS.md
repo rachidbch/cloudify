@@ -1077,3 +1077,12 @@
 - Canary covered install, HTTP/private env file, authentication/RDP configuration, DB-password change, data-preserving reinstall, complete teardown, and expected verify failure after uninstall.
 - Independent raw TAP checks found every result number exactly once, no gaps/duplicates/bailouts or incomplete results; expected no-ivps/no-records warning makes no inventory-coverage claim (ADR-041).
 - No retries, overlapping suites, environment healing, new host, SSH server/key changes, copied credentials/inventory, Incus API use, or production mutation; stopped before Marker sweep (S1).
+
+## 2026-10-17 - revised S1 classification contract
+
+- Fetched origin and confirmed clean `feat/state-convergence` at S0 closure before the new work.
+- Rachid authorized anchored secret suffix recognition instead of removing name detection, plus a roadmap entry for complete removal later; recorded as ADR-042 superseding ADR-039's classification clauses only.
+- Read-only audit covered all 11 package declaration files and six shipped runbooks; 11 missing package-marker sites cover nine distinct names, plus runbook input RDP_PASSWORD; affine already has its marker.
+- Fixed suffix list: `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, `_PWD`, exact uppercase end matches including underscore; MASTERKEY needs its explicit marker; no ordinary audited declaration ends in a listed suffix.
+- Planned S1 preserves legacy raw/provenance/context schemas and reference handling until their coordinated later slices; payload names/order/bytes remain unchanged.
+- No implementation tests or runtime changes yet; AGENTS.md remains untouched pending consent for its classification architecture sentence.

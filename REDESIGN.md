@@ -345,9 +345,12 @@ The mapping syntax is fixed and tested before existing package names change.
 
 ## Secrets
 
-Secret classification (revised 2026-10-17, Rachid): marker-only. A name is secret when its declaration marks it - `secret NAME` in the package's `.remote-vars`, the existing mechanism already parsed by the current code and used by `pkg/affine`.
-No suffix rule and no name heuristic: the implementation sweep adds markers to every shipped package declaration and runbook input, and retires the substring heuristic with them.
-A runbook mapping is secret when either side is marked, so `RDP_PASSWORD` stays secret through its package aliases.
+Secret classification uses explicit markers plus an anchored suffix safety net (Secret markers with suffixes, ADR-042, superseding ADR-039's marker-only clauses).
+A name is secret when marked with `secret NAME`, or when it ends exactly with `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, or `_PWD` (case-sensitive, including the underscore).
+Substring matches and bare names do not qualify; explicit markers cover exceptions such as `CLOUDIFY_ZITADEL_MASTERKEY`.
+The implementation sweep still marks every shipped secret declaration and runbook input.
+A runbook mapping is secret when either side qualifies; that classification follows a shared input through all its aliases, so fan-out cannot expose the same secret under an ordinary-looking name.
+Complete removal of name-based recognition is deferred to the roadmap, requiring a later decision.
 Runbook `inputs:` marker spelling (settled): `secret NAME` entries in the same list; the sweep adds them.
 
 For the MVP, secret values come from the caller's environment; secretspec or another external supplier may populate it (Secrets enter through the environment, ADR-037).
@@ -360,7 +363,7 @@ Replay takes required secret values from the current invocation after applicatio
 
 The external secretspec convention is one profile per named deployment; Cloudify neither derives nor validates that profile.
 
-These rules are settled: marker-only classification, no secret-demand preflight, root ordinary scalars, and operator-owned sharing of secret-bearing installations.
+These rules are settled: marker-plus-suffix classification (ADR-042), no secret-demand preflight, root ordinary scalars, and operator-owned sharing of secret-bearing installations.
 
 The dispatch context may contain resolved plaintext because the target process needs it.
 
@@ -739,7 +742,7 @@ Optional secretspec-aware UX is future work, not a prerequisite of deployment or
 
 The specification gaps named when this section landed are settled (2026-10-17):
 
-- classification: the explicit `secret NAME` marker only, swept across packages and runbooks; the name heuristic is retired;
+- classification: explicit `secret NAME` markers plus the exact suffix list in Secret markers with suffixes (ADR-042); substring matching is retired, and complete removal of name-based recognition is deferred;
 - demands: none - a recipe or verify hook failing for a missing secret fails loudly and names it (graceful, Secrets enter through the environment, ADR-037);
 - record: root scalars, `****` names, root `user_forced` array, `failed: true`, version, revision, target;
 - provenance: the user-forced bit replaces the earlier set/store labels (Defaults ladder, ADR-038);

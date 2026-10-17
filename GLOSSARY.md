@@ -176,9 +176,10 @@ First installs are fed by the environment or defaults files; persistence across 
 
 ## secret
 
-A value classified as sensitive by an explicit `secret NAME` marker in its declaration - marker-only, settled 2026-10-17; the old name-matching heuristic is retired.
+A value classified as sensitive by an explicit `secret NAME` marker or an exact uppercase ending `_PASSWORD`, `_SECRET`, `_TOKEN`, `_KEY`, or `_PWD` (Secret markers with suffixes, ADR-042).
+Substring matching is retired; complete removal of name-based recognition is deferred.
 
-Runbook `inputs:` entries carry the same spelling (`secret NAME` in the list); a mapping is secret when either side is marked.
+Runbook `inputs:` entries carry the same marker spelling (`secret NAME` in the list); a mapping is secret when either side qualifies, including all aliases sharing that input.
 
 Normal inventory, events, and future safe snapshots retain secret names, never their values, digests, or provider locations (Secrets enter through the environment, ADR-037).
 Existing unsafe snapshots still need the agreed implementation repair.

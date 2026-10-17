@@ -176,10 +176,9 @@ First installs are fed by the environment or defaults files; persistence across 
 
 ## secret
 
-A value classified as sensitive before recording or execution.
+A value classified as sensitive by an explicit `secret NAME` marker in its declaration - marker-only, settled 2026-10-17; the old name-matching heuristic is retired.
 
-Current package classification retains explicit markers, reference classification, and name recognition (Simple package secret classification, ADR-035).
-The narrower suffix rule and its runbook-input handling remain open until existing token/key names and optional secrets are accounted for.
+Runbook `inputs:` entries carry the same spelling (`secret NAME` in the list); a mapping is secret when either side is marked.
 
 Normal inventory, events, and future safe snapshots retain secret names, never their values, digests, or provider locations (Secrets enter through the environment, ADR-037).
 Existing unsafe snapshots still need the agreed implementation repair.

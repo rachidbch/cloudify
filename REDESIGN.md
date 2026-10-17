@@ -345,7 +345,7 @@ The mapping syntax is fixed and tested before existing package names change.
 Secret classification (revised 2026-10-17, Rachid): marker-only. A name is secret when its declaration marks it - `secret NAME` in the package's `.remote-vars`, the existing mechanism already parsed by the current code and used by `pkg/affine`.
 No suffix rule and no name heuristic: the implementation sweep adds markers to every shipped package declaration and runbook input, and retires the substring heuristic with them.
 A runbook mapping is secret when either side is marked, so `RDP_PASSWORD` stays secret through its package aliases.
-Open bit: the marker spelling for runbook `inputs:` entries (proposal: `secret NAME` entries in the same list); settles with the sweep.
+Runbook `inputs:` marker spelling (settled): `secret NAME` entries in the same list; the sweep adds them.
 
 For the MVP, secret values come from the caller's environment; secretspec or another external supplier may populate it (Secrets enter through the environment, ADR-037).
 

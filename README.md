@@ -66,12 +66,6 @@ Commands:
   app run <application>[/<flavor>] [--name <name>]  Run the application's runbook (bare run: install then verify)
   deployment list|show <id>                      List deployments; show one manifest and its run snapshots
   deployment migrate <id> --application <app>    One-shot bridge: copy single-ID inputs to the nested path
-  deployment migrate-registry <id> --application <app> [--flavor <f>] [--name <n>]
-                                                 [--write]
-                                                 Investigate (read-only ad-hoc verify) or
-                                                 convert legacy registry records to lean
-                                                 inventory records + migrate-registry events
-                                                 (per-application, ADR-043)
   deployment replay <app> [--name <n>] [--at <run>] [--phase <p>]
                                                  Re-run a recorded run from its snapshot (a
                                                  --phase verify re-run is the drift check)

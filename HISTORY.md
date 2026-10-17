@@ -1524,3 +1524,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Acceptance batch green on pushed HEAD `18472e6` (receipt `results/acceptance/20261017-221425/`): unit 827/827, fragile gate 152/152, canary 7/7, lint exit 0; schema fixture matrix green; payload goldens byte-identical.
 - Schema and lean records (S2) complete. Live conversion campaign is next, gated per application by Live-state approval (G4, ADR-043); two acceptance interruptions were laptop sleep, not host faults (evidence in LOGS).
+
+## 2026-10-17 - Converter scrapped; conversion is manual, world-first
+
+- Rachid scrapped `cloudify deployment migrate-registry` the same day it landed: the live state is a handful of very short files, so a script adds risk where human eyes remove it.
+- Ruling recorded: conversion is manual, one application at a time; "investigate" means inferring the state from the world (what is installed, at what version, what values are in effect) and writing the record to match the machine - the old record is a hint, never the authority; unobservable values carry the name only.
+- Revert keeps only the unrelated `cloudify_is_package` exit-status fix; plan, README, schemas README, HISTORY and LOGS updated in the same commit; acceptance re-run on the reverted HEAD.

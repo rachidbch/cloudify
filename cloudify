@@ -137,7 +137,6 @@ source "$CLOUDIFY_SCRIPT_DIR/lib/matching.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/worker.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/runbooks.sh"
 source "$CLOUDIFY_SCRIPT_DIR/lib/adoption.sh"
-source "$CLOUDIFY_SCRIPT_DIR/lib/migrate-registry.sh"
 
 #== INITIALIZATION
 function cloudify_init_paths() {
@@ -797,10 +796,6 @@ function main() {
                     shift
                     cloudify_deployment_migrate "$@"
                     ;;
-                migrate-registry)
-                    shift
-                    cloudify_deployment_migrate_registry "$@"
-                    ;;
                 delete)
                     shift
                     [[ -n "${1:-}" && "$1" =~ ^[^/]+/[^/]+/[^/]+$ ]] || die "Usage: cloudify deployment delete <app>/<flavor>/<name>"
@@ -823,7 +818,7 @@ function main() {
                     cloudify_deployment_replay "$@"
                     ;;
                 *)
-                    die "Usage: cloudify deployment <list|show|unset|migrate|migrate-registry|replay|rebuild-manifest|delete|sweep> [args]"
+                    die "Usage: cloudify deployment <list|show|unset|migrate|replay|rebuild-manifest|delete|sweep> [args]"
                     ;;
             esac
             break

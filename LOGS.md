@@ -1174,3 +1174,8 @@
 - Acceptance interruption 2: laptop sleep announced; the relaunched batch survived and ran to completion.
 - Green batch on pushed HEAD `18472e6`, receipt `results/acceptance/20261017-221425/` (batch.exit 0): unit 827/827 (`results/unit.nHkgVCeI/report.tap`, plan `1..827`), fragile gate 152/152 (`results/gate.JdkINsLL/report.tap`), canary 7/7 (`results/canary.RlT1RBPw/report.tap`); no skips, no bailouts, no duplicate ids; task lint exit 0.
 - Record-golden review: schema fixture matrix green locally (22 valid accepted, 39 invalid rejected, `bash schemas/v1/validate.sh`); payload goldens byte-identical through the converter change (gate green, no re-capture). The pins remain schema fixtures + payload goldens; no separate record golden set exists.
+
+## 2026-10-17 - Converter removed by ruling; re-gate on the reverted tree
+
+- Rachid scrapped the converter command after review: for a handful of short files, a script is ceremony and risk. Reverted module, router route, README/schemas-README lines and the 6 tests (`git revert` of `18472e6`, conflicts resolved by keeping the later docs); `cloudify_is_package` keeps its real exit status.
+- Surviving converter evidence remains historical only: the acceptance batch of `results/acceptance/20261017-221425/` validated `18472e6`, not the reverted tree; the re-gate below is the authority for the reverted HEAD.

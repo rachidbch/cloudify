@@ -1513,3 +1513,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Rachid ruled the production record conversion follows the earlier adoption pattern: one application at a time, verify each in real time, fix before the next, so harm cannot spread cloud-wide; no bulk dry-run review gates production (per-application live conversion, ADR-043).
 - ADR-043 supersedes only ADR-040's dry-run clause; backup-before-write, idempotence, coordinated reader/writer cutover, and rollback remain; octop's deployment defaults deletion stays separately surfaced.
 - G4 gate, plan conversion task, design migration paragraph, and roadmap live-conversion note updated in the same commit.
+
+## 2026-10-17 - Legacy registry-record converter (S2)
+
+- `cloudify deployment migrate-registry <id> --application <app> [--flavor <f>] [--name <n>] [--write]` landed (lib/migrate-registry.sh): investigate (default, read-only) resolves each old record's target and runs the ad-hoc unnamed verify with the record's non-secret values as caller env; `--write` re-investigates fresh, refuses failed probes and unresolved facts by name, backs up restricted, and converts through the one inventory transition with a `migrate-registry` event per record; idempotent; old records kept until the sweep (per-application live conversion, ADR-043; Rachid's ruling that every record follows an investigation of what is actually deployed).
+- Fixed `cloudify_is_package` to return a real exit status alongside its output contract; three exit-code call sites (adoption guard, recipe printer, install preflight) were silently dead guards and now work as written.
+- Router route + README/schemas-README/PLAN updated in the same commit; acceptance gates follow on pushed HEAD.

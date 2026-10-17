@@ -24,7 +24,9 @@ fi
 #       cloudify_is_package pkg                       # Test if package exist
 function cloudify_is_package() {
     [[ $# == 0 ]] && return 1 # With no package, return false
-    find "$CLOUDIFY_DIR"/pkg/"$1" -maxdepth 0 -exec basename {} \; 2>/dev/null || true
+    local dir="$CLOUDIFY_DIR/pkg/$1"
+    [[ -d "$dir" ]] || return 1 # Not a package directory: rc is a real predicate
+    basename "$dir"            # Output contract: the name when the package exists
 }
 
 # List packages OS tags

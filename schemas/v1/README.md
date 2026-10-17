@@ -96,6 +96,8 @@ The package instance is `default` for every existing record, because the current
 
 ## Migration report contract
 
+The converter command is `cloudify deployment migrate-registry <id> --application <app> [--flavor <f>] [--name <n>] [--write]`: investigate (read-only ad-hoc verify with the record's non-secret values, refusing unresolved facts by name) or convert (restricted backup, lean record + `migrate-registry` event through the one inventory transition, idempotent); the old record is kept until the sweep.
+
 Command: `bash schemas/v1/validate.sh report [--config-dir DIR] [--nodes-dir DIR]`.
 Defaults: `--config-dir` is `$CLOUDIFY_CREDENTIALS_DIR`, else `$XDG_CONFIG_HOME/cloudify`, else `~/.config/cloudify`; `--nodes-dir` is `$IVPS_CONFIG_DIR/nodes`, else `$XDG_CONFIG_HOME/ivps/nodes`, else `~/.config/ivps/nodes`.
 It prints one physical line per item:

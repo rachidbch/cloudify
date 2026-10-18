@@ -1184,3 +1184,10 @@
 
 - Acceptance batch on pushed HEAD `93f5fd3` (receipt `results/acceptance/20261017-232056/`): unit 821/821 (`results/unit.IWlDvz5V/report.tap`, plan `1..821`), fragile gate 152/152 (`results/gate.5y9NZ5qP/report.tap`), canary 7/7 (`results/canary.ns08oZ11/report.tap`); every suite and batch exit 0, no skips, no bailouts, no duplicate ids; `task lint` exit 0.
 - The 6 converter tests are gone with the module; `cloudify_is_package` keeps its real exit status.
+
+## 2026-10-17 - Orphan test records identified and discarded
+
+- Provenance of the two `two-host-e2e` records: the live two-host E2E gate (`tests/e2e/two-host-application.bats`). It generates `runbooks/two-host/default/runbook.md` inline (app `two-host`, flavor `default`, name `e2e`; the legacy ID `two-host-e2e` is that triple flattened), installs the fixture package `fixture-split` on two throwaway containers `cloudai:e2e-2h-a`/`e2e-2h-b` it launches and deletes per run, with the stable `K3S_TOKEN` from its `token.env`. Registry records lived in the ivps node dir (outside the containers), so container teardown never swept them; both are dated 2026-09-19.
+- World check: neither instance appears in `ivps list` (local or on cloudai) - the records are orphans.
+- Discarded recoverably: `trash-put` of `<node-id>/{e2e-2h-a,e2e-2h-b}/deployments/two-host-e2e` only; the instance dirs stay ivps-owned. Migration report now: `deployments=2 runs=0 records=0`.
+- Gap noted (not fixed): an orphan legacy record with no manifest has no designed removal path - `deployment delete` requires a manifest and `deployment sweep` walks only new-format instance inventory. Add to the S9 cleanup scope.

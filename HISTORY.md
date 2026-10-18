@@ -1530,3 +1530,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Rachid scrapped `cloudify deployment migrate-registry` the same day it landed: the live state is a handful of very short files, so a script adds risk where human eyes remove it.
 - Ruling recorded: conversion is manual, one application at a time; "investigate" means inferring the state from the world (what is installed, at what version, what values are in effect) and writing the record to match the machine - the old record is a hint, never the authority; unobservable values carry the name only.
 - Revert keeps only the unrelated `cloudify_is_package` exit-status fix; plan, README, schemas README, HISTORY and LOGS updated in the same commit; acceptance re-run on the reverted HEAD.
+
+## 2026-10-17 - Orphan E2E records discarded
+
+- The two `two-host-e2e` registry records traced to the live two-host E2E gate (`tests/e2e/two-host-application.bats`, package `fixture-split`, throwaway `e2e-2h-a/b`); the instances are gone, so they were orphans. Discarded via recoverable trash; migration inventory now reports zero records.
+- Gap recorded for S9: no designed removal path for an orphan legacy record without a manifest.

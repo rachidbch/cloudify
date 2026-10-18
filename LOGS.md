@@ -1276,3 +1276,7 @@
 - youtube-mcp correction: the host runs an older generation of the same recipe - `/opt/youtube-mcp` exists and the unit predates the token-file design (2026-07-05, `Environment=API_TOKEN=...`, no `/var/lib/youtube-mcp`). The current recipe generates a server-owned token at `/var/lib/youtube-mcp/token` and its README says that token must never enter Cloudify state. So verify fails because the deployment predates the design, not because a secret is missing.
 - basics drift on both octop and t3code: `pkg/basics` depends on pandoc (also wget on t3code is absent), and pandoc is missing on both hosts, so the dependency closure is unsatisfied while the record (applied) stands.
 - secretspec is not installed on this machine (only a schema copy under `~/tmp/cloudify-secretspec/`), so exercising it needs an install step before it can supply anything.
+
+## 2026-10-18 - youtube-mcp parked mid-refactor
+
+- Rachid parked youtube-mcp: it is mid-refactor, so no convergence, no token-source change, no verify chase. Its four converted records stand; the host's older generation (API_TOKEN env, no token file) keeps verify failing until the refactor lands. Recorded under "Parked" in the plan so a later session does not mistake it for migration debt.

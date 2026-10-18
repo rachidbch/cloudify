@@ -202,6 +202,10 @@ The detached batch finished independently; historical PID 17044 is gone, and abs
 - [ ] Remove temporary conversion readers/fixtures only after the approved migration reports zero old artifacts; no permanent runtime dual reader.
 - [ ] Finish bounded spec/technical reviews under the project review budgets, address findings, and record final evidence before PR/merge.
 
+## Parked
+
+- youtube-mcp: parked mid-refactor (Rachid, 2026-10-18). Its four records were converted to the lean shape; the deployed host predates the recipe's server-owned token design, so verify will fail until the refactor lands. Do not converge it or change its token path as migration work.
+
 ## Deferred and protected
 
 No NATS permission broker, ivps path/XDG redesign, Host origin and continuity (ADR-028), guest-generated secret channel, secretspec generation/serve/aware UX, historical secret cleanup, or unrelated wording sweep.

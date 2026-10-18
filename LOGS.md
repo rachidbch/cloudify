@@ -1234,3 +1234,10 @@
 - Proof on `HEAD~1` (the show-flag fix): 11 candidates -> `tests/unit/deployment-show-unset.bats`, selection 17s, cached thereafter.
 - First end-to-end `task test` run pulled `tests/e2e/two-host-application.bats` because an e2e file was in the diff; its setup_file failed (it launched the two disposable hosts and they were not reachable within its wait). No containers were left behind (teardown deleted them). Fixed: the micro-gate selects unit files only; e2e stays with the feature/milestone gates, and a `pkg/*` or `lib/remote.sh` change prints the explicit e2e obligation instead.
 - Green marker bootstrapped to `9a7c2fd`, the last commit validated by a complete ladder (unit 823, gate 152, canary 7); it moves only on a full green `task acceptance`.
+
+## 2026-10-18 - Selector grounded: read-only exploration, floors, honest fallbacks
+
+- Correction from Rachid: a tool-less selector cannot take grounded decisions - it saw test names, not behavior, which is why it pulled the e2e suite into a micro-step. The selector now runs `codex exec --sandbox read-only` in the repository root and reads the diff, the changed code, the tests and git history itself; the prompt tells it to judge what a test actually asserts (and names the e2e rule, which it can now verify).
+- Floors (mechanical, not prompt-level): a test file the diff itself changed is always included; sanctuary guards of touched fragile surfaces are unioned back in. The model reports every drop with a reason, printed for audit.
+- Three flaws found while exercising it, all fixed: (1) it dropped the changed test file - now a mechanical floor; (2) an empty answer fell back to every unit test - now the deterministic candidates, and everything only when there are no candidates; (3) a docs-only diff would have run everything - docs/records diffs now run nothing.
+- Latency: grounded selection is 45-90s cold (it explores), cached by prompt hash thereafter. The selector's own change is covered by no test, so it falls back to `harness.bats` and `remote-bats.bats` - the honest nearest set.

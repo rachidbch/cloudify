@@ -60,12 +60,12 @@ Review passes are bounded: a SPEC review gets one review pass, one fixing pass, 
 
 TDD cycle. Tests run on the test host `cloudify` (an Incus container) through one plain ssh session (`tests/remote-bats.sh`), never on localhost.
 
-**Test selection is delegated** (2026-10-18): the agent never picks the tests - under mission pressure that judgment over-tests.
-- Micro-step: spawn `persona: test-selector` with `Subject: git diff $(cat results/acceptance/GREEN)`; run `task test -- <its PICK files>` and nothing else. Its answer is never adjusted: an add, remove or reorder is a harness defect - fix `tests/SELECT.md` or `~/.pi/agents/test-selector/persona.md` (pi ignores `~/.agents/*.md`), note the bad case, re-spawn. Read its DROP reasons. No selector, no gate: run the unit suite and say why.
-- Feature batch: the selected set plus the affected package's integration test. Milestone: `task acceptance`, the only writer of `results/acceptance/GREEN`.
+**Test selection is delegated** (2026-10-18): the agent never picks the tests - under mission pressure that judgment over-tests or negotiates the rules away.
+- Micro-step: spawn `persona: test-selector` (fresh context, read-only) with `Subject: git diff $(cat results/acceptance/GREEN)`; run `task test -- <its PICK files>` and nothing else. Its answer is never adjusted: an add, remove or reorder is a harness defect - fix `tests/SELECT.md` or `~/.pi/agents/test-selector/persona.md` (pi ignores `~/.agents/*.md`), note the bad case, re-spawn. Read its DROP reasons. No selector, no gate: run the unit suite and say why.
+- Feature batch: the selected set plus the affected package's integration test. Milestone: `task acceptance`, the only writer of `results/acceptance/GREEN` and therefore the selector's diff baseline.
 - Sanctuary (`tests/SANCTUARY.md`) guards are never pruned and always run when their surface is touched; anything else may be deleted if it freezes behavior nobody relies on or duplicates another guard. `tests/e2e/` runs at feature and milestone gates only.
 
-**Two scopes** (2026-10-01): one change never pays both costs - a tool change runs the selected set, a package change runs that package's integration test (plus its unit files if any).
+**Two scopes** (2026-10-01): one change never pays both costs - a tool change runs the selected set, a package change runs `task test-integration:<pkg>` (plus its unit files if any).
 
 **Skills:** before editing cloudify or a package, read the `cloudify-dev` skill (framework) or the `cloudify-pkg-dev` skill (recipes); the bats harness is the completion gate, never the debugger.
 

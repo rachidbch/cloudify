@@ -17,9 +17,9 @@ must be strengthened before the entry is trusted.
 
 ## Value propagation (docs/FRAGILE.md §1)
 
-- One resolution per dispatch - `tests/unit/context-raw-form.bats` (reads from the context alone, with every store deleted).
-- Ladder order, first claim, present-but-empty is a claim - `tests/unit/vars.bats`, `tests/unit/context.bats`.
-- Declaration gate, names-only mappings - `tests/unit/vars.bats`, `tests/unit/context.bats`, `tests/unit/context-wiring.bats`.
+- One resolution per dispatch - `tests/unit/context-raw-form.bats` (reads from the context alone, with every store deleted or changed).
+- Ladder order (weakest to strongest, rightmost package wins) and first claim; a present-but-empty line is a claim - `tests/unit/vars.bats`, `tests/unit/context.bats`.
+- Declaration gate (`.remote-vars` shapes), names-only mappings - `tests/unit/vars.bats`, `tests/unit/context.bats`, `tests/unit/context-wiring.bats`.
 - Payload bytes, allow-list, stdin transport - `tests/unit/golden-fixtures.bats` (byte-exact), `tests/unit/remote-stdin.bats`.
 - Context lifetime: 0600, path never in argv, removed on every exit - `tests/unit/context-wiring.bats`, `tests/unit/tmp-isolation.bats`, the E2E leak scenario.
 
@@ -33,7 +33,8 @@ must be strengthened before the entry is trusted.
 
 ## State and schema
 
-- Record shape and rejected shapes - `tests/unit/state.bats`, the schema fixture matrix in `schemas/v1/validate.sh`.
+- Record shape, required fields and rejected shapes - `tests/unit/state.bats`, the schema fixture matrix in `schemas/v1/validate.sh`.
+- Record and destination paths, identity validation - `tests/unit/state.bats`, `tests/unit/inventory.bats`.
 - Event immutability, revision monotonicity, failure preservation - `tests/unit/worker.bats`, `tests/unit/event.bats`, `tests/unit/inventory.bats`.
 - Teardown safety: reliance refusal, no teardown in a normal run - `tests/unit/uninstall.bats`, `tests/unit/deployments.bats`.
 

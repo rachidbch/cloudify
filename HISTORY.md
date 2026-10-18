@@ -1580,3 +1580,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ## 2026-10-18 - Lean pass over the test discipline docs
 
 - Removed the duplicated rule set (persona and mission both carried the rules): the mission is the single source, the persona holds role and output only. Harness test block 18 lines to 7; sanctuary 67 to 42; no rule lost.
+
+## 2026-10-18 - Lean pass audited for signal loss; ten items restored
+
+- Verified the lean pass rule by rule against the pre-lean text: restored the failure mode ("or negotiates the rules away"), the selector's read-only context, the green marker as the selector's diff baseline, the exact `task test-integration:<pkg>` command, git history as a selector input, the one-resolution "deleted or changed" proof, the ladder semantics (weakest to strongest, rightmost package wins), the `.remote-vars` shapes, required record fields, and the record/destination-path guard line.
+- Net: 10 lines restored against 74 removed; no rule or invariant remains dropped.

@@ -1,8 +1,8 @@
 # Test selection mission
 
 Your only job: name the test files this change needs. Read the diff since the
-green marker (`git diff $(cat results/acceptance/GREEN)`), the changed code, and
-the test files themselves; judge what a test asserts, never its name.
+green marker (`git diff $(cat results/acceptance/GREEN)`), the changed code, the test files themselves
+and git history; judge what a test asserts, never its name.
 
 Rules:
 

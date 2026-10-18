@@ -1291,3 +1291,8 @@
 - Deliberately NOT done: a manual memory cap. ivps has no memory option, and a manual incus cap would leave the world diverging from what ivps records (Rachid's rule). Memory caps are an ivps roadmap item.
 - Done: restart drop-in `/etc/systemd/system/user@1001.service.d/restart.conf` (`Restart=on-failure`, 5s) so a future OOM of the manager recovers by itself.
 - Still open: the stuck run is untouched, so the settle loop and its slow leak continue. Durable fix is clearing/stopping that run from the app, or patching settlement in the source build.
+
+## 2026-10-18 - Crash-loop guards on the t3 user manager and app unit
+
+- Bounded restarts, two layers, verified effective: `user@1001` = `Restart=on-failure`, `RestartSec=5s`, `RestartSteps=5`, `RestartMaxDelaySec=300s`, `StartLimitBurst=3` per `StartLimitIntervalSec=3600`; `t3code-custom.service` = `Restart=always` with `StartLimitBurst=5` per hour (its own `Restart=always` was the hot-loop risk). Past the limit systemd leaves the unit failed, which is visible via `systemctl --failed`; `systemctl reset-failed` clears it after the cause is fixed.
+- Rationale: a deterministic OOM plus an unbounded restart policy is a crash loop that hammers the instance; bounded rate + exponential backoff + give-up is the standard containment until the stuck run is cleared and ivps can cap memory.

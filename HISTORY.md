@@ -1595,3 +1595,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Bare dispatches now allocate `<pkg>`, `<pkg>-2`, ... by atomic mkdir (ADR-045); values never name. `deployment list` hides direct state unless `--direct`. The liveness sweep deletes only direct debris and reports named deployments instead of deleting them (ADR-044), with exact token matching and an unprovable-liveness refusal.
 - Remaining in the ADR-044/045 slice: teardown deletes the record mechanically (and the manifest when empty), recorded values seed later dispatches, and nameless verify/reconfigure/teardown resolve by (package, host, values).
+
+## 2026-10-18 - Affine and youtube-mcp converted; t3code found not deployed
+
+- Affine: host started on Rachid's word, unit active and `/mcp` 401 confirmed, record converted (rev 7) and verified by the tool (`verification=ok`, 1.2.0).
+- youtube-mcp: unit active and port bound; four records converted. Its verify hook is stale - it expects a token file while the unit carries `API_TOKEN` in its environment.
+- t3code: not deployed by cloudify (operator-managed `t3code-custom.service` instead, recipe unit absent, verify failing). Its seven records were left unconverted pending Rachid's decision.

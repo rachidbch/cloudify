@@ -358,30 +358,3 @@ EOF
     [ "$(cat "$CLOUDIFY_TMP/phase-order")" = "verify" ]
     rm -f "$CLOUDIFY_TMP/phase-order"
 }
-
-@test "preflight: only selected phases are inspected" {
-    export CLOUDIFY_APPLICATION=execapp CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=exec-preflight
-    rubric "a teardown-only required var cannot block the install run"
-    local rb="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
-    _make_runbook "$rb" <<'EOF'
----
-targets: guest
----
-```bash step=install target=guest pkg=inst id=i
-echo i
-```
-```bash step=uninstall target=guest pkg=teardown-pkg id=u
-echo u
-```
-EOF
-    mkdir -p "$CLOUDIFY_DIR/pkg/teardown-pkg"
-    printf 'TEARDOWN_ONLY\n' > "$CLOUDIFY_DIR/pkg/teardown-pkg/.remote-vars"
-
-    run cloudify_runbook_preflight "$rb" --target guest=cloudai:xfce-test
-    [ "$status" -eq 0 ]
-    [ -z "$output" ]
-
-    run cloudify_runbook_preflight "$rb" --target guest=cloudai:xfce-test --phase teardown
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"teardown-pkg: TEARDOWN_ONLY"* ]]
-}

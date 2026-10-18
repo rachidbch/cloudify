@@ -67,15 +67,3 @@ V
     [ "$status" -eq 0 ]
     [ "$SHARED_VAR" = "parent-value" ]
 }
-
-@test "verify still fills an unset name from the pkg yaml" {
-    mkdir -p "$CLOUDIFY_DIR/pkg/cfgpkg" "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
-    echo '# recipe' > "$CLOUDIFY_DIR/pkg/cfgpkg/init.sh"
-    cat > "$CLOUDIFY_DIR/pkg/cfgpkg/verify.sh" <<'V'
-pkg_verify() { [[ "${TEST_VERIFY_VAR:-}" == "from-yaml" ]]; }
-V
-    printf 'TEST_VERIFY_VAR: from-yaml\n' > "$CLOUDIFY_CREDENTIALS_DIR/pkgs/cfgpkg.yaml"
-    unset TEST_VERIFY_VAR
-    run _cloudify_run_verify cfgpkg
-    [ "$status" -eq 0 ]
-}

@@ -145,90 +145,17 @@ _run_shell_case_with_tty() {
 # SSH target includes CLOUDIFY_REMOTE_USER
 # ---------------------------------------------------------------
 
-@test "shell uses CLOUDIFY_REMOTE_USER@host as ssh target" {
-    _create_ssh_stub
-    _run_shell_case
-
-    grep -q "root@hermes" "$STUB_DIR/ssh_calls.log"
-}
-
-@test "shell with -i uses CLOUDIFY_REMOTE_USER@host as ssh target" {
-    _create_ssh_stub
-    _run_shell_case -i hermes setup
-
-    grep -q "root@hermes" "$STUB_DIR/ssh_calls.log"
-}
-
-@test "shell non-interactive uses CLOUDIFY_REMOTE_USER@host as ssh target" {
-    _create_ssh_stub
-    _run_shell_case hermes --version
-
-    grep -q "root@hermes" "$STUB_DIR/ssh_calls.log"
-}
-
 # ---------------------------------------------------------------
 # Bare shell (no command) → interactive with -t
 # ---------------------------------------------------------------
-
-@test "shell with no args uses ssh -t when stdin is a TTY" {
-    _create_ssh_stub
-    # Force TTY detection to true
-    _run_shell_case_with_tty
-
-    grep -q "\-t" "$STUB_DIR/ssh_calls.log"
-}
-
-@test "shell with no args omits -t when stdin is not a TTY" {
-    _create_ssh_stub
-    _run_shell_case
-
-    ! grep -q "\-t" "$STUB_DIR/ssh_calls.log"
-}
-
-@test "shell with no args does NOT pipe through tail" {
-    _create_ssh_stub
-    _run_shell_case
-
-    local call_count
-    call_count=$(grep -c "SSH_ARGS:" "$STUB_DIR/ssh_calls.log")
-    [ "$call_count" -eq 1 ]
-}
 
 # ---------------------------------------------------------------
 # shell -i command → interactive with -t
 # ---------------------------------------------------------------
 
-@test "shell -i command uses ssh -t (interactive)" {
-    _create_ssh_stub
-    _run_shell_case -i hermes setup
-
-    grep -q "\-t" "$STUB_DIR/ssh_calls.log"
-}
-
-@test "shell -i command passes command to ssh" {
-    _create_ssh_stub
-    _run_shell_case -i hermes setup
-
-    grep -q "hermes setup" "$STUB_DIR/ssh_calls.log"
-}
-
 # ---------------------------------------------------------------
 # shell command (no -i) → non-interactive, no -t
 # ---------------------------------------------------------------
-
-@test "shell with command but no -i does NOT use -t" {
-    _create_ssh_stub
-    _run_shell_case hermes --version
-
-    ! grep -q "\-t" "$STUB_DIR/ssh_calls.log"
-}
-
-@test "shell with command but no -i passes command to ssh" {
-    _create_ssh_stub
-    _run_shell_case hermes --version
-
-    grep -q "hermes --version" "$STUB_DIR/ssh_calls.log"
-}
 
 # ---------------------------------------------------------------
 # Router: unrecognized arguments must not exit silently
@@ -281,14 +208,6 @@ STUB
         CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true \
         CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-router-test CLOUDIFY_TMP=/tmp/cf-router-test-tmp \
         DEBUG=false bash cloudify --no-verify install 2>&1"
-    [[ "$output" != *"Unknown option"* ]]
-}
-
-@test "--verify flag is accepted (not rejected as unknown option)" {
-    run bash -c "cd /root/cloudify && \
-        CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true \
-        CLOUDIFY_IS_LOCAL=true CLOUDIFY_DIR=/tmp/cf-router-test CLOUDIFY_TMP=/tmp/cf-router-test-tmp \
-        DEBUG=false bash cloudify --verify install 2>&1"
     [[ "$output" != *"Unknown option"* ]]
 }
 

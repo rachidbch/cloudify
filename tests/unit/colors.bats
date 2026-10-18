@@ -10,11 +10,6 @@ teardown() {
     teardown_test_env
 }
 
-@test "cloudify_setup_colors is defined after sourcing colors.sh" {
-    source lib/colors.sh
-    [ "$(type -t cloudify_setup_colors)" = "function" ]
-}
-
 @test "colors are empty when CLOUDIFY_DISABLE_COLORS is true" {
     export CLOUDIFY_DISABLE_COLORS=true
     source lib/colors.sh
@@ -42,10 +37,4 @@ teardown() {
     cloudify_setup_colors
     [ -z "$RESET" ]
     [ -z "$RED" ]
-}
-
-@test "module guard prevents double-sourcing" {
-    source lib/colors.sh
-    source lib/colors.sh
-    [ "$(type -t cloudify_setup_colors)" = "function" ]
 }

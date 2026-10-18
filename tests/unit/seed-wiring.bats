@@ -113,18 +113,6 @@ _seed_record() {
     unset CLOUDIFY_DEPLOYMENT_SYNTHESIZED
 }
 
-@test "verify seed env: a synthesized name skips the local verify seed too" {
-    _seed_record "{}"
-    export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
-    export CLOUDIFY_DEPLOYMENT_SYNTHESIZED=true
-    unset CLOUDIFY_APPLIED_SEED
-
-    _cloudify_verify_seed_env nginx
-
-    [ -z "${CLOUDIFY_APPLIED_SEED:-}" ]
-    unset CLOUDIFY_DEPLOYMENT_SYNTHESIZED
-}
-
 @test "configure dispatch: an application reference with no applied record dies named" {
     export CLOUDIFY_APPLICATION=web CLOUDIFY_FLAVOR=default CLOUDIFY_DEPLOYMENT_NAME=main
 
@@ -143,15 +131,6 @@ _seed_record() {
     [ -n "${CLOUDIFY_APPLIED_SEED:-}" ]
     [ "${ASET:-}" = "4000" ]
     [ "$(cloudify_context_read "$CLOUDIFY_CONTEXT_FILE" phase)" = "verify" ]
-}
-
-@test "local verify: no application reference keeps the legacy unseeded path" {
-    unset CLOUDIFY_APPLICATION CLOUDIFY_FLAVOR CLOUDIFY_DEPLOYMENT_NAME
-    unset CLOUDIFY_APPLIED_SEED
-
-    _cloudify_verify_seed_env nginx
-
-    [ -z "${CLOUDIFY_APPLIED_SEED:-}" ]
 }
 
 @test "a failed value-context build aborts the dispatch - no payload ships" {

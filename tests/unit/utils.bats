@@ -27,11 +27,6 @@ teardown() {
     [ "$output" = "hello" ]
 }
 
-@test "msg_ln adds empty line before message" {
-    run msg_ln "hello"
-    [ "$status" -eq 0 ]
-}
-
 @test "die exits with default code 1" {
     run die "something failed"
     [ "$status" -eq 1 ]
@@ -58,16 +53,6 @@ teardown() {
     [ "$status" -eq 1 ]
 }
 
-@test "cloudify_list_contains finds item in list" {
-    run cloudify_list_contains "one two three" "two"
-    [ "$status" -eq 0 ]
-}
-
-@test "cloudify_list_contains returns 1 for missing item" {
-    run cloudify_list_contains "one two three" "four"
-    [ "$status" -eq 1 ]
-}
-
 @test "cloudify_parse_git_url parses https url" {
     run cloudify_parse_git_url "https://github.com/user/repo.git" "host"
     [ "$status" -eq 0 ]
@@ -76,12 +61,6 @@ teardown() {
 
 @test "cloudify_parse_git_url parses ssh url" {
     run cloudify_parse_git_url "git@github.com:user/repo.git" "host"
-    [ "$status" -eq 0 ]
-    [ "$output" = "github.com" ]
-}
-
-@test "cloudify_parse_git_url extracts domain" {
-    run cloudify_parse_git_url "https://github.com/user/repo.git" "domain"
     [ "$status" -eq 0 ]
     [ "$output" = "github.com" ]
 }
@@ -113,21 +92,11 @@ teardown() {
     [ "$status" -ne 0 ]
 }
 
-@test "cloudify_get_password sets password variable" {
-    cloudify_get_password mypwd
-    [ "$mypwd" = "dummy" ]
-}
-
 @test "cloudify_get_password sets user and host variables" {
     cloudify_get_password mypwd myuser myhost
     [ "$mypwd" = "dummy" ]
     [ -n "$myuser" ]
     [ -n "$myhost" ]
-}
-
-@test "cloudify_print_done runs without error" {
-    run cloudify_print_done
-    [ "$status" -eq 0 ]
 }
 
 @test "cloudify_get_password dies on empty argument" {
@@ -182,11 +151,6 @@ teardown() {
 
 #-- cloudify_init_log tests --
 
-@test "cloudify_init_log creates log directory" {
-    CLOUDIFY_TMP_ROOT="$CLOUDIFY_TMP" cloudify_init_log
-    [ -d "$CLOUDIFY_TMP/logs" ]
-}
-
 @test "cloudify_init_log creates log file" {
     cloudify_init_log
     [ -f "$CLOUDIFY_LOG_FILE" ]
@@ -230,12 +194,6 @@ teardown() {
     touch "$CLOUDIFY_TMP/somefile"
     CLOUDIFY_LOG_LEVEL=INFO cleanup
     [ ! -d "$CLOUDIFY_TMP" ]
-}
-
-@test "cleanup skips removal when DEBUG=true" {
-    touch "$CLOUDIFY_TMP/somefile"
-    CLOUDIFY_LOG_LEVEL=DEBUG cleanup
-    [ -e "$CLOUDIFY_TMP/somefile" ]
 }
 
 
@@ -350,17 +308,6 @@ teardown() {
     [ -e "$CLOUDIFY_TMP/somefile" ]
 }
 
-@test "cleanup preserves the fixed log home when CLOUDIFY_LOG_LEVEL=INFO" {
-    local root proc_dir
-    root=$(mktemp -d /tmp/cloudify_test.ROOT.XXXXXX)
-    proc_dir=$(mktemp -d "$root/tmp-PROC.XXXXXX")
-    CLOUDIFY_TMP_ROOT="$root" CLOUDIFY_TMP="$proc_dir" cloudify_init_log
-    touch "$proc_dir/somefile"
-    CLOUDIFY_LOG_LEVEL=INFO CLOUDIFY_TMP="$proc_dir" cleanup
-    [ ! -e "$proc_dir/somefile" ]
-    [ -d "$root/logs" ]
-}
-
 #-- log file writing tests --
 
 @test "cloudify_init_log is idempotent" {
@@ -375,20 +322,6 @@ teardown() {
     cloudify_init_log
     log_info "test log message"
     grep -q "test log message" "$CLOUDIFY_LOG_FILE"
-}
-
-@test "log_info does not write to log file when CLOUDIFY_LOG_FILE unset" {
-    CLOUDIFY_LOG_LEVEL=INFO
-    unset CLOUDIFY_LOG_FILE
-    run log_info "test"
-    [ "$status" -eq 0 ]
-}
-
-@test "log_debug writes to CLOUDIFY_LOG_FILE at DEBUG level" {
-    CLOUDIFY_LOG_LEVEL=DEBUG
-    cloudify_init_log
-    log_debug "debug msg"
-    grep -q "debug msg" "$CLOUDIFY_LOG_FILE"
 }
 
 @test "log_warn does not write to file at ERROR level" {

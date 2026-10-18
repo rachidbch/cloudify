@@ -94,21 +94,7 @@ EOF
     [ "$TAB_VAR" = "g" ]
 }
 
-@test "declaration: bare NAME back-compat still takes the caller env value (I1b1)" {
-    mkdir -p "$CLOUDIFY_DIR/pkg/kinds"
-    printf 'BARE\n' > "$CLOUDIFY_DIR/pkg/kinds/.remote-vars"
-    export BARE=fromenv
-    _collect install kinds > /dev/null 2>&1
-    [ "$BARE" = "fromenv" ]
-}
-
 # --- T3/T4: scope parsing ---
-
-@test "parse_args: scope flags and positionals" {
-    _cloudify_vars_parse_args set MYKEY myval --global
-    [ "$_CV_SCOPE" = global ]
-    [ "${_CV_POS[0]}" = set ] || true
-}
 
 @test "parse_args: --pkg consumes its name, --deployment its id" {
     _cloudify_vars_parse_args K V --pkg mypkg

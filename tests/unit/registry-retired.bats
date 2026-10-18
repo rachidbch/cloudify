@@ -39,20 +39,3 @@ teardown() {
     [ -z "$(type -t _cloudify_registry_context_raw)" ]
     [ -z "$(type -t _cloudify_registry_now)" ]
 }
-
-@test "storage survives read-only: put (fixtures/migration tooling), get, sweep" {
-    # put remains a storage primitive (tests and migration tooling use it to
-    # stage legacy records); it is not called by any runtime dispatch path.
-    local file
-    file=$(cloudify_registry_file "$DEP" "$NODE" "" "$HOST" "$PKG")
-    printf '%s\n' "# cloudify registry record (observation); do not edit by hand
-status: installed
-deployment: $DEP
-package: $PKG
-var.LEGACY_INPUT: legacy-value
-" | cloudify_registry_put "$DEP" "$NODE" "" "$HOST" "$PKG"
-    [ "$(cloudify_registry_get "$DEP" "$NODE" "" "$HOST" "$PKG" | grep -c 'var.LEGACY_INPUT: legacy-value')" -eq 1 ]
-
-    cloudify_registry_delete_deployment "$DEP" "$NODE" ""
-    [ ! -e "$file" ]
-}

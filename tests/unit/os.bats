@@ -11,10 +11,6 @@ teardown() {
     teardown_test_env
 }
 
-@test "cloudify_osdetect is defined after sourcing os.sh" {
-    [ "$(type -t cloudify_osdetect)" = "function" ]
-}
-
 @test "cloudify_osdetect --os returns non-empty value" {
     result=$(cloudify_osdetect --os)
     [ -n "$result" ]
@@ -23,12 +19,6 @@ teardown() {
 @test "cloudify_osdetect --distro returns non-empty value" {
     result=$(cloudify_osdetect --distro)
     [ -n "$result" ]
-}
-
-@test "cloudify_osdetect --version returns something" {
-    result=$(cloudify_osdetect --version)
-    # version may be empty on some systems, so we just verify it runs
-    cloudify_osdetect --version
 }
 
 @test "cloudify_osdetect --arch returns non-empty value" {
@@ -44,16 +34,6 @@ teardown() {
     # Default output should contain at least two words (os + distro)
     local word_count=$(echo "$result" | wc -w)
     [ "$word_count" -ge 2 ]
-}
-
-@test "module guard prevents double-sourcing" {
-    source lib/os.sh
-    source lib/os.sh
-    [ "$(type -t cloudify_osdetect)" = "function" ]
-}
-
-@test "cloudify_ver_cmp is defined after sourcing os.sh" {
-    [ "$(type -t cloudify_ver_cmp)" = "function" ]
 }
 
 @test "cloudify_ver_cmp >= returns true for greater version" {

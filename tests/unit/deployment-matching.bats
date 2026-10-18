@@ -328,19 +328,6 @@ EOF
     [[ "$output" == *"_direct"* ]]
 }
 
-@test "namespace: an explicit name never matches - resolve is identity and creates nothing" {
-    # The router resolves an explicit --name without consulting the matcher;
-    # the unit-freeze pins the resolve contract: identity, nothing created.
-    mkdir -p "$CLOUDIFY_STATE_DIR/deployments"
-    local before after
-    before=$(find "$CLOUDIFY_STATE_DIR/deployments" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | wc -l)
-    local tuple
-    tuple=$(cloudify_state_direct_resolve main nginx)
-    [ "$tuple" = $'_direct\tdirect\tmain' ]
-    after=$(find "$CLOUDIFY_STATE_DIR/deployments" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | wc -l)
-    [ "$before" = "$after" ]
-}
-
 @test "create: the generated deployment's manifest follows the uniform commit rule" {
     git init -q "$CLOUDIFY_TMP/repo"
     git -C "$CLOUDIFY_TMP/repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m seed

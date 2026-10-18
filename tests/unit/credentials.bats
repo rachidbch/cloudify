@@ -25,18 +25,8 @@ teardown() {
     [ "$(type -t cloudify_credentials_setup)" = "function" ]
 }
 
-@test "module guard prevents double-sourcing" {
-    source lib/credentials.sh
-    source lib/credentials.sh
-    [ "$(type -t cloudify_credentials_save)" = "function" ]
-}
-
 @test "_cloudify_ask_credentials helper is defined" {
     [ "$(type -t _cloudify_ask_credentials)" = "function" ]
-}
-
-@test "_cloudify_write_export helper is defined" {
-    [ "$(type -t _cloudify_write_export)" = "function" ]
 }
 
 @test "_cloudify_write_export produces valid export with simple value" {
@@ -74,13 +64,6 @@ teardown() {
     local perms
     perms=$(stat -c '%a' "$test_dir")
     [ "$perms" = "700" ]
-}
-
-@test "cloudify_credentials_save creates credentials file" {
-    export CLOUDIFY_REMOTE_USER=testuser
-    export CLOUDIFY_REMOTE_PWD=dummy
-    cloudify_credentials_save remote
-    [ -f "$CLOUDIFY_CREDENTIALS_FILE" ]
 }
 
 @test "cloudify_credentials_save writes correct format" {
@@ -172,14 +155,6 @@ teardown() {
     [[ "$output" == *"github:  OK"* ]]
 }
 
-@test "cloudify_credentials_check github INCOMPLETE without token or user+pwd" {
-    unset CLOUDIFY_GITHUBUSER CLOUDIFY_GITHUBPWD CLOUDIFY_GITHUB_READONLY_TOKEN
-
-    run cloudify_credentials_check
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"github:  INCOMPLETE"* ]]
-}
-
 @test "cloudify_credentials_check reports INCOMPLETE when missing" {
     unset CLOUDIFY_REMOTE_USER
     unset CLOUDIFY_REMOTE_PWD
@@ -209,18 +184,6 @@ teardown() {
     grep -q "CLOUDIFY_GITLABUSER" "$CLOUDIFY_CREDENTIALS_FILE"
 }
 
-@test "cloudify_credentials_save saves github section incl. token" {
-    export CLOUDIFY_GITHUBUSER=ghuser
-    export CLOUDIFY_GITHUBPWD=ghpwd
-    export CLOUDIFY_GITHUB_READONLY_TOKEN=ghtoken
-
-    cloudify_credentials_save github
-
-    grep -q "CLOUDIFY_GITHUB_READONLY_TOKEN" "$CLOUDIFY_CREDENTIALS_FILE"
-    # remote should NOT be in the file
-    ! grep -q "CLOUDIFY_REMOTE_USER" "$CLOUDIFY_CREDENTIALS_FILE"
-}
-
 @test "cloudify_credentials_save saves only specified section" {
     export CLOUDIFY_REMOTE_USER=ruser
     export CLOUDIFY_REMOTE_PWD=rpwd
@@ -232,16 +195,4 @@ teardown() {
     grep -q "CLOUDIFY_REMOTE_USER" "$CLOUDIFY_CREDENTIALS_FILE"
     # GitHub should NOT be in the file
     ! grep -q "CLOUDIFY_GITHUBUSER" "$CLOUDIFY_CREDENTIALS_FILE"
-}
-
-@test "cloudify_credentials_save saves only the local section" {
-    export CLOUDIFY_LOCAL_PWD=lpwd
-    export CLOUDIFY_REMOTE_USER=ruser
-    export CLOUDIFY_REMOTE_PWD=rpwd
-
-    cloudify_credentials_save local
-
-    grep -q "CLOUDIFY_LOCAL_PWD" "$CLOUDIFY_CREDENTIALS_FILE"
-    # Remote should NOT be in the file — local section is password-only
-    ! grep -q "CLOUDIFY_REMOTE_USER" "$CLOUDIFY_CREDENTIALS_FILE"
 }

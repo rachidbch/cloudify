@@ -57,32 +57,6 @@ make_fixture() {
     printf 'K3S_TOKEN\n' > "$CLOUDIFY_DIR/pkg/foo/.remote-vars"
 }
 
-@test "declared name takes its value from caller env" {
-    make_fixture
-    export K3S_TOKEN=abc123
-    _collect install foo > "$CLOUDIFY_TMP/names" 2>&1
-    grep -q "K3S_TOKEN" "$CLOUDIFY_TMP/names"
-    [ "$K3S_TOKEN" = "abc123" ]
-}
-
-@test "declared value lands in the remote payload via envsubst" {
-    make_fixture
-    export K3S_TOKEN=token-A
-    export CLOUDIFY_REMOTE_USER=testuser
-    cloudify_init_log
-    # Payload now travels on stdin (branch 3); capture it there, not from argv.
-    ssh() { cat > "$CLOUDIFY_TMP/payload"; return 0; }
-    cloudify_remote_sync somehost install foo
-    grep -q "K3S_TOKEN='token-A'" "$CLOUDIFY_TMP/payload"
-}
-
-@test "declared-but-unset name produces a visible warning" {
-    make_fixture
-    unset K3S_TOKEN
-    _collect install foo > "$CLOUDIFY_TMP/out" 2>&1
-    grep -qi "K3S_TOKEN" "$CLOUDIFY_TMP/out"
-}
-
 @test "no .remote-vars: per-pkg yaml still applies (back-compat)" {
     mkdir -p "$CLOUDIFY_DIR/pkg/foo"
     mkdir -p "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
@@ -90,23 +64,6 @@ make_fixture() {
     unset SOME_VAR
     _collect install foo > /dev/null 2>&1
     [ "$SOME_VAR" = "fromyaml" ]
-}
-
-@test "global remote-vars.yaml still forwarded (back-compat)" {
-    mkdir -p "$CLOUDIFY_DIR/pkg/foo"
-    printf 'ALWAYS_VAR: fromglobal\n' > "$CLOUDIFY_CREDENTIALS_DIR/remote-vars.yaml"
-    unset ALWAYS_VAR
-    _collect install foo > /dev/null 2>&1
-    [ "$ALWAYS_VAR" = "fromglobal" ]
-}
-
-@test "env value wins over same-name per-pkg yaml value" {
-    make_fixture
-    mkdir -p "$CLOUDIFY_CREDENTIALS_DIR/pkgs"
-    printf 'K3S_TOKEN: fromyaml\n' > "$CLOUDIFY_CREDENTIALS_DIR/pkgs/foo.yaml"
-    export K3S_TOKEN=fromenv
-    _collect install foo > /dev/null 2>&1
-    [ "$K3S_TOKEN" = "fromenv" ]
 }
 
 @test "parallel collections each keep their own env value (no shared-file race)" {

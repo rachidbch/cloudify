@@ -104,15 +104,6 @@ teardown() {
     [ "$(cloudify_manifest_field _direct direct "$name" development_override)" = "true" ]
 }
 
-@test "repeated bare installs synthesize distinct deployments; neither matches the other" {
-    local a b
-    a=$(cloudify_state_direct_synthesize nginx "" "" localhost)
-    b=$(cloudify_state_direct_synthesize nginx "" "" localhost)
-    [ "$a" != "$b" ]
-    [ -d "$(cloudify_state_deployment_dir _direct direct "$a")" ]
-    [ -d "$(cloudify_state_deployment_dir _direct direct "$b")" ]
-}
-
 @test "an explicit --name under _direct is that deployment, every time (no synthesis)" {
     # Resolution is identity: the resolver reports the tuple without creating
     # anything - the deployment is created at the first commit, like any other.

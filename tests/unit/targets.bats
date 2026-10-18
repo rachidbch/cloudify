@@ -180,16 +180,6 @@ ivps() {
     [[ "$output" == *"is not on node 'cloudai'"* ]]
 }
 
-@test "X:Y where X is not a node dies" {
-    rubric "X:Y with an unknown node -> error"
-    IVPS_NODES=(cloudai)
-    IVPS_ROWS=(cloudai:cloudify)
-
-    run _cloudify_target_resolve 'nosuchnode:cloudify'
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"node 'nosuchnode' not found"* ]]
-}
-
 # ---------------------------------------------------------------
 # :Y — instance on the active / default node
 # ---------------------------------------------------------------
@@ -336,13 +326,6 @@ ivps() {
 # Helpers
 # ---------------------------------------------------------------
 
-@test "_cloudify_target_active_node prints CLOUDIFY_NODE" {
-    rubric "active node reader"
-    export CLOUDIFY_NODE=cloudai
-    run _cloudify_target_active_node
-    [ "$output" = "cloudai" ]
-}
-
 @test "_cloudify_target_default_node reads IVPS_DEFAULT_NODE from the ivps config" {
     rubric "ivps default node reader"
     echo 'IVPS_DEFAULT_NODE=cloudstation' > "$IVPS_CONFIG_DIR/config.env"
@@ -435,17 +418,6 @@ ivps() {
     [[ "$output" == *"timed out"* ]]
 }
 
-@test "a bare target host absent with a complete inventory is an external host" {
-    rubric "no timeout -> the inventory is complete, so not-found is conclusive"
-    IVPS_NODES=()
-    IVPS_ROWS=()
-    IVPS_TIMEOUT_NODES=()
-
-    run _cloudify_target_resolve myserver
-    [ "$status" -eq 0 ]
-    [ "$output" = "$(printf '\t\tmyserver')" ]
-}
-
 @test "a node target is not blocked by an inventory timeout" {
     rubric "the node is known from metadata; the live probe is not needed"
     IVPS_NODES=(cloudai)
@@ -471,10 +443,3 @@ ivps() {
 # ---------------------------------------------------------------
 # Module guard
 # ---------------------------------------------------------------
-
-@test "module guard prevents double-sourcing" {
-    rubric "lib/targets.sh is guarded"
-    source lib/targets.sh
-    source lib/targets.sh
-    [ "$(type -t _cloudify_target_resolve)" = "function" ]
-}

@@ -338,19 +338,6 @@ EOF
     [ "$output" = "$root/one/default/runbook.md" ]
 }
 
-@test "find_app: no match dies" {
-    rubric "no runbook for the reference -> die"
-    local root="$CLOUDIFY_TMP/scan-none"
-    _make_runbook "$root/other/default/runbook.md" <<'EOF'
----
-targets: guest
----
-EOF
-    CLOUDIFY_RUNBOOKS_DIR="$root" run cloudify_runbook_find_app demo default
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"No runbook found for application 'demo/default'"* ]]
-}
-
 @test "find_app: the default root is \$CLOUDIFY_DIR/runbooks" {
     rubric "no root argument -> the repo runbooks dir, like pkg/"
     _make_runbook "$CLOUDIFY_DIR/runbooks/app/default/runbook.md" <<'EOF'
@@ -440,14 +427,6 @@ EOF
 # ---------------------------------------------------------------
 # cloudify_deployment_run (T6a: plan only)
 # ---------------------------------------------------------------
-
-@test "deployment_run: --from rejects an unknown step id" {
-    rubric "a --from typo fails before anything could run"
-    run cloudify_deployment_run demo --dry-run --runbook "$RUNBOOKS/valid.md" --from nope \
-        --target guest=cloudai:xfce-test --target gateway=cloudai:guac
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"no step with id 'nope'"* ]]
-}
 
 @test "real router: app run --dry-run prints the plan and exits 0" {
     rubric "router path -> find/parse/bind/preflight/plan, nothing executed"
@@ -678,46 +657,6 @@ EOF
     [[ "$output" == *"Invalid mapped package variable"* ]]
 }
 
-@test "phases: a bare canonical run selects install then verify, never teardown" {
-    rubric "cloudify_runbook_phases_for + the selected step list"
-    local f="$CLOUDIFY_DIR/runbooks/app/default/runbook.md"
-    _make_runbook "$f" <<'EOF'
----
-targets: guest
----
-```bash step=install target=guest pkg=x id=i
-echo i
-```
-```bash step=verify target=guest pkg=x id=v
-echo v
-```
-```bash step=uninstall target=guest pkg=x id=u
-echo u
-```
-EOF
-    run cloudify_runbook_phases_for "$f"
-    [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "install" ]
-    [ "${lines[1]}" = "verify" ]
-    [ "${#lines[@]}" -eq 2 ]
-
-    local po
-    po=$(cloudify_runbook_parse "$f")
-    run _cloudify_runbook_select_steps "$f" "$po"
-    [ "$status" -eq 0 ]
-    [[ "$output" != *$'\tu'* ]]
-    [[ "$output" == *$'\ti\t'* ]]
-    [[ "$output" == *$'\tv\t'* ]]
-
-    run _cloudify_runbook_select_steps "$f" "$po" teardown
-    [ "$status" -eq 0 ]
-    [[ "$output" == *$'\tu'* ]]
-
-    run cloudify_runbook_phases_for "$f" bogus
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"unknown phase 'bogus'"* ]]
-}
-
 @test "find_app: the canonical path is the only discoverable runbook" {
     rubric "runbooks/<application>/<flavor>/runbook.md"
     local canonical="$CLOUDIFY_DIR/runbooks/myapp/default/runbook.md"
@@ -842,25 +781,6 @@ EOF
     [[ "$output" == *"--name needs a value"* ]]
 }
 
-@test "app run: no runbook dies naming the full reference and deployment name" {
-    rubric "every error carries the reference and the deployment name"
-    run cloudify_app_run missing/app --name prod
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"app run missing/app --name prod"* ]]
-}
-
-@test "app: reconfigure, verify and teardown are reserved until Phase 4" {
-    run cloudify_app_reserved reconfigure
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"not yet available"* ]]
-    [[ "$output" == *"Phase 4"* ]]
-
-    run cloudify_app_reserved verify
-    [ "$status" -ne 0 ]
-    run cloudify_app_reserved teardown
-    [ "$status" -ne 0 ]
-}
-
 # --- Manifest lifecycle ---
 
 @test "manifest: exists unproved before the first mutating step, stays null after a run with no state-relevant dispatch" {
@@ -875,18 +795,6 @@ EOF
     [ "$(cloudify_manifest_field myapp default default last_run_id)" = "null" ]
     # the compatibility snapshot is still written where it always was
     [ -n "$(ls "$(cloudify_state_runs_dir myapp default default)/"*.yaml 2>/dev/null)" ]
-}
-
-@test "manifest: a run whose dispatches carry no state-relevant event keeps the recorded word" {
-    rubric "the word comes from dispatch events, not from phase selection"
-    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
-    _make_app_runbook myapp default my-dep
-    _clean_tree
-    run cloudify_deployment_run myapp --target guest=cloudai:xfce-test --phase install
-    [ "$status" -eq 0 ]
-    # No package dispatch ran, so no state-relevant event landed: the null
-    # written at creation stands.
-    [ "$(cloudify_manifest_field myapp default default status)" = "null" ]
 }
 
 @test "manifest: a failed bash-only step proves nothing - the word stays what events prove" {

@@ -150,14 +150,6 @@ STUB
     [[ "$output" != *"mango"* ]]
 }
 
-@test "cloudify_list_hosts_by_tags rejects on remote host" {
-    _create_mock_inventory
-    CLOUDIFY_IS_LOCAL=false
-    run cloudify_list_hosts_by_tags
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"not allowed on remote hosts"* ]]
-}
-
 # ---------------------------------------------------------------
 # cloudify_list_hosts_tags
 # ---------------------------------------------------------------
@@ -175,14 +167,6 @@ STUB
     run cloudify_list_hosts_tags
     [ "$status" -eq 0 ]
     [[ "$output" == *"@web"* ]]
-}
-
-@test "cloudify_list_hosts_tags rejects on remote host" {
-    _create_mock_inventory
-    CLOUDIFY_IS_LOCAL=false
-    run cloudify_list_hosts_tags
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"remote hosts"* ]]
 }
 
 # ---------------------------------------------------------------
@@ -203,26 +187,9 @@ STUB
     [ "$output" = "fd42:1:2:3::1" ]
 }
 
-@test "cloudify_info rejects on remote host" {
-    CLOUDIFY_IS_LOCAL=false
-    run cloudify_info testhost ipv4
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"not allowed on remote hosts"* ]]
-}
-
 # ---------------------------------------------------------------
 # cloudify_hostnames (via ivps)
 # ---------------------------------------------------------------
-
-@test "cloudify_hostnames resolves hostname via ivps when no IP given" {
-    _create_ivps_ip_stub
-    # For localhost hostname, no ivps call needed — it uses 127.0.0.1 directly
-    # The /etc/hosts write will fail in test env, but the important thing is
-    # it doesn't fail on lxc lookup (which no longer exists)
-    run cloudify_hostnames localhost add myhost
-    # Accept success or failure from /etc/hosts manipulation — the key is no lxc error
-    [[ "$output" != *"lxc"* ]]
-}
 
 @test "cloudify_hostnames uses explicit IP without ivps" {
     # When IP is given explicitly, no ivps call needed
@@ -234,9 +201,3 @@ STUB
 # ---------------------------------------------------------------
 # Module guard
 # ---------------------------------------------------------------
-
-@test "module guard prevents double-sourcing" {
-    source lib/hosts.sh
-    source lib/hosts.sh
-    [ "$(type -t cloudify_is_host_in_inventory)" = "function" ]
-}

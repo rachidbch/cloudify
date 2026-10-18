@@ -1585,3 +1585,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Verified the lean pass rule by rule against the pre-lean text: restored the failure mode ("or negotiates the rules away"), the selector's read-only context, the green marker as the selector's diff baseline, the exact `task test-integration:<pkg>` command, git history as a selector input, the one-resolution "deleted or changed" proof, the ladder semantics (weakest to strongest, rightmost package wins), the `.remote-vars` shapes, required record fields, and the record/destination-path guard line.
 - Net: 10 lines restored against 74 removed; no rule or invariant remains dropped.
+
+## 2026-10-18 - Test pruning: 110 tests deleted, suite 824 -> 714
+
+- Audit by a read-only delegate over every non-sanctuary suite: 110 deletions, each with a reason (primitive re-assertions, duplicates of another guard, behaviors no caller depends on). It rejected five of its own over-deletions; I verified its riskiest claims before deleting (two zero-caller helpers, the payload string-greps vs the byte-exact goldens, and the shell tests that assert a test-local copy of the router arm).
+- Executed under the selector's own gate: it picked the 26 changed files plus 12 sanctuary guards (pruning removed assertions on value propagation); 597 tests ran, 0 failures. Empty `harness.bats` removed.

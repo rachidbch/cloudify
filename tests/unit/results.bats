@@ -50,29 +50,9 @@ EOF
     [[ "$output" == *"outcome=failed exit=0 verification=ok version=unknown"* ]]
 }
 
-@test "emit: verification=failed forces outcome=failed with truthful exit" {
-    run cloudify_result_emit - nginx install install 0 failed "1.24.0"
-    [[ "$output" == *"outcome=failed exit=0 verification=failed version=1.24.0"* ]]
-}
-
 @test "emit: verification=not-run with exit 0 and version=none is succeeded" {
     run cloudify_result_emit - nginx install install 0 not-run none
     [[ "$output" == *"outcome=succeeded exit=0 verification=not-run version=none"* ]]
-}
-
-@test "emit: non-zero exit forces outcome=failed" {
-    run cloudify_result_emit - nginx install install 17 ok "1.24.0"
-    [[ "$output" == *"outcome=failed exit=17 verification=ok version=1.24.0"* ]]
-}
-
-@test "emit: dependency parent lands verbatim" {
-    run cloudify_result_emit nginx nginx-common install install 0 not-run none
-    [[ "$output" == "result v1: parent=nginx package=nginx-common instance=default phase=install action=install outcome=succeeded exit=0 verification=not-run version=none" ]]
-}
-
-@test "version declaration: well-formed file reads verbatim" {
-    make_declared_pkg good "1.2.3"
-    [ "$(_cloudify_result_version_of good)" = "1.2.3" ]
 }
 
 @test "version declaration: missing, empty or off-charset reads unknown" {

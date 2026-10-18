@@ -75,11 +75,6 @@ valid_line() {
     cloudify_result_emit - nginx install install 0 ok "1.24.0"
 }
 
-@test "validate: the framework's own output passes" {
-    valid_line > "$CLOUDIFY_TMP/lines"
-    cloudify_results_validate "$CLOUDIFY_TMP/lines"
-}
-
 @test "validate: unknown appended fields are ignored" {
     valid_line | sed 's/$/ extrafield=passthrough/' > "$CLOUDIFY_TMP/lines"
     cloudify_results_validate "$CLOUDIFY_TMP/lines"

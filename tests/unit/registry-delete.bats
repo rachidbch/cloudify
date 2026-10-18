@@ -72,21 +72,6 @@ _make_record() {
     [ ! -e "$FALLBACK_HOSTS/host1/inst/deployments/$DEP_X" ]
 }
 
-@test "every candidate bucket is swept: all four layouts at once" {
-    rubric "one call cleans node/instance targets on every node and host"
-    _make_record "$NODE_ROOT/cloudai/deployments/$DEP_X"
-    _make_record "$NODE_ROOT/cloudai/cloudify/deployments/$DEP_X"
-    _make_record "$NODE_ROOT/cloudstation/deployments/$DEP_X"
-    _make_record "$FALLBACK_HOSTS/host1/deployments/$DEP_X"
-
-    run cloudify_registry_delete_deployment "$DEP_X"
-    [ "$status" -eq 0 ]
-    [ ! -e "$NODE_ROOT/cloudai/deployments/$DEP_X" ]
-    [ ! -e "$NODE_ROOT/cloudai/cloudify/deployments/$DEP_X" ]
-    [ ! -e "$NODE_ROOT/cloudstation/deployments/$DEP_X" ]
-    [ ! -e "$FALLBACK_HOSTS/host1/deployments/$DEP_X" ]
-}
-
 @test "another deployment's records are untouched" {
     rubric "scoping: only <id> is swept, a sibling id survives everywhere"
     _make_record "$NODE_ROOT/cloudai/deployments/$DEP_X"
@@ -168,25 +153,6 @@ _make_record() {
 # No-collateral properties of the sweep (the Phase 7 teardown calls it)
 # ---------------------------------------------------------------
 
-@test "cloudify_registry_delete_deployment leaves other deployments and the node dir alone" {
-    rubric "no collateral: node.json, sibling records and the bucket survive"
-    mkdir -p "$NODE_ROOT/cloudai"
-    printf '{}\n' > "$NODE_ROOT/cloudai/node.json"
-    _make_record "$NODE_ROOT/cloudai/deployments/$DEP_X"
-    _make_record "$NODE_ROOT/cloudai/deployments/$DEP_Y"
-
-    run cloudify_registry_delete_deployment "$DEP_X"
-    [ "$status" -eq 0 ]
-    [ -f "$NODE_ROOT/cloudai/node.json" ]
-    [ -f "$NODE_ROOT/cloudai/deployments/$DEP_Y/pkgs/vim/config.yaml" ]
-}
-
 # ---------------------------------------------------------------
 # Module
 # ---------------------------------------------------------------
-
-@test "the cleanup API is exported by lib/registry.sh" {
-    rubric "cloudify_registry_delete_deployment is a function (module guard intact)"
-    source lib/registry.sh
-    [ "$(type -t cloudify_registry_delete_deployment)" = "function" ]
-}

@@ -164,14 +164,6 @@ teardown() {
 
 #-- pkg_install_release alias test --
 
-@test "pkg_install_release alias exists and calls cloudify_install_package_release" {
-    # Verify the function exists
-    [ "$(type -t pkg_install_release)" = "function" ]
-
-    # Verify cloudify_install_package_release also exists
-    [ "$(type -t cloudify_install_package_release)" = "function" ]
-}
-
 @test "pkg_install_release skips when binary exists" {
     # Create a fake binary in PATH
     local fake_bin="$CLOUDIFY_LOCAL_BIN/testcmd_skip"
@@ -189,33 +181,7 @@ teardown() {
 
 #-- pkg_apt_install .deb detection tests --
 
-@test "pkg_apt_install .deb suffix detection works in glob" {
-    # Verify the glob pattern itself matches .deb files
-    # The actual fix: [[ $pkg == *.deb ]] instead of [[ $pkg == .deb ]]
-    local test_deb="$CLOUDIFY_TMP/testpkg.deb"
-    touch "$test_deb"
-
-    # Test the glob directly — this is what was broken (matched literal ".deb" only)
-    local pkg="testpkg.deb"
-    [[ "$pkg" == *.deb ]]
-}
-
 #-- rotation helper tests --
-
-@test "_cloudify_backup_rotate_up creates correct chain" {
-    mkdir -p "$CLOUDIFY_TMP/backup"
-    local base="$CLOUDIFY_TMP/backup/rotate_test"
-
-    # Create initial file
-    echo "content0" > "$base"
-
-    # Rotate up
-    _cloudify_backup_rotate_up "$base"
-
-    # base should be gone, base.bak should exist
-    [ ! -e "$base" ]
-    [ -f "$base.bak" ]
-}
 
 @test "_cloudify_backup_rotate_up shifts existing backups" {
     mkdir -p "$CLOUDIFY_TMP/backup"
@@ -315,18 +281,6 @@ MOCK
     [ "$status" -ne 0 ]
 
     rm -f "$mock_dpkg"
-}
-
-@test "module guard prevents double-sourcing" {
-    source lib/package-api.sh
-    source lib/package-api.sh
-    [ "$(type -t PKG_DEBUG)" = "function" ]
-    [ "$(type -t pkg_backup)" = "function" ]
-    [ "$(type -t pkg_restore)" = "function" ]
-    [ "$(type -t pkg_in_startuprc)" = "function" ]
-    [ "$(type -t cloudify_install_package_release)" = "function" ]
-    [ "$(type -t pkg_install_release)" = "function" ]
-    [ "$(type -t pkg_depends)" = "function" ]
 }
 
 #-- pkg_depends error collection tests --

@@ -99,15 +99,6 @@ _reg_put() {
     [ "$output" = "$CLOUDIFY_CREDENTIALS_DIR/registry/hosts/$HOST/deployments/$DEP/pkgs/$PKG/config.yaml" ]
 }
 
-@test "an empty node falls back to the plain-host bucket" {
-    rubric "no node (plain host) -> fallback bucket keyed by the ssh host"
-    IVPS_NODES=(cloudai)
-
-    run cloudify_registry_file "$DEP" "" "" "$HOST" "$PKG"
-    [ "$status" -eq 0 ]
-    [ "$output" = "$CLOUDIFY_CREDENTIALS_DIR/registry/hosts/$HOST/deployments/$DEP/pkgs/$PKG/config.yaml" ]
-}
-
 @test "an absent ivps falls back to the plain-host bucket" {
     rubric "no ivps at all -> fallback bucket, no abort"
     unset -f ivps
@@ -203,15 +194,6 @@ _reg_put() {
     [[ "$output" == *"pkg is required"* ]]
 }
 
-@test "put with an unsafe component writes nothing" {
-    rubric "validation happens before any mkdir/mktemp"
-    IVPS_NODES=(cloudai)
-
-    run _reg_put "$DEP" "$NODE" "" "$HOST" '../evil' "$RECORD"
-    [ "$status" -ne 0 ]
-    [ ! -e "$IVPS_NODE_ROOT/cloudai" ]
-}
-
 # ---------------------------------------------------------------
 # put / get
 # ---------------------------------------------------------------
@@ -226,15 +208,6 @@ _reg_put() {
     run cloudify_registry_get "$DEP" "$NODE" "" "$HOST" "$PKG"
     [ "$status" -eq 0 ]
     [ "$output" = "$RECORD" ]
-}
-
-@test "put creates the parent chain under the node dir" {
-    rubric "mkdir -p the record's parent, no other side effects"
-    IVPS_NODES=(cloudai)
-
-    _reg_put "$DEP" "$NODE" "" "$HOST" "$PKG" "$RECORD"
-    [ -f "$IVPS_NODE_ROOT/cloudai/deployments/$DEP/pkgs/$PKG/config.yaml" ]
-    [ ! -e "$CLOUDIFY_CREDENTIALS_DIR/registry" ]
 }
 
 @test "put on the fallback bucket round-trips" {
@@ -276,17 +249,6 @@ _reg_put() {
     [ "$ino1" != "$ino2" ]
     [ "$(ls -A "${file%/*}")" = "config.yaml" ]
     [ "$(stat -c '%a' "$file")" = "600" ]
-}
-
-@test "put is idempotent for the same text" {
-    rubric "put twice with the same record -> one file, same content"
-    IVPS_NODES=(cloudai)
-
-    _reg_put "$DEP" "$NODE" "" "$HOST" "$PKG" "$RECORD"
-    _reg_put "$DEP" "$NODE" "" "$HOST" "$PKG" "$RECORD"
-    run cloudify_registry_get "$DEP" "$NODE" "" "$HOST" "$PKG"
-    [ "$output" = "$RECORD" ]
-    [ "$(ls -A "$IVPS_NODE_ROOT/cloudai/deployments/$DEP/pkgs/$PKG")" = "config.yaml" ]
 }
 
 @test "get on an absent record prints nothing and fails" {

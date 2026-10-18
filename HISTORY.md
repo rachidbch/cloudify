@@ -1590,3 +1590,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Audit by a read-only delegate over every non-sanctuary suite: 110 deletions, each with a reason (primitive re-assertions, duplicates of another guard, behaviors no caller depends on). It rejected five of its own over-deletions; I verified its riskiest claims before deleting (two zero-caller helpers, the payload string-greps vs the byte-exact goldens, and the shell tests that assert a test-local copy of the router arm).
 - Executed under the selector's own gate: it picked the 26 changed files plus 12 sanctuary guards (pruning removed assertions on value propagation); 597 tests ran, 0 failures. Empty `harness.bats` removed.
+
+## 2026-10-18 - Direct state part 1: naming, list scope, sweep safety
+
+- Bare dispatches now allocate `<pkg>`, `<pkg>-2`, ... by atomic mkdir (ADR-045); values never name. `deployment list` hides direct state unless `--direct`. The liveness sweep deletes only direct debris and reports named deployments instead of deleting them (ADR-044), with exact token matching and an unprovable-liveness refusal.
+- Remaining in the ADR-044/045 slice: teardown deletes the record mechanically (and the manifest when empty), recorded values seed later dispatches, and nameless verify/reconfigure/teardown resolve by (package, host, values).

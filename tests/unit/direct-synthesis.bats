@@ -25,34 +25,31 @@ teardown() {
     teardown_test_env
 }
 
-@test "generated name: <pkg>-<UTC-timestamp>, unique against existing deployments" {
-    local a b
+@test "generated name: the package word, then -2, -3 on collision (values never name)" {
+    # ADR-045: values never participate in a name, so a reconfigure keeps its
+    # identity; the allocation itself is the atomic mkdir, so two parallel
+    # dispatches cannot pick the same name.
+    local a b c
     a=$(cloudify_state_direct_generated_name nginx)
-    [[ "$a" =~ ^nginx-[0-9]{8}T[0-9]{6}Z$ ]]
-
-    # A deployment dir already holding the proposed name forces a different
-    # name: a suffix on the same second, or the next second's timestamp. The
-    # contract is uniqueness against existing deployments.
-    mkdir -p "$(cloudify_state_deployment_dir _direct direct "$a")"
+    [ "$a" = "nginx" ]
     b=$(cloudify_state_direct_generated_name nginx)
-    [[ "$b" =~ ^nginx-[0-9]{8}T[0-9]{6}Z(-[0-9a-f]{4})?$ ]]
-    [ "$a" != "$b" ]
-    [ ! -d "$(cloudify_state_deployment_dir _direct direct "$b")" ]
+    [ "$b" = "nginx-2" ]
+    c=$(cloudify_state_direct_generated_name nginx)
+    [ "$c" = "nginx-3" ]
 }
 
-@test "generated name: an over-long package segment truncates to the 255-byte component cap" {
+@test "generated name: an over-long package segment truncates under the 255-byte cap" {
     local long out
     long=$(printf 'p%.0s' $(seq 1 300))
     out=$(cloudify_state_direct_generated_name "$long")
     [ "${#out}" -le 255 ]
-    [[ "$out" == ppp* ]]
-    [[ "$out" =~ -[0-9]{8}T[0-9]{6}Z$ ]]
+    [[ "$out" =~ ^p+(-[0-9]+)?$ ]]
 }
 
 @test "synthesize: creates the deployment dir, manifest under the _direct namespace, prints the name" {
     local name
     name=$(cloudify_state_direct_synthesize nginx "" "" localhost)
-    [[ "$name" =~ ^nginx- ]]
+    [ "$name" = "nginx" ]
     [ -d "$(cloudify_state_deployment_dir _direct direct "$name")" ]
     [ -f "$(cloudify_state_manifest_file _direct direct "$name")" ]
 

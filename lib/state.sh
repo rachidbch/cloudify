@@ -341,12 +341,19 @@ function _cloudify_manifest_render() {
 # (the local-inventory prerequisite).
 function cloudify_state_inventory_root() {
     local node="${1:?}" inst="${2:-}"
+    local _cache_key="${node}:${inst}"
+    declare -p _CLOUDIFY_INV_ROOT_CACHE >/dev/null 2>&1 || declare -gA _CLOUDIFY_INV_ROOT_CACHE=()
+    if [[ -n "${_CLOUDIFY_INV_ROOT_CACHE[$_cache_key]:-}" ]]; then
+        printf '%s\n' "${_CLOUDIFY_INV_ROOT_CACHE[$_cache_key]}"
+        return 0
+    fi
     command -v ivps >/dev/null 2>&1 ||
         die "inventory: 'ivps' is required to resolve the node path (the local-inventory prerequisite)."
     local d
     d=$(ivps node path "$node${inst:+:$inst}") ||
         die "inventory: the local ivps inventory cannot resolve '$node${inst:+:$inst}' (host unknown or node path failed)."
     [[ -n "$d" ]] || die "inventory: 'ivps node path $node${inst:+:$inst}' returned nothing."
+    _CLOUDIFY_INV_ROOT_CACHE[$_cache_key]="$d/deployments"
     printf '%s/deployments\n' "$d"
 }
 
@@ -1182,19 +1189,27 @@ cloudify_state_deployment_create() {
 }
 
 # cloudify_state_direct_generated_name <pkg>
-# Propose a unique generated deployment name. The package segment is
-# truncated so the whole name fits the 255-byte component cap; a name whose
-# deployment directory already exists gains a `-<4hex>` suffix (bounded
-# retries, then a named death - never a silent reuse).
+# Allocate the deployment name for a bare dispatch (ADR-045): the package word,
+# then -2, -3 ... The allocation IS the mkdir - atomic, so two parallel
+# dispatches never pick the same name - and values never participate, so a
+# reconfigure keeps its identity. The package segment is truncated under the
+# 255-byte component cap; exhaustion is a named death, never a silent reuse.
 function cloudify_state_direct_generated_name() {
     local pkg="${1:?cloudify_state_direct_generated_name: package required}"
-    local cap=255 ts base
-    ts=$(date -u +%Y%m%dT%H%M%SZ)
-    base="${pkg}-${ts}"
-    if (( ${#base} > cap )); then
-        base="${pkg:0:cap-${#ts}-1}-${ts}"
-    fi
-    _cloudify_state_unique_name "$base" "$_DIRECT_APP" "$_DIRECT_FLAVOR"
+    local cap=255 base name dir n
+    base="${pkg:0:cap}"
+    mkdir -p "$(dirname "$(cloudify_state_deployment_dir "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$base")")" 2>/dev/null || true
+    name="$base"
+    for n in $(seq 1 99); do
+        dir=$(cloudify_state_deployment_dir "$_DIRECT_APP" "$_DIRECT_FLAVOR" "$name") \
+            || die "state: generated deployment name '$name' is not a valid component."
+        if mkdir "$dir" 2>/dev/null; then
+            printf '%s\n' "$name"
+            return 0
+        fi
+        name="${base}-$((n + 1))"
+    done
+    die "state: no free direct deployment name from '$base' after 99 attempts."
 }
 
 # cloudify_state_direct_synthesize <pkg> <node> <instance> <ssh-host>

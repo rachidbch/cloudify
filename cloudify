@@ -774,7 +774,15 @@ function main() {
             shift
             case "${1:-}" in
                 list | ls)
-                    cloudify_deployment_list
+                    shift
+                    local _list_direct=0
+                    while [[ -n "${1:-}" ]]; do
+                        case "$1" in
+                            --direct) _list_direct=1; shift ;;
+                            *) die "Usage: cloudify deployment list [--direct]" ;;
+                        esac
+                    done
+                    cloudify_deployment_list "$_list_direct"
                     ;;
                 show)
                     shift

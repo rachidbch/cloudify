@@ -90,12 +90,16 @@ _cloudify_deployment_ensure() {
 # the manifest the run wrote is (REDESIGN: list current manifests, not
 # historical run files).
 cloudify_deployment_list() {
+    local include_direct="${1:-0}"
     local app flavor dep _path count=0
     local status sdisp slot node instance rest bline rec n uv hosts pkgs hplural uvplural uvdisp
     local -A seen_uv
     if declare -F cloudify_state_list_manifests >/dev/null; then
         while IFS=$'\t' read -r app flavor dep _path; do
             [[ -n "$app" ]] || continue
+            # Named deployments are the default view; direct state is opt-in
+            # (ADR-044): an audit of bare dispatches is not a deployment list.
+            [[ "$app" == _direct && "$include_direct" != 1 ]] && continue
             count=$((count + 1))
             status=$(cloudify_state_status_read "$app" "$flavor" "$dep" 2>/dev/null) || status="-"
             [[ "$status" == "null" || -z "$status" ]] && status="-"
@@ -734,14 +738,34 @@ function cloudify_deployment_sweep() {
         # two levels up from the instance dir.
         nname=$(jq -r .name "$(dirname "$(dirname "$idir")")/node.json" 2>/dev/null) \
             || nname="$(basename "$(dirname "$(dirname "$idir")")")"
+        # No readable metadata means liveness is unprovable: leave it alone and
+        # say so. Never let an empty instance name substring-match a live row.
+        if [[ -z "$iname" ]]; then
+            msg "sweep: instance dir '$d' has no readable instance metadata - left in place (cannot prove the host is gone)"
+            continue
+        fi
         row="$nname:$iname"
-        grep -qF "$row" <<<"$listed" && continue
+        # Exact token match against the live list, never a substring.
+        awk '{print $1}' <<<"$listed" | grep -qxF "$row" && continue
+        # Debris leaves with its host; state does not (ADR-044). A named
+        # deployment on a gone instance is reported and left for the operator:
+        # a host dropping out of the inventory list is not proof the host is gone.
+        local named=0 p
+        for p in "$d"/*/; do
+            [[ -d "$p" ]] || continue
+            [[ "$(basename "${p%/}")" == "_direct" ]] && continue
+            named=$((named + 1))
+        done
+        if (( named > 0 )); then
+            msg "sweep: instance '$row' is not in the live inventory but holds $named named deployment(s) - left in place (never deleted without the operator)"
+            continue
+        fi
         if ((dry)); then
-            msg "sweep (dry run): instance '$row' is not in the live inventory - would remove $d"
+            msg "sweep (dry run): instance '$row' is not in the live inventory - would remove its direct debris at $d"
             continue
         fi
         rm -rf "$d"
-        msg "sweep: instance '$row' is not in the live inventory - removed $d"
+        msg "sweep: instance '$row' is not in the live inventory - removed its direct debris at $d"
     done < <(find "$root" -mindepth 4 -maxdepth 4 -type d -path '*/instances/*/deployments' 2>/dev/null)
 
     # (b) _direct accumulations past the retention age.

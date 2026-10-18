@@ -70,6 +70,22 @@ teardown() {
     printf '%s\n' "$output" | grep -q "myapp/default/prod.*-.*0 pkgs.*1 host"
 }
 
+@test "cloudify_deployment_list hides direct state unless asked" {
+    export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
+    source lib/state.sh
+    local b="$CLOUDIFY_TMP/b.tsv"
+    printf 'guest\tcloudai:cloudify\tcloudai\tcloudify\tcloudify\n' > "$b"
+    cloudify_manifest_write myapp default prod "" 0123456789abcdef0123456789abcdef01234567 false "$b"
+    cloudify_manifest_write _direct direct nginx "" 0123456789abcdef0123456789abcdef01234567 false "$b"
+
+    run cloudify_deployment_list
+    printf '%s\n' "$output" | grep -q "myapp/default/prod"
+    ! printf '%s\n' "$output" | grep -q "_direct/direct/nginx"
+
+    run cloudify_deployment_list 1
+    printf '%s\n' "$output" | grep -q "_direct/direct/nginx"
+}
+
 @test "cloudify_deployment_list never prints a bare directory as a deployment" {
     export CLOUDIFY_STATE_DIR="$CLOUDIFY_TMP/state"
     source lib/state.sh

@@ -108,14 +108,31 @@ teardown() {
     [ -d "$NODE_DIR/instances/live1/deployments/myapp" ]
 }
 
-@test "deployment sweep: an instance absent from the live list is swept, a live one kept" {
-    rubric "liveness is ivps's word - deleted means absent from the list"
-    _record dead1 myapp default twin affine
+@test "deployment sweep: unprovable liveness leaves the tree and says so" {
+    rubric "missing instance metadata is not a death certificate"
+    mkdir -p "$NODE_DIR/instances/unknown1/deployments/_direct/direct/nginx/packages/fixture-split/default"
+    : > "$NODE_DIR/instances/unknown1/deployments/_direct/direct/nginx/packages/fixture-split/default/state.json"
+
+    run cloudify_deployment_sweep
+    [ "$status" -eq 0 ]
+    [ -d "$NODE_DIR/instances/unknown1/deployments/_direct" ]
+    [[ "$output" == *"cannot prove the host is gone"* ]]
+}
+
+@test "deployment sweep: dead-instance debris is swept, a named deployment is never deleted" {
+    rubric "liveness is ivps's word; debris leaves with its host, state does not"
+    _mk_instance dead2 twin2
+    _record dead1 _direct direct nginx-2 fixture-split
+    _record dead2 myapp default twin affine
     _record live1 myapp default main web
 
     run cloudify_deployment_sweep
     [ "$status" -eq 0 ]
-    [ ! -d "$NODE_DIR/instances/dead1/deployments/myapp" ]
+    # Debris on a gone host leaves with the host...
+    [ ! -d "$NODE_DIR/instances/dead1/deployments/_direct" ]
+    # ...but a named deployment's records are reported, never deleted (ADR-044).
+    [ -d "$NODE_DIR/instances/dead2/deployments/myapp" ]
+    [[ "$output" == *"named deployment"* ]]
     [ -d "$NODE_DIR/instances/live1/deployments/myapp" ]
 }
 

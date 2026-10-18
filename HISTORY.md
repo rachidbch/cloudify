@@ -1540,3 +1540,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - `cloudify deployment list` died mid-loop on `mktemp ... No such file or directory`: the router trapped `cleanup` on ERR, and `set -E` inherits that trap into functions and subshells, so a *handled* failure (`status=$(...) || status="-"`) wiped `CLOUDIFY_TMP` while the run continued. Two holes fixed at the source: cleanup now runs only on process exit and on SIGINT/SIGTERM (which exit explicitly, 130/143), and the ownership guard compares `$BASHPID` instead of `$$` (which subshells inherit).
 - Both pinned: a subshell must decline the teardown, and the router's registration must carry no ERR trap. Live check: `deployment list` no longer deletes its scratch; SIGTERM exits 143 with the scratch removed.
+
+## 2026-10-18 - Direct state becomes state: lifecycle, naming, resolution
+
+- Rachid ruled the five structural rules for `_direct`: it is state (not an audit trail), it exists only while its payload is deployed, teardown deletes it mechanically, names are always present, and nameless commands resolve by package + host + recorded values with confirmation on ambiguity.
+- Two decisions carved: direct state with a mechanical lifecycle (ADR-044) and direct naming plus nameless resolution (ADR-045). Naming is allocated under the host lock (`<pkg>`, `<pkg>-2`, ...), never derived from values, so reconfigure keeps identity and parallel differing installs cannot collide; the earlier timestamp-per-invocation clause is superseded, the one-deployment-spanning-hosts decision stands.
+- Design (`REDESIGN.md`) direct-command paragraphs rewritten; plan Unnamed deployment matching item amended with the lifecycle, resolver, list default, lookup memoization and the one-off discard (live step, awaiting go); harness Architecture gains the direct-state bullet.
+- Candidate set for the discard presented before any deletion: keep the four deployments that match the world (`octop`, `affine`, `youtube-mcp`, `t3code`), discard 286 timestamp-named direct manifests and their 1429 record trees via recoverable trash.

@@ -178,6 +178,9 @@ The detached batch finished independently; historical PID 17044 is gone, and abs
 
 - [ ] Replace literal `default` selection with Unnamed deployment matching (ADR-031).
 - [ ] Prove generated first name, identical convergence, differing bindings/scalars/secret-name sets, interrupted/unprovable candidates, and ambiguity refusal naming candidates.
+- [ ] Direct state lifecycle and naming (ADR-044, ADR-045): allocate the name under the host lock (`<pkg>`, `<pkg>-2`, ...; explicit `--name` wins; values never name), delete a package's record mechanically after a successful teardown (and the manifest once no records or bindings remain), seed later dispatches from the recorded applied values (caller environment still wins), and resolve nameless commands by candidates (package, host, values): one equal candidate silently, otherwise list and stop, force on the single-candidate case.
+  Prove: parallel differing installs get distinct names, a repeated install reapplies the same state, a reconfigure keeps its name, teardown removes the state, a nameless verify resolves and records under resolved state but stays ad-hoc with none, and a liveness sweep never deletes a named deployment's records. `deployment list` shows named deployments by default and direct state on request; memoize the inventory lookup so listing does not pay one CLI call per binding.
+- [ ] Discard the accumulated timestamp-named direct state in one deliberate live operation (backup-free; recoverable trash), keeping only deployments whose installations exist in the world; this is a live-state step and needs Rachid's go (the candidate set is presented first; no verification sweep of package payloads).
 - [ ] Prove explicit names still converge in place; implement/wire the currently reserved installation guard so it compares only own-package declared non-secret settings.
 - [ ] Close the tool gates.
 

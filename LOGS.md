@@ -1191,3 +1191,9 @@
 - World check: neither instance appears in `ivps list` (local or on cloudai) - the records are orphans.
 - Discarded recoverably: `trash-put` of `<node-id>/{e2e-2h-a,e2e-2h-b}/deployments/two-host-e2e` only; the instance dirs stay ivps-owned. Migration report now: `deployments=2 runs=0 records=0`.
 - Gap noted (not fixed): an orphan legacy record with no manifest has no designed removal path - `deployment delete` requires a manifest and `deployment sweep` walks only new-format instance inventory. Add to the S9 cleanup scope.
+
+## 2026-10-18 - Trap fix gated (unit 823, gate 152, canary 7)
+
+- Acceptance batch on pushed HEAD `9a7c2fd` (receipt `results/acceptance/20261018-092753/`): unit 823/823 (`results/unit.*/report.tap`, plan `1..823`), fragile gate 152/152, canary 7/7, lint 0; every suite and batch exit 0, no skips, no bailouts.
+- Live verification of the fix: `cloudify deployment list` no longer loses its scratch mid-loop (it is slow only because ~300 `_direct` accumulations are listed - sweep territory); SIGTERM exits 143 with the scratch removed.
+- Surfaced, not fixed: `cloudify --source-only` does not exist (the shared `source_cloudify` test helper therefore sources nothing and hides it); `deployment list` cost grows with `_direct` bloat.

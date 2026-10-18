@@ -84,9 +84,9 @@ tasks:
       - bash tests/run-integration.sh "tests/integration/package-{{.PACKAGE}}.bats"
 
   test:
-    desc: Blast-radius gate - an independent model selects the test files (tests/select-tests.sh)
+    desc: Run the test files the selection delegate named (mission, tests/SELECT.md)
     cmds:
-      - bash tests/select-tests.sh {{.CLI_ARGS}}
+      - bash tests/remote-bats.sh selected {{.CLI_ARGS}}
 
   acceptance:
     desc: Serial acceptance batch (unit -> gate -> canary, or suites as args); receipts in results/acceptance/<run-id>/

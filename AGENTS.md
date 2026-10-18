@@ -61,11 +61,12 @@ Review passes are bounded: a SPEC review gets one review pass, one fixing pass, 
 TDD cycle. All tests run inside an Incus container (`cloudai:cloudify`), never on localhost.
 
 **Test selection is delegated** (ruled 2026-10-18): the working agent never chooses which tests run - under mission pressure that judgment over-tests or negotiates the rules away.
-- Micro-step gate: `task test` - an independent model in a read-only sandbox (`tests/select-tests.sh`, backend `codex`) explores the diff, the changed code, the test files and git history itself, then picks the blast-radius set from the diff against `results/acceptance/GREEN`; run exactly that set. Floors it cannot drop: a test file the diff itself changed, and the sanctuary guards of any fragile surface the diff touches. Docs-only diffs run nothing. Add a test only with a stated reason (which break it catches); never remove one the selector returned. A missing marker or a broken selector falls back to the whole candidate area, never to silence.
+- Micro-step gate: spawn a fresh-context delegate (subagent tool) with the mission in `tests/SELECT.md` and the current diff as its subject; it names the files, you run exactly those (`task test -- <files...>`). You may ADD a file with a stated reason; never remove one it named. Its rejections are part of the answer - read them.
 - Feature-batch gate: the selected set plus the affected package's integration test.
-- Milestone gate: `task acceptance` (full unit + fragile gate + canary); it alone writes the green marker, and the selector's diff baseline is that marker.
-- Sanctuary: `tests/SANCTUARY.md` names the load-bearing guards; the selector always includes them when their surface appears in the diff, and they are never pruned.
+- Milestone gate: `task acceptance` (full unit + fragile gate + canary); it alone writes `results/acceptance/GREEN`, which is the delegate's diff baseline.
+- Sanctuary: `tests/SANCTUARY.md` names the load-bearing guards; they are never pruned and always run when their surface is in the diff.
 - Pruning: a test outside the sanctuary that freezes behavior no caller depends on, or duplicates another guard, is deleted rather than kept for comfort.
+- End-to-end installs (`tests/e2e/`) run at feature and milestone gates, never on a micro-step; they are never deleted.
 
 **Two products, two test scopes** (ruled 2026-10-01): cloudify is the tool AND a pkg registry; never pay both costs for one change.
 - cloudify code change (`cloudify`, `lib/`, `schemas/`, tool tests): `task test` while iterating; the feature-batch gate above at a slice exit; the full ladder at milestones.

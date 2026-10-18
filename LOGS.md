@@ -1241,3 +1241,7 @@
 - Floors (mechanical, not prompt-level): a test file the diff itself changed is always included; sanctuary guards of touched fragile surfaces are unioned back in. The model reports every drop with a reason, printed for audit.
 - Three flaws found while exercising it, all fixed: (1) it dropped the changed test file - now a mechanical floor; (2) an empty answer fell back to every unit test - now the deterministic candidates, and everything only when there are no candidates; (3) a docs-only diff would have run everything - docs/records diffs now run nothing.
 - Latency: grounded selection is 45-90s cold (it explores), cached by prompt hash thereafter. The selector's own change is covered by no test, so it falls back to `harness.bats` and `remote-bats.bats` - the honest nearest set.
+
+## 2026-10-18 - Selector script removed; delegate mission is the contract
+
+- `tests/select-tests.sh` trashed; the mission lives in `tests/SELECT.md` (short, reviewable), `task test` now only runs the named files through the plain-ssh transport, and `results/acceptance/GREEN` stays the diff baseline. No backend, cache, parser or fallback code remains; the delegate's rejections are read, not filtered.

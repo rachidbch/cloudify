@@ -1566,3 +1566,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Sanctuary established (`tests/SANCTUARY.md`): the fragile surfaces from the design's fragility doc plus the state/schema contracts and the end-to-end installs. Sanctuary guards are never pruned and are unioned back into any selection deterministically when their surface is touched - the model cannot drop them.
 - Chains: micro-step = `task test` (selected unit files only; e2e excluded - it mutates real machines and belongs to feature/milestone gates, and a package or transport change prints the e2e obligation); feature batch = selection plus the affected package integration; milestone = `task acceptance`, which alone writes `results/acceptance/GREEN`, the selector's diff baseline (bootstrapped to the last ladder-validated commit `9a7c2fd`).
 - Harness testing section rewritten to those gates; the stale `task test` (`ivps exec`, prohibited transport) replaced by the selector gate.
+
+## 2026-10-18 - Test selection simplified to a fresh delegate with a short mission
+
+- Rachid rejected the selector machinery (backends, caches, parsing, floors in code) as overcomplication. Selection is now: spawn a fresh-context delegate with the mission in `tests/SELECT.md`, get the test files and the rejected candidates with reasons, run exactly those (`task test -- <files>`).
+- The harness keeps the standing floors as rules on the agent: a changed test file and the sanctuary guards always run, e2e never runs on a micro-step, and the agent may add with a stated reason but never remove one the delegate named.

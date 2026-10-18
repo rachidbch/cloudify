@@ -104,6 +104,20 @@ _manifest() { # _manifest <binding-line...>
     [ "$n_user" -eq 2 ]
 }
 
+@test "show: a passed 0 (the router's default flag) is not user-only mode" {
+    # Proven live: the router passes 0 for --user-values, and "non-empty" made
+    # every plain `deployment show` render the user-only header and drop the
+    # recorded values.
+    _manifest $'primary\tlocalhost\tweb1\t\tweb1'
+    _seed_record web1 nginx '{"PORT": "8080"}' '[]'
+
+    run cloudify_deployment_show main 0
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"values in effect:"* ]]
+    [[ "$output" != *"user only"* ]]
+    printf '%s\n' "$output" | grep -q "PORT.*8080"
+}
+
 @test "list: one rich line per deployment - status, pkgs, hosts, user values" {
     _manifest $'primary\tlocalhost\tweb1\t\tweb1'
     _seed_record web1 nginx '{"PORT": "8080", "TOKEN": "abc"}' '["TOKEN"]'

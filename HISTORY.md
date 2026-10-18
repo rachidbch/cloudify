@@ -1553,3 +1553,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - With Rachid's go, 286 timestamp-named direct manifests, 1429 direct record trees and the 20 two-host records on dead instances were discarded via recoverable trash, plus the E2E's isolated scratch state. Kept the four deployments that match the world (octop, affine, t3code, youtube-mcp; 19 records, all old-shape). Events stay as history.
 - `deployment list` dropped from over two minutes (timing out) to 8.9s for four rows; the remaining cost is the per-deployment inventory lookup, already on the plan as a memoization item.
 - Two-host E2E audit: it proves one runbook deployment across two hosts, one bare dispatch across two hosts producing one direct deployment with two bindings, and `--name` addressing that deployment across invocations. It also expects to pollute ("the sweep owns it") - under ADR-044/045 it must isolate the record root and delete its state at teardown.
+
+## 2026-10-18 - Octop converted by hand; show flag bug fixed
+
+- `octop/default/main` converted manually: six lean records written from the world check (octop rev 7, the other five rev 5) with six `migrate-registry` events and restricted backups; `pandoc` dropped as absent in the world, its claim never copied.
+- The post-conversion verify passed against the converted record and the host was untouched; the dispatch left the manifest `degraded` only because the executed-code attestation saw a pinned commit different from the code the host ran.
+- `deployment show` always rendered user-only mode because the router's 0-flag is non-empty; fixed and pinned. Remaining live conversions: affine, t3code, youtube-mcp (one at a time, per-application go).

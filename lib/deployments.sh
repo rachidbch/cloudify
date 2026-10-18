@@ -172,6 +172,8 @@ function _cloudify_deployment_tuple_of() {
 # exists, and always lists the run snapshots. Never a value.
 function cloudify_deployment_show() {
     local id="${1:-}" user_only="${2:-}" name="${3:-default}" tuple app flavor dname runs_dir snapshots newest
+    # The router passes 0 for the absent flag; only a real 1 means user-only.
+    [[ "$user_only" == "1" ]] || user_only=""
     [[ -n "$id" ]] || die "Usage: cloudify deployment show <application>[/<flavor>] [--name <name>] [--user-values]"
     printf 'deployment: %s\n' "$id"
 

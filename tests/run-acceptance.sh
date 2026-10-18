@@ -45,3 +45,10 @@ for suite in "${suites[@]}"; do
         exit "$rc"
     fi
 done
+
+# The milestone marker: only a complete green ladder (the default three suites)
+# may move it. The selector compares changes against this commit.
+if (( ${#suites[@]} == 3 )) && [[ "${suites[0]} ${suites[1]} ${suites[2]}" == "unit gate canary" ]]; then
+    git rev-parse HEAD > results/acceptance/GREEN
+    printf 'green marker: %s\n' "$(cat results/acceptance/GREEN)"
+fi

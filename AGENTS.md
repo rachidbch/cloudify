@@ -60,9 +60,17 @@ Review passes are bounded: a SPEC review gets one review pass, one fixing pass, 
 
 TDD cycle. All tests run inside an Incus container (`cloudai:cloudify`), never on localhost.
 
+**Test selection is delegated** (ruled 2026-10-18): the working agent never chooses which tests run - under mission pressure that judgment over-tests or negotiates the rules away.
+- Micro-step gate: `task test` - an independent, tool-less model (`tests/select-tests.sh`, backend `codex`) picks the blast-radius set from the diff against `results/acceptance/GREEN`; run exactly that set. Add a test only with a stated reason (which break it catches); never remove one the selector returned. A missing marker or a broken selector falls back to the whole candidate area, never to silence.
+- Feature-batch gate: the selected set plus the affected package's integration test.
+- Milestone gate: `task acceptance` (full unit + fragile gate + canary); it alone writes the green marker, and the selector's diff baseline is that marker.
+- Sanctuary: `tests/SANCTUARY.md` names the load-bearing guards; the selector always includes them when their surface appears in the diff, and they are never pruned.
+- Pruning: a test outside the sanctuary that freezes behavior no caller depends on, or duplicates another guard, is deleted rather than kept for comfort.
+
 **Two products, two test scopes** (ruled 2026-10-01): cloudify is the tool AND a pkg registry; never pay both costs for one change.
-- cloudify code change (`cloudify`, `lib/`, `schemas/`, tool tests): focused runs while iterating; full unit + gate + `task test-canary` (guacamole, the complex pkg) at the feature-batch exit gate. Full pkg sweep only at milestones.
+- cloudify code change (`cloudify`, `lib/`, `schemas/`, tool tests): `task test` while iterating; the feature-batch gate above at a slice exit; the full ladder at milestones.
 - pkg change: `task test-integration:<pkg>` only, plus that pkg's unit tests if it has any.
+- End-to-end installs (`tests/e2e/`) are the proof you care about: they run when package, transport or dispatch behavior changes and at milestones; they are never deleted.
 
 **Skills:** before editing cloudify or a package, read the `cloudify-dev` skill (framework) or the `cloudify-pkg-dev` skill (recipes); the bats harness is the completion gate, never the debugger.
 

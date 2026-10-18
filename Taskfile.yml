@@ -84,11 +84,9 @@ tasks:
       - bash tests/run-integration.sh "tests/integration/package-{{.PACKAGE}}.bats"
 
   test:
-    desc: Run all tests (unit + integration)
+    desc: Blast-radius gate - an independent model selects the test files (tests/select-tests.sh)
     cmds:
-      - task: sync
-      - ivps exec {{.CONTAINER}} -- bash -c 'cd {{.REPO_DIR}} && bats tests/unit/ tests/integration/recipe-discovery.bats'
-      - bash tests/run-integration.sh
+      - bash tests/select-tests.sh {{.CLI_ARGS}}
 
   acceptance:
     desc: Serial acceptance batch (unit -> gate -> canary, or suites as args); receipts in results/acceptance/<run-id>/

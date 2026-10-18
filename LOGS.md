@@ -1227,3 +1227,10 @@
 ## 2026-10-18 - deployment show: a passed 0 is not user-only mode
 
 - The router passes 0 for the absent `--user-values` flag, and the renderer tested "non-empty", so every plain `deployment show` printed the user-only header and dropped recorded values. Fixed by normalizing to 1/empty at the renderer boundary; pinned by a red/green case in `tests/unit/deployment-show-unset.bats` (8/8 after the fix). Found by the octop conversion: the converted values were invisible until the flag meant what it said.
+
+## 2026-10-18 - Selection gate landed and exercised
+
+- `tests/select-tests.sh`: changed paths vs `results/acceptance/GREEN` (plus untracked), deterministic candidate expansion (module -> suites that source it), tool-less model narrowing (`CLOUDIFY_TEST_SELECTOR=codex` by default, `claude`/`gemini` available), answer cached by prompt hash, every failure -> full candidate set. Sanctuary union for `lib/vars.sh`, `lib/context.sh`, `lib/remote.sh`, `lib/shadows/*`, `schemas/v1/*`.
+- Proof on `HEAD~1` (the show-flag fix): 11 candidates -> `tests/unit/deployment-show-unset.bats`, selection 17s, cached thereafter.
+- First end-to-end `task test` run pulled `tests/e2e/two-host-application.bats` because an e2e file was in the diff; its setup_file failed (it launched the two disposable hosts and they were not reachable within its wait). No containers were left behind (teardown deleted them). Fixed: the micro-gate selects unit files only; e2e stays with the feature/milestone gates, and a `pkg/*` or `lib/remote.sh` change prints the explicit e2e obligation instead.
+- Green marker bootstrapped to `9a7c2fd`, the last commit validated by a complete ladder (unit 823, gate 152, canary 7); it moves only on a full green `task acceptance`.

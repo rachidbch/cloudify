@@ -1576,3 +1576,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - The SDLC test block now carries the delegated-selection ritual verbatim (persona + green-marker subject), the no-adjustment rule with its defect path (contract or role profile, never the answer), the three gates, the sanctuary, the pruning rule and the e2e boundary.
 - Stale statements removed in the same edit: `task test` no longer reads as "all tests", `task sync` is gone from the test commands, and the transport is described as the one plain ssh session the runner uses.
+
+## 2026-10-18 - Lean pass over the test discipline docs
+
+- Removed the duplicated rule set (persona and mission both carried the rules): the mission is the single source, the persona holds role and output only. Harness test block 18 lines to 7; sanctuary 67 to 42; no rule lost.

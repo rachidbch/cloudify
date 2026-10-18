@@ -60,19 +60,12 @@ Review passes are bounded: a SPEC review gets one review pass, one fixing pass, 
 
 TDD cycle. Tests run on the test host `cloudify` (an Incus container) through one plain ssh session (`tests/remote-bats.sh`), never on localhost.
 
-**Test selection is delegated** (ruled 2026-10-18): the working agent never chooses which tests run - under mission pressure that judgment over-tests or negotiates the rules away.
-- Micro-step gate, one fixed ritual: spawn the selector with `persona: test-selector` (fresh context, read-only) and the single sentence `Subject: git diff $(cat results/acceptance/GREEN)`; it returns PICK lines (file, and what it asserts that this change could break) and DROP lines (file, and why it cannot); run `task test -- <PICK files>` and nothing else.
-- The answer is never adjusted. Adding, removing or reordering a file it named is a harness defect: change the project contract (`tests/SELECT.md`) or the role profile (`~/.pi/agents/test-selector/persona.md`; pi does not load `~/.agents/*.md`, root files there are skipped), record the bad case, spawn it again. Never edit the answer.
-- Its DROP reasons are read, not filtered. If the selector cannot be spawned, run the whole unit suite and say why.
-- Feature-batch gate: the selected set plus the affected package's integration test.
-- Milestone gate: `task acceptance` (full unit + fragile gate + canary); it alone writes `results/acceptance/GREEN`, the selector's diff baseline.
-- Sanctuary: `tests/SANCTUARY.md` names the load-bearing guards; they are never pruned and always run when their surface is in the diff.
-- Pruning: a test outside the sanctuary that freezes behavior no caller depends on, or duplicates another guard, is deleted rather than kept for comfort.
-- End-to-end installs (`tests/e2e/`) are the proof that matters: they run at feature and milestone gates (package, transport or dispatch changes), never on a micro-step, and are never deleted.
+**Test selection is delegated** (2026-10-18): the agent never picks the tests - under mission pressure that judgment over-tests.
+- Micro-step: spawn `persona: test-selector` with `Subject: git diff $(cat results/acceptance/GREEN)`; run `task test -- <its PICK files>` and nothing else. Its answer is never adjusted: an add, remove or reorder is a harness defect - fix `tests/SELECT.md` or `~/.pi/agents/test-selector/persona.md` (pi ignores `~/.agents/*.md`), note the bad case, re-spawn. Read its DROP reasons. No selector, no gate: run the unit suite and say why.
+- Feature batch: the selected set plus the affected package's integration test. Milestone: `task acceptance`, the only writer of `results/acceptance/GREEN`.
+- Sanctuary (`tests/SANCTUARY.md`) guards are never pruned and always run when their surface is touched; anything else may be deleted if it freezes behavior nobody relies on or duplicates another guard. `tests/e2e/` runs at feature and milestone gates only.
 
-**Two products, two test scopes** (ruled 2026-10-01): cloudify is the tool AND a pkg registry; never pay both costs for one change.
-- cloudify code change (`cloudify`, `lib/`, `schemas/`, tool tests): `task test` while iterating; the feature-batch gate above at a slice exit; the full ladder at milestones.
-- pkg change: `task test-integration:<pkg>` only, plus that pkg's unit tests if it has any.
+**Two scopes** (2026-10-01): one change never pays both costs - a tool change runs the selected set, a package change runs that package's integration test (plus its unit files if any).
 
 **Skills:** before editing cloudify or a package, read the `cloudify-dev` skill (framework) or the `cloudify-pkg-dev` skill (recipes); the bats harness is the completion gate, never the debugger.
 

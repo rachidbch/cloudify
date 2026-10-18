@@ -1571,3 +1571,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Rachid rejected the selector machinery (backends, caches, parsing, floors in code) as overcomplication. Selection is now: spawn a fresh-context delegate with the mission in `tests/SELECT.md`, get the test files and the rejected candidates with reasons, run exactly those (`task test -- <files>`).
 - The harness keeps the standing floors as rules on the agent: a changed test file and the sanctuary guards always run, e2e never runs on a micro-step, and the agent may add with a stated reason but never remove one the delegate named.
+
+## 2026-10-18 - AGENTS.md test section made sticky
+
+- The SDLC test block now carries the delegated-selection ritual verbatim (persona + green-marker subject), the no-adjustment rule with its defect path (contract or role profile, never the answer), the three gates, the sanctuary, the pruning rule and the e2e boundary.
+- Stale statements removed in the same edit: `task test` no longer reads as "all tests", `task sync` is gone from the test commands, and the transport is described as the one plain ssh session the runner uses.

@@ -58,35 +58,34 @@ Bash-based host provisioning and package management for Ubuntu/Debian. Two compo
 
 Review passes are bounded: a SPEC review gets one review pass, one fixing pass, and one verification pass; a Technical review gets at most three review/fix/verify passes. A verification pass that still finds must-fix findings escalates to Rachid - never another loop. Budgets are per reviewed artifact; when a budget is exhausted, stop and escalate. Reason: each extra loop iteration adds micro-drift that becomes truth in the next iteration, so drift multiplies.
 
-TDD cycle. All tests run inside an Incus container (`cloudai:cloudify`), never on localhost.
+TDD cycle. Tests run on the test host `cloudify` (an Incus container) through one plain ssh session (`tests/remote-bats.sh`), never on localhost.
 
 **Test selection is delegated** (ruled 2026-10-18): the working agent never chooses which tests run - under mission pressure that judgment over-tests or negotiates the rules away.
-- Micro-step gate, one fixed ritual: spawn the selector with `persona: test-selector` (fresh context, read-only) and the single sentence `Subject: git diff $(cat results/acceptance/GREEN)`; it returns its PICK set with reasons and its DROP set with reasons; run `task test -- <PICK files>`. The invocation is never improvised and its answer is never adjusted: adding, removing or reordering a file it named is a harness defect - fix `tests/SELECT.md` or the persona, then spawn it again. Its DROP reasons are read, not filtered. If the selector cannot be spawned, run the whole unit suite and say why.
+- Micro-step gate, one fixed ritual: spawn the selector with `persona: test-selector` (fresh context, read-only) and the single sentence `Subject: git diff $(cat results/acceptance/GREEN)`; it returns PICK lines (file, and what it asserts that this change could break) and DROP lines (file, and why it cannot); run `task test -- <PICK files>` and nothing else.
+- The answer is never adjusted. Adding, removing or reordering a file it named is a harness defect: change the project contract (`tests/SELECT.md`) or the role profile (`~/.pi/agents/test-selector/persona.md`; pi does not load `~/.agents/*.md`, root files there are skipped), record the bad case, spawn it again. Never edit the answer.
+- Its DROP reasons are read, not filtered. If the selector cannot be spawned, run the whole unit suite and say why.
 - Feature-batch gate: the selected set plus the affected package's integration test.
-- Milestone gate: `task acceptance` (full unit + fragile gate + canary); it alone writes `results/acceptance/GREEN`, which is the delegate's diff baseline.
+- Milestone gate: `task acceptance` (full unit + fragile gate + canary); it alone writes `results/acceptance/GREEN`, the selector's diff baseline.
 - Sanctuary: `tests/SANCTUARY.md` names the load-bearing guards; they are never pruned and always run when their surface is in the diff.
 - Pruning: a test outside the sanctuary that freezes behavior no caller depends on, or duplicates another guard, is deleted rather than kept for comfort.
-- End-to-end installs (`tests/e2e/`) run at feature and milestone gates, never on a micro-step; they are never deleted.
+- End-to-end installs (`tests/e2e/`) are the proof that matters: they run at feature and milestone gates (package, transport or dispatch changes), never on a micro-step, and are never deleted.
 
 **Two products, two test scopes** (ruled 2026-10-01): cloudify is the tool AND a pkg registry; never pay both costs for one change.
 - cloudify code change (`cloudify`, `lib/`, `schemas/`, tool tests): `task test` while iterating; the feature-batch gate above at a slice exit; the full ladder at milestones.
 - pkg change: `task test-integration:<pkg>` only, plus that pkg's unit tests if it has any.
-- End-to-end installs (`tests/e2e/`) are the proof you care about: they run when package, transport or dispatch behavior changes and at milestones; they are never deleted.
 
 **Skills:** before editing cloudify or a package, read the `cloudify-dev` skill (framework) or the `cloudify-pkg-dev` skill (recipes); the bats harness is the completion gate, never the debugger.
 
-**Prerequisites:** Incus, `ivps` CLI, running container `cloudai:cloudify`.
+**Prerequisites:** Incus, `ivps` CLI, the running test host `cloudify`.
 
 ```bash
-task setup-container   # One-time: install bats + libraries
-task test-unit         # Push + unit tests
-task test              # Push + all tests (unit + integration)
+task setup-container   # one-time: bats + libraries on the test host
+task test -- <files>   # the selector's PICK set (selection is delegated, above)
+task test-unit         # the whole unit suite: only when the selector cannot run
 task lint              # shellcheck on this host
 ```
 
-**Testing:** tests run in `cloudai:cloudify` only; `task sync` rsyncs the tree (prunes deletions), integration tests also need the branch pushed.
-Background + poll, never redirect or grep: `mkdir -p results/<suite>`; `setsid <cmd> --report-formatter tap13 -o results/<suite> </dev/null >/dev/null 2>&1 &`; then `tail results/<suite>/report.tap`. bats always names it `report.tap`, and stdout must be discarded or SIGPIPE kills it when the ssh channel closes. tap13 carries each failure's assertion and output, so the tap suffices; give a large tap to a subagent for the failures only.
-Scope every run by code radius and feature radius; a focused red→green that reproduces the bug is that bug's exit gate. Full suite at phase and milestone boundaries; E2E is an exit gate, never a debugger. All authored test/runner code lives in `tests/` (`tests/red/` for explicit-invocation reproducers), transient tests included; `~/tmp` holds run data only.
+**Evidence:** long runs are detached (`setsid <cmd> </dev/null >/dev/null 2>&1 &`); `tests/remote-bats.sh` keeps `results/<name>.tap` pointing at the run's `report.tap`, which carries each failure's assertion and output. Read TAP raw; hand a large TAP to a subagent for the failures only. All authored test/runner code lives in `tests/` (`tests/red/` for explicit-invocation reproducers, transient tests included); `~/tmp` holds run data only.
 
 **Implementation:** the lead agent writes the code and shows the moves; subagents review, research, and read large taps.
 

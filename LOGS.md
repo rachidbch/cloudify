@@ -1245,3 +1245,9 @@
 ## 2026-10-18 - Selector script removed; delegate mission is the contract
 
 - `tests/select-tests.sh` trashed; the mission lives in `tests/SELECT.md` (short, reviewable), `task test` now only runs the named files through the plain-ssh transport, and `results/acceptance/GREEN` stays the diff baseline. No backend, cache, parser or fallback code remains; the delegate's rejections are read, not filtered.
+
+## 2026-10-18 - Selector profile fixed; its judgment validated by reintroducing the bug
+
+- The selector now runs as a dedicated persona (`~/.pi/agents/test-selector/persona.md` - the only location the subagent harness loads; `~/.agents/*.md` is ignored by pi, root files there are skipped, so a profile there would silently do nothing). The project contract stays in `tests/SELECT.md`. Harness rule: one fixed invocation (persona + `Subject: git diff $(cat results/acceptance/GREEN)`), and its answer is never adjusted - adding, removing or reordering a named file is a harness defect to fix in the contract or persona.
+- Validation by falsification: the show-flag bug was reintroduced (normalization line removed) and the delegate's own set was run. `tests/unit/deployments.bats` passed with the bug (the delegate over-included it; safe direction), `tests/unit/runbooks.bats` passed exactly as the delegate's DROP reason predicted, and the only failing test was the new case in `tests/unit/deployment-show-unset.bats`, its first PICK. The full battery would also have caught it - at 824 tests instead of 2 files.
+- Delegate cost on this diff: two files, ~40s. My own reflex was the whole battery; the delegate's rejections were each correct on the files that could be tested.

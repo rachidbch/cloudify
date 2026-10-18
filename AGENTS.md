@@ -61,7 +61,7 @@ Review passes are bounded: a SPEC review gets one review pass, one fixing pass, 
 TDD cycle. All tests run inside an Incus container (`cloudai:cloudify`), never on localhost.
 
 **Test selection is delegated** (ruled 2026-10-18): the working agent never chooses which tests run - under mission pressure that judgment over-tests or negotiates the rules away.
-- Micro-step gate: spawn a fresh-context delegate (subagent tool) with the mission in `tests/SELECT.md` and the current diff as its subject; it names the files, you run exactly those (`task test -- <files...>`). You may ADD a file with a stated reason; never remove one it named. Its rejections are part of the answer - read them.
+- Micro-step gate, one fixed ritual: spawn the selector with `persona: test-selector` (fresh context, read-only) and the single sentence `Subject: git diff $(cat results/acceptance/GREEN)`; it returns its PICK set with reasons and its DROP set with reasons; run `task test -- <PICK files>`. The invocation is never improvised and its answer is never adjusted: adding, removing or reordering a file it named is a harness defect - fix `tests/SELECT.md` or the persona, then spawn it again. Its DROP reasons are read, not filtered. If the selector cannot be spawned, run the whole unit suite and say why.
 - Feature-batch gate: the selected set plus the affected package's integration test.
 - Milestone gate: `task acceptance` (full unit + fragile gate + canary); it alone writes `results/acceptance/GREEN`, which is the delegate's diff baseline.
 - Sanctuary: `tests/SANCTUARY.md` names the load-bearing guards; they are never pruned and always run when their surface is in the diff.

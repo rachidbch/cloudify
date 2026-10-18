@@ -1601,3 +1601,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Affine: host started on Rachid's word, unit active and `/mcp` 401 confirmed, record converted (rev 7) and verified by the tool (`verification=ok`, 1.2.0).
 - youtube-mcp: unit active and port bound; four records converted. Its verify hook is stale - it expects a token file while the unit carries `API_TOKEN` in its environment.
 - t3code: not deployed by cloudify (operator-managed `t3code-custom.service` instead, recipe unit absent, verify failing). Its seven records were left unconverted pending Rachid's decision.
+
+## 2026-10-18 - t3code converted; the "not deployed" verdict corrected
+
+- t3code is installed (cloudify's user unit, version 0.0.46-nightly.20261008.2801) and down only because the t3 user has no linger; two operator source-build units also exist. Seven records converted, pandoc dropped as absent - zero old-shape records remain anywhere.
+- youtube-mcp's verify failure is a generation gap, not a missing secret: the host predates the recipe's server-owned token file. Options (converge the host, or supply the token via secretspec) are with Rachid; secretspec itself is not installed yet.

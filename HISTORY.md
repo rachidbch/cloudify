@@ -1606,3 +1606,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - t3code is installed (cloudify's user unit, version 0.0.46-nightly.20261008.2801) and down only because the t3 user has no linger; two operator source-build units also exist. Seven records converted, pandoc dropped as absent - zero old-shape records remain anywhere.
 - youtube-mcp's verify failure is a generation gap, not a missing secret: the host predates the recipe's server-owned token file. Options (converge the host, or supply the token via secretspec) are with Rachid; secretspec itself is not installed yet.
+
+## 2026-10-18 - t3 outage traced to one stuck run; service restored
+
+- The outage was not agentic activity: a web-push thread from Oct 10-11 has a `todo_list` node stuck `running` since Oct 9, so settlement retries forever (days), the leak accumulates, and yesterday's OOM killed the user manager. No messages after Oct 12, no scheduled tasks, no client traffic.
+- Restored: manager started, app up, URL 200; memory flat (slow leak). No manual memory cap (ivps roadmap; world-vs-inventory wedge). Added a `Restart=on-failure` drop-in for `user@1001`.
+- Open: the stuck run still retries, so the leak returns in days unless that run is cleared or settlement is patched.

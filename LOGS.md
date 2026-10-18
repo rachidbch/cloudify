@@ -1280,3 +1280,14 @@
 ## 2026-10-18 - youtube-mcp parked mid-refactor
 
 - Rachid parked youtube-mcp: it is mid-refactor, so no convergence, no token-source change, no verify chase. Its four converted records stand; the host's older generation (API_TOKEN env, no token file) keeps verify failing until the refactor lands. Recorded under "Parked" in the plan so a later session does not mistake it for migration debt.
+
+## 2026-10-18 - t3 outage: forensics, recovery, and what stays open
+
+- Identity of the stuck session: thread `ad8ddf01-d810-4ee9-ba21-6515cd8ca699`, no title row (v2 threads have none in this DB); it opens 2026-10-08 13:03 with "I would like to assess your introspection capabilities...", clarifies that the project folder named `t3` is unrelated to T3 Code, and by 2026-10-10/11 is the web-push work (Android delivery, native permission API). Provider: codex (run ordinal 59) plus a pi session. Last assistant message 2026-10-11 17:10: "Production is already deployed and healthy; 14 focused tests pass."
+- The stuck item: one node of kind `todo_list`, status `running` since **2026-10-09T15:44:04**, plus a pending `root_turn`. A run with a running node cannot settle, so `ThreadSettlementServiceV2.settleThread` fails forever and the server keeps dispatching `server:auto-settle:<thread>:<uuid>`: 84 settle attempts and ~1000 sweep calls in the last two hours, identical in every rotated trace, so the loop is days old.
+- Ruled out: no app messages after 2026-10-12 08:04, zero `scheduled_tasks` rows, no HTTP spans (no client drove it). The "sudden activity" was the server retrying one old run.
+- The kill: OOM at 16:18:30 took the app (`result 'oom-kill'`), `Restart=always` restarted it, more OOM at 16:26 and 16:35, then at 16:37 the user manager itself was killed and left `failed` (10.1 GiB peak; container memory uncapped).
+- Recovery: `systemctl reset-failed user@1001 && systemctl start user@1001` brought the manager up, which started `t3code-custom`; port 3773 listens and `https://t3.komodo-everest.ts.net` answers **200** from the laptop. Memory measured flat for three minutes (~285 MB app RSS, 1.4 GB cgroup), so the leak is slow (six days to 11 GB), not a fast blow-up.
+- Deliberately NOT done: a manual memory cap. ivps has no memory option, and a manual incus cap would leave the world diverging from what ivps records (Rachid's rule). Memory caps are an ivps roadmap item.
+- Done: restart drop-in `/etc/systemd/system/user@1001.service.d/restart.conf` (`Restart=on-failure`, 5s) so a future OOM of the manager recovers by itself.
+- Still open: the stuck run is untouched, so the settle loop and its slow leak continue. Durable fix is clearing/stopping that run from the app, or patching settlement in the source build.

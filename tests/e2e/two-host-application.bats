@@ -72,33 +72,12 @@ setup_file() {
             commit -q --allow-empty -m "e2e scratch tree"
     fi
 
-    # The application's runbook: two target slots, the disposable fixture package.
+    # The application's runbook: two target slots, the disposable fixture
+    # package. The artifact lives in tests/e2e/fixtures/two-host/runbook.md so the
+    # proof of the multi-host case is reviewable on its own; the test only stages
+    # a copy into its scratch config tree.
     mkdir -p "$CFG_DIR/runbooks/$APP/$FLAVOR"
-    cat > "$CFG_DIR/runbooks/$APP/$FLAVOR/runbook.md" <<'RUNBOOK'
----
-targets: alpha, beta
----
-
-# Two-host application
-
-The disposable fixture package lands on both hosts.
-
-```bash step=install target=alpha pkg=fixture-split
-cloudify --on "$TARGET_ALPHA" install fixture-split
-```
-
-```bash step=verify target=alpha pkg=fixture-split
-cloudify --on "$TARGET_ALPHA" verify fixture-split
-```
-
-```bash step=install target=beta pkg=fixture-split
-cloudify --on "$TARGET_BETA" install fixture-split
-```
-
-```bash step=verify target=beta pkg=fixture-split
-cloudify --on "$TARGET_BETA" verify fixture-split
-```
-RUNBOOK
+    cp "$BATS_TEST_DIRNAME/fixtures/two-host/runbook.md" "$CFG_DIR/runbooks/$APP/$FLAVOR/runbook.md"
 
     # The code each host runs comes from the test code mode (push by default:
     # the working tree over ssh; github/branch:<name> exercise the pull path).
@@ -150,13 +129,26 @@ setup() {
 }
 
 teardown_file() {
-    echo "── teardown: the two hosts ──"
-    # No teardown verb yet: releasing claims and removing the package is the
-    # pinned-provenance and teardown phase (Phase 7). Until then the disposable
-    # hosts going away is the whole cleanup.
+    echo "── teardown: the two hosts and the state this run wrote ──"
+    # The run's own state leaves with the run, never with a later sweep. The
+    # controller-side state root is already isolated (XDG_STATE_HOME under $WD);
+    # the records land in the disposable hosts' inventory, so they are removed
+    # here, before the hosts go away. Direct state is deleted by its allocated
+    # names once the lifecycle is mechanical; until then it is debris-only.
+    local h d
     for h in "$HOST_A" "$HOST_B"; do
+        d=$(ivps node path "$REMOTE:$h" 2>/dev/null) || d=""
+        if [[ -n "$d" ]]; then
+            [[ -d "$d/deployments/$APP" ]] && trash-put "$d/deployments/$APP" 2>/dev/null \
+                && echo "  $h: deployment records removed"
+            [[ -d "$d/deployments/_direct" ]] && trash-put "$d/deployments/_direct" 2>/dev/null \
+                && echo "  $h: direct records removed"
+        fi
         ivps delete "$REMOTE:$h" >/dev/null 2>&1 && echo "  $h deleted" || echo "  ($h already gone)"
     done
+    [[ -d "$XDG_STATE_HOME/cloudify" ]] && trash-put "$XDG_STATE_HOME/cloudify" 2>/dev/null \
+        && echo "  controller state root removed (events, manifests, runs)"
+    return 0
 }
 
 @test "install (Phase 2 repair): both hosts receive the package" {
@@ -239,8 +231,9 @@ teardown_file() {
     run bash -c "PATH=\$PATH cloudify --on $HOST_A $HOST_B install fixture-split"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 
-    # THIS invocation's manifest is the newest _direct fixture-split one (a
-    # dev controller accumulates e2e debris from prior runs; the sweep owns it).
+    # THIS invocation's manifest is the newest _direct fixture-split one. The
+    # state root is isolated under $WD and teardown removes it, so no prior-run
+    # debris can be mistaken for this run's verdict.
     local m
     m=$(ls -1 "${XDG_STATE_HOME:-$HOME/.local/state}"/cloudify/deployments/_direct/direct/fixture-split-*/manifest.json 2>/dev/null | sort | tail -1)
     [ -n "$m" ] || { echo "no _direct manifest"; return 1; }

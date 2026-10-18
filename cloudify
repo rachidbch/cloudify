@@ -112,7 +112,15 @@ if $DEBUG && [[ "$CLOUDIFY_LOG_LEVEL" != "DEBUG" ]]; then
 fi
 
 #== CLEANUP BEFORE EXIT
-trap cleanup SIGINT SIGTERM ERR EXIT
+# Cleanup owns the end of the process, never a mid-run moment. EXIT covers the
+# normal and the set -e abort paths; the signals must terminate explicitly
+# (a handler that returns would resume the run with its scratch deleted). ERR
+# is deliberately NOT trapped: set -E inherits an ERR trap into functions and
+# subshells, where it fires on failures the caller recovers from - proven live
+# by `deployment list`, whose scratch vanished mid-loop on one such failure.
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 #== SOURCE LIBRARY MODULES
 source "$CLOUDIFY_SCRIPT_DIR/lib/utils.sh"

@@ -1535,3 +1535,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - The two `two-host-e2e` registry records traced to the live two-host E2E gate (`tests/e2e/two-host-application.bats`, package `fixture-split`, throwaway `e2e-2h-a/b`); the instances are gone, so they were orphans. Discarded via recoverable trash; migration inventory now reports zero records.
 - Gap recorded for S9: no designed removal path for an orphan legacy record without a manifest.
+
+## 2026-10-18 - Cleanup trap fired mid-run; `deployment list` lost its scratch
+
+- `cloudify deployment list` died mid-loop on `mktemp ... No such file or directory`: the router trapped `cleanup` on ERR, and `set -E` inherits that trap into functions and subshells, so a *handled* failure (`status=$(...) || status="-"`) wiped `CLOUDIFY_TMP` while the run continued. Two holes fixed at the source: cleanup now runs only on process exit and on SIGINT/SIGTERM (which exit explicitly, 130/143), and the ownership guard compares `$BASHPID` instead of `$$` (which subshells inherit).
+- Both pinned: a subshell must decline the teardown, and the router's registration must carry no ERR trap. Live check: `deployment list` no longer deletes its scratch; SIGTERM exits 143 with the scratch removed.

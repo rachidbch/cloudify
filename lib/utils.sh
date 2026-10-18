@@ -81,8 +81,11 @@ function cleanup() {
     # per-process scratch, killing the dispatch worker mktemps). Only the
     # process that created CLOUDIFY_TMP tears it down; an unset owner means
     # a standalone caller (tests, direct lib use) keeps the full teardown.
+    # $$ is inherited by subshells, so a subshell must compare its own
+    # process identity instead: $BASHPID changes on every fork, while the
+    # owner recorded at startup is the router's main shell.
     local _cleanup_owner=true
-    if [[ -n "${_CLOUDIFY_TMP_OWNER:-}" && "$_CLOUDIFY_TMP_OWNER" != "$$" ]]; then
+    if [[ -n "${_CLOUDIFY_TMP_OWNER:-}" && "$_CLOUDIFY_TMP_OWNER" != "$BASHPID" ]]; then
         _cleanup_owner=false
     fi
     if [[ "$_cleanup_owner" != true ]]; then

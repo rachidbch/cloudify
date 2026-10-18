@@ -415,3 +415,18 @@ teardown() {
     CLOUDIFY_LOG_LEVEL=INFO CLOUDIFY_TMP="$proc_dir" _CLOUDIFY_TMP_OWNER=$BASHPID cleanup
     [ ! -e "$proc_dir" ]
 }
+
+@test "cleanup: a subshell never deletes the owning process's scratch (BASHPID guard)" {
+    # Proven live: `cloudify deployment list` lost its CLOUDIFY_TMP mid-loop -
+    # cleanup fired inside a pipeline/process-substitution subshell, and the
+    # ownership guard passed because $$ is inherited by subshells. The real
+    # process identity is $BASHPID; a subshell must always decline.
+    local scratch
+    scratch=$(mktemp -d "$CLOUDIFY_TMP/scratch.XXXXXX")
+    bash -c '
+        source lib/utils.sh
+        export CLOUDIFY_TMP="$1" _CLOUDIFY_TMP_OWNER="$BASHPID" CLOUDIFY_LOG_LEVEL=INFO
+        ( cleanup )   # a subshell: $$ is inherited, BASHPID is its own
+        [ -d "$CLOUDIFY_TMP" ] || { echo "scratch deleted by a subshell"; exit 1; }
+    ' _ "$scratch"
+}

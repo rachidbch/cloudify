@@ -512,3 +512,22 @@ ENV
     [ "$status" -ne 0 ]
     [[ "$output" == *"localhost arm is not wired"* ]]
 }
+
+# ---------------------------------------------------------------
+# Real router: cleanup registration (never on ERR)
+# ---------------------------------------------------------------
+
+@test "router traps cleanup on process end and signals, never on ERR" {
+    # Proven live: `cloudify deployment list` lost its scratch mid-loop. Under
+    # set -E an ERR trap is inherited into functions and subshells, so it fired
+    # on failures the caller recovers from (`status=$(...) || status="-"`),
+    # wiped CLOUDIFY_TMP, and execution continued. Cleanup belongs to process
+    # exit and to terminating signals only.
+    run grep -n "^trap .*cleanup" "$CLOUDIFY_SCRIPT_DIR/cloudify"
+    assert_success
+    assert_output --partial "trap cleanup EXIT"
+    assert_output --partial "cleanup; exit 130"
+    assert_output --partial "cleanup; exit 143"
+    refute_output --partial "ERR"
+    refute_output --partial "SIGINT"
+}

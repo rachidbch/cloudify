@@ -1197,3 +1197,16 @@
 - Acceptance batch on pushed HEAD `9a7c2fd` (receipt `results/acceptance/20261018-092753/`): unit 823/823 (`results/unit.*/report.tap`, plan `1..823`), fragile gate 152/152, canary 7/7, lint 0; every suite and batch exit 0, no skips, no bailouts.
 - Live verification of the fix: `cloudify deployment list` no longer loses its scratch mid-loop (it is slow only because ~300 `_direct` accumulations are listed - sweep territory); SIGTERM exits 143 with the scratch removed.
 - Surfaced, not fixed: `cloudify --source-only` does not exist (the shared `source_cloudify` test helper therefore sources nothing and hides it); `deployment list` cost grows with `_direct` bloat.
+
+## 2026-10-18 - Direct-state discard executed (Rachid's go)
+
+- Discarded via recoverable trash: `~/.local/state/cloudify/deployments/_direct` (286 manifests plus their run snapshots), every `*/deployments/_direct` and `*/deployments/two-host` record tree under the ivps inventories (1429 + 20 records), and the E2E's isolated scratch state `~/tmp/two-host-e2e/state`.
+- Kept: the four deployments that match the world - `octop/default/main` (7 records), `affine/default/main` (1), `t3code/default/main` (7), `youtube-mcp/default/main` (4) - 19 records total, all still old-shape and awaiting conversion.
+- Events untouched: they are immutable history (1504 events, most of them referring to discarded direct subjects).
+- Effect: manifests 290 -> 4; records 1468 -> 19; `deployment list` went from >120s (timed out mid-run) to 8.9s for four rows - about 2.2s per row, which is the per-deployment `ivps node path` cost, so the lookup-memoization item stays.
+
+## 2026-10-18 - Two-host E2E audit (what its runbook actually proves)
+
+- The runbook is generated inline by the test under its scratch config tree; no repo runbook exists for `two-host`. It declares two target slots (alpha, beta) and installs plus verifies the disposable `fixture-split` package on both.
+- Claims the test pins: one runbook deployment spanning two hosts (manifest status verified, one binding per slot, run snapshots written, no dispatch context left behind even at DEBUG); **one bare dispatch across two hosts produces ONE direct deployment with two bindings and one record per host** (ADR-032's core, asserted directly); and **`--name web` addresses that direct deployment across a separate install and verify invocation** (the explicit-name path of ADR-045, already exercised).
+- Defect the audit exposes for the new rules: the test's own comment says "a dev controller accumulates e2e debris from prior runs; the sweep owns it" - it expects to pollute. Under ADR-044/045 it must isolate records (the state root is already isolated via XDG_STATE_HOME; the record root is not) and delete its state at teardown; its "newest fixture-split manifest" assertion becomes obsolete because an unnamed dispatch now resolves to a deterministic name.

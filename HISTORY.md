@@ -1547,3 +1547,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Two decisions carved: direct state with a mechanical lifecycle (ADR-044) and direct naming plus nameless resolution (ADR-045). Naming is allocated under the host lock (`<pkg>`, `<pkg>-2`, ...), never derived from values, so reconfigure keeps identity and parallel differing installs cannot collide; the earlier timestamp-per-invocation clause is superseded, the one-deployment-spanning-hosts decision stands.
 - Design (`REDESIGN.md`) direct-command paragraphs rewritten; plan Unnamed deployment matching item amended with the lifecycle, resolver, list default, lookup memoization and the one-off discard (live step, awaiting go); harness Architecture gains the direct-state bullet.
 - Candidate set for the discard presented before any deletion: keep the four deployments that match the world (`octop`, `affine`, `youtube-mcp`, `t3code`), discard 286 timestamp-named direct manifests and their 1429 record trees via recoverable trash.
+
+## 2026-10-18 - Direct-state discard executed; two-host E2E audited
+
+- With Rachid's go, 286 timestamp-named direct manifests, 1429 direct record trees and the 20 two-host records on dead instances were discarded via recoverable trash, plus the E2E's isolated scratch state. Kept the four deployments that match the world (octop, affine, t3code, youtube-mcp; 19 records, all old-shape). Events stay as history.
+- `deployment list` dropped from over two minutes (timing out) to 8.9s for four rows; the remaining cost is the per-deployment inventory lookup, already on the plan as a memoization item.
+- Two-host E2E audit: it proves one runbook deployment across two hosts, one bare dispatch across two hosts producing one direct deployment with two bindings, and `--name` addressing that deployment across invocations. It also expects to pollute ("the sweep owns it") - under ADR-044/045 it must isolate the record root and delete its state at teardown.

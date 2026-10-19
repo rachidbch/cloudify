@@ -202,6 +202,23 @@ The detached batch finished independently; historical PID 17044 is gone, and abs
 - [ ] Remove temporary conversion readers/fixtures only after the approved migration reports zero old artifacts; no permanent runtime dual reader.
 - [ ] Finish bounded spec/technical reviews under the project review budgets, address findings, and record final evidence before PR/merge.
 
+### Adoption of the remaining fleet (S10)
+
+Rachid's ruling (2026-10-18): migration is complete; the remaining work on the fleet is adoption, in two levels. An app is left alone only with a stated ground - not needed (transient, leftover) or complex enough to warrant its own project (roadmap entry).
+
+- **Level 1 adoption - document and automate**: write the recipe (`pkg/<app>`) and the runbook (`runbooks/<app>/<flavor>/runbook.md`) for an app that exists in the world. No cloudify state is written and the world is not mutated; proving it means running the recipe's read-only verify hook against the live app. Closes with the selector gate (a code and docs change).
+- **Level 2 adoption - back-fill state**: record the deployment with the adoption command (operator inference: version and settings the world shows), which creates the manifest when absent and runs the seeded verify. Preconditions: the level 1 artifacts exist, the host is observable (a stopped host is woken first, as affine was), a restricted backup exists for anything replaced, and Rachid gives the per-app go. The record must describe the world; a failed verify never unwrites it.
+
+Targets:
+
+- Level 1: `pi-pocket` (running, no recipe, no runbook), `dsh` (running: agent-browser stack, several bespoke units, no recipe or runbook), `piku` (running PaaS with zero apps hosted, no recipe or runbook), `dokku` (stopped, no recipe or runbook), `kamal` (stopped, no recipe or runbook), `openclaw` (stopped, no recipe or runbook).
+- Level 2: `zitadel` (recipe and runbook exist, host stopped: wake, verify, adopt), `piface` (recipe exists, runbook missing: level 1 gap first, then adopt), `pi-web` (no recipe and no runbook: level 1 gap first, then adopt).
+- Roadmap, not now: the Guacamole oracle pair; the whole Hermes saga (`hermes`, `hermes-svc`, `openwebui-hermes`).
+
+Order: level 1 first, because level 2 depends on its artifacts. Within level 2, `zitadel` first, since only its artifacts are ready. Every level 2 step follows the same sequence the four migrated deployments used: observe the world, back up, write the record and its event, verify, report.
+
+Left unassigned: `seed`, `ref-check`, `xf-test`, `pir` and the other stopped leftovers with no workload and no target. They are instance-lifecycle debris for ivps, not cloudify state.
+
 ## Parked
 
 - youtube-mcp: parked mid-refactor (Rachid, 2026-10-18). Its four records were converted to the lean shape; the deployed host predates the recipe's server-owned token design, so verify will fail until the refactor lands. Do not converge it or change its token path as migration work.

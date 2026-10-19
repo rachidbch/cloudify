@@ -1612,3 +1612,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - The outage was not agentic activity: a web-push thread from Oct 10-11 has a `todo_list` node stuck `running` since Oct 9, so settlement retries forever (days), the leak accumulates, and yesterday's OOM killed the user manager. No messages after Oct 12, no scheduled tasks, no client traffic.
 - Restored: manager started, app up, URL 200; memory flat (slow leak). No manual memory cap (ivps roadmap; world-vs-inventory wedge). Added a `Restart=on-failure` drop-in for `user@1001`.
 - Open: the stuck run still retries, so the leak returns in days unless that run is cleared or settlement is patched.
+
+## 2026-10-18 - Adoption plan carved: two levels, assigned targets
+
+- Rachid defined adoption as level 1 (write the recipe and runbook for an app that exists) and level 2 (back-fill the state that reflects, and could replay, the deployment). Assigned: level 1 = pi-pocket, dsh, piku, dokku, kamal, openclaw; level 2 = zitadel, piface, pi-web; roadmap = Guacamole oracle pair and the Hermes saga.
+- Plan section "Adoption of the remaining fleet (S10)" records the definitions, preconditions, order and gates.

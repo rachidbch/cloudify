@@ -1296,3 +1296,9 @@
 
 - Bounded restarts, two layers, verified effective: `user@1001` = `Restart=on-failure`, `RestartSec=5s`, `RestartSteps=5`, `RestartMaxDelaySec=300s`, `StartLimitBurst=3` per `StartLimitIntervalSec=3600`; `t3code-custom.service` = `Restart=always` with `StartLimitBurst=5` per hour (its own `Restart=always` was the hot-loop risk). Past the limit systemd leaves the unit failed, which is visible via `systemctl --failed`; `systemctl reset-failed` clears it after the cause is fixed.
 - Rationale: a deterministic OOM plus an unbounded restart policy is a crash loop that hammers the instance; bounded rate + exponential backoff + give-up is the standard containment until the stuck run is cleared and ivps can cap memory.
+
+## 2026-10-18 - t3code state re-pointed to the custom source build
+
+- Rachid's ruling: state must describe the custom build that serves traffic. The deployment's `t3code` package record was re-pointed (rev 3 -> 4) with `version = 0.0.46-dev.f4eb89dd` (what the binary reports: `t3 v0.0.46-dev.f4eb89dd`), written with an adopt-style event (`command_kind: adopt`, operator writer, commit null + development override true, since the source build is not the manifest's pinned commit) whose summary names the artifact: unit `t3code-custom.service`, release `f4eb89dd`, vendor unit dormant by operator decision.
+- The dependency-closure records (the developer toolkit this deployment installed in earlier steps: the `basics` meta-package, git, mosh, wezterm, silversearcher-ag) keep their versions: cloudify installed them and they are present.
+- Consequence recorded, not chased: the recipe's verify targets the vendor unit, so `verify t3code` stays red until the recipe learns source builds; the deployment's manifest commit (`d37289c…`) describes the vendor install, so the deployment now reads as not exactly replayable.

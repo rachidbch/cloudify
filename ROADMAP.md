@@ -37,6 +37,18 @@ A `_direct` deployment has no runbook on disk (its single step lives in the disp
 - [ ] Synthesise one verify step per recorded (package, host) so direct and named deployments share one mechanism. Needs no new on-disk artifact, and it reuses the rule replay-from-inventory already depends on: the record set is authoritative for what exists.
 - Known limit: a package whose install failed and left no record is invisible to the verify. A materialised plan (writing the package and host list at first dispatch) would fix that, at the cost of a second copy of the truth that can drift from the records.
 
+## Adopt the remaining fleet (roadmap entry, 2026-10-20)
+
+Parked until the state-convergence slices close: S3-S5 change value resolution and seeding, so adopting now would write state under semantics that are about to change.
+
+Two levels. Level 1 writes the recipe and runbook for an app that already exists - no state, no world mutation, proven by the package's own verify hook against the live host. Level 2 back-fills state with the adoption command (operator inference, seeded verify, recorded backup, per-app go) and requires the level 1 artifacts plus an observable host.
+
+- [x] `pi-pocket` level 1 (2026-10-20): recipe, runbook, README; verified on `cloudai:pocket-box`.
+- [ ] Level 1: `dsh` (agent-browser stack), `piku` (Paas host, zero apps hosted), `dokku`, `kamal`, `openclaw` (stopped, no recipe, no runbook).
+- [ ] Level 2: `zitadel` (recipe and runbook ready, host stopped), `piface` (recipe only), `pi-web` (neither).
+- Separate projects, not this entry: the Guacamole oracle pair and the Hermes saga (`hermes`, `hermes-svc`, `openwebui-hermes`).
+- Instance debris with no workload and no target (`seed`, `ref-check`, `xf-test`, `pir`, ...) is ivps lifecycle, not adoption.
+
 ## State convergence (approved implementation plan, 2026-10-17)
 
 - [ ] Implement Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Boolean failure marker (ADR-039), Secret markers with suffixes (ADR-042), and Unnamed matching (ADR-031) through [the active plan](PLAN.md), tracked in [issue #17](https://github.com/rachidbch/cloudify/issues/17).

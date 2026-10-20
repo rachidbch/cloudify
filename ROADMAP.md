@@ -49,6 +49,21 @@ Two levels. Level 1 writes the recipe and runbook for an app that already exists
 - Separate projects, not this entry: the Guacamole oracle pair and the Hermes saga (`hermes`, `hermes-svc`, `openwebui-hermes`).
 - Instance debris with no workload and no target (`seed`, `ref-check`, `xf-test`, `pir`, ...) is ivps lifecycle, not adoption.
 
+## Redesign slice status (2026-10-20, evidence-checked)
+
+The boxes below are slice *closes*: each needs its proof and its gates, not just landing code. Several slices were built before this branch and read as "not started" only because no box was ticked. Checked against the code, not memory:
+
+- Baseline and prerequisites (S0): **closed**. Unit 821, gate 152, canary 7 (S1 exit run, `24a008a`).
+- Marker sweep and suffix fallback (S1): **closed** at `24a008a`.
+- Schema and lean records (S2): **closed** at `18472e6`; acceptance re-gated on the reverted tree (`93f5fd3`).
+- Environment-only secret plumbing (S3): **not started**. The digest field still travels in the context, the resupply demand is still enforced, and secret backends still resolve at runtime.
+- Defaults ladder (S4): **partly built**. Application and application-flavor defaults exist in the walker; the deployment rung is still live (`values.yaml` readers, `vars --deployment`, stored `TARGET_*`).
+- User-forced seeding (S5): **built, unproven**. Reconfigure seeds only `user_forced` names and `deployment unset` removes the bit; neither has its slice proofs or gates.
+- Current-state and historical replay (S6): **mostly built (2026-10-20)**. Replay without `--at` rebuilds from the manifest and records; `--at` is the only historical path. Remaining: the value-refusal proofs and the direct path.
+- Unnamed deployment matching (S7): **not wired**. `lib/matching.sh` exists and nothing calls it.
+- Inventory-backed manifest cache (S8): **partly built**. An explicit rebuild command exists; reads do not rebuild on missing, corrupt or revision-stale state.
+- Failure vocabulary and release (S9): **not started**. Runtime code still emits `degraded`.
+
 ## State convergence (approved implementation plan, 2026-10-17)
 
 - [ ] Implement Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Boolean failure marker (ADR-039), Secret markers with suffixes (ADR-042), and Unnamed matching (ADR-031) through [the active plan](PLAN.md), tracked in [issue #17](https://github.com/rachidbch/cloudify/issues/17).

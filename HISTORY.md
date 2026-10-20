@@ -1639,3 +1639,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ## 2026-10-20 - Selector gate on the verify/replay change
 
 - The selector picked 36 unit files from the diff (everything touched plus the state, worker, event, inventory, uninstall sanctuary guards). 525 tests, 0 failures, 4m17s. Its drops were read: e2e and non-test files by rule, `adoption.bats` because it stubs the verify child, and the untouched value-propagation suites because `lib/vars.sh` and `lib/context.sh` were not modified.
+
+## 2026-10-20 - Slice status moved to the roadmap
+
+- The evidence-checked slice status was first written into the plan, which was a category error: that document is scoped to one branch's work, while the status spans the whole redesign. It now lives in `ROADMAP.md`, and the plan holds only work and evidence for this branch.

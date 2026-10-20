@@ -1,0 +1,8 @@
+# pkg/pi-pocket - declared names (values live in the caller env or
+# ~/.config/cloudify/pkgs/pi-pocket.yaml, never in the repo). The recipe
+# default stays runtime truth - keep the two in sync.
+PI_POCKET_PORT=8787
+PI_POCKET_ACCESS=lan
+PI_POCKET_DIR=/opt/pi-pocket
+PI_POCKET_DATA=/var/lib/pi-pocket
+PI_POCKET_SERVICE=pi-pocket

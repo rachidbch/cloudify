@@ -1622,3 +1622,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Rachid's ruling: one dated capture file is enough. `LOGS.md` is archived at `docs/archive/LOGS-until-2026-10-20.md` (marked ARCHIVED, kept as evidence) and the harness now says HISTORY.md is the only capture file: facts belong in HISTORY entries, TAP receipts under `results/`, and dispatch transcripts. The dev skill carries the same rule.
 - Also this session: pi updated 0.84.1 -> 1.3.0 after clearing a stale npm temp dir from August that made every install fail with ENOTEMPTY; mise updated to 2026.10.15; opencode replicated from the cloudai node (mise `opencode@2.0.32`, legacy github/npm entries removed, config `opencode.json` and `service.json` copied); the pi providers `opencode-go` and `opendesign` imported from the cloudai node's models file, with the `opencode-go` credential from its auth file.
+
+## 2026-10-20 - pi-pocket level 1 adoption: recipe, runbook, README
+
+- Recipe `pkg/pi-pocket/` (install converges an existing checkout instead of duplicating it; verify proves unit + bound port + HTTP answer; uninstall keeps the data directory unless `--clear-data`), runbook `runbooks/pi-pocket/default/runbook.md`, and README.
+- Facts it rests on, observed on `cloudai:pocket-box`: `pi-pocket.service` = `/usr/bin/node /opt/pi-pocket/bin/pi-pocket.js --access lan -y --port 8787 --data /var/lib/pi-pocket`, `Restart=always`, browser drop-in; checkout v0.15.0 from the host-local bare repo `/srv/pi-pocket.git`; node v22.23.3; health 200.
+- No state written: level 1. The verify hook was proven on the host, which required pushing (hosts run code from GitHub, never the local tree).

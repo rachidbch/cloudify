@@ -1635,3 +1635,7 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - `deployment replay` without `--at` now rebuilds from current state - bindings from the manifest, runbook from the canonical path, values through the dispatch's own applied seeding - so an adopted deployment with no run history can be verified. `--at` remains the only path that reads a snapshot. Tests: `tests/unit/runbook-replay.bats` 13/13.
 - `_direct` verification decided as C: iterate the records and call each package hook; `deployment replay` stays a named-deployment verb. Deriving steps from the record set (proposal A) is now a roadmap entry.
 - Verification ownership and provenance (ADR-046) re-scoped the drift-verification roadmap entry: pass 1 covers only Cloudify's own actions, pass 2 is the package hook. A new roadmap entry covers standardising what recipes hand-write (units), which is what would move unit checks into pass 1.
+
+## 2026-10-20 - Selector gate on the verify/replay change
+
+- The selector picked 36 unit files from the diff (everything touched plus the state, worker, event, inventory, uninstall sanctuary guards). 525 tests, 0 failures, 4m17s. Its drops were read: e2e and non-test files by rule, `adoption.bats` because it stubs the verify child, and the untouched value-propagation suites because `lib/vars.sh` and `lib/context.sh` were not modified.

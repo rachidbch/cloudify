@@ -1643,3 +1643,9 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 ## 2026-10-20 - Slice status moved to the roadmap
 
 - The evidence-checked slice status was first written into the plan, which was a category error: that document is scoped to one branch's work, while the status spans the whole redesign. It now lives in `ROADMAP.md`, and the plan holds only work and evidence for this branch.
+
+## 2026-10-20 - State-convergence branch adopted into master; S3 branch cut
+
+- Full ladder on final HEAD `af935c5`: unit 718/718, fragile gate 147/147, canary 7/7, batch exit 0 (receipt `results/acceptance/20261020-164737/`). The gate count fell from 152 to 147 because the pruning removed five predgate assertions; no gate coverage was dropped on a fragile surface.
+- `master` fast-forwarded `e85a279..af935c5` (57 commits, 145 files) and pushed; `feat/state-convergence` deleted locally and remotely since it is now identical to master. The merged set: state model closures S0-S2, direct-state naming/list/sweep, verification requiring a record, replay from inventory, the `probe` verb, three framework bugs, the delegated test-selection harness with the sanctuary, 110 pruned tests, `pkg/pi-pocket` level 1, and the ops/docs records.
+- Next slice: `feat/state-s3-secrets`, cut from master, for environment-only secret plumbing.

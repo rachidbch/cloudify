@@ -1,5 +1,24 @@
 # Cloudify Roadmap
 
+## Drift verification: verify in two passes (roadmap entry, 2026-10-18)
+
+Inspired by the Ansible model: `cloudify verify` should answer "does reality still match the recorded state", not only "does the recipe's hook pass".
+
+- [ ] Two passes, in order: (1) a **generic pass** that checks everything checkable without package knowledge; (2) the **package pass**, the optional `pkg/<name>/verify.sh` hook as it exists today.
+- Why: a package without a hook, or with a narrow hook, leaves drift invisible, while the inventory holds recorded state that nothing cross-checks. The generic pass is the cross-check.
+
+Highly underspecified on purpose. A discussion is owed when this entry is reached, before any design is committed. Questions it must answer:
+
+- What "generically verifiable" covers: package presence and version from the system's own database, declared files, systemd units, listening ports, recorded settings compared against live configuration, or none of these.
+- How a generic pass knows the expected artifact without a recipe: from the recorded state, from the package declaration, from the system's package manager, or from a per-package facts file.
+- Comparison semantics: what counts as drift, as absent, as changed, and as unknowable; a host that is down is unknowable, never drift.
+- Reporting and exit semantics: per-fact results, value-free output, exit codes, and how drift relates to the failure marker and the status word.
+- Secrets: names only, never values or digests.
+- Composition with the package hook: order, timeouts, short-circuit or always run both.
+- Whether a generic pass may run for a deployment with no recipe at all (adopted state).
+
+No runtime behavior changes until that discussion closes.
+
 ## State convergence (approved implementation plan, 2026-10-17)
 
 - [ ] Implement Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Boolean failure marker (ADR-039), Secret markers with suffixes (ADR-042), and Unnamed matching (ADR-031) through [the active plan](PLAN.md), tracked in [issue #17](https://github.com/rachidbch/cloudify/issues/17).

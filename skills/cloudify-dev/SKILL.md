@@ -13,7 +13,7 @@ description: Use when developing, upgrading or debugging the cloudify tool itsel
 
 - Never convert `curl URL | bash -s -- args` into `bash -c "$(curl URL)" ...`. With `bash -c` the next word becomes `$0`: the script receives `--` as its first argument. Download to a file, run `bash <file> <args>`.
 - Never dispatch without `CLOUDIFY_FORCE_UPDATE=true` while iterating. The 30-minute gate silently runs stale code; the only trace is the `checkout v1:` line.
-- Never redirect or filter cloudify output (`>/dev/null`, pipes, `rg` on first read), never trust memory over the log. Transcripts are evidence: `/tmp/cloudify/logs/<ts>.log` on the controller, `latest.log` only on hosts (AGENTS.md LOGS).
+- Never redirect or filter cloudify output (`>/dev/null`, pipes, `rg` on first read), never trust memory over the log. Transcripts are evidence: `/tmp/cloudify/logs/<ts>.log` on the controller, `latest.log` only on hosts (AGENTS.md "Logs and evidence").
 - Never rerun with a timeout below the last observed duration. After any self-inflicted timeout kill, the next timeout is 3x observed.
 - Never inline quotes, pipes or `$()` in `cloudify exec '<cmd>'` - the channel mangles them. Push a script (`ivps push`) and run the file.
 - Never `cloudify app run` on a dirty tree - commit the plan first.
@@ -28,7 +28,7 @@ description: Use when developing, upgrading or debugging the cloudify tool itsel
 - `lib/targets.sh`: `--on` target grammar (`X`/`X:`/`X:Y`/`:Y`) -> (node, instance, ssh host); ivps is the inventory provider.
 - `lib/registry.sh`: observation records per (deployment, target, package) under the ivps node dir; written after a dispatch, swept by `deployment delete`.
 - `lib/runbooks.sh`: runbook parse/bind/preflight/run/replay + run snapshots.
-- `pkg/<name>/`: recipes. `tests/`: bats. `plans/`, `ADR.md`, `HISTORY.md`, `LOGS.md`.
+- `pkg/<name>/`: recipes. `tests/`: bats. `plans/`, `ADR.md`, `HISTORY.md` (the only capture file).
 
 ## Critical gate
 
@@ -74,6 +74,6 @@ Framework specifics: `task test-unit` runs bats in `cloudai:cloudify`; unit test
 
 ## Conventions
 
-- Update `HISTORY.md` + `LOGS.md` every turn; end with `git status --short` clean.
+- Update `HISTORY.md` every turn (no separate journal); end with `git status --short` clean.
 - ADRs are numbered and append-only; plans live in `plans/`.
 - `shellcheck` clean; lint covers `lib/*.sh`, `lib/shadows/*.sh`, `lib/secrets/*.sh`, `cloudify`, `pkg/*/{init,install,configure,uninstall,verify}.sh`.

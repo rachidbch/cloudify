@@ -1,3 +1,4 @@
+Status: ARCHIVED 2026-10-20. The dated session journal is retired; capture lives in HISTORY.md. Kept for historical evidence only.
 # Cloudify session log
 
 ## 2026-08-31

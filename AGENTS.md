@@ -82,14 +82,14 @@ task lint              # shellcheck on this host
 
 **Implementation:** the lead agent writes the code and shows the moves; subagents review, research, and read large taps.
 
-**Logs and observability:** LOGS section below. Native logs only, raw; never redirect, filter or discard.
+**Logs and observability:** the native log channels below. Logs are read raw; never redirect, filter or discard.
 **Test transport:** plain `ssh root@X` (Tailscale SSH, no options, no incus daemon) is the only test transport: one ssh session streams the tree to the test target (`X` = `CLOUDIFY_TEST_TARGET`, default `cloudify`), runs bats there, streams the TAP back live, and the ssh exit is the run's exit. Never `ivps exec`, never the incus API, never per-command round trips, never backgrounded remote runs. A repeat of the improvisation trap escalates to Rachid immediately.
 
-**Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues. Canonical docs (`PLAN.md`/`HISTORY.md`/`LOGS.md`) own progress and evidence; scratch files never become the tracking authority.
+**Planning:** one plan at a time, `PLAN.md` → symlink to `plans/<current>.md`. `plans/` holds plans only; finished plans move to `plans/archived/`. If the plan stops flying, raise it with Rachid rather than forking a second plan. Issues/PRs document outcomes; plans reference issues. Canonical docs (`PLAN.md`/`HISTORY.md`) own progress and evidence; scratch files never become the tracking authority.
 
 **Versioning:** strict SemVer. The `VERSION` file at the repo root is the single source; `cloudify --version` prints it; `CLOUDIFY_VERSION` overrides it in tests. Bump per semver whenever the tool meaningfully changes (breaking: MAJOR, behavior/features: MINOR, fixes: PATCH).
 
-**Normative files:** the design (`REDESIGN.md`) and the plan (`plans/<current>.md` via `PLAN.md`) are the single source of truth. Everything else is a working note I may use freely, except `schemas/v1/` (machine-enforced), `AGENTS.md` (process) and `LOGS.md`/`HISTORY.md` (required records). Every spec or plan change must land in a normative file, and a design change lands in `REDESIGN.md` in the same commit as the decision that authorizes it.
+**Normative files:** the design (`REDESIGN.md`) and the plan (`plans/<current>.md` via `PLAN.md`) are the single source of truth. Everything else is a working note I may use freely, except `schemas/v1/` (machine-enforced), `AGENTS.md` (process) and `HISTORY.md` (the required record). Every spec or plan change must land in a normative file, and a design change lands in `REDESIGN.md` in the same commit as the decision that authorizes it.
 
 **ADRs:** self-contained, never referencing a path that can move or be deleted. `REDESIGN.md` and `PLAN.md` are the only stable references an ADR may name.
 
@@ -99,11 +99,12 @@ task lint              # shellcheck on this host
 **PRs:** `git push -u origin <branch>` then `gh pr create`.
 
 **Turn closure:** each turn ends with ALL docs updated (README.md, HISTORY.md, pkg READMEs, AGENTS.md) + `git status --short` clean. Missing a HISTORY entry is a bug.
+**Capture:** `HISTORY.md` is the only dated capture file. The old session journal (`LOGS.md`) is retired and archived under `docs/archive/`; its facts belong in HISTORY entries, the TAP receipts under `results/`, and the dispatch transcripts. Do not create a new journal file.
 
 **Recipe conventions:** see "Directory structure" and "Recipe conventions" in README.md. Packages with non-obvious config/exposure/gotchas ship a `README.md` (and `docs/` if needed) — update it alongside the recipe.
 
 
-## LOGS
+## Logs and evidence
 
 Cloudify's native evidence channels - always these, always raw:
 

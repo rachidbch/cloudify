@@ -1617,3 +1617,8 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 
 - Rachid defined adoption as level 1 (write the recipe and runbook for an app that exists) and level 2 (back-fill the state that reflects, and could replay, the deployment). Assigned: level 1 = pi-pocket, dsh, piku, dokku, kamal, openclaw; level 2 = zitadel, piface, pi-web; roadmap = Guacamole oracle pair and the Hermes saga.
 - Plan section "Adoption of the remaining fleet (S10)" records the definitions, preconditions, order and gates.
+
+## 2026-10-20 - Capture consolidated into HISTORY; the session journal retired
+
+- Rachid's ruling: one dated capture file is enough. `LOGS.md` is archived at `docs/archive/LOGS-until-2026-10-20.md` (marked ARCHIVED, kept as evidence) and the harness now says HISTORY.md is the only capture file: facts belong in HISTORY entries, TAP receipts under `results/`, and dispatch transcripts. The dev skill carries the same rule.
+- Also this session: pi updated 0.84.1 -> 1.3.0 after clearing a stale npm temp dir from August that made every install fail with ENOTEMPTY; mise updated to 2026.10.15; opencode replicated from the cloudai node (mise `opencode@2.0.32`, legacy github/npm entries removed, config `opencode.json` and `service.json` copied); the pi providers `opencode-go` and `opendesign` imported from the cloudai node's models file, with the `opencode-go` credential from its auth file.

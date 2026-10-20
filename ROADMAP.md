@@ -30,6 +30,13 @@ Each recipe writes its own systemd unit or service definition today (pi-pocket w
 - [ ] Once units are framework-written, a unit check moves from pass 2 to pass 1 legitimately: it becomes a fact about Cloudify's own action rather than an inference about an opaque package.
 - Why: fewer ways for recipes to get units wrong, and pass 1 of drift verification becomes useful for the deployment's most common artifact.
 
+## Derive a direct deployment's verify steps from its records (roadmap entry, 2026-10-20)
+
+A `_direct` deployment has no runbook on disk (its single step lives in the dispatcher) and no run snapshot, so it cannot be replayed like a named deployment. Today the chosen shape is a thin loop: iterate the records, call each package hook.
+
+- [ ] Synthesise one verify step per recorded (package, host) so direct and named deployments share one mechanism. Needs no new on-disk artifact, and it reuses the rule replay-from-inventory already depends on: the record set is authoritative for what exists.
+- Known limit: a package whose install failed and left no record is invisible to the verify. A materialised plan (writing the package and host list at first dispatch) would fix that, at the cost of a second copy of the truth that can drift from the records.
+
 ## State convergence (approved implementation plan, 2026-10-17)
 
 - [ ] Implement Inventory authority (ADR-036), Environment-only secrets (ADR-037), Defaults ladder (ADR-038), Boolean failure marker (ADR-039), Secret markers with suffixes (ADR-042), and Unnamed matching (ADR-031) through [the active plan](PLAN.md), tracked in [issue #17](https://github.com/rachidbch/cloudify/issues/17).

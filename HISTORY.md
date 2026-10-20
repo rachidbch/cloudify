@@ -1628,3 +1628,10 @@ Tailnet name back to plain `guac-gui`; both snapshots intact.
 - Recipe `pkg/pi-pocket/` (install converges an existing checkout instead of duplicating it; verify proves unit + bound port + HTTP answer; uninstall keeps the data directory unless `--clear-data`), runbook `runbooks/pi-pocket/default/runbook.md`, and README.
 - Facts it rests on, observed on `cloudai:pocket-box`: `pi-pocket.service` = `/usr/bin/node /opt/pi-pocket/bin/pi-pocket.js --access lan -y --port 8787 --data /var/lib/pi-pocket`, `Restart=always`, browser drop-in; checkout v0.15.0 from the host-local bare repo `/srv/pi-pocket.git`; node v22.23.3; health 200.
 - No state written: level 1. The verify hook was proven on the host, which required pushing (hosts run code from GitHub, never the local tree).
+
+## 2026-10-20 - Verification needs a record; replay from inventory; direct verify decided
+
+- ADR-046 landed with its mechanics: an unnamed `verify` now resolves the deployment that owns the package's record on that host and refuses when there is none or when several candidates exist; the liveness case became the explicit `probe` verb (records nothing, claims no verdict). A hook can no longer be judged against recipe defaults.
+- `deployment replay` without `--at` now rebuilds from current state - bindings from the manifest, runbook from the canonical path, values through the dispatch's own applied seeding - so an adopted deployment with no run history can be verified. `--at` remains the only path that reads a snapshot. Tests: `tests/unit/runbook-replay.bats` 13/13.
+- `_direct` verification decided as C: iterate the records and call each package hook; `deployment replay` stays a named-deployment verb. Deriving steps from the record set (proposal A) is now a roadmap entry.
+- Verification ownership and provenance (ADR-046) re-scoped the drift-verification roadmap entry: pass 1 covers only Cloudify's own actions, pass 2 is the package hook. A new roadmap entry covers standardising what recipes hand-write (units), which is what would move unit checks into pass 1.

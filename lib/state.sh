@@ -373,6 +373,26 @@ _cloudify_state_check_package() {
         die "Invalid package name '${1:-}' (leading alphanumeric, then lowercase, digits, '.' '_' '-')."
 }
 
+# cloudify_state_record_candidates <package> <node> [<instance>]
+# Print one `app<TAB>flavor<TAB>deployment` per deployment holding a record for
+# that package on that host. Used to resolve an unnamed verification: a verdict
+# needs recorded state (ADR-046), so the caller names the deployment that owns
+# the record instead of judging a live deployment against recipe defaults.
+function cloudify_state_record_candidates() {
+    local pkg="${1:?}" node="${2:?}" inst="${3:-}" root rec rel
+    root=$(cloudify_state_inventory_root "$node" "$inst")
+    [[ -d "$root" ]] || return 0
+    while IFS= read -r rec; do
+        [[ -f "$rec" ]] || continue
+        rel="${rec#"$root"/}"
+        # app/flavor/deployment/packages/<pkg>/<instance>/state.json
+        printf '%s\t%s\t%s\n' "${rel%%/*}" \
+            "$(printf '%s' "$rel" | cut -d/ -f2)" \
+            "$(printf '%s' "$rel" | cut -d/ -f3)"
+    done < <(find "$root" -mindepth 6 -maxdepth 6 -name state.json -path "*/packages/${pkg}/*" 2>/dev/null | sort)
+    return 0
+}
+
 # cloudify_state_record_dir <node> [<instance>] <app> <flavor> <deployment>
 #   <package> <instance> - the per-deployment inventory record directory on
 # the host; every component is validated before anything is printed.

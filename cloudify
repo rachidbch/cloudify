@@ -975,6 +975,12 @@ function main() {
             verify)
                 action='verify'
                 ;;
+            probe)
+                # A liveness observation, not a verdict: no records, no event,
+                # no comparison against defaults (ADR-046).
+                action='verify'
+                export CLOUDIFY_PROBE_ONLY=true
+                ;;
             esac
 
             [[ -z "$packages" ]] && packages="--$action" || packages="$packages --$action"

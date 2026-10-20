@@ -347,13 +347,24 @@ function _cloudify_dispatch_worker() {
             cloudify_state_binding_add "$app" "$flavor" "$name" "$slot" "$ssh" "$node" "$inst"
         fi
     elif [[ "$action" == "verify" || "${CLOUDIFY_VERIFY_ONLY:-}" == "true" ]]; then
-        # An UNNAMED verify is an ad-hoc observation (the standing decision,
-        # same wording as the router's synthesis gate): no records to seed
-        # against (ADR-030), nothing synthesized - else a multi-host bare
-        # verify would mint one _direct deployment PER HOST, contradicting
-        # ADR-032's one-invocation-one-deployment rule.
-        log_warn "worker: unnamed verify on '$node${inst:+:$inst}' is ad-hoc - no records, no event"
-        return 0
+        # A verification needs recorded state (ADR-046): a hook judged against
+        # recipe defaults is a category error, not a weak check. So an unnamed
+        # verify resolves the deployment that owns this package's record on this
+        # host, and refuses when there is none or when the answer is ambiguous.
+        if [[ "${CLOUDIFY_PROBE_ONLY:-}" == "true" ]]; then
+            log_warn "worker: probe on '$node${inst:+:$inst}' - liveness observation only, no records, no verdict"
+            return 0
+        fi
+        local cands n_cands
+        cands=$(cloudify_state_record_candidates "${words[0]:-}" "$node" "$inst") || cands=""
+        n_cands=$(printf '%s\n' "$cands" | grep -c . || true)
+        if [[ "$n_cands" -eq 0 ]]; then
+            die "verify: no recorded state for '${words[0]:-}' on '$node${inst:+:$inst}' - a verification compares a deployment against its own record, never against defaults. Adopt or install it first, or use 'cloudify --on $node${inst:+:$inst} probe ${words[0]:-}' for a liveness observation."
+        elif [[ "$n_cands" -gt 1 ]]; then
+            die "verify: '${words[0]:-}' is recorded by $n_cands deployments on '$node${inst:+:$inst}' ($(printf '%s' "$cands" | awk -F'\t' '{printf "%s%s/%s/%s", (NR>1?", ":""), $1, $2, $3}')) - name the deployment with CLOUDIFY_APPLICATION/CLOUDIFY_FLAVOR/CLOUDIFY_DEPLOYMENT_NAME, or use 'probe' for a liveness observation."
+        fi
+        IFS=$'\t' read -r app flavor name <<< "$cands"
+        msg "verify: resolved $app/$flavor/$name from its record on '$node${inst:+:$inst}'"
     else
         app="$_DIRECT_APP" flavor="$_DIRECT_FLAVOR"
         name=$(cloudify_state_direct_synthesize "${words[0]:-direct}" "$node" "$inst" "$ssh")

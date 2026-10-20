@@ -133,7 +133,7 @@ EOF
     _snapshot_write replay-values 20260101T000000Z.yaml "$rb" \
         'target.guest: cloudai:xfce-test' 'value.MYVAR: hello'
 
-    run cloudify_deployment_replay replay-values --name replay-values --yes
+    run cloudify_deployment_replay replay-values --name replay-values --at 20260101T000000Z.yaml --yes
     [ "$status" -eq 0 ] || { echo "REPLAY OUT: $output"; false; }
     [[ "$output" == *"Replay: $(cloudify_state_runs_dir replay-values default replay-values)/20260101T000000Z.yaml"* ]]
     [[ "$output" == *"Seeded values (names only): MYVAR"* ]]
@@ -163,7 +163,7 @@ EOF
     _snapshot_write replay-ref 20260101T000000Z.yaml "$rb" \
         'target.guest: cloudai:xfce-test' 'value.SECRET_VAR: @base64:aGVsbG8='
 
-    run cloudify_deployment_replay replay-ref --name replay-ref --yes
+    run cloudify_deployment_replay replay-ref --name replay-ref --at 20260101T000000Z.yaml --yes
     [ "$status" -eq 0 ]
     [ "$(cat "$CLOUDIFY_TMP/ref-seen")" = "sec=hello" ]
 
@@ -189,14 +189,14 @@ EOF
     _snapshot_write replay-targets 20260101T000000Z.yaml "$rb" \
         'target.guest: cloudai:xfce-test' 'target.gateway: cloudai:guac'
 
-    run cloudify_deployment_replay replay-targets --name replay-targets --yes
+    run cloudify_deployment_replay replay-targets --name replay-targets --at 20260101T000000Z.yaml --yes
     [ "$status" -eq 0 ]
     [ "$(head -1 "$CLOUDIFY_TMP/targets-seen")" = "guest=cloudai:xfce-test" ]
     [ "$(tail -1 "$CLOUDIFY_TMP/targets-seen")" = "gateway=cloudai:guac" ]
     [[ "$output" == *"Seeded targets: guest=cloudai:xfce-test,gateway=cloudai:guac"* ]]
 
     step "--target gateway=... overrides the snapshot binding only"
-    run cloudify_deployment_replay replay-targets --name replay-targets --target gateway=cloudai:cloudify --yes
+    run cloudify_deployment_replay replay-targets --name replay-targets --at 20260101T000000Z.yaml --target gateway=cloudai:cloudify --yes
     [ "$status" -eq 0 ]
     [ "$(head -1 "$CLOUDIFY_TMP/targets-seen")" = "guest=cloudai:xfce-test" ]
     [ "$(tail -1 "$CLOUDIFY_TMP/targets-seen")" = "gateway=cloudai:cloudify" ]
@@ -227,7 +227,7 @@ EOF
         esac
     }
 
-    run cloudify_deployment_replay replay-collide --name replay-collide --yes
+    run cloudify_deployment_replay replay-collide --name replay-collide --at 20260101T000000Z.yaml --yes
     [ "$status" -eq 0 ]
     [ "$(cat "$CLOUDIFY_TMP/collide-seen")" = "oldest" ]
     [ "$(ls "$(cloudify_state_runs_dir replay-collide default replay-collide)" | wc -l)" -eq 2 ]
@@ -259,11 +259,11 @@ printf 'other' > "$CLOUDIFY_TMP/rb-seen"
 EOF
     _snapshot_write replay-rb 20260101T000000Z.yaml "$rb" 'target.guest: cloudai:xfce-test'
 
-    run cloudify_deployment_replay replay-rb --name replay-rb --yes
+    run cloudify_deployment_replay replay-rb --name replay-rb --at 20260101T000000Z.yaml --yes
     [ "$status" -eq 0 ]
     [ "$(cat "$CLOUDIFY_TMP/rb-seen")" = "snap" ]
 
-    run cloudify_deployment_replay replay-rb --name replay-rb --runbook "$other" --yes
+    run cloudify_deployment_replay replay-rb --name replay-rb --at 20260101T000000Z.yaml --runbook "$other" --yes
     [ "$status" -eq 0 ]
     [ "$(cat "$CLOUDIFY_TMP/rb-seen")" = "other" ]
 
@@ -297,9 +297,11 @@ EOF
     _snapshot_write replay-at 20260103T000000Z.yaml "$rb" \
         'target.guest: cloudai:xfce-test' 'value.MYVAR: newest'
 
+    # No --at is inventory replay (S6), so a deployment with snapshots but no
+    # manifest is refused rather than silently replaying its newest run.
     run cloudify_deployment_replay replay-at --name replay-at --yes
-    [ "$status" -eq 0 ]
-    [ "$(cat "$CLOUDIFY_TMP/at-seen")" = "newest" ]
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no manifest"* ]]
 
     run cloudify_deployment_replay replay-at --name replay-at --at 20260101 --yes
     [ "$status" -eq 0 ]
@@ -317,7 +319,7 @@ EOF
 
 @test "replay: no runs, no match and an ambiguous --at all die" {
     rubric "fail closed: never a silent pick"
-    run cloudify_deployment_replay never-ran --name never-ran
+    run cloudify_deployment_replay never-ran --name never-ran --at 20260101
     [ "$status" -ne 0 ]
     [[ "$output" == *"no runs under"* ]]
 
@@ -368,7 +370,7 @@ EOF
     _snapshot_write replay-dry 20260101T000000Z.yaml "$rb" \
         'target.guest: cloudai:xfce-test' 'value.MYVAR: s3cr3t'
 
-    run cloudify_deployment_replay replay-dry --name replay-dry --dry-run
+    run cloudify_deployment_replay replay-dry --name replay-dry --at 20260101T000000Z.yaml --dry-run
     [ "$status" -eq 0 ]
     [[ "$output" == *"Seeded values (names only): MYVAR"* ]]
     [[ "$output" == *"Deployment: replay-dry"* ]] || { echo "DRY OUT: $output"; false; }
@@ -391,7 +393,7 @@ printf 'ran' > "$CLOUDIFY_TMP/owned-marker"
 EOF
     _snapshot_write replay-owned 20260101T000000Z.yaml "$rb" \
         'target.guest: cloudai:xfce-test' 'value.CLOUDIFY_FORCE: true'
-    run cloudify_deployment_replay replay-owned --name replay-owned --yes
+    run cloudify_deployment_replay replay-owned --name replay-owned --at 20260101T000000Z.yaml --yes
     [ "$status" -ne 0 ]
     [[ "$output" == *"framework-owned var 'CLOUDIFY_FORCE'"* ]]
     [ ! -f "$CLOUDIFY_TMP/owned-marker" ]
@@ -431,7 +433,7 @@ EOF
         export CLOUDIFY_DISABLE_COLORS=true CLOUDIFY_SKIPCREDENTIALS=true CLOUDIFY_IS_LOCAL=true
         export CLOUDIFY_DIR='$cf' CLOUDIFY_TMP='$cf/tmp' CLOUDIFY_CREDENTIALS_DIR='$cf/creds'
         export CLOUDIFY_REMOTE_USER=root CLOUDIFY_REMOTE_PWD=test
-        cd '$PWD' && bash cloudify deployment replay demo --name demo --yes 2>&1
+        cd '$PWD' && bash cloudify deployment replay demo --name demo --at 20260101T000000Z.yaml --yes 2>&1
     "
     [ "$status" -eq 0 ] || { echo "ROUTER OUT: $output"; false; }
     [[ "$output" == *"Replay: $snapdir/20260101T000000Z.yaml"* ]]
@@ -447,4 +449,47 @@ EOF
         cd '$PWD' && bash cloudify help 2>&1
     "
     [[ "$output" == *"cloudify deployment replay <id>"* ]]
+}
+
+# ---------------------------------------------------------------
+# Replay from current inventory (no run snapshot)
+# ---------------------------------------------------------------
+
+@test "replay from inventory: no snapshot needed - bindings and runbook come from state" {
+    rubric "an adopted deployment has no run history; verify must still run"
+    local rb="$CLOUDIFY_DIR/runbooks/adopted/default/runbook.md"
+    _make_runbook "$rb" <<RB
+---
+targets: server
+---
+
+\`\`\`bash step=verify target=server id=check pkg=demo
+printf 'target=%s\n' "\$TARGET_SERVER" > "$CLOUDIFY_TMP/seen"
+\`\`\`
+RB
+    local b="$CLOUDIFY_TMP/b.tsv"
+    printf 'server\tcloudai:cloudify\tcloudai\tcloudify\tcloudify\n' > "$b"
+    cloudify_manifest_write adopted default main "" 0123456789abcdef0123456789abcdef01234567 false "$b"
+
+    [ ! -d "$(cloudify_state_runs_dir adopted default main)" ]
+
+    export CLOUDIFY_DEVELOPMENT_OVERRIDE=1
+    run cloudify_deployment_replay adopted --name main --phase verify --yes
+    [ "$status" -eq 0 ] || { echo "REPLAY OUT: $output"; return 1; }
+    [[ "$output" == *"from inventory"* ]]
+    [ "$(cat "$CLOUDIFY_TMP/seen")" = "target=cloudai:cloudify" ]
+}
+
+@test "replay from inventory: no manifest is a named refusal, never a guess" {
+    _make_runbook "$CLOUDIFY_DIR/runbooks/ghost/default/runbook.md" <<RB
+---
+targets: server
+---
+\`\`\`bash step=verify target=server id=check pkg=demo
+true
+\`\`\`
+RB
+    run cloudify_deployment_replay ghost --name main --phase verify --yes
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no manifest"* ]]
 }

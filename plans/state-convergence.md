@@ -185,8 +185,9 @@ Where each piece comes from:
 
 Order of work, each proven before the next:
 
-- [ ] Red test first: `replay --phase verify` on a deployment whose runs directory does not exist. Today it fails; it must pass from inventory alone.
-- [ ] Build the step set from the canonical runbook and the value set from records; run them under the deployment tuple.
+- [x] Red test first: `replay --phase verify` on a deployment whose runs directory does not exist; it now passes from inventory alone (`--at` absent means inventory, no snapshot read), proven in `tests/unit/runbook-replay.bats`.
+- [x] Build the step set from the canonical runbook and bindings from the manifest; values reach the hooks through the dispatch's own applied seeding, never from defaults (ADR-046).
+- [x] Verification needs recorded state: an unnamed `verify` resolves the deployment that owns the package record on that host and refuses when there is none or when several candidates exist; the liveness case is the explicit `probe` verb, which records nothing and claims no verdict.
 - [ ] Prove: a changed recorded value changes what the hook probes; a missing secret fails naming the input; a recorded package with no recipe refuses by name; a binding that no longer resolves refuses by name.
 - [ ] Prove the same path for a `_direct` deployment once the direct step derivation lands.
 - [ ] Prove historical replay is unchanged when `--at` names a snapshot (its ordinary values win, secrets still come from the environment).
@@ -198,9 +199,12 @@ A `_direct` deployment is a bare package dispatch recorded as state: application
 
 Proposals, cheapest first:
 
-- [ ] **A. Derive the steps from the record set (recommended).** At replay/verify time, synthesize one verify step per recorded (package, host). Deterministic, needs no new artifact, and reuses exactly the "record set is authoritative" rule that replay-from-inventory needs anyway, so named and direct deployments share one mechanism. Cost: the order is synthetic (package name, then host), and a package whose install failed and left no record is invisible to the verify.
-- [ ] **B. Materialise the virtual runbook** into the deployment directory at the first dispatch (packages and hosts as a small plan file). Gives direct deployments a real, auditable step list and uniform replay. Cost: a second copy of the truth, which can drift from the records.
-- [ ] **C. Keep deployment-level verify out of `_direct`**: "verify the deployment" means iterating its records and calling each package hook. That is proposal A with a smaller name and no synthesis step; it also means `deployment replay` stays a named-deployment verb, which the help text must say.
+Decision (2026-10-20): **C now, A as a roadmap entry.** `deployment replay` stays a named-deployment verb; verifying a `_direct` deployment means iterating its records and calling each package hook, and the help text says so. Proposal A moves to `ROADMAP.md`.
+
+- [ ] **C. Chosen.** Implement "verify a direct deployment" as a thin loop over its records: each recorded (package, host) gets its package hook, values from the record. `deployment replay` continues to refuse `_direct` with a message naming this path.
+- [ ] **A. Roadmap.** Derive the steps from the record set (synthesise one verify step per recorded package and host, so direct and named share one mechanism). At replay/verify time, synthesize one verify step per recorded (package, host). Deterministic, needs no new artifact, and reuses exactly the "record set is authoritative" rule that replay-from-inventory needs anyway, so named and direct deployments share one mechanism. Cost: the order is synthetic (package name, then host), and a package whose install failed and left no record is invisible to the verify.
+- [ ] **B. Rejected for now:** materialise the virtual runbook into the deployment directory at the first dispatch (packages and hosts as a small plan file). Gives direct deployments a real, auditable step list and uniform replay. Cost: a second copy of the truth, which can drift from the records.
+
 
 Under all three: a `_direct` verify compares against its records (never defaults, ADR-046), and a named package with no record is a refusal, not a default-driven probe.
 

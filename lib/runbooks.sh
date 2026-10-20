@@ -1719,7 +1719,48 @@ function cloudify_deployment_replay() {
     _cloudify_identity_check_component "flavor" "$flavor"
     _cloudify_identity_check_component "deployment name" "$name"
 
-    local snapshot
+    local snapshot=""
+    # Replay from current inventory (no --at): the deployment's own state is the
+    # source - bindings from the manifest, runbook from the canonical path, and
+    # values from the records through the dispatch's own applied seeding. An
+    # adopted deployment has no run history, and a verification must not depend
+    # on one (ADR-046: compare against the record, never against defaults).
+    if [[ -z "$at" ]]; then
+        cloudify_manifest_exists "$app" "$flavor" "$name" ||
+            die "deployment replay: no manifest for $app/$flavor/$name - replay from inventory needs recorded state."
+        runbook="${runbook:-$(cloudify_runbook_find_app "$app" "$flavor")}" ||
+            die "deployment replay: no canonical runbook for $app/$flavor; pass --runbook <path>."
+        [[ -f "$runbook" ]] ||
+            die "deployment replay: runbook '$runbook' not found; pass --runbook <path>."
+        local bslot baddr
+        while IFS=$'\t' read -r bslot baddr _ _; do
+            [[ -n "$bslot" && -n "$baddr" ]] || continue
+            target_args+=(--target "$bslot=$baddr")
+            seeded_targets+=("$bslot=$baddr")
+        done < <(cloudify_manifest_bindings "$app" "$flavor" "$name")
+        (( ${#target_args[@]} > 0 )) ||
+            die "deployment replay: $app/$flavor/$name has no bindings - nothing to target."
+        msg "Replay: from inventory (no run snapshot; bindings from the manifest, values from the records)"
+        msg "Seeded targets: $(IFS=','; printf '%s' "${seeded_targets[*]}")"
+        msg "Seeded values (names only): from the records"
+        # Command-line bindings win over the manifest's: drop the manifest pair
+        # for any slot the caller named, then append the caller's.
+        local cb t
+        local -a kept=()
+        for cb in ${cli_bindings[@]+"${cli_bindings[@]}"}; do
+            kept=()
+            for t in ${target_args[@]+"${target_args[@]}"}; do
+                [[ "$t" == "--target" ]] && continue
+                [[ "${t%%=*}" == "${cb%%=*}" ]] && continue
+                kept+=("$t")
+            done
+            target_args=(${kept[@]+"${kept[@]}"})
+        done
+        for cb in ${cli_bindings[@]+"${cli_bindings[@]}"}; do
+            target_args+=(--target "$cb")
+            seeded_targets+=("$cb")
+        done
+    else
     # The selector dies with the reason (none/ambiguous); stop here explicitly
     # rather than relying on errexit, which a caller in a || list disables.
     if ! snapshot=$(_cloudify_runbook_select_snapshot "$(cloudify_state_runs_dir "$app" "$flavor" "$name")" "$at"); then
@@ -1736,7 +1777,8 @@ function cloudify_deployment_replay() {
     done
 
     local line key raw value snap_runbook=""
-    local -a value_names=() target_args=() seeded_targets=()
+    local -a value_names=() seeded_targets=()
+    local -a target_args=()
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -n "$line" && "$line" == *:* ]] || continue
         key="$(_cloudify_vars_trim "${line%%:*}")"
@@ -1765,19 +1807,22 @@ function cloudify_deployment_replay() {
                 ;;
         esac
     done < "$snapshot"
+    fi
 
-    [[ -n "$runbook" ]] || runbook="$snap_runbook"
+    [[ -n "$runbook" ]] || runbook="${snap_runbook:-}"
     [[ -f "$runbook" ]] ||
         die "deployment replay: runbook '$runbook' (from $snapshot) not found; pass --runbook <path>."
 
-    local names_str="" targets_str=""
-    [[ ${#value_names[@]} -gt 0 ]] &&
-        names_str=$(IFS=','; printf '%s' "${value_names[*]}")
-    [[ ${#seeded_targets[@]} -gt 0 ]] &&
-        targets_str=$(IFS=','; printf '%s' "${seeded_targets[*]}")
-    msg "Replay: $snapshot"
-    msg "Seeded values (names only): ${names_str:-<none>}"
-    msg "Seeded targets: ${targets_str:-<none>}"
+    if [[ -n "$snapshot" ]]; then
+        local names_str="" targets_str=""
+        [[ ${#value_names[@]} -gt 0 ]] &&
+            names_str=$(IFS=','; printf '%s' "${value_names[*]}")
+        [[ ${#seeded_targets[@]} -gt 0 ]] &&
+            targets_str=$(IFS=','; printf '%s' "${seeded_targets[*]}")
+        msg "Replay: $snapshot"
+        msg "Seeded values (names only): ${names_str:-<none>}"
+        msg "Seeded targets: ${targets_str:-<none>}"
+    fi
 
     local -a run_args=()
     for b in ${cli_bindings[@]+"${cli_bindings[@]}"}; do
@@ -1801,6 +1846,8 @@ function cloudify_deployment_replay() {
     # none of its own).
     export CLOUDIFY_APPLICATION="$app" CLOUDIFY_FLAVOR="$flavor" CLOUDIFY_DEPLOYMENT_NAME="$name"
     export CLOUDIFY_DEPLOYMENT="$name"
-    CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES="$snapshot"
+    if [[ -n "$snapshot" ]]; then
+        CLOUDIFY_RUNBOOK_SNAPSHOT_VALUES="$snapshot"
+    fi
     cloudify_deployment_run "$ref" --name "$name" --runbook "$runbook" ${run_args[@]+"${run_args[@]}"}
 }

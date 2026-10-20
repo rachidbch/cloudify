@@ -693,3 +693,18 @@ REDESIGN.md and PLAN.md carry the revised contract.
 **Decision:** An explicit `--name` wins. Otherwise the name is allocated under the host mutation lock as the first free of the invocation's first package word and its numbered suffixes (`bat`, `bat-2`, ...); one name per invocation, carried to every host it targets. Values never participate in naming. A nameless command that is not an install resolves by candidates: the deployments holding a record for that package on that host. Exactly one candidate whose recorded values equal this invocation's resolved values proceeds silently, which is the idempotent reapply. Otherwise the candidates are listed and the command stops; forcing proceeds on the single-candidate case as a reconfigure. Duplicate protection compares package, host and non-secret applied values, never the package name alone.
 
 **Consequences:** Names are stable identities; values are mutable properties. Parallel differing installs cannot collide, and repeats converge instead of multiplying. A one-off migration matches the accumulated timestamp-named direct states to real installations before discarding the rest. The plan's Unnamed deployment matching item gains this resolver.
+
+## ADR-046: Verification owns only Cloudify's own actions, and never compares a deployment against defaults
+
+**Status:** Accepted 2026-10-20 (Rachid's ruling).
+
+**Context:** A verify hook reads environment values. For a recorded deployment those values are the record's; for an unnamed dispatch there is no record, so the hook falls back to recipe defaults and file defaults. The same command therefore produced two different meanings - a verdict against recorded state, and a probe against whatever defaults happened to exist - while both printed the same word. Adopting pi-pocket showed it plainly: the hook verified a live app against its own `${PI_POCKET_PORT:-8787}` fallback. A real deployment checked against defaults is a category error, not a weak check: a default-driven pass is indistinguishable from a real verdict, and a default-driven failure says nothing about the deployment.
+
+Packages are opaque to the framework: a recipe writes its own units, its own config files and its own sockets, so the framework cannot know what "correct" means for them.
+
+**Decision:** Two rules.
+
+1. **Provenance.** A verification compares a deployment against its own recorded values, never against defaults. With no record there is no verification: an unnamed dispatch is an observation of liveness, it carries its own word and never a convergence verdict.
+2. **Ownership.** Cloudify checks only facts about its own actions - the packages it installed, the paths it created, the bindings and records it wrote - and it relays the verdicts that recipe and runbook verifications report. Anything that is package behavior (listening sockets, the units and config files a recipe writes, whether the app's live configuration matches the record) belongs to that recipe's or runbook's own verification, and cloudify neither substitutes for it nor infers it.
+
+**Consequences:** A hook's coverage becomes an explicit property of the hook rather than an assumption about the framework. Framework checks shrink to what the framework actually did, which makes them honest and cheap. The boundary also names where to invest: standardizing what recipes hand-write today (units in particular) is what would let the framework verify more without pretending to know opaque packages.

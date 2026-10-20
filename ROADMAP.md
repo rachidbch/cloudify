@@ -1,23 +1,34 @@
 # Cloudify Roadmap
 
-## Drift verification: verify in two passes (roadmap entry, 2026-10-18)
+## Drift verification: verify in two passes (roadmap entry, 2026-10-18; enriched 2026-10-20)
 
 Inspired by the Ansible model: `cloudify verify` should answer "does reality still match the recorded state", not only "does the recipe's hook pass".
 
-- [ ] Two passes, in order: (1) a **generic pass** that checks everything checkable without package knowledge; (2) the **package pass**, the optional `pkg/<name>/verify.sh` hook as it exists today.
-- Why: a package without a hook, or with a narrow hook, leaves drift invisible, while the inventory holds recorded state that nothing cross-checks. The generic pass is the cross-check.
+- [ ] Two passes, in order: (1) a **generic pass**; (2) the **package pass**, the optional `pkg/<name>/verify.sh` hook as it exists today.
 
-Highly underspecified on purpose. A discussion is owed when this entry is reached, before any design is committed. Questions it must answer:
+Boundary settled by the pi-pocket adoption (ADR-046), and it shrinks pass 1 from the first draft:
 
-- What "generically verifiable" covers: package presence and version from the system's own database, declared files, systemd units, listening ports, recorded settings compared against live configuration, or none of these.
-- How a generic pass knows the expected artifact without a recipe: from the recorded state, from the package declaration, from the system's package manager, or from a per-package facts file.
-- Comparison semantics: what counts as drift, as absent, as changed, and as unknowable; a host that is down is unknowable, never drift.
-- Reporting and exit semantics: per-fact results, value-free output, exit codes, and how drift relates to the failure marker and the status word.
+- A verification compares a deployment against its own **recorded values**, never against recipe or file defaults. With no record there is no verification - an unnamed dispatch is a liveness observation with its own word.
+- Pass 1 covers only **Cloudify's own actions**: the packages it installed (presence and version from the system's package database), the paths it created, the bindings and records it wrote, and the target still resolving.
+- Pass 2 covers everything that is **package behavior**: listening sockets, the units and config files a recipe writes, and whether the app's live configuration matches the record. Cloudify relays the hook's verdict; it never infers or substitutes for it.
+
+Still to decide before any design is committed:
+
+- The exact shape of a verdict: one word per deployment, per package, per host, or per fact; and how a default-free liveness observation is reported so it can never be mistaken for a convergence verdict.
+- Whether pass 1 facts come from the declaration file (`.remote-vars`), from the records, or from a new per-package facts file - the unit name today is declared for some packages and implicit for others, which makes a generic unit check half-useful.
+- Comparison and reporting semantics: what counts as drift, absent, changed, unknowable (a down host is unknowable, never drift).
 - Secrets: names only, never values or digests.
-- Composition with the package hook: order, timeouts, short-circuit or always run both.
-- Whether a generic pass may run for a deployment with no recipe at all (adopted state).
+- Composition with the runbook's verify phase, and whether pass 1 runs when the package hook fails.
 
 No runtime behavior changes until that discussion closes.
+
+## Standardise what recipes hand-write: units and service definitions (roadmap entry, 2026-10-20)
+
+Each recipe writes its own systemd unit or service definition today (pi-pocket writes a unit file; octop and t3code call upstream service installers; zitadel uses a compose stack). That duplication is why the framework cannot verify units: it does not know their names or shapes, so unit correctness can only be a recipe's business.
+
+- [ ] Offer a declared service shape (name, exec, user, restart policy, environment, working directory) that the framework writes and therefore can verify. Recipes keep an escape hatch for service systems the framework does not model.
+- [ ] Once units are framework-written, a unit check moves from pass 2 to pass 1 legitimately: it becomes a fact about Cloudify's own action rather than an inference about an opaque package.
+- Why: fewer ways for recipes to get units wrong, and pass 1 of drift verification becomes useful for the deployment's most common artifact.
 
 ## State convergence (approved implementation plan, 2026-10-17)
 

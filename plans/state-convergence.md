@@ -170,9 +170,39 @@ The detached batch finished independently; historical PID 17044 is gone, and abs
 
 ### Current-state and historical replay (S6)
 
-- [ ] Make replay without `--at` read inventory rather than the newest snapshot; preserve explicit YAML snapshot replay for `--at`.
-- [ ] Prove inventory/current defaults/historical ordinary values differ intentionally, missing run history does not block current replay, and secrets always use the new environment after mappings.
+**Design (2026-10-20, no implementation yet).** Replay without `--at` rebuilds a run from current state instead of from a snapshot, so a deployment recorded by adoption can be replayed and verified with no local run history.
+
+Where each piece comes from:
+
+- **Identity**: the manifest (application, flavor, deployment name).
+- **Hosts**: the manifest bindings (slot -> address, node, instance, ssh host). A binding that no longer resolves is a named refusal, never a skip.
+- **What to run**: the recorded package set under each binding (`packages/<package>/<instance>/`). The record set is authoritative for which packages exist; a recorded package with no recipe is a named refusal.
+- **Steps**: for a named deployment, the canonical runbook's step list, in file order, filtered by the requested phase. For a `_direct` deployment, steps derived from the record set (see the direct-verification proposal below).
+- **Values**: recorded ordinary values seed the dispatch; secret names (`****`) take their values from this invocation's environment; each still resolves through the defaults ladder, weakest to strongest. Nothing is compared against recipe defaults (ADR-046).
+- **Secrets**: absent from the record down to the name; a missing one fails in the hook and names the input.
+- **Provenance**: the replay writes its own events with the phase's `command_kind`; it claims no `application_commit` it cannot prove, and its summary says it ran from inventory.
+- **Never**: read an old snapshot when `--at` is absent, and never write values back into records - a verify converges nothing.
+
+Order of work, each proven before the next:
+
+- [ ] Red test first: `replay --phase verify` on a deployment whose runs directory does not exist. Today it fails; it must pass from inventory alone.
+- [ ] Build the step set from the canonical runbook and the value set from records; run them under the deployment tuple.
+- [ ] Prove: a changed recorded value changes what the hook probes; a missing secret fails naming the input; a recorded package with no recipe refuses by name; a binding that no longer resolves refuses by name.
+- [ ] Prove the same path for a `_direct` deployment once the direct step derivation lands.
+- [ ] Prove historical replay is unchanged when `--at` names a snapshot (its ordinary values win, secrets still come from the environment).
 - [ ] Close the tool gates.
+
+### Verifying `_direct` deployments
+
+A `_direct` deployment is a bare package dispatch recorded as state: application `_direct`, flavor `direct`, a name allocated from the package word (ADR-045), one binding per targeted host, and a record per package per host. It has no canonical runbook file - its one-step runbook (`step_id: direct`) exists in the dispatcher, not on disk - and today it writes no run snapshot, so nothing about it can be replayed or iteration-verified.
+
+Proposals, cheapest first:
+
+- [ ] **A. Derive the steps from the record set (recommended).** At replay/verify time, synthesize one verify step per recorded (package, host). Deterministic, needs no new artifact, and reuses exactly the "record set is authoritative" rule that replay-from-inventory needs anyway, so named and direct deployments share one mechanism. Cost: the order is synthetic (package name, then host), and a package whose install failed and left no record is invisible to the verify.
+- [ ] **B. Materialise the virtual runbook** into the deployment directory at the first dispatch (packages and hosts as a small plan file). Gives direct deployments a real, auditable step list and uniform replay. Cost: a second copy of the truth, which can drift from the records.
+- [ ] **C. Keep deployment-level verify out of `_direct`**: "verify the deployment" means iterating its records and calling each package hook. That is proposal A with a smaller name and no synthesis step; it also means `deployment replay` stays a named-deployment verb, which the help text must say.
+
+Under all three: a `_direct` verify compares against its records (never defaults, ADR-046), and a named package with no record is a refusal, not a default-driven probe.
 
 ### Unnamed deployment matching (S7)
 

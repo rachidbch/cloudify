@@ -209,6 +209,10 @@ The live host remains authoritative about what exists now.
 
 Verification refreshes health and detects drift.
 
+Verification compares a deployment against its own recorded values and never against defaults (verification ownership and provenance, ADR-046); without a record an unnamed dispatch is a liveness observation carrying its own word, never a convergence verdict.
+
+Cloudify verifies only facts about its own actions and relays the verdicts recipes and runbooks report; package behavior - sockets, units, config files, whether live configuration matches the record - is the recipe's or the runbook's own verification.
+
 Folding an event log is not a substitute for inspecting a live host.
 
 ## One value resolution per dispatch
